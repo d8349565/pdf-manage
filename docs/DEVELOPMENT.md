@@ -14,7 +14,7 @@ python -m venv .venv
 
 - 程序目录：`dist/ZhiXuPDF/`，不能只复制 EXE。
 - 构建报告：`build/build-report.json`，仅保留本机。
-- 安装包：安装 Inno Setup 后运行 `build_setup.bat`，输出 `dist-installer/ZhiXuPDF-Setup.exe`。
+- 安装包：安装 Inno Setup 后运行 `build.bat`（或 `build_setup.bat`），输出 `dist-installer/ZhiXuPDF-Setup.exe`。
 
 ## 代码位置
 

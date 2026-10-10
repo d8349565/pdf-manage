@@ -53,7 +53,7 @@ def self_test(report_path: Path) -> int:
                 doc.save(source)
             assert startup_pdf_paths([sys.executable, str(source)]) == [str(source)]
             window = MainWindow()
-            assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
+            assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}（吾爱破解）")
             from native_window_check import check_native_window
             report["native_resize"] = check_native_window(window, qapp)
             report["checks"].append("real Windows edge hit testing and native drag resize")

@@ -1007,8 +1007,8 @@ def test_custom_title_bar_matches_app_chrome(window, qapp):
     assert bool(window.windowFlags() & Qt.WindowType.FramelessWindowHint)
     assert window.menuWidget() is not None
     from app import APP_NAME, __version__
-    title = f"合同.pdf — {APP_NAME} v{__version__}"
-    assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
+    title = f"合同.pdf — {APP_NAME} v{__version__}（吾爱破解）"
+    assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}（吾爱破解）")
     window.setWindowTitle(title)
     assert window.title_label.toolTip() == title
     assert window.btn_min.accessibleName() == "最小化"
