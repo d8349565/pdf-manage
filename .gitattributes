@@ -1,0 +1,4 @@
+* text=auto
+*.bat text eol=crlf
+*.cmd text eol=crlf
+build_setup.bat working-tree-encoding=GBK

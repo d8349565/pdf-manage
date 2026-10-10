@@ -1,0 +1,37 @@
+"""File commit helpers shared by PDF, image and Word exporters."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+class OperationCancelled(Exception):
+    pass
+
+
+def check_cancel(cancel):
+    if cancel and cancel():
+        raise OperationCancelled("任务已取消，未完成的临时文件已清理。")
+
+
+def stamp(path):
+    try:
+        stat = os.stat(path)
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+    except FileNotFoundError:
+        return None
+
+
+def commit_file(temp, target, expected, *, cancel=None):
+    check_cancel(cancel)
+    if stamp(target) != expected:
+        raise OSError("目标文件在处理期间发生变化，未覆盖，请重新选择输出文件。")
+    # 新文件采用排他创建，避免检查之后出现的同名文件被替换。
+    if expected is None:
+        if os.name == "nt":
+            os.rename(temp, target)  # Windows rename refuses an existing target.
+        else:
+            os.link(temp, target)
+            Path(temp).unlink()
+    else:
+        os.replace(temp, target)
