@@ -44,10 +44,17 @@ class EncryptionDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         hint(layout, "密码仅用于本次输出，不会保存。请妥善保管，本软件无法找回。")
+        self.mode = QComboBox()
+        self.mode.setAccessibleName("输出保护方式")
+        self.mode.addItem("打开密码 · 输入密码才能阅读", "open")
+        self.mode.addItem("免密阅读 · 限制打印与复制", "permissions")
+        self.mode.addItem("双重保护 · 打开密码与独立管理密码", "both")
+        layout.addWidget(self.mode)
         self.plain = QCheckBox("明确选择不加密")
         self.plain.setVisible(allow_plain)
         layout.addWidget(self.plain)
         form = QFormLayout()
+        self.password_form = form
         self.algorithm = QComboBox()
         self.algorithm.setAccessibleName("PDF 加密格式")
         self.algorithm.addItem("AES-256 · 常规加密", pymupdf.PDF_ENCRYPT_AES_256)
@@ -90,11 +97,24 @@ class EncryptionDialog(QDialog):
         self.start = buttons(self, layout, "确认输出保护")
         self.plain.toggled.connect(self.validate)
         self.algorithm.currentIndexChanged.connect(self.validate)
+        self.mode.currentIndexChanged.connect(self.protection_changed)
+        self.protection_changed()
+        self.validate()
+
+    def protection_changed(self):
+        mode = self.mode.currentData()
+        restricted = mode != "open"
+        self.password_form.setRowVisible(self.password, mode != "permissions")
+        self.password_form.setRowVisible(self.confirm, mode != "permissions")
+        self.advanced.setVisible(False)
+        self.options.setVisible(restricted)
+        self.printing.setChecked(not restricted)
+        self.copying.setChecked(not restricted)
         self.validate()
 
     def validate(self):
         plain = self.plain.isChecked()
-        for widget in (self.algorithm, self.password, self.confirm, self.advanced, self.options):
+        for widget in (self.mode, self.algorithm, self.password, self.confirm, self.advanced, self.options):
             widget.setEnabled(not plain)
         restricted = not self.printing.isChecked() or not self.copying.isChecked()
         self.owner.setEnabled(restricted and not plain)
@@ -104,16 +124,20 @@ class EncryptionDialog(QDialog):
             "密码限 1～32 个字符，仅支持字母、数字、英文符号和空格，中文密码请使用 AES-256。"
             if compatible else "AES-256 支持 1～40 个字符；旧版阅读器不一定支持此格式。")
         if not plain:
-            if not self.password.text():
+            permission_only = self.mode.currentData() == "permissions"
+            user_password = "" if permission_only else self.password.text()
+            if permission_only and not restricted:
+                error = "请至少限制打印或复制，或改选打开密码保护。"
+            elif not permission_only and not user_password:
                 error = f"请输入打开密码（最多 {32 if compatible else 40} 个字符）。"
-            elif self.password.text() != self.confirm.text():
+            elif not permission_only and user_password != self.confirm.text():
                 error = "两次打开密码不一致。"
             elif restricted and not self.owner.text():
                 error = "限制权限时请输入独立管理密码。"
-            elif restricted and self.owner.text() == self.password.text():
+            elif restricted and self.owner.text() == user_password:
                 error = "管理密码必须不同于打开密码。"
             elif compatible and any(len(value) > 32 or any(not 32 <= ord(char) <= 126 for char in value)
-                    for value in (self.password.text(), self.owner.text() if restricted else "")):
+                    for value in (user_password, self.owner.text() if restricted else "")):
                 error = "兼容模式密码须为最多 32 个半角字符；中文密码请选 AES-256。"
         self.feedback.setText(error)
         self.start.setEnabled(not error)
@@ -127,7 +151,7 @@ class EncryptionDialog(QDialog):
                 permissions &= ~(pymupdf.PDF_PERM_PRINT | pymupdf.PDF_PERM_PRINT_HQ)
             if not self.copying.isChecked():
                 permissions &= ~pymupdf.PDF_PERM_COPY
-            self.setting = EncryptionOptions(self.password.text(),
+            self.setting = EncryptionOptions("" if self.mode.currentData() == "permissions" else self.password.text(),
                 self.owner.text() if permissions != 4095 else "", permissions,
                 algorithm=self.algorithm.currentData())
             # Persist only the explicit format choice; all passwords stay in memory.

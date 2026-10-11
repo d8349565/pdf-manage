@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 
@@ -27,11 +28,19 @@ def commit_file(temp, target, expected, *, cancel=None):
     if stamp(target) != expected:
         raise OSError("目标文件在处理期间发生变化，未覆盖，请重新选择输出文件。")
     # 新文件采用排他创建，避免检查之后出现的同名文件被替换。
-    if expected is None:
-        if os.name == "nt":
-            os.rename(temp, target)  # Windows rename refuses an existing target.
-        else:
-            os.link(temp, target)
-            Path(temp).unlink()
-    else:
-        os.replace(temp, target)
+    # Windows readers briefly hold newly closed files; retry handles transient locks.
+    for attempt in range(20):
+        try:
+            if expected is None:
+                if os.name == "nt":
+                    os.rename(temp, target)  # Windows rename refuses an existing target.
+                else:
+                    os.link(temp, target)
+                    Path(temp).unlink()
+            else:
+                os.replace(temp, target)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(.05)

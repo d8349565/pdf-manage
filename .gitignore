@@ -43,6 +43,8 @@
 /docs/**
 !/docs/DEVELOPMENT.md
 !/docs/REPOSITORY.md
+!/docs/ACCEPTANCE.md
+!/docs/issues.md
 !/docs/images/
 !/docs/images/reading.png
 !/docs/images/arrange.png

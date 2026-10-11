@@ -106,6 +106,48 @@ _PATHS: dict[str, str] = {
         '<rect width="18" height="18" x="3" y="3" rx="2"/>'
         '<path d="M15 3v18"/>'
     ),
+    "highlighter": (
+        '<path d="m9 11-6 6v3h3l6-6"/>'
+        '<path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>'
+    ),
+    "pen": (
+        '<path d="M12 20h9"/>'
+        '<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'
+    ),
+    "sticky-note": (
+        '<path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
+        '<path d="M15 3v5h5"/>'
+    ),
+    "type": (
+        '<polyline points="4 7 4 4 20 4 20 7"/>'
+        '<line x1="9" y1="20" x2="15" y2="20"/>'
+        '<line x1="12" y1="4" x2="12" y2="20"/>'
+    ),
+    "mouse-pointer": (
+        '<path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>'
+        '<path d="m13 13 6 6"/>'
+    ),
+    "bookmark": (
+        '<path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'
+    ),
+    "square": (
+        '<rect width="18" height="18" x="3" y="3" rx="2"/>'
+    ),
+    "circle": (
+        '<circle cx="12" cy="12" r="9"/>'
+    ),
+    "arrow-up-right": (
+        '<path d="M7 17 17 7"/>'
+        '<path d="M7 7h10v10"/>'
+    ),
+    "underline": (
+        '<path d="M6 3v7a6 6 0 0 0 12 0V3"/>'
+        '<line x1="4" y1="21" x2="20" y2="21"/>'
+    ),
+    "x": (
+        '<line x1="18" y1="6" x2="6" y2="18"/>'
+        '<line x1="6" y1="6" x2="18" y2="18"/>'
+    ),
     "win-min": '<path d="M5 12h14"/>',
     "win-max": '<rect width="12" height="12" x="6" y="6" rx="1.2"/>',
     "win-restore": (

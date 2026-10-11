@@ -4,6 +4,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import dataclass
 from urllib.parse import quote
+from pathlib import Path
 
 import pymupdf
 
@@ -228,8 +229,9 @@ def restore_navigation(out, pages, snapshots, warnings, merged):
     inactive_bookmarks = 0
     for ordinal, (sid, snapshot) in enumerate(snapshots.items(), 1):
         mapping = mappings[sid]
-        if merged and snapshot["toc"]:
-            toc.append([1, f"来源 {ordinal}", min(mapping.values()) + 1])
+        if merged:
+            source_path = next(ref.source_path for ref in pages if ref.source_id == sid)
+            toc.append([1, Path(source_path).stem or f"来源 {ordinal}", min(mapping.values()) + 1])
             toc_targets.append(None)
         for level, title, old_page, original in snapshot["toc"]:
             destination = dict(original)

@@ -1,6 +1,9 @@
 #define MyAppExeName "ZhiXuPDF.exe"
-#define MyAppName GetStringFileInfo("..\dist\ZhiXuPDF\" + MyAppExeName, "ProductName")
-#define MyAppVersion GetStringFileInfo("..\dist\ZhiXuPDF\" + MyAppExeName, "ProductVersion")
+#ifndef MyAppPackageDir
+  #define MyAppPackageDir "..\dist\ZhiXuPDF"
+#endif
+#define MyAppName GetStringFileInfo(MyAppPackageDir + "\" + MyAppExeName, "ProductName")
+#define MyAppVersion GetStringFileInfo(MyAppPackageDir + "\" + MyAppExeName, "ProductVersion")
 #define MyAppProgId "PDFManage.Document"
 
 [Setup]
@@ -22,8 +25,8 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ChangesAssociations=yes
 
 [Files]
-Source: "..\dist\ZhiXuPDF\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\ZhiXuPDF\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppPackageDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyAppPackageDir}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
