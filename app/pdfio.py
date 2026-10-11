@@ -570,6 +570,25 @@ class PdfStore:
                     self._text_cache_bytes -= removed
             return snapshot
 
+    def search_page(self, ref, query):
+        """Search displayed PDF points, including unsaved text corrections."""
+        import pymupdf
+        if not query.strip():
+            return [], False
+        with self._render_page(ref) as page:
+            text = page.get_textpage(flags=pymupdf.TEXT_DEHYPHENATE |
+                pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_PRESERVE_LIGATURES |
+                pymupdf.TEXT_MEDIABOX_CLIP)
+            extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
+            rotated = page.rect * extra
+            extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
+            matrix = page.rotation_matrix * extra
+            matches = []
+            for quad in page.search_for(query, quads=True, textpage=text):
+                points = [point * matrix for point in (quad.ul, quad.ur, quad.lr, quad.ll)]
+                matches.append(tuple((point.x, point.y) for point in points))
+            return matches, bool(text.extractText().strip())
+
     def prepare_replacement(self, ref, rectangle, text):
         from app.pdfedits import prepare_replacement
         self.require_operation([ref], "content_edit")

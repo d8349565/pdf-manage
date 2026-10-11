@@ -42,6 +42,7 @@ from PyQt6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QPolygonF,
     QPixmap,
     QShortcut,
     QTransform,
@@ -911,6 +912,8 @@ class PreviewView(QGraphicsView):
         self.page_signature = None
         self.active_page = 0
         self.neighbors = {}
+        self.search_areas = {}
+        self.current_search = -1
         self._item = QGraphicsPixmapItem()
         self._scene.addItem(self._item)
         self._detail = QGraphicsPixmapItem()
@@ -990,6 +993,34 @@ class PreviewView(QGraphicsView):
         item.setPixmap(QPixmap.fromImage(image))
         item.setTransform(QTransform.fromScale(rect.width() / image.width(), rect.height() / image.height()))
         item.setPos(rect.topLeft())
+
+    def set_search_results(self, results, current):
+        self.search_areas = {}
+        for index, (page, points) in enumerate(results):
+            self.search_areas.setdefault(page, []).append((index, points))
+        self.current_search = current
+        self.viewport().update()
+
+    def jump_to_search(self, page, points):
+        if 0 <= page < len(self.page_rects):
+            origin = self.page_rects[page].topLeft()
+            polygon = QPolygonF([origin + QPointF(x, y) for x, y in points])
+            self.ensureVisible(polygon.boundingRect(), 48, 72)
+
+    def drawForeground(self, painter, rect) -> None:
+        super().drawForeground(painter, rect)
+        painter.save()
+        for page in self.visible_pages(rect):
+            origin = self.page_rects[page].topLeft()
+            for index, points in self.search_areas.get(page, ()):
+                polygon = QPolygonF([origin + QPointF(x, y) for x, y in points])
+                active = index == self.current_search
+                painter.setBrush(QColor(255, 153, 0, 105) if active else QColor(255, 224, 70, 75))
+                pen = QPen(QColor("#B45309") if active else QColor(220, 175, 0, 100))
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.drawPolygon(polygon)
+        painter.restore()
 
     def set_photo(self, pix: QPixmap, dpr: float, page_size=None) -> None:
         self._item.setPixmap(pix)
@@ -1633,6 +1664,9 @@ class MainWindow(QMainWindow):
             self.first_painted.emit()
 
     def _chrome_actions(self) -> None:
+        self.find_action = self._act("全文搜索", self.open_search, QKeySequence.StandardKey.Find)
+        self.find_action.setIcon(toolbar_icon("search"))
+        self.find_action.setToolTip("全文搜索 (Ctrl+F)")
         self.act_pages = QAction("页面栏", self)
         self.act_pages.setCheckable(True)
         self.act_pages.setChecked(False)
@@ -1732,6 +1766,7 @@ class MainWindow(QMainWindow):
         self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
+        edit.addAction(self.find_action)
         edit.addAction(self._act("审阅与文字修正…", self.open_annotation_tools))
         edit.addSeparator()
         edit.addAction(self._act("全选", self.select_all_pages, QKeySequence.StandardKey.SelectAll))
@@ -1807,6 +1842,9 @@ class MainWindow(QMainWindow):
         self.review_button.setFixedSize(30, 30)
         self.review_button.setCheckable(True)
         document.addWidget(self.review_button)
+        self.search_button = self._action_btn(self.find_action)
+        self.search_button.setFixedSize(30, 30)
+        document.addWidget(self.search_button)
         self.document_name = QLabel(bar)
         self.document_name.setObjectName("documentName")
         self.document_name.setMinimumWidth(80)
@@ -1926,6 +1964,9 @@ class MainWindow(QMainWindow):
         current = self.ws.preview_index()
         if current is not None:
             self.go_to_page(current + 1 + delta)
+
+    def open_search(self) -> None:
+        self.search_bar.open_search()
 
     def _update_export_controls(self) -> None:
         count = len(self.ws.pages)
@@ -2060,6 +2101,8 @@ class MainWindow(QMainWindow):
         self.navigation_bar = QWidget()
         self.navigation_bar.setLayout(zoom_bar)
         zoom_bar.setContentsMargins(0, 0, 0, 0)
+        from app.searchui import SearchBar
+        self.search_bar = SearchBar(self)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -2376,6 +2419,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+Right"), self, lambda: self.step_page(1))
         QShortcut(QKeySequence("Ctrl+L"), self, self.focus_page_number)
         QShortcut(QKeySequence("Ctrl+="), self, self.zoom_in)
+        QShortcut(QKeySequence("F3"), self, lambda: self.search_bar.step(1))
+        QShortcut(QKeySequence("Shift+F3"), self, lambda: self.search_bar.step(-1))
 
     def focus_page_number(self) -> None:
         if self.ws.pages:
@@ -2821,6 +2866,8 @@ class MainWindow(QMainWindow):
 
     def _update_preview(self) -> None:
         self._sync_controls()
+        self.find_action.setEnabled(bool(self.ws.pages))
+        self.search_bar.sync_document()
         if self.ws.pages:
             self._ensure_annotation_tools()
         if hasattr(self, "annotation_tools"):
@@ -3788,6 +3835,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.confirm_leave():
+            self.search_bar.cancel()
             self._reading_timer.stop()
             self._preview_timer.stop()
             self._detail_timer.stop()
