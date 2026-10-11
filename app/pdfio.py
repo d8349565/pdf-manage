@@ -4,7 +4,7 @@ import os
 import math
 import tempfile
 import threading
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 
 from PyQt6.QtGui import QImage
@@ -48,6 +48,8 @@ class WriteOptions:
     encryption: "EncryptionOptions | None" = None
     compression: str = ""
     editable_copy: bool = False
+    page_numbers: "PageNumberOptions | None" = None
+    outline: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -66,8 +68,10 @@ class EncryptionOptions:
         import pymupdf
         if self.algorithm not in (pymupdf.PDF_ENCRYPT_AES_128, pymupdf.PDF_ENCRYPT_AES_256):
             raise PdfError("不支持的 PDF 加密格式。")
-        if not self.user_password or len(self.user_password) > 40 or len(self.owner_password) > 40:
-            raise PdfError("打开密码须为 1～40 个字符，管理密码不能超过 40 个字符。")
+        if len(self.user_password) > 40 or len(self.owner_password) > 40:
+            raise PdfError("打开密码和管理密码不能超过 40 个字符。")
+        if not self.user_password and self.permissions == 4095:
+            raise PdfError("请选择打开密码保护，或限制打印与复制权限。")
         if self.algorithm == pymupdf.PDF_ENCRYPT_AES_128:
             if any(len(value) > 32 or any(not 32 <= ord(char) <= 126 for char in value)
                    for value in (self.user_password, self.owner_password)):
@@ -115,7 +119,7 @@ class _Source:
     """一个已打开的源文档。MuPDF 非线程安全，故每个文档单独加锁。"""
 
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
-                 "password", "safety", "disk_stamp")
+                 "password", "safety", "disk_stamp", "label_rules", "label_starts")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
                  authentication: int, disk_stamp, progress_callback=None) -> None:
@@ -129,6 +133,8 @@ class _Source:
         if progress_callback:
             progress_callback(0, 0, "正在检查签名与文档结构")
         self.safety = inspect_safety(doc, authentication)
+        self.label_rules = tuple(doc.get_page_labels())
+        self.label_starts = tuple(rule["startpage"] for rule in self.label_rules)
         self.sizes = []
         self.rotations = []
         for i in range(doc.page_count):
@@ -165,6 +171,11 @@ class PdfStore:
         self._sources: dict[str, _Source] = {}
         self._n = 0
         self._written_stamps = {}
+        self._draft_lock = threading.RLock()
+        self._draft = None
+        self._draft_key = None
+        self._text_cache = None
+        self._text_cache_bytes = 0
 
     def _source(self, sid: str) -> _Source:
         src = self._sources.get(sid)
@@ -173,6 +184,7 @@ class PdfStore:
         return src
 
     def close_all(self) -> None:
+        self._clear_edit_caches()
         sources = list(self._sources.values())
         self._sources.clear()
         self._written_stamps.clear()
@@ -180,6 +192,8 @@ class PdfStore:
             src.close()
 
     def close_except(self, keep: set[str]) -> None:
+        if self._draft_key is not None and self._draft_key[0] not in keep:
+            self._clear_edit_caches()
         for sid in [s for s in self._sources if s not in keep]:
             src = self._sources.pop(sid)
             src.close()
@@ -253,6 +267,21 @@ class PdfStore:
         """页面在源文件里自带的 /Rotate（0/90/180/270）。同样只查表，UI 线程可放心调用。"""
         return self._source(ref.source_id).page_rotation(ref.source_page)
 
+    def page_label(self, ref):
+        """Cached metadata only: never wait on a render lock in the UI."""
+        from bisect import bisect_right
+        source = self._source(ref.source_id)
+        if not source.label_rules:
+            return None
+        index = bisect_right(source.label_starts, ref.source_page) - 1
+        if index < 0:
+            return None
+        import pymupdf
+        rule = source.label_rules[index]
+        style = rule.get("style", "")
+        number = ref.source_page - rule["startpage"] + rule.get("firstpagenum", 1) - int(style in ("a", "A"))
+        return pymupdf.utils.construct_label(style, rule.get("prefix", ""), number)
+
     def operation_reason(self, pages: list[PageRef], operation: str) -> str:
         if not pages:
             return ""
@@ -268,9 +297,13 @@ class PdfStore:
                     return "当前密码不允许修改或导出内容，不能制作可编辑副本。"
             if operation == "modify" and safety.read_only_reason:
                 return safety.read_only_reason
-            permission = {"print": pymupdf.PDF_PERM_PRINT, "copy": pymupdf.PDF_PERM_COPY}.get(operation)
+            permission = {"print": pymupdf.PDF_PERM_PRINT, "copy": pymupdf.PDF_PERM_COPY,
+                          "annotate": pymupdf.PDF_PERM_ANNOTATE, "content_edit": pymupdf.PDF_PERM_MODIFY,
+                          "outline": pymupdf.PDF_PERM_MODIFY}.get(operation)
             if permission is not None and not safety.allows(permission):
-                return "当前密码不允许打印。" if operation == "print" else "当前密码不允许导出内容。"
+                return {"print": "当前密码不允许打印。", "copy": "当前密码不允许导出内容。",
+                        "annotate": "当前密码不允许添加或修改批注。", "content_edit": "当前密码不允许修改原文。",
+                        "outline": "当前密码不允许修改大纲。"}[operation]
         return ""
 
     def require_operation(self, pages: list[PageRef], operation: str) -> None:
@@ -423,9 +456,7 @@ class PdfStore:
 
     def render_qimage(self, ref: PageRef, width: int) -> QImage:
         import pymupdf
-        src = self._source(ref.source_id)
-        with src.lock:
-            page = src.doc_locked().load_page(ref.source_page)
+        with self._render_page(ref) as page:
             rect = page.rect
             base = rect.height if ref.rotation % 180 else rect.width
             zoom = max(int(width), 1) / (base or 1)
@@ -441,9 +472,7 @@ class PdfStore:
         import pymupdf
         if not math.isfinite(scale) or scale <= 0 or not all(math.isfinite(v) for v in region):
             raise PdfError("无效的预览范围")
-        src = self._source(ref.source_id)
-        with src.lock:
-            page = src.doc_locked().load_page(ref.source_page)
+        with self._render_page(ref) as page:
             rotation = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
             rotated = page.rect * rotation
             rotation *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
@@ -456,6 +485,152 @@ class PdfStore:
             matrix = rotation * pymupdf.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=matrix, clip=area * ~rotation, alpha=False)
         return _to_qimage(pix), (pix.x / scale, pix.y / scale), scale
+
+    def _clear_edit_caches(self):
+        with self._draft_lock:
+            if self._draft is not None:
+                self._draft.close()
+            self._draft = self._draft_key = None
+            self._text_cache = None
+            self._text_cache_bytes = 0
+
+    @contextmanager
+    def _render_page(self, ref):
+        src = self._source(ref.source_id)
+        if not ref.edits:
+            with src.lock:
+                yield src.doc_locked().load_page(ref.source_page)
+            return
+        import pymupdf
+        from app.pdfedits import apply_edits
+        key = (ref.source_id, ref.source_page, ref.page_id, ref.revision)
+        with self._draft_lock:
+            if key != self._draft_key:
+                if self._draft is not None:
+                    self._draft.close()
+                self._draft = self._draft_key = None
+                draft = pymupdf.open()
+                try:
+                    with src.lock:
+                        original = src.doc_locked()
+                        original_page = original[ref.source_page]
+                        draft.insert_pdf(original, from_page=ref.source_page, to_page=ref.source_page)
+                        # A one-page preview omits links to other pages. Keep their
+                        # rectangles as inert links so text correction still rejects them.
+                        for link in original_page.get_links():
+                            if link.get("kind") == pymupdf.LINK_GOTO:
+                                draft[0].insert_link(dict(kind=pymupdf.LINK_URI, uri="about:blank",
+                                    **{"from": pymupdf.Rect(link["from"]) * original_page.derotation_matrix}))
+                    apply_edits(draft[0], ref.edits)
+                    self._draft, self._draft_key = draft, key
+                except Exception as exc:
+                    draft.close()
+                    if isinstance(exc, (ValueError, PdfError)):
+                        raise
+                    raise PdfError(f"无法应用页面修改：{exc}") from exc
+            yield self._draft[0]
+
+    def text_snapshot(self, ref):
+        from collections import OrderedDict
+        from app.pdfedits import snapshot_page
+        import pymupdf
+        import sys
+        with self._draft_lock:
+            if self._text_cache is None:
+                self._text_cache = OrderedDict()
+            key = ref.render_key
+            hit = self._text_cache.get(key)
+            if hit is not None:
+                self._text_cache.move_to_end(key)
+                return hit[0]
+            with self._render_page(ref) as page:
+                snapshot = snapshot_page(page)
+                extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
+                rotated = page.rect * extra
+                extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
+                snapshot["matrix"] = tuple(page.rotation_matrix * extra)
+            seen = set()
+            def size(value):
+                identity = id(value)
+                if identity in seen:
+                    return 0
+                seen.add(identity)
+                total = sys.getsizeof(value)
+                if isinstance(value, dict):
+                    total += sum(size(k) + size(v) for k, v in value.items())
+                elif isinstance(value, (tuple, list)):
+                    total += sum(size(v) for v in value)
+                return total
+            cost = size(snapshot)
+            if cost <= 8 * 1024 * 1024:
+                self._text_cache[key] = snapshot, cost
+                self._text_cache_bytes += cost
+                while self._text_cache_bytes > 8 * 1024 * 1024:
+                    _, (_, removed) = self._text_cache.popitem(last=False)
+                    self._text_cache_bytes -= removed
+            return snapshot
+
+    def prepare_replacement(self, ref, rectangle, text):
+        from app.pdfedits import prepare_replacement
+        self.require_operation([ref], "content_edit")
+        with self._render_page(ref) as page:
+            return prepare_replacement(page, rectangle, text)
+
+    def number_preview(self, pages, index, options, width):
+        import pymupdf
+        from app.pagenumbers import stamp_number
+        options.validate(len(pages))
+        ref = pages[index]
+        draft = pymupdf.open()
+        try:
+            with self._render_page(ref) as original:
+                draft.insert_pdf(original.parent, from_page=original.number, to_page=original.number)
+                draft[0].set_rotation((original.rotation + ref.rotation) % 360)
+            page = draft[0]
+            if index >= options.skip and options.mode == "visible":
+                stamp_number(page, options.text(options.start + index - options.skip, len(pages) - options.skip), options, index)
+            zoom = width / page.rect.width
+            return _to_qimage(page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False))
+        finally:
+            draft.close()
+
+    def outline_entries(self, pages, *, group_sources=None):
+        from pathlib import Path
+        from app.workspace import OutlineEntry
+        from app.pdfstructure import _destination
+        import pymupdf
+        by_source = {}
+        for page in pages:
+            by_source.setdefault(page.source_id, {}).setdefault(page.source_page, page.page_id)
+        merged = len(by_source) > 1 if group_sources is None else group_sources
+        entries = []
+        for sid, targets in by_source.items():
+            source = self._source(sid)
+            if merged:
+                entries.append(OutlineEntry(1, Path(source.path).stem, next(iter(targets.values()))))
+            with source.lock:
+                doc = source.doc_locked()
+                for level, title, target, destination in doc.get_toc(False):
+                    try:
+                        destination = _destination(doc, destination)
+                    except ValueError:
+                        destination = dict(destination, kind=pymupdf.LINK_NONE)
+                    destination.pop("xref", None)
+                    destination.pop("id", None)
+                    if "to" in destination:
+                        destination["to"] = tuple(destination["to"])
+                    entries.append(OutlineEntry(level + int(merged), title,
+                        targets.get(destination.get("page", target - 1)), tuple(destination.items())))
+        return tuple(entries)
+
+    def write_operation(self, pages, options):
+        if options.operation != "modify" or options.outline is not None or options.page_numbers is not None:
+            return options.operation
+        if pages and any(page.edits for page in pages) and not any(e.kind == "replace" for page in pages for e in page.edits):
+            sid = pages[0].source_id
+            if all(page.source_id == sid and page.source_page == i and page.rotation == 0 for i, page in enumerate(pages)) and len(pages) == len(self._source(sid).sizes):
+                return "annotate"
+        return options.operation
 
     def write(self, pages: list[PageRef], dest: str, *, progress_callback=None,
               options: WriteOptions | None = None, register_result: bool = False, cancel=None) -> WriteResult:
@@ -470,7 +645,14 @@ class PdfStore:
             options.encryption.validate()
         if options.editable_copy != (options.operation == "editable_copy"):
             raise PdfError("签名副本必须使用专用的保护流程。")
-        self.require_operation(pages, options.operation)
+        self.require_operation(pages, self.write_operation(pages, options))
+        for ref in pages:
+            for edit in ref.edits:
+                self.require_operation([ref], "content_edit" if edit.kind == "replace" else "annotate")
+        if options.outline is not None:
+            self.require_operation(pages, "outline")
+        if options.page_numbers is not None:
+            self.require_operation(pages, "content_edit" if options.page_numbers.mode == "visible" else "outline")
         if cancel:
             original_progress = progress_callback
             def guarded_progress(current, total, message):
@@ -487,7 +669,7 @@ class PdfStore:
             if not 0 <= ref.source_page < len(sources[ref.source_id].sizes) or ref.rotation % 90:
                 raise PdfError("页面引用或旋转角度无效，已停止写入。")
         target_stamp = self._check_destination(dest)
-        if (options.editable_copy or options.encryption or options.compression) and self.is_source_destination(dest):
+        if (options.editable_copy or options.encryption or options.compression or options.page_numbers) and self.is_source_destination(dest):
             raise PdfError("此操作只能另存副本，不能覆盖来源文件。")
         if options.allow_structure_loss and self.is_source_destination(dest):
             raise PdfError("特殊结构只能另存副本，不能覆盖已打开的来源文件。")
@@ -517,6 +699,21 @@ class PdfStore:
             elif options.compression not in ("", "quality"):
                 raise PdfError("未知压缩档位")
             check_cancel(cancel)
+            subset = False
+            if any(ref.edits for ref in pages):
+                from app.pdfedits import apply_edits
+                for index, ref in enumerate(pages):
+                    check_cancel(cancel)
+                    if ref.edits:
+                        subset |= apply_edits(out[index], ref.edits)
+            if options.outline is not None:
+                from app.pdfedits import apply_outline
+                apply_outline(out, pages, options.outline, warnings)
+            if options.page_numbers is not None:
+                from app.pagenumbers import apply_page_numbers
+                subset |= apply_page_numbers(out, options.page_numbers, progress_callback, cancel)
+            if subset:
+                out.subset_fonts()
             expected = document_signature(out)
             os.makedirs(folder, exist_ok=True)
             fd, tmp = tempfile.mkstemp(suffix=".pdf", prefix=".pdfasm-", dir=folder)
@@ -548,7 +745,7 @@ class PdfStore:
                     raise PdfError("待保存文件的页面、跳转或对象核对失败，原文件未改动。")
                 if options.editable_copy and signature_state(check) != "none":
                     raise PdfError("签名验证结构未完整移除，已停止输出。")
-                candidate = _Source(dest, check, data, password, authentication, _file_stamp(tmp), progress_callback)
+                candidate = _Source(dest, check, data, password, authentication, _file_stamp(tmp))
                 check = None
             finally:
                 if check is not None:
@@ -561,7 +758,7 @@ class PdfStore:
             if register_result:
                 self._n += 1
                 result_sid = str(self._n)
-                result_pages = tuple(PageRef(result_sid, dest, i, 0) for i in range(len(pages)))
+                result_pages = tuple(PageRef(result_sid, dest, i, 0, page_id=old.page_id) for i, old in enumerate(pages))
                 self._sources[result_sid] = candidate
             result = WriteResult(dest, result_pages, tuple(warnings))
             commit_file(tmp, dest, target_stamp, cancel=cancel)

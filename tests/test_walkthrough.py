@@ -57,7 +57,7 @@ def test_excel_preparation_keeps_ui_responsive(window, qapp, tmp_path, monkeypat
     def save_dialog(*args, **kwargs):
         observed['options'] = kwargs.get('options')
         return str(tmp_path / 'output.xlsx'), ''
-    def prepare(pages, dest, *, progress_callback=None):
+    def prepare(pages, dest, *, progress_callback=None, options=None, cancel=None):
         observed['thread'] = threading.get_ident()
         observed['temp'] = dest
         observed['rotation'] = pages[0].rotation
@@ -168,7 +168,7 @@ def test_excel_preparation_failure_cleans_up(window, qapp, tmp_path, monkeypatch
     window.ws.select_index(0)
     window.ws.rotate(90)
     paths, messages = [], []
-    def fail(pages, dest, *, progress_callback=None):
+    def fail(pages, dest, *, progress_callback=None, options=None, cancel=None):
         assert callable(progress_callback)
         paths.append(dest)
         raise OSError('preparation failed')
@@ -832,19 +832,23 @@ def test_current_changed_syncs_selection(window, tmp_path):
     assert window.ws.selected_index == 1
 
 
-def test_encrypted_save_requires_confirm(window, tmp_path, monkeypatch):
+def test_encrypted_save_preserves_protection(window, tmp_path, monkeypatch):
     path = tmp_path / "enc.pdf"
     doc = pymupdf.open()
     page = doc.new_page()
     page.insert_text((40, 80), "secret")
     doc.save(path, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="pw", owner_pw="owner")
     doc.close()
-    original = path.read_bytes()
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("pw", True))
     assert window._load_one(str(path))
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Cancel)
-    assert window.save() is False
-    assert path.read_bytes() == original
+    assert window.save() is True
+    with pymupdf.open(path) as saved:
+        assert saved.needs_pass
+        assert saved.authenticate("wrong") == 0
+        assert saved.authenticate("pw") == 2
+        assert saved[0].get_text().strip() == "secret"
+        assert saved.authenticate("owner") == 4
 
 
 def test_sidebar_thumb_width_fills_bar():

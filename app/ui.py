@@ -50,6 +50,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -269,13 +270,216 @@ QPushButton:hover { background: #F0FDFA; }
 QPushButton:pressed { background: #CCFBF1; }
 QPushButton:focus { border: 2px solid #0D9488; }
 QPushButton:disabled { color: #94A3B8; border-color: #E5EEEC; }
-QPushButton[primary="true"] {
+QPushButton#primary, QPushButton[primary="true"] {
     background: #0F766E;
     color: #FFFFFF;
     border: 1px solid #0F766E;
+    font-weight: 600;
 }
-QPushButton[primary="true"]:hover { background: #0D9488; }
+QPushButton#primary:hover, QPushButton[primary="true"]:hover { background: #0D9488; border-color: #0D9488; }
+QPushButton#primary:pressed, QPushButton[primary="true"]:pressed { background: #115E59; border-color: #115E59; }
+QPushButton#primary:disabled, QPushButton[primary="true"]:disabled {
+    background: #94A3B8;
+    border-color: #94A3B8;
+    color: #F1F5F9;
+}
 QPushButton[danger="true"] { color: #B91C1C; border-color: #FECACA; }
+QPushButton[danger="true"]:hover { background: #FEF2F2; }
+QSpinBox, QDoubleSpinBox {
+    background: #FFFFFF;
+    border: 1px solid #D7E8E4;
+    border-radius: 8px;
+    padding: 4px 8px;
+    min-height: 28px;
+    color: #134E4A;
+}
+QSpinBox:focus, QDoubleSpinBox:focus { border: 2px solid #0D9488; }
+QComboBox {
+    min-height: 32px;
+    padding: 4px 10px;
+    background: #FFFFFF;
+    border: 1px solid #D7E8E4;
+    border-radius: 8px;
+    color: #134E4A;
+    font-size: 13px;
+}
+QComboBox:hover { border-color: #0D9488; background: #F0FDFA; }
+QComboBox:focus { border: 2px solid #0D9488; }
+QComboBox:disabled { color: #94A3B8; background: #F8FBFA; border-color: #E2EEEC; }
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 24px;
+    border-left: none;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF;
+    border: 1px solid #D7E8E4;
+    border-radius: 8px;
+    padding: 4px;
+    selection-background-color: #CCFBF1;
+    selection-color: #134E4A;
+    outline: none;
+}
+QCheckBox {
+    spacing: 8px;
+    color: #134E4A;
+    font-size: 14px;
+}
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #C5D5D2;
+    border-radius: 4px;
+    background: #FFFFFF;
+}
+QCheckBox::indicator:hover {
+    border-color: #0D9488;
+    background: #F0FDFA;
+}
+QCheckBox::indicator:checked {
+    border-color: #0F766E;
+    background: #0F766E;
+}
+QTreeWidget {
+    background: #FFFFFF;
+    border: 1px solid #E2EEEC;
+    border-radius: 10px;
+    padding: 4px;
+    color: #134E4A;
+    outline: none;
+}
+QTreeWidget::item {
+    height: 30px;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+QTreeWidget::item:hover {
+    background: #F0FDFA;
+    color: #0F766E;
+}
+QTreeWidget::item:selected {
+    background: #CCFBF1;
+    color: #0F766E;
+    font-weight: 600;
+}
+QHeaderView::section {
+    background: #F8FBFA;
+    color: #4D6B67;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-bottom: 1px solid #E2EEEC;
+    padding: 5px 8px;
+}
+QTableWidget {
+    background: #FFFFFF;
+    border: 1px solid #E2EEEC;
+    border-radius: 10px;
+    gridline-color: #F3F6F5;
+    color: #134E4A;
+    outline: none;
+}
+QTableWidget::item {
+    padding: 6px 10px;
+    border-bottom: 1px solid #F8FBFA;
+}
+QTableWidget::item:selected {
+    background: #CCFBF1;
+    color: #0F766E;
+}
+QTableWidget::item:hover {
+    background: #F0FDFA;
+}
+QListWidget {
+    background: #FFFFFF;
+    border: 1px solid #E2EEEC;
+    border-radius: 10px;
+    padding: 6px;
+    color: #134E4A;
+    outline: none;
+}
+QListWidget::item {
+    height: 32px;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+QListWidget::item:hover { background: #F0FDFA; }
+QListWidget::item:selected { background: #CCFBF1; color: #0F766E; font-weight: 600; }
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 8px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #D7E8E4;
+    min-height: 24px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #99BDB7;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar:horizontal {
+    border: none;
+    background: transparent;
+    height: 8px;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: #D7E8E4;
+    min-width: 24px;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #99BDB7;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+QDialog {
+    background: #F3F6F5;
+}
+QFrame#annotationBar {
+    background: #FFFFFF;
+    border: none;
+    border-bottom: 1px solid #E2EEEC;
+    border-radius: 0;
+}
+QFrame#annotationBar QToolButton {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    border-radius: 6px;
+}
+QFrame#annotationBar QDoubleSpinBox {
+    min-height: 24px;
+    padding: 0 16px 0 4px;
+    font-size: 12px;
+    border-radius: 6px;
+}
+QFrame#annotationBar QComboBox {
+    min-height: 28px;
+    max-height: 30px;
+    padding: 2px 26px 2px 8px;
+    font-size: 13px;
+    border-radius: 6px;
+}
+QFrame#annotationBar QPushButton {
+    min-height: 28px;
+    max-height: 30px;
+    padding: 2px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+}
+QFrame#annotationBar QPushButton:disabled {
+    color: #94A3B8;
+    background: transparent;
+    border: 1px solid #E2EEEC;
+}
 QToolButton {
     min-width: 40px;
     min-height: 40px;
@@ -731,9 +935,9 @@ class PreviewView(QGraphicsView):
     def photo(self) -> QPixmap:
         return self._item.pixmap()
 
-    def set_pages(self, signature, sizes) -> None:
+    def set_pages(self, signature, sizes) -> bool:
         if signature == self.page_signature:
-            return
+            return False
         self.page_signature = signature
         self.layout_generation += 1
         self.clear_photo()
@@ -749,6 +953,7 @@ class PreviewView(QGraphicsView):
         self._page_tops = [r.top() for r in self.page_rects]
         self._page_bottoms = [r.bottom() for r in self.page_rects]
         self._scene.setSceneRect(QRectF(0, 0, width, max(0, y - 16)))
+        return True
 
     def visible_pages(self, rect):
         start = bisect_left(self._page_bottoms, rect.top())
@@ -931,9 +1136,11 @@ class ConversionThread(QThread):
                 p_cb(0, 0, "正在准备转换页面...")
                 fd, tmp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=".pdfasm-conv-")
                 os.close(fd)
+                # This is our empty reservation, not an existing PDF to inspect.
+                os.remove(tmp_pdf)
                 self.store.require_operation(self.pages, "copy")
                 self.store.write(self.pages, tmp_pdf, progress_callback=p_cb,
-                                 options=WriteOptions(preserve_encryption=False, operation="copy"))
+                                 options=WriteOptions(preserve_encryption=False, operation="copy"), cancel=c_check)
                 source_pdf = tmp_pdf
                 indices = None
             if c_check():
@@ -945,7 +1152,7 @@ class ConversionThread(QThread):
                 progress_callback=p_cb,
                 cancel_check=c_check,
             )
-        except InterruptedError:
+        except (InterruptedError, OperationCancelled):
             self.error_message = "转换已被取消"
         except Exception as exc:
             self.error_message = f"转换失败：{exc}"
@@ -1039,7 +1246,7 @@ class PageListModel(QAbstractListModel):
         for row, page in enumerate(self.ws.pages):
             self._rows_by_key.setdefault(self._thumb_key(page), []).append(row)
         live = {
-            (page.source_id, page.source_page, page.rotation) for page in self.ws.pages
+            page.render_key for page in self.ws.pages
         }
         if len(self.thumbs) > len(live):
             self.thumbs = OrderedDict(
@@ -1092,7 +1299,7 @@ class PageListModel(QAbstractListModel):
         return min(1600, max(THUMB_MIN_W, steps * THUMB_RENDER_STEP))
 
     def _thumb_key(self, page) -> tuple:
-        return (page.source_id, page.source_page, page.rotation)
+        return page.render_key
 
     def _placeholder(self, page) -> QPixmap:
         box = self._thumb_box(page)
@@ -1252,6 +1459,36 @@ class _HoverIconButton(QToolButton):
         super().leaveEvent(event)
 
 
+class ElidedTitleLabel(QLabel):
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__("", parent)
+        self._full_text = text
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(40)
+        self._update_elided()
+
+    def setFullText(self, text: str) -> None:
+        self._full_text = text
+        self.setToolTip(text)
+        self._update_elided()
+
+    def fullText(self) -> str:
+        return self._full_text
+
+    def _update_elided(self) -> None:
+        avail_w = max(20, self.width() - 8)
+        elided = self.fontMetrics().elidedText(self._full_text, Qt.TextElideMode.ElideMiddle, avail_w)
+        super().setText(elided)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_elided()
+
+    def paintEvent(self, event) -> None:
+        self._update_elided()
+        super().paintEvent(event)
+
+
 class TitleBar(QWidget):
     def __init__(self, host: MainWindow) -> None:
         super().__init__(host)
@@ -1260,7 +1497,7 @@ class TitleBar(QWidget):
         self.setFixedHeight(40)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 0, 0, 0)
-        lay.setSpacing(0)
+        lay.setSpacing(6)
         mark = QLabel()
         mark.setPixmap(brand_icon().pixmap(QSize(18, 18)))
         mark.setFixedWidth(28)
@@ -1271,7 +1508,7 @@ class TitleBar(QWidget):
         host._menubar.setNativeMenuBar(False)
         host._menubar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         lay.addWidget(host._menubar)
-        host.title_label = QLabel(f"{APP_NAME} v{__version__}（吾爱破解）")
+        host.title_label = ElidedTitleLabel(f"{APP_NAME} v{__version__}（吾爱破解）", self)
         host.title_label.setObjectName("windowTitle")
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -1363,6 +1600,7 @@ class MainWindow(QMainWindow):
         self._reading_timer.timeout.connect(self._reading_scrolled)
         self._scroll_navigation = False
         self._neighbor_pending = set()
+        self._neighbor_keys = {}
         self._layout_pages = None
         self._page_images = OrderedDict()
         self._page_image_bytes = 0
@@ -1440,6 +1678,8 @@ class MainWindow(QMainWindow):
             "QProgressBar { border: none; background: #DDEBE5; border-radius: 2px; }"
             "QProgressBar::chunk { background: #149587; border-radius: 2px; }")
         self.render_label = QLabel("正在渲染页面", status_widgets)
+        # Match the status message height so rendering does not resize the reader.
+        self.render_label.setStyleSheet("font-size: 13px;")
         # addPermanentWidget 会自动显示未显式隐藏的控件并触发布局和字体测量。
         # 空窗口先隐藏，渲染或保护提示真正需要时再显示。
         self.render_label.hide()
@@ -1477,6 +1717,9 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._act("图片转 PDF…", self.images_to_pdf))
         file_menu.addSeparator()
         file_menu.addAction(self._act("批量 Word 转 PDF…", self.open_word_converter))
+        file_menu.addAction(self._act("批量 PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
+        file_menu.addAction(self._act("Markdown 转 PDF…", self.convert_markdown))
+        file_menu.addAction(self._act("页码处理…", self.open_page_numbers))
         if sys.platform == "win32":
             file_menu.addSeparator()
             file_menu.addAction(self._act("设为默认 PDF 应用…", self.choose_default_application))
@@ -1489,6 +1732,7 @@ class MainWindow(QMainWindow):
         self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
+        edit.addAction(self._act("审阅与文字修正…", self.open_annotation_tools))
         edit.addSeparator()
         edit.addAction(self._act("全选", self.select_all_pages, QKeySequence.StandardKey.SelectAll))
         self.delete_action = self._act("删除页面", self.delete_pages)
@@ -1496,6 +1740,7 @@ class MainWindow(QMainWindow):
         view = self._menubar.addMenu("视图")
         view.addAction(self._act("阅读", lambda: self.stack.setCurrentIndex(0)))
         view.addAction(self._act("整理页面", lambda: self.stack.setCurrentIndex(1)))
+        view.addAction(self._act("大纲书签", self.open_outline))
         view.addSeparator()
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
@@ -1558,6 +1803,10 @@ class MainWindow(QMainWindow):
             self.mode_buttons.append(button)
             document.addWidget(button)
         self.mode_buttons[0].setChecked(True)
+        self.review_button = self._icon_btn("pen", "审阅与文字修正", self.toggle_annotation_tools)
+        self.review_button.setFixedSize(30, 30)
+        self.review_button.setCheckable(True)
+        document.addWidget(self.review_button)
         self.document_name = QLabel(bar)
         self.document_name.setObjectName("documentName")
         self.document_name.setMinimumWidth(80)
@@ -1596,6 +1845,8 @@ class MainWindow(QMainWindow):
 
     def _sync_mode(self, index: int) -> None:
         self.mode_buttons[index].setChecked(True)
+        if index == 1 and hasattr(self, "annotation_tools"):
+            self.annotation_tools.deactivate()
         if index == 0:
             self._update_preview()
         self._sync_selection()
@@ -1620,8 +1871,12 @@ class MainWindow(QMainWindow):
         self.page_total.setText(f"/ {count} 页")
         self.previous_page.setEnabled(current is not None and current > 0)
         self.next_page.setEnabled(current is not None and current < count - 1)
+        save_reason = read_only
+        if read_only and any(page.edits for page in self.ws.pages):
+            save_operation = self.store.write_operation(self.ws.pages, WriteOptions(outline=self.ws.outline))
+            save_reason = self.store.operation_reason(self.ws.pages, save_operation)
         for action in (self.save_action, self.save_as_action):
-            action.setEnabled(bool(count) and not read_only)
+            action.setEnabled(bool(count) and not save_reason)
         self.compress_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
@@ -1646,6 +1901,7 @@ class MainWindow(QMainWindow):
         self._set_tools_visible(self.act_tools.isChecked())
         self.navigation_bar.setVisible(bool(count))
         self.mode_buttons[1].setEnabled(bool(count) or self._in_arrange())
+        self.review_button.setEnabled(bool(count))
         self._update_export_controls()
         name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else "尚未打开文档")
         self.document_name.setText(name)
@@ -1722,12 +1978,19 @@ class MainWindow(QMainWindow):
         cap = QLabel("页面")
         cap.setObjectName("caption")
         self.left_view = self._list_view(False)
-        left_l.addWidget(cap)
-        left_l.addWidget(self.left_view)
+        self.sidebar_mode = QComboBox()
+        self.sidebar_mode.addItems(["页面缩略图", "大纲书签"])
+        self.sidebar_mode.setAccessibleName("侧栏视图")
+        left_l.addWidget(self.sidebar_mode)
+        self.sidebar_stack = QStackedWidget()
+        self.sidebar_stack.addWidget(self.left_view)
+        left_l.addWidget(self.sidebar_stack)
+        self.sidebar_mode.currentIndexChanged.connect(self.show_outline)
         split.addWidget(self.left_panel)
         center = QFrame()
         center.setObjectName("card")
         c_l = QVBoxLayout(center)
+        self._reader_layout = c_l
         c_l.setContentsMargins(0, 0, 0, 0)
         c_l.setSpacing(0)
         self.banner = QLabel("", center)
@@ -1742,7 +2005,11 @@ class MainWindow(QMainWindow):
         self.page_number.setToolTip("输入页码，按 Enter 跳转")
         self.page_number.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         self.page_number.setKeyboardTracking(False)
-        self.page_number.setFixedWidth(64)
+        self.page_number.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_number.setMinimumWidth(32)
+        self.page_number.setMaximumWidth(46)
+        self.page_number.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.page_number.setStyleSheet("padding: 1px 2px; min-height: 22px;")
         self.page_number.valueChanged.connect(self.go_to_page)
         zoom_bar.addWidget(self.page_number)
         self.page_total = QLabel("/ 0 页")
@@ -2127,6 +2394,8 @@ class MainWindow(QMainWindow):
             self._fit_thumbs()
             self._sync_selection()
             self._update_preview()
+            if hasattr(self, "outline_panel") and self.sidebar_mode.currentIndex() == 1:
+                self.outline_panel.refresh()
             name = os.path.basename(self.ws.path) if self.ws.path else "未命名"
             star = " *" if self.ws.dirty else ""
             self.setWindowTitle(f"{name}{star} — {APP_NAME} v{__version__}（吾爱破解）")
@@ -2263,21 +2532,28 @@ class MainWindow(QMainWindow):
 
     def setWindowTitle(self, title: str) -> None:
         super().setWindowTitle(title)
-        if getattr(self, "title_label", None) is not None:
-            self.title_label.setToolTip(title)
-            self._elide_title()
+        label = getattr(self, "title_label", None)
+        if label is not None:
+            if hasattr(label, "setFullText"):
+                label.setFullText(title)
+            else:
+                label.setToolTip(title)
+                self._elide_title()
 
     def _elide_title(self) -> None:
         label = getattr(self, "title_label", None)
         if label is None:
             return
-        label.setText(
-            label.fontMetrics().elidedText(
-                self.windowTitle(),
-                Qt.TextElideMode.ElideMiddle,
-                max(48, label.width()),
+        if hasattr(label, "setFullText"):
+            label.setFullText(self.windowTitle())
+        else:
+            label.setText(
+                label.fontMetrics().elidedText(
+                    self.windowTitle(),
+                    Qt.TextElideMode.ElideMiddle,
+                    max(48, label.width()),
+                )
             )
-        )
 
     def _toggle_max(self) -> None:
         if self.isMaximized():
@@ -2545,14 +2821,23 @@ class MainWindow(QMainWindow):
 
     def _update_preview(self) -> None:
         self._sync_controls()
+        if self.ws.pages:
+            self._ensure_annotation_tools()
+        if hasattr(self, "annotation_tools"):
+            self.annotation_tools.sync_page()
         # Workspace 的编辑、撤销、打开和保存均替换页面列表；滚动/缩放不重建布局。
         layout_changed = self._layout_pages is not self.ws.pages
+        geometry_changed = False
         if layout_changed:
             self._layout_pages = self.ws.pages
             signature = tuple((p.source_id, p.source_page, p.rotation) for p in self.ws.pages)
-            self.preview_view.set_pages(signature, [self.store.page_size(p) for p in self.ws.pages])
+            geometry_changed = self.preview_view.set_pages(signature, [self.store.page_size(p) for p in self.ws.pages])
             self._neighbor_pending.clear()
-            live = set(signature)
+            live = {page.render_key for page in self.ws.pages}
+            for index in list(self.preview_view.neighbors):
+                if index >= len(self.ws.pages) or self._neighbor_keys.get(index) != self.ws.pages[index].render_key:
+                    self.preview_view._scene.removeItem(self.preview_view.neighbors.pop(index))
+                    self._neighbor_keys.pop(index, None)
             for key in list(self._page_images):
                 if key not in live:
                     self._page_image_bytes -= self._page_images.pop(key).sizeInBytes()
@@ -2583,12 +2868,15 @@ class MainWindow(QMainWindow):
         if idx is None:
             return
         page = self.ws.pages[idx]
-        changed = layout_changed or self.preview_view.active_page != idx
+        changed = geometry_changed or self.preview_view.active_page != idx
         self.preview_view.active_page = idx
         try:
             wpt, hpt = self.store.page_size(page)
             source_rotation = self.store.source_rotation(page)
             note = f" · 源文件已旋转 {source_rotation}°" if source_rotation else ""
+            label = self.store.page_label(page)
+            if label is not None:
+                note += f" · 阅读器标签：{label or '未编号'}"
             self.details.setText(
                 f"工作区第 {idx + 1} / {len(self.ws.pages)} 页 · "
                 f"来自 {os.path.basename(page.source_path)} 原第 {page.source_page + 1} 页 · "
@@ -2641,11 +2929,12 @@ class MainWindow(QMainWindow):
             w, h = self.store.page_size(page)
             width = max(1, min(1200, max(64, int(w * view.transform().m11() * view.devicePixelRatioF())),
                                int(math.sqrt(1_500_000 * w / max(h, 1)))))
-            page_key = (page.source_id, page.source_page, page.rotation)
+            page_key = page.render_key
             cached = self._page_images.get(page_key)
             if cached is not None and cached.width() >= width:
                 self._page_images.move_to_end(page_key)
                 view.set_neighbor(i, cached)
+                self._neighbor_keys[i] = page_key
                 continue
             self._neighbor_pending.add(key)
             QThreadPool.globalInstance().start(RenderJob(
@@ -2660,7 +2949,8 @@ class MainWindow(QMainWindow):
             return
         if image is not None and not image.isNull() and key[0] == self.preview_view.layout_generation:
             page = self.ws.pages[key[1]]
-            self._cache_page_image((page.source_id, page.source_page, page.rotation), image)
+            self._cache_page_image(page.render_key, image)
+            self._neighbor_keys[key[1]] = page.render_key
             self.preview_view.set_neighbor(key[1], image)
 
     def _cache_page_image(self, key, image) -> None:
@@ -2678,28 +2968,32 @@ class MainWindow(QMainWindow):
 
     def _request_preview(self, page) -> None:
         width = self._preview_render_width()
-        key = (page.source_id, page.source_page, page.rotation, width)
+        key = (*page.render_key, width)
+        cached = self._page_images.get(key[:3])
+        cached_ready = (cached is not None and width <= cached.width() * PREVIEW_UPSCALE_SLACK
+                        and cached.width() <= width * PREVIEW_REUSE_RATIO)
         if self._preview_key is None or key[:3] != self._preview_key[:3]:
             self._detail_key = None
             self._detail_busy = False
             self._preview_image = None
-            self.preview_view.clear_photo()
-            neighbor = self.preview_view.neighbors.get(self.preview_view.active_page)
-            if neighbor is not None and not neighbor.pixmap().isNull():
-                self.preview_view.set_photo(neighbor.pixmap(), 1, self.store.page_size(page))
+            if cached_ready:
+                self.preview_view.clear_detail()
+            else:
+                self.preview_view.clear_photo()
+                neighbor = self.preview_view.neighbors.get(self.preview_view.active_page)
+                if neighbor is not None and not neighbor.pixmap().isNull():
+                    self.preview_view.set_photo(neighbor.pixmap(), 1, self.store.page_size(page))
         if key == self._preview_key:
             self._apply_view_zoom()
             return
-        cached = self._page_images.get(key[:3])
-        if self._preview_image is None and cached is not None:
-            if width <= cached.width() * PREVIEW_UPSCALE_SLACK and cached.width() <= width * PREVIEW_REUSE_RATIO:
-                self._page_images.move_to_end(key[:3])
-                self._preview_key = (*key[:3], cached.width())
-                self._preview_image = cached
-                self._preview_busy = False
-                self._show_preview_image()
-                self._update_render_progress()
-                return
+        if self._preview_image is None and cached_ready:
+            self._page_images.move_to_end(key[:3])
+            self._preview_key = (*key[:3], cached.width())
+            self._preview_image = cached
+            self._preview_busy = False
+            self._show_preview_image()
+            self._update_render_progress()
+            return
         if self._preview_image is not None and self._preview_key is not None and key[:3] == self._preview_key[:3]:
             rendered = self._preview_key[3]
             if width > rendered:
@@ -2742,7 +3036,7 @@ class MainWindow(QMainWindow):
         if index is None or self._preview_image is None or self._preview_busy or self._in_arrange():
             return
         page = self.ws.pages[index]
-        page_key = (page.source_id, page.source_page, page.rotation)
+        page_key = page.render_key
         if self._preview_key is None or self._preview_key[:3] != page_key:
             return
         view = self.preview_view
@@ -2815,6 +3109,7 @@ class MainWindow(QMainWindow):
             self._detail_key = None
             self.preview_view.setTransform(QTransform.fromScale(factor, factor))
             self.preview_view.centerOn(center)
+            self.preview_view.view_changed.emit()
         self._detail_timer.start()
 
     def rotate(self, delta: int) -> None:
@@ -2931,7 +3226,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "不能合并只读文档", "该文档包含签名或权限限制，请单独打开阅读。")
             self._release_unused_docs()
             return False
-        self.ws.load_first_or_merge(pages, os.path.abspath(path))
+        incoming_outline = self.store.outline_entries(pages, group_sources=True) if self.ws.outline is not None else None
+        self.ws.load_first_or_merge(pages, os.path.abspath(path), outline=incoming_outline)
         return True
 
     def _release_unused_docs(self) -> None:
@@ -2948,6 +3244,8 @@ class MainWindow(QMainWindow):
     def _write_pdf(self, pages, path, title, *, register_result=False, groups=None, dests=None,
                    options=None, cancellable=False):
         options = options or WriteOptions()
+        if options.outline is None and self.ws.outline is not None:
+            options = replace(options, outline=self.ws.outline)
         while True:
             try:
                 def work(progress, cancel=None):
@@ -3099,9 +3397,12 @@ class MainWindow(QMainWindow):
         except PdfError as exc:
             QMessageBox.warning(self, "副本未完成", str(exc))
 
-    def open_word_converter(self):
+    def open_word_converter(self, *, direction="word_to_pdf"):
         from app.wordui import WordConverterWindow
-        window = WordConverterWindow()
+        if direction == "pdf_to_word" and self.ws.path and self.ws.dirty and not self.confirm_leave():
+            return
+        paths = [self.ws.path] if direction == "pdf_to_word" and self.ws.path else []
+        window = WordConverterWindow(paths, direction=direction)
         window.setStyleSheet(STYLESHEET)
         if not hasattr(self, "_word_windows"):
             self._word_windows = []
@@ -3109,6 +3410,57 @@ class MainWindow(QMainWindow):
         window.destroyed.connect(lambda: self._word_windows.remove(window) if window in self._word_windows else None)
         window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         window.show()
+
+    def convert_markdown(self):
+        from app.outputui import MarkdownDialog
+        dialog = MarkdownDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def open_page_numbers(self):
+        from app.outputui import PageNumbersDialog
+        dialog = PageNumbersDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def show_outline(self, index):
+        if index == 1:
+            if not hasattr(self, "outline_panel"):
+                from app.editingui import OutlinePanel
+                self.outline_panel = OutlinePanel(self)
+                self.sidebar_stack.addWidget(self.outline_panel)
+            self.outline_panel.refresh()
+        self.sidebar_stack.setCurrentIndex(index)
+
+    def open_outline(self):
+        self.stack.setCurrentIndex(0)
+        self.act_pages.setChecked(True)
+        self.sidebar_mode.setCurrentIndex(1)
+        self.show_outline(1)
+
+    def _ensure_annotation_tools(self):
+        if not hasattr(self, "annotation_tools"):
+            from app.editingui import AnnotationTools
+            self.annotation_tools = AnnotationTools(self)
+            self._reader_layout.insertWidget(0, self.annotation_tools)
+            self.annotation_tools.hide()
+        return self.annotation_tools
+
+    def toggle_annotation_tools(self):
+        if hasattr(self, "annotation_tools") and self.annotation_tools.isVisible():
+            self.annotation_tools.deactivate()
+        else:
+            self.open_annotation_tools()
+
+    def open_annotation_tools(self):
+        if not self.ws.pages:
+            QMessageBox.information(self, "请先打开 PDF", "打开 PDF 后即可高亮、备注、绘图或修正文字。")
+            return
+        self.stack.setCurrentIndex(0)
+        tools = self._ensure_annotation_tools()
+        tools._ensure_filter()
+        tools.show()
+        self.review_button.setChecked(True)
 
     def _show_write_notes(self, results):
         warnings = list(dict.fromkeys(note for result in results for note in result.warnings))
@@ -3120,7 +3472,8 @@ class MainWindow(QMainWindow):
             box.exec()
 
     def save(self, save_as: bool = False) -> bool:
-        if not self._allow_operation("modify"):
+        operation = self.store.write_operation(self.ws.pages, WriteOptions(outline=self.ws.outline))
+        if not self._allow_operation(operation):
             return False
         if not self.ws.can_save():
             QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
@@ -3441,6 +3794,12 @@ class MainWindow(QMainWindow):
             self._neighbor_pending.clear()
             self._preview_key = None
             self._detail_key = None
+            if hasattr(self, "annotation_tools"):
+                self.annotation_tools.deactivate()
+                try:
+                    self.preview_view.viewport().removeEventFilter(self.annotation_tools)
+                except Exception:
+                    pass
             run_operation(self, "关闭文档", lambda progress: self.store.close_all())
             event.accept()
         else:
