@@ -65,8 +65,10 @@ def main() -> None:
     for required in ("qjpeg.dll", "qtiff.dll", "pythoncom", "pywintypes", "win32job", "win32process"):
         assert any(required in n for n in names), f"Missing conversion dependency: {required}"
     python_modules = archive.open_embedded_archive("PYZ.pyz").toc
-    for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "win32com.client"):
+    for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell",
+                     "win32com.client", "win32com.server.factory", "win32com.server.policy", "win32com.shell.shellcon"):
         assert required in python_modules, f"Missing module: {required}"
+    assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
     for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "pandas", "lxml", "libssl", "libcrypto"):
         assert not any(unwanted.lower() in n.lower() for n in names), unwanted
 

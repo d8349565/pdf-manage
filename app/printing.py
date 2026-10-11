@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from bisect import bisect_left
 from dataclasses import dataclass, field
+import math
 
-from PyQt6.QtCore import QEvent, QMarginsF, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QMarginsF, QObject, QRunnable, QRectF, QSize, QThreadPool, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -33,7 +35,9 @@ from PyQt6.QtWidgets import (
 )
 
 from app.icons import toolbar_icon
-from app.pdfio import PdfStore
+from app.pdfio import PdfError, PdfStore
+from app.output import OperationCancelled, check_cancel
+from app.progress import run_operation
 from app.workspace import PageRef, Workspace, parse_page_range
 
 DUPLEX_MODES = {
@@ -46,8 +50,11 @@ DUPLEX_MODES = {
 # 这里固定按 300 dpi 渲染位图，再由 QPainter 落到打印机自己的高分辨率画布上。
 PRINT_DPI = 300
 MAX_PRINT_PX = 5000
+MAX_PRINT_PIXELS = 32_000_000
 MAX_PREVIEW_PX = 1400
+MAX_PREVIEW_PIXELS = 2_000_000
 PREVIEW_CACHE_SIZE = 48
+PREVIEW_CACHE_BYTES = 64 * 1024 * 1024
 
 FALLBACK_PAPERS = (
     QPageSize.PageSizeId.A4,
@@ -259,6 +266,9 @@ def render_pages_to_printer(
     pages: list[PageRef],
     options: PrintOptions,
     painter: QPainter | None = None,
+    *,
+    progress_callback=None,
+    cancel_check=None,
 ) -> None:
     """按物理纸张的面序把页面画到打印机上。"""
     sheets = build_sheets(pages, options, store)
@@ -273,33 +283,40 @@ def render_pages_to_printer(
             faces.append((sheet.back, sheet.back_portrait))
     if not faces:
         return
+    check_cancel(cancel_check)
+    store.require_operation(pages, "print")
+    if progress_callback:
+        progress_callback(0, len(faces), "正在准备打印任务")
 
     printer.setDuplex(DUPLEX_MODES.get(options.duplex, QPrinter.DuplexMode.DuplexNone))
-    if options.copies > 1:
-        printer.setCopyCount(options.copies)
+    printer.setCopyCount(options.copies)
 
     # 第一面的纸张方向必须在 QPainter 开启前设定，否则 QPainter 会沿用旧纸张朝向。
     geometry = apply_sheet_layout(printer, options, faces[0][1])
 
     should_end = False
     if painter is None:
-        painter = QPainter(printer)
+        painter = QPainter()
+        if not painter.begin(printer):
+            raise PdfError("无法启动打印任务，请检查打印机连接和驱动。")
         should_end = True
 
     try:
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         applied_portrait = faces[0][1]
         for position, (page_index, portrait) in enumerate(faces):
+            check_cancel(cancel_check)
             if position > 0:
                 # 朝向变了才回写打印机：每次回写都是一趟驱动往返，长文档上很费时间。
                 if portrait != applied_portrait:
                     geometry = apply_sheet_layout(printer, options, portrait)
                     applied_portrait = portrait
-                printer.newPage()
+                if not printer.newPage():
+                    raise PdfError(f"发送第 {position + 1} 页失败，请检查打印机状态。")
 
             vp = painter.viewport()
             if vp.width() <= 0 or vp.height() <= 0:
-                continue
+                raise PdfError("打印机没有提供有效的可打印区域。")
 
             # 跨页切换朝向时，QPainter 的 viewport 可能未同步转置，防御性校准绘制区域
             draw_rect = QRectF(vp)
@@ -310,18 +327,50 @@ def render_pages_to_printer(
 
             wanted = int(geometry.content_width / 25.4 * PRINT_DPI)
             render_w = max(320, min(wanted, int(draw_rect.width()), MAX_PRINT_PX))
+            width_pt, height_pt = store.page_size(pages[page_index])
+            render_w = min(render_w, max(1, int(math.sqrt(MAX_PRINT_PIXELS * width_pt / max(height_pt, 1)))))
             try:
                 image = store.render_qimage(pages[page_index], render_w)
-            except Exception:
-                continue
+            except Exception as exc:
+                raise PdfError(f"工作区第 {page_index + 1} 页渲染失败：{exc}") from exc
             if image.isNull():
-                continue
+                raise PdfError(f"工作区第 {page_index + 1} 页无法渲染，打印已停止。")
 
+            check_cancel(cancel_check)
             target = fit_rect(draw_rect, image.width() / image.height())
             painter.drawImage(target, image)
+            if progress_callback:
+                progress_callback(position + 1, len(faces), f"已发送 {position + 1} / {len(faces)} 页")
+        check_cancel(cancel_check)
+        if should_end and not painter.end():
+            raise PdfError("结束打印任务失败，请检查打印机队列。")
+    except Exception:
+        printer.abort()
+        raise
     finally:
-        if should_end:
+        if should_end and painter.isActive():
             painter.end()
+
+
+class _PreviewSignals(QObject):
+    done = pyqtSignal(tuple, object, str)
+
+
+class _PreviewJob(QRunnable):
+    def __init__(self, store, ref, key, signals, pending):
+        super().__init__()
+        self.store, self.ref, self.key = store, ref, key
+        self.signals, self.pending = signals, pending
+
+    def run(self):
+        if self.key not in self.pending:
+            return
+        try:
+            image = self.store.render_qimage(self.ref, self.key[-1])
+            error = "" if not image.isNull() else "页面图像为空"
+        except Exception as exc:
+            image, error = QImage(), str(exc)
+        self.signals.done.emit(self.key, image, error)
 
 
 class SheetPreview(QWidget):
@@ -355,7 +404,16 @@ class SheetPreview(QWidget):
         self.duplex = "none"
         self.scale = 1.0  # 像素 / 毫米
         self._rows: list[SheetPreview._Row] = []
+        self._row_bottoms: list[float] = []
         self._cache: OrderedDict[tuple, QImage] = OrderedDict()
+        self._cache_bytes = 0
+        self._pending: set[tuple] = set()
+        self._errors: dict[tuple, str] = {}
+        self._generation = 0
+        self._rendering_enabled = True
+        # 无 QObject 父节点；关闭窗口后，运行中的任务仍可安全发出完成信号。
+        self._signals = _PreviewSignals()
+        self._signals.done.connect(self._on_image, Qt.ConnectionType.QueuedConnection)
 
     # ---- 数据与布局 ----
 
@@ -366,7 +424,13 @@ class SheetPreview(QWidget):
         geometries: dict[bool, SheetGeometry],
         duplex: str,
     ) -> None:
-        self.pages = pages
+        if tuple(p.render_key for p in pages) != tuple(p.render_key for p in self.pages):
+            self._generation += 1
+            self._pending.clear()
+            self._cache.clear()
+            self._cache_bytes = 0
+            self._errors.clear()
+        self.pages = list(pages)
         self.sheets = sheets
         self.geometries = geometries
         self.duplex = duplex
@@ -409,13 +473,11 @@ class SheetPreview(QWidget):
         return int(self._rows[index].top - self.HEADER_H)
 
     def sheet_at(self, y: int) -> int:
-        for i, row in enumerate(self._rows):
-            if y <= row.top + row.row_h:
-                return i
-        return max(len(self._rows) - 1, 0)
+        return min(bisect_left(self._row_bottoms, y), max(len(self._rows) - 1, 0))
 
     def _relayout(self) -> None:
         self._rows = []
+        self._row_bottoms = []
         y = float(self.PAD)
         widest = 240.0
         duplex = self.duplex != "none"
@@ -448,6 +510,7 @@ class SheetPreview(QWidget):
                     back_geo,
                 )
             )
+            self._row_bottoms.append(y + self.HEADER_H + row_h)
             y += self.HEADER_H + row_h + self.CAPTION_H + self.PAD
             widest = max(widest, row_w)
         self.setMinimumSize(int(widest + 2 * self.PAD), int(y))
@@ -478,7 +541,9 @@ class SheetPreview(QWidget):
             return
 
         dirty = QRectF(event.rect())
-        for index, row in enumerate(self._rows):
+        start = bisect_left(self._row_bottoms, dirty.top() - self.CAPTION_H)
+        for index in range(start, len(self._rows)):
+            row = self._rows[index]
             top = row.top - self.HEADER_H
             if top + self.HEADER_H + row.row_h + self.CAPTION_H < dirty.top():
                 continue
@@ -590,7 +655,9 @@ class SheetPreview(QWidget):
         if image is None:
             painter.setPen(QColor("#CBD5E1"))
             painter.setFont(self._font(9))
-            painter.drawText(content, Qt.AlignmentFlag.AlignCenter, "无法预览此页")
+            key = self._image_key(page_index, int(content.width() * dpr))
+            message = "无法预览此页" if key in self._errors else "正在生成预览…"
+            painter.drawText(content, Qt.AlignmentFlag.AlignCenter, message)
             return
         painter.drawImage(fit_rect(content, image.width() / image.height()), image)
 
@@ -643,24 +710,52 @@ class SheetPreview(QWidget):
         font.setBold(bold)
         return font
 
+    def _image_key(self, page_index: int, width: int) -> tuple:
+        bucket = max(96, min(((int(width) + 63) // 64) * 64, MAX_PREVIEW_PX))
+        ref = self.pages[page_index]
+        width_pt, height_pt = self.store.page_size(ref)
+        bucket = min(bucket, max(1, int(math.sqrt(MAX_PREVIEW_PIXELS * width_pt / max(height_pt, 1)))))
+        return (self._generation, *ref.render_key, bucket)
+
     def _image(self, page_index: int, width: int) -> QImage | None:
         if not (0 <= page_index < len(self.pages)):
             return None
-        bucket = max(96, min(((int(width) + 63) // 64) * 64, MAX_PREVIEW_PX))
-        ref = self.pages[page_index]
-        key = (ref.source_id, ref.source_page, ref.rotation, bucket)
+        key = self._image_key(page_index, width)
         image = self._cache.get(key)
         if image is None:
-            try:
-                image = self.store.render_qimage(ref, bucket)
-            except Exception:
-                image = QImage()
-            self._cache[key] = image
-            while len(self._cache) > PREVIEW_CACHE_SIZE:
-                self._cache.popitem(last=False)
-        else:
-            self._cache.move_to_end(key)
+            if self._rendering_enabled and key not in self._pending:
+                self._pending.add(key)
+                QThreadPool.globalInstance().start(
+                    _PreviewJob(self.store, self.pages[page_index], key, self._signals, self._pending), -1)
+            return None
+        self._cache.move_to_end(key)
         return None if image.isNull() else image
+
+    def _on_image(self, key, image, error):
+        if key not in self._pending:
+            return
+        self._pending.discard(key)
+        old = self._cache.pop(key, None)
+        if old is not None:
+            self._cache_bytes -= old.sizeInBytes()
+        self._cache[key] = image
+        self._cache_bytes += image.sizeInBytes()
+        if error:
+            self._errors[key] = error
+            self.setToolTip(f"预览失败：{error}。可以尝试打印，失败时会说明具体页码。")
+        while len(self._cache) > PREVIEW_CACHE_SIZE or (self._cache_bytes > PREVIEW_CACHE_BYTES and len(self._cache) > 1):
+            dropped_key, dropped = self._cache.popitem(last=False)
+            self._cache_bytes -= dropped.sizeInBytes()
+            self._errors.pop(dropped_key, None)
+        self.update()
+
+    def pause_rendering(self):
+        self._rendering_enabled = False
+        self._pending.clear()
+
+    def resume_rendering(self):
+        self._rendering_enabled = True
+        self.update()
 
 
 class PrintDialog(QDialog):
@@ -676,6 +771,7 @@ class PrintDialog(QDialog):
         self._auto_fit = True
         self._sheet_index = 0
         self._geometry_cache: dict[tuple, dict[bool, SheetGeometry]] = {}
+        self._printing = False
 
         self.setWindowTitle("打印")
         self.resize(1120, 760)
@@ -1223,7 +1319,7 @@ class PrintDialog(QDialog):
             text = "还没有选定要打印的页面"
         self.label_summary.setText(text)
 
-        self.btn_print.setEnabled(sheets_n > 0)
+        self.btn_print.setEnabled(sheets_n > 0 and not self._printing)
         self._update_hint()
         self._update_duplex_warning(options)
         self._update_sheet_counter()
@@ -1269,14 +1365,51 @@ class PrintDialog(QDialog):
             self.label_duplex_warn.setVisible(False)
 
     def do_print(self) -> None:
+        if self._printing:
+            return
         options = self._collect_options()
         if not options.page_indices:
             QMessageBox.warning(self, "没有可打印的页面", "请指定有效的打印页码范围。")
             return
-        if options.printer_name:
-            self.printer.setPrinterName(options.printer_name)
+        self._printing = True
+        self.btn_print.setEnabled(False)
+        self.canvas.pause_rendering()
+        pages = list(self.pages)
+
+        def work(progress, cancelled):
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            if options.printer_name:
+                printer.setPrinterName(options.printer_name)
+            if not printer.isValid():
+                raise PdfError("没有可用的打印机，请先连接或安装打印机。")
+            render_pages_to_printer(printer, self.store, pages, options,
+                                    progress_callback=progress, cancel_check=cancelled)
+
         try:
-            render_pages_to_printer(self.printer, self.store, self.pages, options)
+            run_operation(self, "发送打印任务", work, cancellable=True)
             self.accept()
+        except OperationCancelled:
+            QMessageBox.information(self, "已取消打印", "已请求停止发送。已经交给打印机的页面可能仍会打印，可在系统打印队列中取消。")
         except Exception as exc:
-            QMessageBox.critical(self, "打印失败", f"发送打印任务时出错：{exc}")
+            QMessageBox.critical(self, "打印失败", f"发送打印任务时出错：{exc}\n\n任务可能已经部分发送，请检查系统打印队列后再重试。")
+        finally:
+            self._printing = False
+            self.canvas.resume_rendering()
+            self._refresh()
+
+    def reject(self) -> None:
+        if self._printing:
+            dialog = getattr(self, "_task_dialog", None)
+            if dialog is not None:
+                dialog.request_cancel()
+            return
+        self.canvas.pause_rendering()
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        if self._printing:
+            self.reject()
+            event.ignore()
+            return
+        self.canvas.pause_rendering()
+        super().closeEvent(event)

@@ -35,8 +35,23 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："
 Name: "wordcontext"; Description: "Word 文件和文件夹添加「Word 转 PDF」右键入口"; GroupDescription: "资源管理器："
+Name: "pdfcontext"; Description: "PDF 文件添加「用纸序 PDF 拆分 / 合并」右键入口"; GroupDescription: "资源管理器："
 
 [Registry]
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageSplit"; ValueType: none; Flags: deletekey; Tasks: not pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageMerge"; ValueType: none; Flags: deletekey; Tasks: not pdfcontext
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}"; ValueType: none; Flags: deletekey; Tasks: not pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageSplit"; ValueType: string; ValueName: ""; ValueData: "用纸序 PDF 拆分"; Flags: uninsdeletekey; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageSplit"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageSplit"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageSplit\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --split-pdf ""%1"""; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageMerge"; ValueType: string; ValueName: ""; ValueData: "用纸序 PDF 合并"; Flags: uninsdeletekey; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageMerge"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageMerge"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageMerge\DropTarget"; ValueType: string; ValueName: "CLSID"; ValueData: "{{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}"; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}"; ValueType: string; ValueName: ""; ValueData: "纸序 PDF 多选合并入口"; Flags: uninsdeletekey; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}\LocalServer32"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --pdf-shell-server"; Tasks: pdfcontext
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}\PythonCOM"; ValueType: string; ValueName: ""; ValueData: "app.pdfshell.MergeDropTarget"; Tasks: pdfcontext
 Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}"; ValueType: string; ValueName: ""; ValueData: "PDF 文档"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"",1"
 Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""

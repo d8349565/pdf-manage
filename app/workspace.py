@@ -68,7 +68,7 @@ def drop_target(src: int, dest: int, count: int) -> int:
 
 def parse_range_segments(spec: str, count: int) -> list[list[int]]:
     """Each comma-separated part is one group: '1-3,5' -> [[0, 1, 2], [4]]."""
-    text = spec.strip()
+    text = spec.translate(str.maketrans({"，": ",", "；": ",", ";": ",", "\u3000": " "})).strip()
     if not text:
         raise ValueError("请输入页码范围，例如 1-3,5")
     if count < 1:
@@ -387,11 +387,16 @@ class Workspace:
         self._push(after, self.path, "重排")
         self.select_index(dst)
 
-    def merge_pages(self, incoming: list[PageRef], outline=None) -> None:
+    def insert_pages(self, incoming: list[PageRef], at_index: int | None = None, outline=None) -> None:
         if not incoming:
             return
         incoming = self._unique_pages(incoming, self.pages)
-        after = list(self.pages) + incoming
+        if at_index is None or at_index >= len(self.pages):
+            after = list(self.pages) + incoming
+        elif at_index <= 0:
+            after = incoming + list(self.pages)
+        else:
+            after = list(self.pages[:at_index]) + incoming + list(self.pages[at_index:])
         self.protected_paths = {
             os.path.normcase(os.path.abspath(p.source_path))
             for p in after
@@ -409,7 +414,11 @@ class Workspace:
                         seen.add(page.source_id)
                 outline = roots
             combined = (*combined, *outline)
-        self._push(after, None, "合并", outline=combined)
+        action_text = "合并" if at_index is None else "插入"
+        self._push(after, None, action_text, outline=combined)
+
+    def merge_pages(self, incoming: list[PageRef], outline=None) -> None:
+        self.insert_pages(incoming, at_index=None, outline=outline)
 
     def load_first_or_merge(self, incoming: list[PageRef], path: str, *, outline=None) -> None:
         if not self.pages:

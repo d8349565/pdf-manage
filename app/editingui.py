@@ -8,7 +8,7 @@ import uuid
 from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, QTimer, Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QButtonGroup, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QApplication, QButtonGroup, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -240,46 +240,89 @@ class MoveHandleButton(QToolButton):
         self.hover_bar = hover_bar
         self._drag_start_pos = None
         self._dragging = False
+        self._drag_cancelled = False
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
         self.setToolTip("按住拖动以移动批注，或点击后点选新位置")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self.hover_bar._hide_timer.stop()
             self._drag_start_pos = event.globalPosition().toPoint()
             self._drag_scene_start = self.hover_bar.tools.view.mapToScene(
                 self.hover_bar.tools.view.viewport().mapFromGlobal(self._drag_start_pos))
             self._dragging = False
+            self._drag_cancelled = False
+            self._bar_start_pos = self.hover_bar.pos()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.LeftButton and self._drag_start_pos:
             delta = event.globalPosition().toPoint() - self._drag_start_pos
-            if not self._dragging and delta.manhattanLength() > 6:
-                self._dragging = True
+            tools = self.hover_bar.tools
+            if not self._dragging and delta.manhattanLength() >= QApplication.startDragDistance():
+                self._dragging = tools.start_move_annot(self.hover_bar.annot_id,
+                    page_index=self.hover_bar.page_index, anchor=self._drag_scene_start)
+                if not self._dragging:
+                    self._drag_cancelled = True
+                    self._drag_start_pos = None
+                    self.setDown(False)
+                    event.accept()
+                    return
             if self._dragging:
-                delta_move = event.globalPosition().toPoint() - self._drag_start_pos
-                self._drag_start_pos = event.globalPosition().toPoint()
-                self.hover_bar.move(self.hover_bar.pos() + delta_move)
+                point = tools.view.mapToScene(tools.view.viewport().mapFromGlobal(event.globalPosition().toPoint()))
+                offset = tools.update_move_preview(point)
+                if offset is not None:
+                    self.hover_bar.move(self._bar_start_pos + offset)
+                event.accept()
                 return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._drag_cancelled:
+                self._drag_start_pos = None
+                self._drag_cancelled = False
+                self.setDown(False)
+                event.accept()
+                return
             if self._dragging:
                 self._dragging = False
                 self._drag_start_pos = None
-                import pymupdf as p
                 tools = self.hover_bar.tools
                 scene_pt = tools.view.mapToScene(tools.view.viewport().mapFromGlobal(event.globalPosition().toPoint()))
-                index = self.hover_bar.page_index
-                delta = tools.canonical(scene_pt, index) - tools.canonical(self._drag_scene_start, index)
-                canonical_pt = p.Point(self.hover_bar.annot["rect"][:2]) + delta
                 self.setDown(False)
-                self.hover_bar.tools.move_annot_to(self.hover_bar.annot_id, canonical_pt)
-                self.hover_bar.hide()
+                tools.finish_move_annot(scene_pt)
+                event.accept()
                 return
             self._drag_start_pos = None
         super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        tools = self.hover_bar.tools
+        if event.key() == Qt.Key.Key_Escape and tools._move_committing:
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Escape and (tools._move_state or self._drag_start_pos is not None):
+            tools.cancel_move_annot()
+            self._drag_cancelled = True
+            self._drag_start_pos = None
+            self.setDown(False)
+            tools._set_feedback("已取消移动。")
+            event.accept()
+            return
+        if self._dragging:
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def event(self, event):
+        if event.type() == QEvent.Type.ShortcutOverride and event.key() == Qt.Key.Key_Escape:
+            tools = self.hover_bar.tools
+            if self._drag_start_pos is not None or tools._move_state or tools._move_committing:
+                event.accept()
+                return True
+        return super().event(event)
 
 
 class AnnotationHoverBar(QFrame):
@@ -403,7 +446,7 @@ class AnnotationHoverBar(QFrame):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if not getattr(self.move_btn, "_dragging", False):
+        if self.move_btn._drag_start_pos is None:
             self._hide_timer.start(250)
         super().leaveEvent(event)
 
@@ -431,6 +474,7 @@ class AnnotationHoverBar(QFrame):
             self.edit_btn.setToolTip("添加备注")
 
         self.move_btn.setVisible(kind in (0, 4))
+        self.move_btn.setToolTip("拖动可实时预览位置；也可点击后选位置，Esc 取消")
 
         self.adjustSize()
         self.layout().activate()
@@ -466,7 +510,7 @@ class AnnotationHoverBar(QFrame):
 
     def _on_move_click(self):
         self.hide()
-        self.tools.start_move_annot(self.annot_id)
+        self.tools.start_move_annot(self.annot_id, page_index=self.page_index)
 
     def _on_style(self):
         self.hide()
@@ -500,6 +544,9 @@ class AnnotationTools(QWidget):
         self.snapshot_index = None
         self.stroke = []
         self.overlay = None
+        self._move_state = None
+        self._move_preview = None
+        self._move_committing = False
         self.color = QColor("#EAB308")
 
         root_layout = QVBoxLayout(self)
@@ -613,10 +660,12 @@ class AnnotationTools(QWidget):
             self.view.setMouseTracking(True)
             self.view.viewport().setMouseTracking(True)
         self.hover_bar = AnnotationHoverBar(self.view.viewport(), self)
-        self._moving_annot_id = None
+        if hasattr(self.view, "installEventFilter"):
+            self.view.installEventFilter(self)
         if hasattr(self.view, "view_changed"):
             self.view.view_changed.connect(self.hover_bar.hide)
             self.view.view_changed.connect(self._position_inline_replace)
+            self.view.view_changed.connect(self._move_view_changed)
 
     def _set_feedback(self, text):
         self.feedback.setText(text)
@@ -646,11 +695,18 @@ class AnnotationTools(QWidget):
             self._update_color_button_style()
 
     def _ensure_filter(self):
+        self.remove_view_filters()
+        self.view.viewport().installEventFilter(self)
+        if hasattr(self.view, "installEventFilter"):
+            self.view.installEventFilter(self)
+
+    def remove_view_filters(self):
         try:
             self.view.viewport().removeEventFilter(self)
-        except Exception:
+            if hasattr(self.view, "removeEventFilter"):
+                self.view.removeEventFilter(self)
+        except RuntimeError:
             pass
-        self.view.viewport().installEventFilter(self)
 
     def _set_view_cursor(self, cursor):
         vp = self.view.viewport() if hasattr(self.view, "viewport") else None
@@ -658,7 +714,7 @@ class AnnotationTools(QWidget):
             vp.setCursor(cursor)
 
     def deactivate(self):
-        self._moving_annot_id = None
+        self.cancel_move_annot()
         self._set_view_cursor(Qt.CursorShape.ArrowCursor)
         if hasattr(self, "hover_bar"):
             self.hover_bar.hide()
@@ -671,16 +727,14 @@ class AnnotationTools(QWidget):
             self.host.review_button.setChecked(False)
 
     def closeEvent(self, event):
+        self.cancel_move_annot()
         self._close_inline_replace()
-        try:
-            self.view.viewport().removeEventFilter(self)
-        except Exception:
-            pass
+        self.remove_view_filters()
         super().closeEvent(event)
 
     def choose_tool(self):
         try:
-            self._moving_annot_id = None
+            self.cancel_move_annot()
             self._set_view_cursor(Qt.CursorShape.ArrowCursor)
             if hasattr(self, "hover_bar"):
                 self.hover_bar.hide()
@@ -780,6 +834,13 @@ class AnnotationTools(QWidget):
                 self.commit(PageEdit("delete", annotation_id=identifier), page_index=index, expected_ref=ref)
 
     def sync_page(self):
+        move = self._move_state
+        if move and (move["index"] >= len(self.host.ws.pages)
+                     or self.host.ws.pages[move["index"]] is not move["ref"]
+                     or self.host.ws.preview_index() != move["active_index"]):
+            self.cancel_move_annot()
+            if not self._move_committing:
+                self._set_feedback("页面已改变，移动已取消。")
         state = getattr(self, "_inline_replace", None)
         if state and (state["index"] != self.host.ws.preview_index()
                       or state["index"] >= len(self.host.ws.pages)
@@ -793,6 +854,7 @@ class AnnotationTools(QWidget):
             self.deactivate()
 
     def clear_overlay(self):
+        self.cancel_move_annot()
         if hasattr(self, "hover_bar"):
             self.hover_bar.hide()
         if self.overlay is not None:
@@ -801,6 +863,14 @@ class AnnotationTools(QWidget):
         self.stroke = []
 
     def eventFilter(self, watched, event):
+        if getattr(self, "view", None) is None:
+            return False
+        if watched in (self.view, self.view.viewport()) and event.type() == QEvent.Type.ShortcutOverride:
+            if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing):
+                event.accept()
+                return True
+        if watched is self.view and event.type() == QEvent.Type.Hide and self._move_state:
+            self.cancel_move_annot()
         state = getattr(self, "_inline_replace", None)
         if state and watched is state["input"]:
             if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
@@ -808,46 +878,51 @@ class AnnotationTools(QWidget):
                 self.view.setFocus()
                 return True
             return False
+        if watched is self.view and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Escape and self._move_committing:
+                return True
+            if event.key() == Qt.Key.Key_Escape and self._move_state:
+                self.cancel_move_annot()
+                self._set_feedback("已取消移动。")
+                return True
+            return False
         if watched is not self.view.viewport():
             return False
         if event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self._position_inline_replace)
-        if event.type() == QEvent.Type.Leave:
+        if event.type() == QEvent.Type.Leave and not self._move_state:
             self.hover_bar._hide_timer.start(250)
         if not self.host.ws.pages or not self.view.isVisible():
             return False
         kind = self.tool.currentData() if self.isVisible() else "browse"
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            if getattr(self, "_moving_annot_id", None):
-                self._moving_annot_id = None
+            if self._move_committing:
+                return True
+            if self._move_state:
+                self.cancel_move_annot()
                 self._set_feedback("已取消移动。")
-                self._set_view_cursor(Qt.CursorShape.ArrowCursor)
                 return True
             self._close_inline_replace()
             self.clear_overlay()
             return True
 
-        if getattr(self, "_moving_annot_id", None):
-            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+        if self._move_committing:
+            return event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease, QEvent.Type.MouseMove)
+        if self._move_state:
+            if event.type() == QEvent.Type.MouseMove:
                 point = self.view.mapToScene(event.position().toPoint())
-                index = self.view.page_at_y(point.y())
-                if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
-                    if index != self._moving_page_index:
-                        self._set_feedback("请在原页面内选择批注的新位置；Esc 取消。")
-                        return True
-                    if self.host.ws.pages[index] is not self._moving_ref:
-                        self._moving_annot_id = None
-                        self._set_view_cursor(Qt.CursorShape.ArrowCursor)
-                        self._set_feedback("页面已改变，请重新选择批注。")
-                        return True
-                    self.ensure_snapshot(index)
-                    canonical_pt = self.canonical(point, index)
-                    annot_id = self._moving_annot_id
-                    self._moving_annot_id = None
-                    self._set_view_cursor(Qt.CursorShape.ArrowCursor)
-                    if self.move_annot_to(annot_id, canonical_pt):
-                        self._set_feedback("批注已移动；Ctrl+Z 撤销。")
+                self.update_move_preview(point)
+                return True
+            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self.sync_page()
+                if not self._move_state:
                     return True
+                point = self.view.mapToScene(event.position().toPoint())
+                bounds = self.view.page_rects[self._move_state["index"]]
+                if not bounds.contains(point):
+                    self._set_feedback("请在原页面内放置批注；Esc 取消。")
+                    return True
+                self.finish_move_annot(point)
                 return True
             return False
 
@@ -896,7 +971,7 @@ class AnnotationTools(QWidget):
 
         # Single click keeps one popover; editing is an explicit action or double click.
         if kind in ("browse", "select") and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
-            if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages and not getattr(self, "_moving_annot_id", None):
+            if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages and not self._move_state:
                 point = self.view.mapToScene(event.position().toPoint())
                 index = self.view.page_at_y(point.y())
                 if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
@@ -1294,16 +1369,121 @@ class AnnotationTools(QWidget):
                                  color=(self.color.redF(), self.color.greenF(), self.color.blueF()),
                                  width=self.width.value()), page_index=self.snapshot_index)
 
-    def move_annot_to(self, identifier: str, canonical_pt):
+    def move_annot_to(self, identifier: str, canonical_pt, *, page_index=None, expected_ref=None):
         if identifier:
-            return self.commit(PageEdit("move", points=(tuple(canonical_pt),), annotation_id=identifier), page_index=self.snapshot_index)
+            return self.commit(PageEdit("move", points=(tuple(canonical_pt),), annotation_id=identifier),
+                               page_index=self.snapshot_index if page_index is None else page_index,
+                               expected_ref=expected_ref)
 
-    def start_move_annot(self, identifier: str):
-        self._moving_annot_id = identifier
-        self._moving_page_index = self.snapshot_index
-        self._moving_ref = self.host.ws.pages[self.snapshot_index]
-        self._set_feedback("请在页面点击新位置以放置批注；Esc 取消。")
+    def start_move_annot(self, identifier: str, *, page_index=None, anchor=None):
+        import pymupdf as p
+        if self._move_committing:
+            return False
+        index = self.snapshot_index if page_index is None else page_index
+        if index is None:
+            index = self.host.ws.preview_index()
+        if not self.host._allow_operation("annotate") or not self.ensure_snapshot(index):
+            return False
+        annot = next((a for a in self.snapshot["annotations"] if a["id"] == identifier), None)
+        if not annot or annot["kind"] not in (0, 4):
+            self._set_feedback("当前批注不支持移动。")
+            return False
+        self.cancel_move_annot()
+        matrix = p.Matrix(self.snapshot["matrix"])
+        rect = p.Rect(annot["rect"])
+        page = self.view.page_rects[index]
+        bounds = p.Rect(0, 0, page.width(), page.height()) * ~matrix
+        if rect.width > bounds.width or rect.height > bounds.height:
+            self._set_feedback("批注大于页面，无法在页内移动。")
+            return False
+        self._move_state = dict(id=identifier, index=index, active_index=self.host.ws.preview_index(),
+            ref=self.host.ws.pages[index], rect=rect, matrix=matrix, bounds=bounds,
+            anchor=None if anchor is None else p.Point(anchor.x() - page.x(), anchor.y() - page.y()) * ~matrix,
+            target=p.Point(rect.top_left), drag_mode=self.view.dragMode())
+        self._move_preview = QGraphicsPathItem()
+        self._move_preview.setZValue(5)
+        components = annot.get("color", ())
+        color = QColor.fromRgbF(*components) if len(components) == 3 else QColor("#0F766E")
+        self._move_preview.setPen(QPen(color, max(.5, annot.get("width") or 1), Qt.PenStyle.DashLine))
+        self._move_preview.setOpacity(.85)
+        if annot["kind"] == 0:
+            fill = QColor(color)
+            fill.setAlpha(45)
+            self._move_preview.setBrush(fill)
+        self.view._scene.addItem(self._move_preview)
+        self.hover_bar._hide_timer.stop()
+        self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self._set_view_cursor(Qt.CursorShape.CrossCursor)
+        self._set_feedback("拖动预览位置，松开鼠标放置；Esc 取消。" if anchor is not None else
+                           "移动鼠标预览位置，点击放置；Esc 取消。")
+        origin = rect.top_left * matrix
+        self.update_move_preview(anchor if anchor is not None else QPointF(origin.x + page.x(), origin.y + page.y()))
+        if anchor is None:
+            self.view.setFocus()
+        return self._move_state is not None
+
+    def update_move_preview(self, point):
+        import pymupdf as p
+        self.sync_page()
+        state = self._move_state
+        if not state:
+            return None
+        page = self.view.page_rects[state["index"]]
+        local = p.Point(point.x() - page.x(), point.y() - page.y()) * ~state["matrix"]
+        rect = state["rect"]
+        target = local if state["anchor"] is None else rect.top_left + local - state["anchor"]
+        bounds = state["bounds"]
+        target = p.Point(max(bounds.x0, min(bounds.x1 - rect.width, target.x)),
+                         max(bounds.y0, min(bounds.y1 - rect.height, target.y)))
+        state["target"] = target
+        moved = p.Rect(target.x, target.y, target.x + rect.width, target.y + rect.height) * state["matrix"]
+        path = QPainterPath()
+        path.addRect(QRectF(moved.x0 + page.x(), moved.y0 + page.y(), moved.width, moved.height))
+        self._move_preview.setPath(path)
+        original = rect.top_left * state["matrix"]
+        destination = target * state["matrix"]
+        return self.view.mapFromScene(QPointF(destination.x + page.x(), destination.y + page.y())) - self.view.mapFromScene(
+            QPointF(original.x + page.x(), original.y + page.y()))
+
+    def finish_move_annot(self, point):
+        self.update_move_preview(point)
+        state = self._move_state
+        if not state:
+            return
+        self._move_committing = True
+        self.hover_bar.hide()
+        try:
+            if abs(state["target"] - state["rect"].top_left) < .01:
+                self._set_feedback("位置未改变。")
+            elif self.move_annot_to(state["id"], state["target"], page_index=state["index"], expected_ref=state["ref"]):
+                self._set_feedback("批注已移动；Ctrl+Z 撤销，Ctrl+S 保存。")
+        except Exception as exc:
+            self._set_feedback(f"移动未完成，请检查当前页面：{exc}")
+        finally:
+            self._move_committing = False
+            self.cancel_move_annot()
+
+    def cancel_move_annot(self):
+        state = self._move_state
+        self._move_state = None
+        if self._move_preview is not None:
+            self.view._scene.removeItem(self._move_preview)
+            self._move_preview = None
+        if state:
+            self.view.setDragMode(state["drag_mode"])
+            self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+            button = self.hover_bar.move_btn
+            if button._dragging:
+                button._drag_cancelled = True
+            button._dragging = False
+            button._drag_start_pos = None
+            button.setDown(False)
+            self.hover_bar.hide()
+
+    def _move_view_changed(self):
+        if self._move_state and self._move_state["anchor"] is not None and not self._move_committing:
+            self.cancel_move_annot()
+            self._set_feedback("视图已改变，移动已取消。")
 
     def delete(self):
         identifier = self.annotations.currentData()

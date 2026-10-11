@@ -42,6 +42,7 @@ from PyQt6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QPolygonF,
     QPixmap,
     QShortcut,
     QTransform,
@@ -780,18 +781,23 @@ class PageListView(QListView):
         self._drop_motion.start()
 
     def _move_highlight(self, rect) -> None:
+        if not self.isVisible():
+            return
         dirty = self._highlight_rect.united(rect).adjusted(-5, -5, 5, 5)
         self._highlight_rect = QRectF(rect)
         self.viewport().update(dirty.toAlignedRect())
 
     def _fade_highlight(self, opacity) -> None:
+        if not self.isVisible():
+            return
         self._highlight_opacity = float(opacity)
         self.viewport().update(self._highlight_rect.adjusted(-5, -5, 5, 5).toAlignedRect())
 
     def _clear_highlight(self) -> None:
         old = self._highlight_rect
         self._highlight_rect = QRectF()
-        self.viewport().update(old.adjusted(-5, -5, 5, 5).toAlignedRect())
+        if self.isVisible():
+            self.viewport().update(old.adjusted(-5, -5, 5, 5).toAlignedRect())
 
     def _relocate_highlight(self) -> None:
         if self._drop_row is not None:
@@ -799,6 +805,8 @@ class PageListView(QListView):
             self._move_highlight(QRectF(self.visualRect(self.model().index(self._drop_row, 0))))
 
     def _show_landing(self, row) -> None:
+        if not self.isVisible():
+            return
         index = self.model().index(row, 0)
         if not index.isValid():
             return
@@ -911,6 +919,8 @@ class PreviewView(QGraphicsView):
         self.page_signature = None
         self.active_page = 0
         self.neighbors = {}
+        self.search_areas = {}
+        self.current_search = -1
         self._item = QGraphicsPixmapItem()
         self._scene.addItem(self._item)
         self._detail = QGraphicsPixmapItem()
@@ -990,6 +1000,34 @@ class PreviewView(QGraphicsView):
         item.setPixmap(QPixmap.fromImage(image))
         item.setTransform(QTransform.fromScale(rect.width() / image.width(), rect.height() / image.height()))
         item.setPos(rect.topLeft())
+
+    def set_search_results(self, results, current):
+        self.search_areas = {}
+        for index, (page, points) in enumerate(results):
+            self.search_areas.setdefault(page, []).append((index, points))
+        self.current_search = current
+        self.viewport().update()
+
+    def jump_to_search(self, page, points):
+        if 0 <= page < len(self.page_rects):
+            origin = self.page_rects[page].topLeft()
+            polygon = QPolygonF([origin + QPointF(x, y) for x, y in points])
+            self.ensureVisible(polygon.boundingRect(), 48, 72)
+
+    def drawForeground(self, painter, rect) -> None:
+        super().drawForeground(painter, rect)
+        painter.save()
+        for page in self.visible_pages(rect):
+            origin = self.page_rects[page].topLeft()
+            for index, points in self.search_areas.get(page, ()):
+                polygon = QPolygonF([origin + QPointF(x, y) for x, y in points])
+                active = index == self.current_search
+                painter.setBrush(QColor(255, 153, 0, 105) if active else QColor(255, 224, 70, 75))
+                pen = QPen(QColor("#B45309") if active else QColor(220, 175, 0, 100))
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.drawPolygon(polygon)
+        painter.restore()
 
     def set_photo(self, pix: QPixmap, dpr: float, page_size=None) -> None:
         self._item.setPixmap(pix)
@@ -1633,6 +1671,9 @@ class MainWindow(QMainWindow):
             self.first_painted.emit()
 
     def _chrome_actions(self) -> None:
+        self.find_action = self._act("全文搜索", self.open_search, QKeySequence.StandardKey.Find)
+        self.find_action.setIcon(toolbar_icon("search"))
+        self.find_action.setToolTip("全文搜索 (Ctrl+F)")
         self.act_pages = QAction("页面栏", self)
         self.act_pages.setCheckable(True)
         self.act_pages.setChecked(False)
@@ -1680,6 +1721,10 @@ class MainWindow(QMainWindow):
         self.render_label = QLabel("正在渲染页面", status_widgets)
         # Match the status message height so rendering does not resize the reader.
         self.render_label.setStyleSheet("font-size: 13px;")
+        for widget in (self.render_label, self.render_progress):
+            policy = widget.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            widget.setSizePolicy(policy)
         # addPermanentWidget 会自动显示未显式隐藏的控件并触发布局和字体测量。
         # 空窗口先隐藏，渲染或保护提示真正需要时再显示。
         self.render_label.hide()
@@ -1732,8 +1777,11 @@ class MainWindow(QMainWindow):
         self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
+        edit.addAction(self.find_action)
         edit.addAction(self._act("审阅与文字修正…", self.open_annotation_tools))
         edit.addSeparator()
+        self.insert_action = self._act("插入页面…", self.insert_files)
+        edit.addAction(self.insert_action)
         edit.addAction(self._act("全选", self.select_all_pages, QKeySequence.StandardKey.SelectAll))
         self.delete_action = self._act("删除页面", self.delete_pages)
         edit.addAction(self.delete_action)
@@ -1807,6 +1855,9 @@ class MainWindow(QMainWindow):
         self.review_button.setFixedSize(30, 30)
         self.review_button.setCheckable(True)
         document.addWidget(self.review_button)
+        self.search_button = self._action_btn(self.find_action)
+        self.search_button.setFixedSize(30, 30)
+        document.addWidget(self.search_button)
         self.document_name = QLabel(bar)
         self.document_name.setObjectName("documentName")
         self.document_name.setMinimumWidth(80)
@@ -1887,6 +1938,10 @@ class MainWindow(QMainWindow):
         self.editable_button.setEnabled(self.editable_action.isEnabled())
         self.print_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "print"))
         self.append_action.setEnabled(not read_only)
+        if hasattr(self, "insert_action"):
+            self.insert_action.setEnabled(not read_only)
+        if hasattr(self, "insert_button"):
+            self.insert_button.setEnabled(not read_only)
         self.arrange_view.setDragEnabled(not read_only)
         self.arrange_view.setAcceptDrops(not read_only)
         selected = bool(self.ws.target_indices())
@@ -1927,6 +1982,9 @@ class MainWindow(QMainWindow):
         if current is not None:
             self.go_to_page(current + 1 + delta)
 
+    def open_search(self) -> None:
+        self.search_bar.open_search()
+
     def _update_export_controls(self) -> None:
         count = len(self.ws.pages)
         for kind, button, label in (
@@ -1935,6 +1993,7 @@ class MainWindow(QMainWindow):
             ("convert", self.convert_button, self.convert_feedback),
         ):
             error = ""
+            summary = ""
             try:
                 if not count:
                     raise ValueError("请先打开 PDF")
@@ -1945,8 +2004,13 @@ class MainWindow(QMainWindow):
                     raise ValueError(reason)
                 if kind == "extract":
                     self.ws.extract_indices(self.extract_range.text())
-                elif kind == "split" and self.split_range_mode.isChecked():
-                    parse_range_segments(self.split_range.text(), count)
+                elif kind == "split":
+                    if self.split_range_mode.isChecked():
+                        outputs = len(parse_range_segments(self.split_range.text(), count))
+                    else:
+                        step = self.split_count.value() if self.split_every.isChecked() else 1
+                        outputs = (count + step - 1) // step
+                    summary = f"预计输出 {outputs} 个文件"
                 elif kind == "convert":
                     if self.convert_range_mode.isChecked():
                         parse_page_range(self.convert_range.text(), count)
@@ -1956,8 +2020,8 @@ class MainWindow(QMainWindow):
                 error = str(exc)
             button.setEnabled(not error)
             button.setToolTip(error)
-            label.setText(error)
-            label.setVisible(bool(error))
+            label.setText(error or summary)
+            label.setVisible(bool(error or summary))
 
     def _act(self, text, slot, shortcut=None) -> QAction:
         action = QAction(text, self)
@@ -2060,6 +2124,8 @@ class MainWindow(QMainWindow):
         self.navigation_bar = QWidget()
         self.navigation_bar.setLayout(zoom_bar)
         zoom_bar.setContentsMargins(0, 0, 0, 0)
+        from app.searchui import SearchBar
+        self.search_bar = SearchBar(self)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -2089,6 +2155,9 @@ class MainWindow(QMainWindow):
             button = self._btn(label, slot, icon=icon, danger=icon == "trash")
             self._selection_buttons.append(button)
             bar.addWidget(button)
+        self.insert_button = self._btn("插入页面…", self.insert_files, icon="folder-plus")
+        self.insert_button.setToolTip("插入 PDF 页面（已选页面后或末尾）")
+        bar.addWidget(self.insert_button)
         bar.addWidget(self._btn("全选", self.select_all_pages, icon="select-all"))
         selected_export = self._btn("提取所选页…", self.extract_selected, icon="scissors")
         self._selection_buttons.append(selected_export)
@@ -2189,12 +2258,26 @@ class MainWindow(QMainWindow):
         extract.addStretch()
         split = section("拆分文件 · 多个 PDF")
         self.split_each = QRadioButton("每页一个文件")
+        self.split_every = QRadioButton("每几页一个文件")
+        self.split_count = QSpinBox()
+        self.split_count.setRange(1, 1_000_000)
+        self.split_count.setValue(5)
+        self.split_count.setSuffix(" 页")
+        self.split_count.setAccessibleName("每个拆分文件的页数")
+        self.split_count.hide()
+        self.split_every.toggled.connect(self.split_count.setVisible)
+        self.split_count.valueChanged.connect(self._update_export_controls)
         self.split_range_mode = QRadioButton("按页码范围")
         self.split_mode_group = QButtonGroup(self)
         self.split_mode_group.addButton(self.split_each)
+        self.split_mode_group.addButton(self.split_every)
         self.split_mode_group.addButton(self.split_range_mode)
         self.split_each.setChecked(True)
         split.addWidget(self.split_each)
+        interval = QHBoxLayout()
+        interval.addWidget(self.split_every)
+        interval.addWidget(self.split_count)
+        split.addLayout(interval)
         split.addWidget(self.split_range_mode)
         self.split_range = QLineEdit()
         self.split_range.setPlaceholderText("如 1-3,5,7-9，每段一个文件")
@@ -2266,7 +2349,7 @@ class MainWindow(QMainWindow):
         security.addStretch()
         for field in (self.extract_range, self.split_range, self.convert_range):
             field.textChanged.connect(self._update_export_controls)
-        for radio in (self.split_each, self.split_range_mode, self.convert_all, self.convert_selected, self.convert_range_mode):
+        for radio in (self.split_each, self.split_every, self.split_range_mode, self.convert_all, self.convert_selected, self.convert_range_mode):
             radio.toggled.connect(self._update_export_controls)
         return box
 
@@ -2376,6 +2459,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+Right"), self, lambda: self.step_page(1))
         QShortcut(QKeySequence("Ctrl+L"), self, self.focus_page_number)
         QShortcut(QKeySequence("Ctrl+="), self, self.zoom_in)
+        QShortcut(QKeySequence("F3"), self, lambda: self.search_bar.step(1))
+        QShortcut(QKeySequence("Shift+F3"), self, lambda: self.search_bar.step(-1))
 
     def focus_page_number(self) -> None:
         if self.ws.pages:
@@ -2821,6 +2906,8 @@ class MainWindow(QMainWindow):
 
     def _update_preview(self) -> None:
         self._sync_controls()
+        self.find_action.setEnabled(bool(self.ws.pages))
+        self.search_bar.sync_document()
         if self.ws.pages:
             self._ensure_annotation_tools()
         if hasattr(self, "annotation_tools"):
@@ -2856,6 +2943,7 @@ class MainWindow(QMainWindow):
             self.preview_stack.setCurrentIndex(0)
             self.details.setText("")
             self.banner.setText("")
+            self._update_render_progress()
             self.statusBar().showMessage(self._status_line())
             return
         self.preview_stack.setCurrentIndex(1)
@@ -3050,6 +3138,11 @@ class MainWindow(QMainWindow):
         visible = view.mapToScene(view.viewport().rect()).boundingRect()
         margin = 24 / max(scale, 0.001)
         page_rect = view.page_rects[index]
+        if (self._detail_key and not self._detail_busy and self._detail_key[:3] == page_key
+                and math.isclose(self._detail_key[-1], scale, rel_tol=.001)
+                and not view._detail.pixmap().isNull()
+                and view._detail.sceneBoundingRect().contains(visible.intersected(page_rect))):
+            return
         region = visible.adjusted(-margin, -margin, margin, margin).intersected(page_rect)
         region.translate(-page_rect.topLeft())
         if region.isEmpty():
@@ -3157,25 +3250,81 @@ class MainWindow(QMainWindow):
         if paths:
             self._ingest(paths, replace=False)
 
-    def _ingest(self, paths: list[str], replace: bool) -> None:
-        if not replace and self.ws.pages and not self._allow_operation("modify"):
+    def open_shell_files(self, paths: list[str], mode: str) -> bool:
+        if mode not in ("split", "merge"):
+            QMessageBox.warning(self, "无法打开右键入口", "无法识别此操作，请重新选择拆分或合并。")
+            return False
+        paths = [os.path.abspath(path) for path in paths]
+        invalid = [path for path in paths if not path.lower().endswith(".pdf") or not os.path.isfile(path)]
+        if not paths or invalid or (mode == "split" and len(paths) != 1):
+            message = "请选择一个 PDF 进行拆分。" if mode == "split" else "请选择有效的 PDF 文件进行合并。"
+            if invalid:
+                message += "\n无法打开：" + "、".join(os.path.basename(path) for path in invalid[:4])
+            QMessageBox.warning(self, "无法打开右键入口", message)
+            return False
+        if not self._ingest(paths, replace=True):
+            return False
+        if mode == "split":
+            self.split_each.setChecked(True)
+            self.open_export_tool(1)
+        else:
+            self.stack.setCurrentIndex(1)
+            self.statusBar().showMessage(f"已载入 {len(paths)} 个 PDF，共 {len(self.ws.pages)} 页 · 检查顺序后保存", 8000)
+        return True
+
+    def insert_files(self) -> None:
+        if self.ws.pages and not self._allow_operation("modify"):
             return
+        paths, _ = QFileDialog.getOpenFileNames(self, "插入 PDF", "", "PDF (*.pdf)")
+        if not paths:
+            return
+        selected = self.ws.target_indices()
+        has_selection = bool(selected)
+        base_pos = (max(selected) + 1) if has_selection else len(self.ws.pages)
+
+        inserted_count = 0
+        cur_pos = base_pos
+        for index, path in enumerate(paths, start=1):
+            pages = self._load_one(path, index, len(paths), insert_at=cur_pos)
+            if not pages:
+                break
+            cur_pos += len(pages)
+            inserted_count += len(pages)
+
+        if inserted_count > 0:
+            inserted_range = list(range(base_pos, base_pos + inserted_count))
+            self.ws.set_selection(inserted_range, current=base_pos)
+            self.refresh()
+            self._sync_selection()
+            self.arrange_view.scrollTo(self.model.index(base_pos, 0))
+            self.arrange_view._show_landing(base_pos)
+            if has_selection:
+                self.statusBar().showMessage(f"已在第 {max(selected) + 1} 页后插入 {inserted_count} 页 · 可拖动调整顺序", 4000)
+            else:
+                self.statusBar().showMessage(f"已在末尾插入 {inserted_count} 页 · 可拖动调整顺序", 4000)
+
+    def _ingest(self, paths: list[str], replace: bool) -> bool:
+        if not paths:
+            return False
+        if not replace and self.ws.pages and not self._allow_operation("modify"):
+            return False
         if replace:
             if not self.confirm_leave():
-                return
+                return False
             batches: list[tuple[str, list]] = []
             for index, path in enumerate(paths, start=1):
                 pages = self._try_load(path, index, len(paths))
                 if pages is None:
                     self._release_unused_docs()
-                    return
+                    return False
                 batches.append((os.path.abspath(path), pages))
             if len(batches) > 1:
-                for _, pages in batches:
-                    if self.store.operation_reason(pages, "modify"):
-                        QMessageBox.warning(self, "不能合并只读文档", "所选文件包含签名或权限受限的文档，请单独打开阅读。")
+                for path, pages in batches:
+                    reason = self.store.operation_reason(pages, "modify")
+                    if reason:
+                        self._warn_merge_readonly(path, pages, reason)
                         self._release_unused_docs()
-                        return
+                        return False
             self.ws.reset()
             for path, pages in batches:
                 self.ws.load_first_or_merge(pages, path)
@@ -3184,11 +3333,14 @@ class MainWindow(QMainWindow):
             self.refresh()
             # 关闭旧文档时按文档加锁，最多等这一次渲染跑完，而不是整个线程池排空。
             self._release_unused_docs()
-            return
+            return True
+        loaded = True
         for index, path in enumerate(paths, start=1):
             if not self._load_one(path, index, len(paths)):
+                loaded = False
                 break
         self.refresh()
+        return loaded
 
     def _try_load(self, path: str, index: int = 1, total: int = 1):
         password = None
@@ -3216,19 +3368,31 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "无法打开", str(exc))
                 return None
 
-    def _load_one(self, path: str, index: int = 1, total: int = 1) -> bool:
+    def _load_one(self, path: str, index: int = 1, total: int = 1, insert_at: int | None = None) -> list | None:
         if self.ws.pages and not self._allow_operation("modify"):
-            return False
+            return None
         pages = self._try_load(path, index, total)
         if pages is None:
-            return False
-        if self.ws.pages and self.store.operation_reason(pages, "modify"):
-            QMessageBox.warning(self, "不能合并只读文档", "该文档包含签名或权限限制，请单独打开阅读。")
+            return None
+        reason = self.store.operation_reason(pages, "modify") if self.ws.pages else ""
+        if reason:
+            self._warn_merge_readonly(path, pages, reason)
             self._release_unused_docs()
-            return False
+            return None
         incoming_outline = self.store.outline_entries(pages, group_sources=True) if self.ws.outline is not None else None
-        self.ws.load_first_or_merge(pages, os.path.abspath(path), outline=incoming_outline)
-        return True
+        if not self.ws.pages:
+            self.ws.open_replace(pages, os.path.abspath(path))
+        elif insert_at is not None:
+            self.ws.insert_pages(pages, at_index=insert_at, outline=incoming_outline)
+        else:
+            self.ws.load_first_or_merge(pages, os.path.abspath(path), outline=incoming_outline)
+        return pages
+
+    def _warn_merge_readonly(self, path, pages, reason) -> None:
+        message = f"{os.path.basename(path)}\n{reason}\n\n请单独打开阅读。"
+        if not self.store.operation_reason(pages, "editable_copy"):
+            message += "符合条件时，可在单独打开后制作可编辑副本，再合并副本。"
+        QMessageBox.warning(self, "不能合并只读文档", message)
 
     def _release_unused_docs(self) -> None:
         keep = self.ws.live_sources()
@@ -3576,6 +3740,13 @@ class MainWindow(QMainWindow):
         except PdfError as exc:
             QMessageBox.warning(self, "抽取失败", str(exc))
 
+    def _split_groups(self) -> list[list[int]]:
+        count = len(self.ws.pages)
+        if self.split_range_mode.isChecked():
+            return parse_range_segments(self.split_range.text(), count)
+        step = self.split_count.value() if self.split_every.isChecked() else 1
+        return [list(range(start, min(start + step, count))) for start in range(0, count, step)]
+
     def split(self) -> None:
         if not self._allow_operation("modify") or not self._allow_operation("copy"):
             return
@@ -3583,10 +3754,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "拆分", "工作区没有页面")
             return
         try:
-            if self.split_each.isChecked():
-                groups = [[i] for i in range(len(self.ws.pages))]
-            else:
-                groups = parse_range_segments(self.split_range.text(), len(self.ws.pages))
+            groups = self._split_groups()
         except ValueError as exc:
             QMessageBox.information(self, "拆分", str(exc))
             return
@@ -3788,18 +3956,20 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.confirm_leave():
+            self.search_bar.cancel()
             self._reading_timer.stop()
             self._preview_timer.stop()
             self._detail_timer.stop()
+            if hasattr(self, "arrange_view"):
+                self.arrange_view._drop_motion.stop()
+                self.arrange_view._drop_fade.stop()
             self._neighbor_pending.clear()
             self._preview_key = None
             self._detail_key = None
             if hasattr(self, "annotation_tools"):
                 self.annotation_tools.deactivate()
-                try:
-                    self.preview_view.viewport().removeEventFilter(self.annotation_tools)
-                except Exception:
-                    pass
+                self.annotation_tools.remove_view_filters()
+            QThreadPool.globalInstance().waitForDone(1000)
             run_operation(self, "关闭文档", lambda progress: self.store.close_all())
             event.accept()
         else:

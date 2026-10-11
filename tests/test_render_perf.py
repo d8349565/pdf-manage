@@ -56,6 +56,35 @@ def _settle(qapp):
     qapp.processEvents()
 
 
+def test_detail_reuses_covered_image_and_rerenders_when_cleared(window, tmp_path, qapp, monkeypatch):
+    source = tmp_path / "detail.pdf"
+    _make_pdf(source, n=1)
+    assert window._load_one(str(source))
+    window.refresh()
+    _settle(qapp)
+    window._zoom = 4
+    window._apply_view_zoom()
+    view = window.preview_view
+    page = window.ws.pages[0]
+    scale = view.transform().m11() * max(view.devicePixelRatioF(), 1.0)
+    window._preview_image = QImage(80, 100, QImage.Format.Format_RGB32)
+    window._preview_key = (*page.render_key, 80)
+    window._preview_busy = False
+    window._detail_key = (*page.render_key, (0, 0, 300, 400), scale)
+    window._detail_busy = False
+    image = QImage(int(300 * scale), int(400 * scale), QImage.Format.Format_RGB32)
+    view.set_detail(image, (0, 0), scale)
+    jobs = []
+    from types import SimpleNamespace
+    with monkeypatch.context() as patch:
+        patch.setattr(QThreadPool, "globalInstance", lambda: SimpleNamespace(start=lambda *args: jobs.append(args)))
+        window._request_detail()
+        assert not jobs and not window._detail_busy
+        view.clear_detail()
+        window._request_detail()
+        assert len(jobs) == 1 and window._detail_busy
+
+
 def test_render_width_matches_request_for_every_rotation(qapp, tmp_path):
     src = tmp_path / "rot.pdf"
     _make_pdf(src)

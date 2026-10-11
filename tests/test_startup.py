@@ -48,6 +48,7 @@ app.processEvents()
 win.ws.reset()
 win.store.close_all()
 win.close()
+app.processEvents()
 """, str(source)], cwd=Path(__file__).resolve().parents[1],
         env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
         capture_output=True, text=True, timeout=30)
@@ -132,6 +133,8 @@ def test_status_widgets_are_registered_once_while_hidden(qapp, monkeypatch):
     win._update_render_progress()
     assert win.render_label.isHidden()
     assert win.render_progress.isHidden()
+    assert win.render_label.sizePolicy().retainSizeWhenHidden()
+    assert win.render_progress.sizePolicy().retainSizeWhenHidden()
     win.close()
 
 

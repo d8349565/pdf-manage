@@ -32,6 +32,10 @@ python -m venv .venv
 
 ## 验证
 
+安装器的 `pdfcontext` 选项按当前用户登记 PDF 右键入口。拆分使用 `--split-pdf`；合并由 `--pdf-shell-server` 进程外 COM 接收完整选区，每次调用打开独立窗口。窗口全关后空闲 60 秒退出；升级取消该选项或卸载会清理两项入口及专用 CLSID。
+
+源码运行也可用 `python -m app --split-pdf "输入.pdf"` 或 `python -m app --merge-pdf "一.pdf" "二.pdf"` 检查入口预填行为。`tests/test_shell_split.py` 使用合成 PDF 检查入口加载、每 N 页拆分、来源保护和窗口正常退出；页面插入回归见 `tests/test_insert_pages.py`。资源管理器多选与安装卸载需要重新构建安装包实机验收。本轮检查与验收项目见 `docs/ACCEPTANCE.md` 顶部。
+
 ```powershell
 .venv\Scripts\python.exe -m compileall -q app packaging
 .venv\Scripts\python.exe -m pytest

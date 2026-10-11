@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication
 # 24×24 outline glyphs, 1.5px stroke, 3px inset so they stay crisp at toolbar size.
 # Metaphors: document for PDF, tray-arrow for save, copy for save-as.
 _PATHS: dict[str, str] = {
+    "search": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
     "folder-open": (
         '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>'
         '<path d="M14 3v5h5"/>'

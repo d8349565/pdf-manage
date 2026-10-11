@@ -8,6 +8,7 @@ from app import APP_NAME
 APP_REG_NAME = "PDFManage"
 # 保留既有注册标识，以便品牌更新后仍沿用已有的 PDF 打开方式。
 PROG_ID = "PDFManage.Document"
+PDF_MERGE_CLSID = "{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}"
 DEFAULT_APPS_URL = "ms-settings:defaultapps?registeredAppUser=PDFManage"
 
 

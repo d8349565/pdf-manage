@@ -283,11 +283,11 @@ def apply_edits(page, edits):
                 annot.set_info(content=edit.text)
             elif edit.kind == "move":
                 new_pt = p.Point(edit.points[0])
+                if not all(math.isfinite(v) for v in new_pt):
+                    raise ValueError("批注位置无效。")
                 r = annot.rect
-                try:
-                    annot.set_rect(p.Rect(new_pt.x, new_pt.y, new_pt.x + r.width, new_pt.y + r.height))
-                except Exception:
-                    pass
+                if annot.set_rect(p.Rect(new_pt.x, new_pt.y, new_pt.x + r.width, new_pt.y + r.height)) is False:
+                    raise ValueError("当前批注无法移动，本次修改未应用。")
             else:
                 annot.set_colors(stroke=edit.color)
                 annot.set_border(width=edit.width)
