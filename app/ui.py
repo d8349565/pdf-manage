@@ -1452,6 +1452,36 @@ class _HoverIconButton(QToolButton):
         super().leaveEvent(event)
 
 
+class ElidedTitleLabel(QLabel):
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__("", parent)
+        self._full_text = text
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(40)
+        self._update_elided()
+
+    def setFullText(self, text: str) -> None:
+        self._full_text = text
+        self.setToolTip(text)
+        self._update_elided()
+
+    def fullText(self) -> str:
+        return self._full_text
+
+    def _update_elided(self) -> None:
+        avail_w = max(20, self.width() - 8)
+        elided = self.fontMetrics().elidedText(self._full_text, Qt.TextElideMode.ElideMiddle, avail_w)
+        super().setText(elided)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_elided()
+
+    def paintEvent(self, event) -> None:
+        self._update_elided()
+        super().paintEvent(event)
+
+
 class TitleBar(QWidget):
     def __init__(self, host: MainWindow) -> None:
         super().__init__(host)
@@ -1460,7 +1490,7 @@ class TitleBar(QWidget):
         self.setFixedHeight(40)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 0, 0, 0)
-        lay.setSpacing(0)
+        lay.setSpacing(6)
         mark = QLabel()
         mark.setPixmap(brand_icon().pixmap(QSize(18, 18)))
         mark.setFixedWidth(28)
@@ -1471,7 +1501,7 @@ class TitleBar(QWidget):
         host._menubar.setNativeMenuBar(False)
         host._menubar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         lay.addWidget(host._menubar)
-        host.title_label = QLabel(f"{APP_NAME} v{__version__}（吾爱破解）")
+        host.title_label = ElidedTitleLabel(f"{APP_NAME} v{__version__}（吾爱破解）", self)
         host.title_label.setObjectName("windowTitle")
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -2483,21 +2513,28 @@ class MainWindow(QMainWindow):
 
     def setWindowTitle(self, title: str) -> None:
         super().setWindowTitle(title)
-        if getattr(self, "title_label", None) is not None:
-            self.title_label.setToolTip(title)
-            self._elide_title()
+        label = getattr(self, "title_label", None)
+        if label is not None:
+            if hasattr(label, "setFullText"):
+                label.setFullText(title)
+            else:
+                label.setToolTip(title)
+                self._elide_title()
 
     def _elide_title(self) -> None:
         label = getattr(self, "title_label", None)
         if label is None:
             return
-        label.setText(
-            label.fontMetrics().elidedText(
-                self.windowTitle(),
-                Qt.TextElideMode.ElideMiddle,
-                max(48, label.width()),
+        if hasattr(label, "setFullText"):
+            label.setFullText(self.windowTitle())
+        else:
+            label.setText(
+                label.fontMetrics().elidedText(
+                    self.windowTitle(),
+                    Qt.TextElideMode.ElideMiddle,
+                    max(48, label.width()),
+                )
             )
-        )
 
     def _toggle_max(self) -> None:
         if self.isMaximized():

@@ -10,13 +10,78 @@ from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFrame, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QMenu, QMessageBox, QPushButton, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit, QToolButton, QToolTip, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.icons import toolbar_icon
 from app.pdfio import PdfError
 from app.progress import run_operation
 from app.workspace import OutlineEntry, PageEdit
+
+
+class NoteViewerDialog(QDialog):
+    def __init__(self, parent, content: str, can_edit: bool = True):
+        super().__init__(parent)
+        self.setWindowTitle("便签备注")
+        self.resize(380, 260)
+        self.setStyleSheet("""
+            QDialog { background: #FFFFFF; }
+            QLabel#noteHeader { color: #0F766E; font-size: 14px; font-weight: 600; }
+            QTextEdit { border: 1.5px solid #FDE047; border-radius: 8px; padding: 10px; font-size: 13px; color: #713F12; background: #FEFCE8; }
+            QPushButton { min-height: 28px; padding: 0 12px; font-size: 12px; border-radius: 6px; }
+            QPushButton#saveBtn { background: #0F766E; color: #FFFFFF; font-weight: 600; border: none; }
+            QPushButton#saveBtn:hover { background: #0D9488; }
+            QPushButton#deleteBtn { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+            QPushButton#deleteBtn:hover { background: #FEE2E2; }
+            QPushButton#closeBtn { background: #F3F4F6; color: #4B5563; border: 1px solid #E5E7EB; }
+            QPushButton#closeBtn:hover { background: #E5E7EB; }
+        """)
+        self.action = None
+        self.new_text = content
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        header = QLabel("📌 便签备注内容")
+        header.setObjectName("noteHeader")
+        layout.addWidget(header)
+
+        self.editor = QTextEdit(content)
+        self.editor.setReadOnly(not can_edit)
+        self.editor.setPlaceholderText("请输入便签内容…")
+        layout.addWidget(self.editor, 1)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        if can_edit:
+            self.delete_btn = QPushButton("删除便签")
+            self.delete_btn.setObjectName("deleteBtn")
+            self.delete_btn.clicked.connect(self._on_delete)
+            btn_layout.addWidget(self.delete_btn)
+
+            btn_layout.addStretch()
+
+            self.save_btn = QPushButton("保存修改")
+            self.save_btn.setObjectName("saveBtn")
+            self.save_btn.clicked.connect(self._on_save)
+            btn_layout.addWidget(self.save_btn)
+        else:
+            btn_layout.addStretch()
+
+        close_btn = QPushButton("关闭")
+        close_btn.setObjectName("closeBtn")
+        close_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+    def _on_save(self):
+        self.action = "save"
+        self.new_text = self.editor.toPlainText().strip()
+        self.accept()
+
+    def _on_delete(self):
+        self.action = "delete"
+        self.accept()
 
 
 class OutlinePanel(QWidget):
@@ -264,7 +329,7 @@ class AnnotationTools(QWidget):
         bar_layout.addWidget(self.annotations)
 
         self.annotation_actions = []
-        for title, callback in (("应用样式", self.style), ("改备注", self.note_text), ("删除", self.delete)):
+        for title, callback in (("应用样式", self.style), ("查看/改备注", self.note_text), ("删除", self.delete)):
             button = QPushButton(title, self.bar)
             button.setFixedHeight(30)
             button.clicked.connect(callback)
@@ -392,10 +457,42 @@ class AnnotationTools(QWidget):
         return True
 
     def sync_annotation_actions(self):
-        selected = self.annotations.currentData() is not None
+        selected_id = self.annotations.currentData()
+        selected = selected_id is not None
         for button in getattr(self, "annotation_actions", ()):
             button.setEnabled(selected)
-            button.setToolTip("" if selected else "先点选页面上的批注")
+            button.setToolTip("" if selected else "先在页面或下拉框中选中批注")
+        if selected and self.snapshot and self.snapshot.get("annotations"):
+            annot = next((a for a in self.snapshot["annotations"] if a["id"] == selected_id), None)
+            if annot and annot.get("content"):
+                self.feedback.setText(f"便签内容：「{annot['content']}」；点击「查看/改备注」可编辑")
+
+    def find_annotation_at(self, point):
+        import pymupdf as p
+        if not self.snapshot or not self.snapshot.get("annotations"):
+            return None
+        local = self.canonical(point)
+        for item in reversed(self.snapshot["annotations"]):
+            rect = p.Rect(item["rect"])
+            expanded = p.Rect(rect.x0 - 6, rect.y0 - 6, rect.x1 + 6, rect.y1 + 6)
+            if expanded.contains(local):
+                return item
+        return None
+
+    def open_note_dialog(self, identifier: str):
+        if not self.snapshot or not self.snapshot.get("annotations"):
+            return
+        annot = next((a for a in self.snapshot["annotations"] if a["id"] == identifier), None)
+        if not annot:
+            return
+        content = annot.get("content", "")
+        can_edit = self.host._allow_operation("annotate")
+        dialog = NoteViewerDialog(self, content, can_edit=can_edit)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.action == "save" and dialog.new_text != content:
+                self.commit(PageEdit("note_text", annotation_id=identifier, text=dialog.new_text))
+            elif dialog.action == "delete":
+                self.commit(PageEdit("delete", annotation_id=identifier))
 
     def clear_overlay(self):
         if self.overlay is not None:
@@ -407,8 +504,6 @@ class AnnotationTools(QWidget):
         if watched is not self.view.viewport() or not self.isVisible():
             return False
         kind = self.tool.currentData()
-        if kind == "browse":
-            return False
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             self._close_inline_replace()
             self.clear_overlay()
@@ -423,6 +518,40 @@ class AnnotationTools(QWidget):
                     return False
                 if event.type() == QEvent.Type.MouseButtonPress:
                     self._close_inline_replace()
+
+        # 便签悬停提示
+        if event.type() == QEvent.Type.MouseMove and not self.stroke:
+            try:
+                point = self.view.mapToScene(event.position().toPoint())
+                index = self.view.page_at_y(point.y())
+                if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
+                    if self.ensure_snapshot():
+                        hit_annot = self.find_annotation_at(point)
+                        if hit_annot:
+                            content = hit_annot.get("content") or ""
+                            kind_name = "便签" if hit_annot.get("kind") == 0 else "批注"
+                            tip = f"📌 {kind_name}备注：\n{content}" if content else f"📌 {kind_name}（暂无内容）"
+                            QToolTip.showText(event.globalPosition().toPoint(), tip, self.view.viewport())
+                        else:
+                            QToolTip.hideText()
+            except Exception:
+                pass
+
+        # 便签点击查看/编辑
+        if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
+            if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages:
+                point = self.view.mapToScene(event.position().toPoint())
+                index = self.view.page_at_y(point.y())
+                if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
+                    if self.ensure_snapshot():
+                        hit_annot = self.find_annotation_at(point)
+                        if hit_annot and (hit_annot.get("kind") == 0 or hit_annot.get("content")):
+                            self.annotations.setCurrentIndex(self.annotations.findData(hit_annot["id"]))
+                            self.open_note_dialog(hit_annot["id"])
+                            return True
+
+        if kind == "browse":
+            return False
 
         if event.type() not in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease):
             return False
@@ -728,7 +857,4 @@ class AnnotationTools(QWidget):
         identifier = self.annotations.currentData()
         if not identifier:
             return
-        original = next((a["content"] for a in self.snapshot["annotations"] if a["id"] == identifier), "")
-        text, accepted = QInputDialog.getMultiLineText(self, "修改备注", "备注内容", original)
-        if accepted:
-            self.commit(PageEdit("note_text", annotation_id=identifier, text=text))
+        self.open_note_dialog(identifier)

@@ -721,3 +721,39 @@ def test_replacement_allows_longer_text_when_space_permits(qapp, tmp_path):
     store.close_all()
 
 
+def test_elided_title_label_adapts_to_window_shrink(qapp):
+    from app.ui import ElidedTitleLabel
+    long_title = "演示材料_非常非常长的一个测试文件名_待合并附件.pdf — 纸序 PDF v0.2.2 (吾爱破解)"
+    lbl = ElidedTitleLabel(long_title)
+    lbl.resize(800, 30)
+    lbl._update_elided()
+    assert lbl.fullText() == long_title
+    full_text_rendered = lbl.text()
+
+    # 缩小至 150 像素宽
+    lbl.resize(150, 30)
+    lbl._update_elided()
+    shrunk_rendered = lbl.text()
+    assert len(shrunk_rendered) < len(full_text_rendered)
+    assert "..." in shrunk_rendered or "…" in shrunk_rendered
+
+
+def test_note_viewer_dialog_and_interaction(qapp):
+    from app.editingui import NoteViewerDialog
+    content = "这是一条重要的测试便签备注内容"
+    dialog = NoteViewerDialog(None, content, can_edit=True)
+    assert dialog.editor.toPlainText() == content
+    assert dialog.editor.isReadOnly() is False
+
+    # 模拟修改
+    dialog.editor.setPlainText("修改后的便签内容")
+    dialog._on_save()
+    assert dialog.action == "save"
+    assert dialog.new_text == "修改后的便签内容"
+
+    # 模拟删除
+    dialog2 = NoteViewerDialog(None, content, can_edit=True)
+    dialog2._on_delete()
+    assert dialog2.action == "delete"
+
+
