@@ -536,13 +536,13 @@ class AnnotationTools(QWidget):
         container = QWidget(self.view.viewport())
         container.setObjectName("inlineReplace")
         container.setStyleSheet(
-            "QWidget#inlineReplace { background: #FFFFFF; border: 2px solid #0F766E; border-radius: 6px; } "
-            "QLineEdit { border: none; background: transparent; font-size: 13px; color: #134E4A; padding: 2px 4px; } "
-            "QPushButton { min-height: 22px; max-height: 22px; padding: 0 8px; font-size: 12px; border-radius: 4px; } "
-            "QPushButton#apply { background: #0F766E; color: #FFFFFF; font-weight: 600; border: none; } "
+            "QWidget#inlineReplace { background: #FFFFFF; border: 2px solid #0F766E; border-radius: 8px; } "
+            "QLineEdit { border: none; background: transparent; font-size: 13px; color: #134E4A; padding: 2px 6px; } "
+            "QPushButton { min-height: 24px; max-height: 24px; font-size: 12px; border-radius: 5px; } "
+            "QPushButton#apply { background: #0F766E; color: #FFFFFF; font-weight: 600; padding: 0 10px; border: none; } "
             "QPushButton#apply:hover { background: #0D9488; } "
-            "QPushButton#cancel { background: #F3F6F5; color: #4D6B67; border: 1px solid #D7E8E4; } "
-            "QPushButton#cancel:hover { background: #E2EEEC; }"
+            "QPushButton#cancel { background: #F3F4F6; color: #4B5563; border: 1px solid #D1D5DB; padding: 0 6px; } "
+            "QPushButton#cancel:hover { background: #E5E7EB; }"
         )
         layout = QHBoxLayout(container)
         layout.setContentsMargins(4, 2, 4, 2)
@@ -563,9 +563,15 @@ class AnnotationTools(QWidget):
         cancel_btn.setToolTip("取消 (Esc)")
         layout.addWidget(cancel_btn)
 
-        total_w = max(vw + 90, 160)
-        total_h = max(vh + 8, 32)
-        container.setGeometry(vx - 4, vy - 4, total_w, total_h)
+        total_w = max(vw + 120, 240)
+        total_h = max(vh + 12, 34)
+        vp_width = self.view.viewport().width()
+        if total_w > vp_width - 16:
+            total_w = max(vp_width - 16, 200)
+        vx_pos = max(8, min(int(vx - 6), vp_width - total_w - 8))
+        vy_pos = max(8, int(vy + (vh - total_h) / 2))
+
+        container.setGeometry(vx_pos, vy_pos, total_w, total_h)
         container.raise_()
         container.show()
         edit_input.setFocus()
@@ -627,7 +633,8 @@ class AnnotationTools(QWidget):
                 for block in raw_data.get("blocks", ()):
                     for line in block.get("lines", ()):
                         box = p.Rect(line["bbox"])
-                        if box.contains(click_pt) or box.distance_to_point(click_pt) < 10:
+                        expanded = p.Rect(box.x0 - 8, box.y0 - 8, box.x1 + 8, box.y1 + 8)
+                        if expanded.contains(click_pt):
                             area = box
                             selected = selected_lines(raw_data, area)
                             break
