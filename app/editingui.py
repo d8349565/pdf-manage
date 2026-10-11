@@ -5,11 +5,11 @@ from dataclasses import replace
 import math
 import uuid
 
-from PyQt6.QtCore import QEvent, QPointF, QSize, Qt
+from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, QTimer, Qt
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFrame, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
+    QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit, QToolButton, QToolTip, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -234,6 +234,257 @@ class OutlinePanel(QWidget):
         menu.exec(position)
 
 
+class MoveHandleButton(QPushButton):
+    def __init__(self, text, hover_bar):
+        super().__init__(text, hover_bar)
+        self.hover_bar = hover_bar
+        self._drag_start_pos = None
+        self._dragging = False
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setToolTip("按住拖动以移动批注，或点击后点选新位置")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_pos = event.globalPosition().toPoint()
+            self._dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton and self._drag_start_pos:
+            delta = event.globalPosition().toPoint() - self._drag_start_pos
+            if not self._dragging and delta.manhattanLength() > 6:
+                self._dragging = True
+            if self._dragging:
+                delta_move = event.globalPosition().toPoint() - self._drag_start_pos
+                self._drag_start_pos = event.globalPosition().toPoint()
+                self.hover_bar.move(self.hover_bar.pos() + delta_move)
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._dragging:
+                self._dragging = False
+                self._drag_start_pos = None
+                v_pt = self.hover_bar.pos() + event.position().toPoint()
+                scene_pt = self.hover_bar.tools.view.mapToScene(v_pt)
+                canonical_pt = self.hover_bar.tools.canonical(scene_pt)
+                self.hover_bar.tools.move_annot_to(self.hover_bar.annot_id, canonical_pt)
+                self.hover_bar.hide()
+                return
+            self._drag_start_pos = None
+        super().mouseReleaseEvent(event)
+
+
+class AnnotationHoverBar(QFrame):
+    def __init__(self, parent_viewport, tools):
+        vp = parent_viewport if isinstance(parent_viewport, QWidget) else None
+        super().__init__(vp)
+        self.tools = tools
+        self.annot = None
+        self.annot_id = None
+        self.page_index = None
+
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
+
+        self.setObjectName("annotHoverBar")
+        self.setStyleSheet("""
+            QFrame#annotHoverBar {
+                background: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+            }
+            QLabel#hoverTitle {
+                font-size: 11px;
+                font-weight: 600;
+                color: #854D0E;
+            }
+            QLabel#hoverContent {
+                font-size: 12px;
+                line-height: 1.4;
+                color: #1F2937;
+                background: #FEFCE8;
+                border: 1px solid #FEF08A;
+                border-radius: 6px;
+                padding: 6px 8px;
+            }
+            QPushButton {
+                min-height: 24px;
+                max-height: 24px;
+                font-size: 12px;
+                border-radius: 5px;
+                padding: 0 8px;
+            }
+            QPushButton#editBtn {
+                background: #0F766E;
+                color: #FFFFFF;
+                font-weight: 600;
+                border: none;
+            }
+            QPushButton#editBtn:hover {
+                background: #0D9488;
+            }
+            QPushButton#moveBtn {
+                background: #F3F4F6;
+                color: #374151;
+                border: 1px solid #D1D5DB;
+            }
+            QPushButton#moveBtn:hover {
+                background: #E5E7EB;
+            }
+            QPushButton#styleBtn {
+                background: #F3F4F6;
+                color: #374151;
+                border: 1px solid #D1D5DB;
+            }
+            QPushButton#styleBtn:hover {
+                background: #E5E7EB;
+            }
+            QPushButton#deleteBtn {
+                background: #FEF2F2;
+                color: #DC2626;
+                border: 1px solid #FECACA;
+            }
+            QPushButton#deleteBtn:hover {
+                background: #FEE2E2;
+            }
+        """)
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(12)
+        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setOffset(0, 2)
+        self.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        self.content_box = QWidget(self)
+        c_layout = QVBoxLayout(self.content_box)
+        c_layout.setContentsMargins(0, 0, 0, 0)
+        c_layout.setSpacing(4)
+
+        self.title_label = QLabel("📌 便签备注", self.content_box)
+        self.title_label.setObjectName("hoverTitle")
+        c_layout.addWidget(self.title_label)
+
+        self.content_label = QLabel(self.content_box)
+        self.content_label.setObjectName("hoverContent")
+        self.content_label.setWordWrap(True)
+        self.content_label.setMaximumWidth(280)
+        c_layout.addWidget(self.content_label)
+
+        layout.addWidget(self.content_box)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(4)
+
+        self.edit_btn = QPushButton("✏️ 编辑", self)
+        self.edit_btn.setObjectName("editBtn")
+        self.edit_btn.clicked.connect(self._on_edit)
+        btn_layout.addWidget(self.edit_btn)
+
+        self.move_btn = MoveHandleButton("⠿ 拖动", self)
+        self.move_btn.setObjectName("moveBtn")
+        self.move_btn.clicked.connect(self._on_move_click)
+        btn_layout.addWidget(self.move_btn)
+
+        self.style_btn = QPushButton("🎨 样式", self)
+        self.style_btn.setObjectName("styleBtn")
+        self.style_btn.setToolTip("应用当前选择的颜色与线宽")
+        self.style_btn.clicked.connect(self._on_style)
+        btn_layout.addWidget(self.style_btn)
+
+        self.delete_btn = QPushButton("🗑️ 删除", self)
+        self.delete_btn.setObjectName("deleteBtn")
+        self.delete_btn.clicked.connect(self._on_delete)
+        btn_layout.addWidget(self.delete_btn)
+
+        layout.addLayout(btn_layout)
+        self.hide()
+
+    def enterEvent(self, event):
+        if self._hide_timer.isActive():
+            self._hide_timer.stop()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if not getattr(self.move_btn, "_dragging", False):
+            self._hide_timer.start(250)
+        super().leaveEvent(event)
+
+    def show_for_annot(self, annot, page_index):
+        import pymupdf as p
+        self._hide_timer.stop()
+        self.annot = annot
+        self.annot_id = annot["id"]
+        self.page_index = page_index
+
+        content = (annot.get("content") or "").strip()
+        kind = annot.get("kind", -1)
+        names = {0: "便签", 2: "文本", 3: "线条", 4: "矩形", 5: "椭圆", 8: "高亮", 9: "下划线", 15: "画笔"}
+        kind_name = names.get(kind, "批注")
+
+        if content or kind == 0:
+            self.content_box.show()
+            self.title_label.setText(f"📌 {kind_name}备注")
+            self.content_label.setText(content if content else "（暂无备注内容，点击编辑添加）")
+            self.edit_btn.setText("✏️ 编辑")
+        else:
+            self.content_box.hide()
+            self.edit_btn.setText("✏️ 添加备注")
+
+        self.move_btn.setVisible(kind in (0, 4))
+
+        self.adjustSize()
+        self.layout().activate()
+
+        matrix = p.Matrix(self.tools.snapshot["matrix"])
+        local_rect = p.Rect(annot["rect"]) * matrix
+        page_top = self.tools.view.page_rects[page_index].topLeft()
+        scene_rect = QRectF(page_top.x() + local_rect.x0, page_top.y() + local_rect.y0,
+                            max(local_rect.width, 16), max(local_rect.height, 16))
+        v_tl = self.tools.view.mapFromScene(scene_rect.topLeft())
+        v_br = self.tools.view.mapFromScene(scene_rect.bottomRight())
+        annot_vp_rect = QRect(v_tl, v_br).normalized()
+
+        w = self.sizeHint().width()
+        h = self.sizeHint().height()
+        bar_x = annot_vp_rect.center().x() - w // 2
+        bar_y = annot_vp_rect.top() - h - 6
+        if bar_y < 8:
+            bar_y = annot_vp_rect.bottom() + 6
+
+        vp_width = self.tools.view.viewport().width()
+        vp_height = self.tools.view.viewport().height()
+        bar_x = max(8, min(bar_x, vp_width - w - 8))
+        bar_y = max(8, min(bar_y, vp_height - h - 8))
+
+        self.move(bar_x, bar_y)
+        self.show()
+        self.raise_()
+
+    def _on_edit(self):
+        self.hide()
+        self.tools.open_note_dialog(self.annot_id)
+
+    def _on_move_click(self):
+        self.hide()
+        self.tools.start_move_annot(self.annot_id)
+
+    def _on_style(self):
+        self.hide()
+        self.tools.apply_style_to(self.annot_id)
+
+    def _on_delete(self):
+        self.hide()
+        self.tools.delete_annot(self.annot_id)
+
+
 class AnnotationTools(QWidget):
     TOOL_DEFS = (
         ("browse", "mouse-pointer", "浏览／移动"),
@@ -317,15 +568,17 @@ class AnnotationTools(QWidget):
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.VLine)
         sep2.setStyleSheet("color: #E2EEEC; margin: 4px 2px;")
+        sep2.hide()
         bar_layout.addWidget(sep2)
 
-        # Annotation picker & actions
+        # Annotation picker & actions (hidden to keep toolbar minimal; actions shown on hover)
         self.annotations = QComboBox(self.bar)
         self.annotations.addItem("当前页批注", None)
         self.annotations.setAccessibleName("当前页面批注")
         self.annotations.setMinimumWidth(140)
         self.annotations.setFixedHeight(30)
         self.annotations.currentIndexChanged.connect(self.sync_annotation_actions)
+        self.annotations.hide()
         bar_layout.addWidget(self.annotations)
 
         self.annotation_actions = []
@@ -335,6 +588,7 @@ class AnnotationTools(QWidget):
             button.clicked.connect(callback)
             button.setEnabled(False)
             button.setToolTip("先在页面或下拉框中选中批注")
+            button.hide()
             self.annotation_actions.append(button)
             bar_layout.addWidget(button)
 
@@ -355,6 +609,10 @@ class AnnotationTools(QWidget):
         root_layout.addWidget(self.bar)
         self._update_color_button_style()
         self.view.viewport().installEventFilter(self)
+        self.hover_bar = AnnotationHoverBar(self.view.viewport(), self)
+        self._moving_annot_id = None
+        if hasattr(self.view, "view_changed"):
+            self.view.view_changed.connect(self.hover_bar.hide)
 
     def _on_tool_combo_changed(self, index):
         if 0 <= index < len(self.tool_buttons):
@@ -383,7 +641,16 @@ class AnnotationTools(QWidget):
             pass
         self.view.viewport().installEventFilter(self)
 
+    def _set_view_cursor(self, cursor):
+        vp = self.view.viewport() if hasattr(self.view, "viewport") else None
+        if vp and hasattr(vp, "setCursor"):
+            vp.setCursor(cursor)
+
     def deactivate(self):
+        self._moving_annot_id = None
+        self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+        if hasattr(self, "hover_bar"):
+            self.hover_bar.hide()
         self._close_inline_replace()
         self.tool.setCurrentIndex(0)
         self.clear_overlay()
@@ -404,6 +671,10 @@ class AnnotationTools(QWidget):
 
     def choose_tool(self):
         try:
+            self._moving_annot_id = None
+            self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+            if hasattr(self, "hover_bar"):
+                self.hover_bar.hide()
             self._close_inline_replace()
             kind = self.tool.currentData()
             self.clear_overlay()
@@ -461,11 +732,7 @@ class AnnotationTools(QWidget):
         selected = selected_id is not None
         for button in getattr(self, "annotation_actions", ()):
             button.setEnabled(selected)
-            button.setToolTip("" if selected else "先在页面或下拉框中选中批注")
-        if selected and self.snapshot and self.snapshot.get("annotations"):
-            annot = next((a for a in self.snapshot["annotations"] if a["id"] == selected_id), None)
-            if annot and annot.get("content"):
-                self.feedback.setText(f"便签内容：「{annot['content']}」；点击「查看/改备注」可编辑")
+            button.setToolTip("" if selected else "先在页面中选中批注")
 
     def find_annotation_at(self, point):
         import pymupdf as p
@@ -495,6 +762,8 @@ class AnnotationTools(QWidget):
                 self.commit(PageEdit("delete", annotation_id=identifier))
 
     def clear_overlay(self):
+        if hasattr(self, "hover_bar"):
+            self.hover_bar.hide()
         if self.overlay is not None:
             self.view._scene.removeItem(self.overlay)
         self.overlay = None
@@ -505,9 +774,27 @@ class AnnotationTools(QWidget):
             return False
         kind = self.tool.currentData()
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+            if getattr(self, "_moving_annot_id", None):
+                self._moving_annot_id = None
+                self.feedback.setText("已取消移动。")
+                self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+                return True
             self._close_inline_replace()
             self.clear_overlay()
             return True
+
+        if getattr(self, "_moving_annot_id", None):
+            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                point = self.view.mapToScene(event.position().toPoint())
+                index = self.view.page_at_y(point.y())
+                if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
+                    canonical_pt = self.canonical(point)
+                    annot_id = self._moving_annot_id
+                    self._moving_annot_id = None
+                    self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+                    self.move_annot_to(annot_id, canonical_pt)
+                    self.feedback.setText("批注已移动；Ctrl+Z 撤销。")
+                    return True
 
         inline_rep = getattr(self, "_inline_replace", None)
         if inline_rep:
@@ -519,27 +806,40 @@ class AnnotationTools(QWidget):
                 if event.type() == QEvent.Type.MouseButtonPress:
                     self._close_inline_replace()
 
-        # 便签悬停提示
+        hover_bar = getattr(self, "hover_bar", None)
+        if hover_bar and hover_bar.isVisible() and hasattr(event, "position"):
+            pos = event.position().toPoint()
+            if hover_bar.geometry().contains(pos):
+                hover_bar._hide_timer.stop()
+                return False
+
+        # 便签与批注悬停操作条
         if event.type() == QEvent.Type.MouseMove and not self.stroke:
             try:
-                point = self.view.mapToScene(event.position().toPoint())
-                index = self.view.page_at_y(point.y())
-                if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
-                    if self.ensure_snapshot():
-                        hit_annot = self.find_annotation_at(point)
-                        if hit_annot:
-                            content = hit_annot.get("content") or ""
-                            kind_name = "便签" if hit_annot.get("kind") == 0 else "批注"
-                            tip = f"📌 {kind_name}备注：\n{content}" if content else f"📌 {kind_name}（暂无内容）"
-                            QToolTip.showText(event.globalPosition().toPoint(), tip, self.view.viewport())
-                        else:
-                            QToolTip.hideText()
+                pos = event.position().toPoint()
+                if hover_bar and hover_bar.isVisible() and hover_bar.geometry().contains(pos):
+                    hover_bar._hide_timer.stop()
+                else:
+                    point = self.view.mapToScene(pos)
+                    index = self.view.page_at_y(point.y())
+                    if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
+                        if self.ensure_snapshot():
+                            hit_annot = self.find_annotation_at(point)
+                            if hit_annot:
+                                if hover_bar:
+                                    hover_bar.show_for_annot(hit_annot, index)
+                            else:
+                                if hover_bar and hover_bar.isVisible() and not hover_bar._hide_timer.isActive():
+                                    hover_bar._hide_timer.start(250)
+                    else:
+                        if hover_bar and hover_bar.isVisible() and not hover_bar._hide_timer.isActive():
+                            hover_bar._hide_timer.start(250)
             except Exception:
                 pass
 
         # 便签点击查看/编辑
         if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
-            if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages:
+            if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages and not getattr(self, "_moving_annot_id", None):
                 point = self.view.mapToScene(event.position().toPoint())
                 index = self.view.page_at_y(point.y())
                 if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
@@ -843,15 +1143,34 @@ class AnnotationTools(QWidget):
         except (ValueError, PdfError) as exc:
             QMessageBox.information(self, "本次操作未应用", str(exc))
 
+    def delete_annot(self, identifier: str):
+        if identifier:
+            self.commit(PageEdit("delete", annotation_id=identifier))
+
+    def apply_style_to(self, identifier: str):
+        if identifier:
+            self.commit(PageEdit("style", annotation_id=identifier,
+                                 color=(self.color.redF(), self.color.greenF(), self.color.blueF()),
+                                 width=self.width.value()))
+
+    def move_annot_to(self, identifier: str, canonical_pt):
+        if identifier:
+            self.commit(PageEdit("move", points=(tuple(canonical_pt),), annotation_id=identifier))
+
+    def start_move_annot(self, identifier: str):
+        self._moving_annot_id = identifier
+        self.feedback.setText("请在页面点击新位置以放置批注；Esc 取消。")
+        self._set_view_cursor(Qt.CursorShape.CrossCursor)
+
     def delete(self):
         identifier = self.annotations.currentData()
         if identifier:
-            self.commit(PageEdit("delete", annotation_id=identifier))
+            self.delete_annot(identifier)
 
     def style(self):
         identifier = self.annotations.currentData()
         if identifier:
-            self.commit(PageEdit("style", annotation_id=identifier, color=(self.color.redF(), self.color.greenF(), self.color.blueF()), width=self.width.value()))
+            self.apply_style_to(identifier)
 
     def note_text(self):
         identifier = self.annotations.currentData()

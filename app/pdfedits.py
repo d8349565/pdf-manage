@@ -216,7 +216,7 @@ def apply_edits(page, edits):
             page.insert_text(details["origin"], edit.text, fontname=name,
                              fontsize=details["font_size"], color=edit.color)
             continue
-        if edit.kind in ("delete", "style", "note_text"):
+        if edit.kind in ("delete", "style", "note_text", "move"):
             annot = next((a for a in (page.annots() or ()) if a.info.get("id") == edit.annotation_id), None)
             if annot is None:
                 raise ValueError("要修改的批注已不存在。")
@@ -225,6 +225,13 @@ def apply_edits(page, edits):
                 continue
             if edit.kind == "note_text":
                 annot.set_info(content=edit.text)
+            elif edit.kind == "move":
+                new_pt = p.Point(edit.points[0])
+                r = annot.rect
+                try:
+                    annot.set_rect(p.Rect(new_pt.x, new_pt.y, new_pt.x + r.width, new_pt.y + r.height))
+                except Exception:
+                    pass
             else:
                 annot.set_colors(stroke=edit.color)
                 annot.set_border(width=edit.width)

@@ -757,3 +757,90 @@ def test_note_viewer_dialog_and_interaction(qapp):
     assert dialog2.action == "delete"
 
 
+def test_page_number_spinbox_compact_sizing(qapp, tmp_path):
+    from PyQt6.QtCore import Qt
+    from app.ui import MainWindow
+    win = MainWindow()
+    try:
+        assert win.page_number.minimumWidth() == 32
+        assert win.page_number.maximumWidth() == 46
+        assert win.page_number.alignment() == Qt.AlignmentFlag.AlignCenter
+    finally:
+        win.close()
+
+
+def test_annotation_hover_bar_and_clean_toolbar(qapp, tmp_path):
+    from PyQt6.QtCore import QThreadPool
+    from app.ui import MainWindow
+    import pymupdf as p
+    source = tmp_path / "annot_test.pdf"
+    make_pdf(source, count=1)
+    # Add a sticky note
+    with p.open(source) as doc:
+        page = doc[0]
+        a = page.add_text_annot((100, 100), "这是悬浮便签测试")
+        a.update()
+        doc.save(tmp_path / "annot_with_note.pdf")
+
+    win = MainWindow()
+    try:
+        assert win._load_one(str(tmp_path / "annot_with_note.pdf"))
+        win.show()
+        win.refresh()
+        QThreadPool.globalInstance().waitForDone(30000)
+        qapp.processEvents()
+
+        win.open_annotation_tools()
+        tools = win.annotation_tools
+        assert tools.isVisible()
+        assert tools.ensure_snapshot()
+
+        # 图3控件默认已隐藏
+        assert tools.annotations.isHidden()
+        for btn in tools.annotation_actions:
+            assert btn.isHidden()
+
+        # sync_annotation_actions 不再在标题/工具栏中打印长文本
+        tools.annotations.setCurrentIndex(1)
+        assert "这是悬浮便签测试" not in tools.feedback.text()
+
+        # 悬浮在便签位置时触发 hover_bar
+        annot = tools.snapshot["annotations"][0]
+        tools.hover_bar.show_for_annot(annot, 0)
+        assert tools.hover_bar.isVisible()
+        assert "这是悬浮便签测试" in tools.hover_bar.content_label.text()
+        assert tools.hover_bar.edit_btn.isVisible()
+        assert tools.hover_bar.move_btn.isVisible()
+        assert tools.hover_bar.delete_btn.isVisible()
+
+        # 测试移动便签
+        old_rect = annot["rect"]
+        tools.move_annot_to(annot["id"], (220, 260))
+        assert win.ws.pages[0].edits[-1].kind == "move"
+
+        # 验证新位置
+        output = tmp_path / "moved.pdf"
+        win.store.write(win.ws.pages, str(output))
+        with p.open(output) as doc:
+            page = doc[0]
+            new_annot = next(page.annots())
+            assert abs(new_annot.rect.x0 - 220) < 1
+            assert abs(new_annot.rect.y0 - 260) < 1
+
+        # 测试撤销恢复
+        win.ws.undo_stack.undo()
+        win.refresh()
+        win.store.write(win.ws.pages, str(output))
+        with p.open(output) as doc:
+            page = doc[0]
+            restored_annot = next(page.annots())
+            assert abs(restored_annot.rect.x0 - old_rect[0]) < 1
+    finally:
+        QThreadPool.globalInstance().waitForDone(30000)
+        win.ws.reset()
+        win.store.close_all()
+        win.close()
+        qapp.processEvents()
+
+
+
