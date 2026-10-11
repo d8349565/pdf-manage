@@ -82,6 +82,53 @@ def replacement_font(page, text, preferred=""):
     return font, "ZhiXuCJK", cjk_font_buffer()
 
 
+def available_right_boundary(page, raw, area, selected):
+    import pymupdf as p
+    max_right = page.rect.x1 - 12
+    y_min = area.y0 - 2
+    y_max = area.y1 + 2
+
+    # 1. 检查右侧其他文字
+    for block in raw.get("blocks", ()):
+        for line in block.get("lines", ()):
+            for span in line.get("spans", ()):
+                for char in span.get("chars", ()):
+                    bbox = p.Rect(char["bbox"])
+                    if bbox.y1 > y_min and bbox.y0 < y_max:
+                        if (tuple(char["origin"]), char["c"]) not in selected:
+                            if bbox.x0 >= area.x1 - 1 and bbox.x0 < max_right:
+                                max_right = bbox.x0 - 3
+
+    # 2. 检查右侧图片
+    for info in page.get_image_info():
+        ibox = p.Rect(info["bbox"])
+        if ibox.y1 > y_min and ibox.y0 < y_max and ibox.x0 >= area.x1 - 1:
+            if ibox.x0 < max_right:
+                max_right = ibox.x0 - 3
+
+    # 3. 检查右侧垂直边框或表格线
+    for drawing in page.get_drawings():
+        d_rect = p.Rect(drawing.get("rect", (0, 0, 0, 0)))
+        if d_rect.y1 > y_min and d_rect.y0 < y_max:
+            for item in drawing.get("items", ()):
+                kind = item[0]
+                if kind == "l":
+                    p1, p2 = item[1], item[2]
+                    if abs(p1.x - p2.x) < 2 and min(p1.y, p2.y) <= y_max and max(p1.y, p2.y) >= y_min:
+                        line_x = (p1.x + p2.x) / 2
+                        if line_x >= area.x1 - 0.5 and line_x < max_right:
+                            max_right = line_x - 3
+                elif kind == "re":
+                    r = item[1]
+                    if r.y1 >= y_min and r.y0 <= y_max:
+                        if r.x1 >= area.x1 - 0.5 and r.x1 < max_right:
+                            max_right = r.x1 - 3
+                        if r.x0 >= area.x1 - 0.5 and r.x0 < max_right:
+                            max_right = r.x0 - 3
+
+    return max(area.x1, max_right)
+
+
 def prepare_replacement(page, rectangle, text, raw=None):
     import pymupdf as p
     if not text.strip() or "\n" in text or "\r" in text:
@@ -118,15 +165,26 @@ def prepare_replacement(page, rectangle, text, raw=None):
             if any(area.intersects(p.Rect(char[3])) for char in span.get("chars", ())):
                 raise ValueError("选区含隐藏文字层，不能作为原文修正。")
     font, _, _ = replacement_font(page, text, first["font"])
-    if font.text_length(text, fontsize=first["size"]) > area.width + .1:
-        raise ValueError("新文字超出原文字宽度，请缩短文字或转 Word 编辑。")
+    target_size = first["size"]
+    max_right = available_right_boundary(page, raw, area, selected)
+    available_width = max(area.width, max_right - area.x0)
+
+    needed_width = font.text_length(text, fontsize=target_size)
+    if needed_width > available_width + 0.5:
+        # 支持字号自适应微调适配（至多按可用空间缩小至 85%）
+        scale = available_width / needed_width
+        if scale >= 0.85:
+            target_size = first["size"] * scale
+            needed_width = font.text_length(text, fontsize=target_size)
+        else:
+            raise ValueError(f"新文字超出可用空间宽度（可用约 {int(available_width)} pt，需要约 {int(needed_width)} pt），请缩短文字或转 Word 编辑。")
     origin = tuple(chars[0][0]["origin"])
-    if origin[1] - font.ascender * first["size"] < area.y0 - 1 or origin[1] - font.descender * first["size"] > area.y1 + 1:
+    if origin[1] - font.ascender * target_size < area.y0 - 2 or origin[1] - font.descender * target_size > area.y1 + 2:
         raise ValueError("替换字体超出原文字高度，请转 Word 编辑。")
     color = first["color"]
     rgb = tuple(((color >> shift) & 255) / 255 for shift in (16, 8, 0))
     return PageEdit("replace", tuple(area), text=text, color=rgb, details=(
-        ("font", first["font"]), ("font_size", first["size"]), ("origin", origin),
+        ("font", first["font"]), ("font_size", target_size), ("origin", origin),
         ("old_text", "".join(c["c"] for c, _ in chars)),
     ))
 

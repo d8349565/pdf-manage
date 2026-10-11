@@ -688,3 +688,36 @@ def test_annotation_tools_replace_robustness(qapp, tmp_path):
     host.store.close_all()
 
 
+def test_replacement_allows_longer_text_when_space_permits(qapp, tmp_path):
+    from app.pdfio import PdfStore
+    source = tmp_path / "space_test.pdf"
+    doc = p.open()
+    page = doc.new_page(width=600, height=800)
+    page.insert_text((100, 150), "短文本", fontsize=14)
+    doc.save(str(source))
+    doc.close()
+
+    store = PdfStore()
+    ref = store.load(str(source))[0]
+    words = store.text_snapshot(ref)["raw"]
+    chars = [c for b in words["blocks"] for l in b["lines"] for s in l["spans"] for c in s["chars"]]
+    assert chars
+    rect = p.Rect(chars[0]["bbox"])
+    for c in chars[1:]:
+        rect |= p.Rect(c["bbox"])
+
+    # 较长的新文本（原文字长约 42pt，新文字长约 120pt，但右侧有 450pt 空间）
+    longer_text = "短文本加上很长的后续内容2525"
+    prepared = store.prepare_replacement(ref, rect, longer_text)
+    assert prepared.text == longer_text
+    applied = ref.edited(prepared)
+    target = tmp_path / "replaced.pdf"
+    store.write([applied], str(target))
+
+    with p.open(target) as check_doc:
+        text = check_doc[0].get_text()
+        assert longer_text in text
+
+    store.close_all()
+
+
