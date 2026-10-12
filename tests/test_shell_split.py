@@ -120,8 +120,11 @@ def test_split_every_writes_correct_groups_without_changing_source(window, tmp_p
     assert window.split_feedback.text() == f"预计输出 {len(expected)} 个文件"
     output = tmp_path / "output"
     output.mkdir()
+    opened_folders = []
+    monkeypatch.setattr(window, "_open_output_folder", opened_folders.append)
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(output))
     window.split()
+    assert opened_folders == [str(output)]
     text = []
     for index, count in enumerate(expected, 1):
         with pymupdf.open(output / f"source_{index}.pdf") as doc:
@@ -130,6 +133,23 @@ def test_split_every_writes_correct_groups_without_changing_source(window, tmp_p
     assert text == [f"source-{index}" for index in range(1, 7)]
     assert window.ws.pages == before and not window.ws.dirty
     assert Path(source).read_bytes() == original
+
+
+def test_merge_save_opens_output_folder_once(window, tmp_path, monkeypatch):
+    first = make_pdf(tmp_path / "first.pdf")
+    second = make_pdf(tmp_path / "second.pdf", count=3)
+    target = tmp_path / "merged.pdf"
+    opened_folders = []
+    monkeypatch.setattr(window, "_open_output_folder", opened_folders.append)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(target), ""))
+    assert window.open_shell_files([first, second], "merge")
+    assert opened_folders == []
+    assert window.save()
+    assert opened_folders == [str(tmp_path)]
+    with pymupdf.open(target) as doc:
+        assert len(doc) == 5
+    assert window.save()
+    assert opened_folders == [str(tmp_path)]
 
 
 def test_windows_exit_normally_after_loading_and_garbage_collection(tmp_path):

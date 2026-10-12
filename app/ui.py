@@ -577,6 +577,65 @@ QRadioButton::indicator:checked {
     border-radius: 8px;
     background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 #0F766E, stop:0.48 #0F766E, stop:0.52 #FFFFFF, stop:1 #FFFFFF);
 }
+QWidget#splitPanel, QWidget#splitPanel QWidget {
+    font-family: "Microsoft YaHei UI";
+}
+QWidget#splitPanel QRadioButton {
+    min-height: 36px;
+    spacing: 10px;
+    color: #334D49;
+}
+QWidget#splitPanel QRadioButton:checked {
+    color: #134E4A;
+    font-weight: 600;
+}
+QWidget#splitPanel QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #99B2AC;
+    border-radius: 9px;
+}
+QWidget#splitPanel QRadioButton::indicator:hover {
+    border-color: #0F766E;
+}
+QWidget#splitPanel QRadioButton::indicator:checked {
+    border-color: #0F766E;
+}
+QWidget#splitPanel QSpinBox {
+    min-height: 26px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    border-color: #C5D5D2;
+}
+QWidget#splitPanel QSpinBox:focus {
+    border-color: #0F766E;
+}
+QWidget#splitPanel QLineEdit {
+    min-height: 26px;
+    border-radius: 8px;
+}
+QWidget#splitPanel QLineEdit:focus {
+    border-color: #0F766E;
+}
+QLabel#splitFeedback {
+    color: #4D6B67;
+    font-size: 13px;
+    font-weight: 400;
+    padding: 0;
+}
+QPushButton#splitSubmit {
+    min-height: 28px;
+    padding: 6px 12px;
+    border-radius: 8px;
+}
+QPushButton#splitSubmit:hover:enabled {
+    background: #0B6F68;
+    border-color: #0B6F68;
+}
+QPushButton#splitSubmit:pressed:enabled {
+    background: #115E59;
+    border-color: #115E59;
+}
 QListView {
     background: transparent;
     border: none;
@@ -2320,6 +2379,9 @@ class MainWindow(QMainWindow):
         extract.addWidget(self.extract_button)
         extract.addStretch()
         split = section("拆分文件 · 多个 PDF")
+        split.parentWidget().setObjectName("splitPanel")
+        split.setContentsMargins(8, 12, 8, 12)
+        split.setSpacing(8)
         self.split_each = QRadioButton("每页一个文件")
         self.split_every = QRadioButton("每几页一个文件")
         self.split_count = QSpinBox()
@@ -2327,8 +2389,8 @@ class MainWindow(QMainWindow):
         self.split_count.setValue(5)
         self.split_count.setSuffix(" 页")
         self.split_count.setAccessibleName("每个拆分文件的页数")
-        self.split_count.setFixedWidth(68)
-        self.split_count.setFixedHeight(26)
+        self.split_count.setFixedWidth(104)
+        self.split_count.setFixedHeight(36)
         self.split_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.split_count.hide()
         self.split_every.toggled.connect(self.split_count.setVisible)
@@ -2342,10 +2404,9 @@ class MainWindow(QMainWindow):
         split.addWidget(self.split_each)
         interval = QHBoxLayout()
         interval.setContentsMargins(0, 0, 0, 0)
-        interval.setSpacing(6)
-        interval.addWidget(self.split_every)
+        interval.setSpacing(8)
+        interval.addWidget(self.split_every, 1)
         interval.addWidget(self.split_count)
-        interval.addStretch()
         split.addLayout(interval)
         split.addWidget(self.split_range_mode)
         self.split_range = QLineEdit()
@@ -2354,10 +2415,13 @@ class MainWindow(QMainWindow):
         self.split_range.setVisible(False)
         self.split_range_mode.toggled.connect(self.split_range.setVisible)
         split.addWidget(self.split_range)
-        self.split_feedback = self._caption("")
+        split.addSpacing(4)
+        self.split_feedback = QLabel("")
+        self.split_feedback.setObjectName("splitFeedback")
         self.split_feedback.setWordWrap(True)
         split.addWidget(self.split_feedback)
         self.split_button = self._btn("拆分到文件夹…", self.split, icon="split", primary=True)
+        self.split_button.setObjectName("splitSubmit")
         split.addWidget(self.split_button)
         split.addStretch()
         convert = section("表格转 Excel")
@@ -3748,6 +3812,13 @@ class MainWindow(QMainWindow):
                 box.setDetailedText("\n".join(warnings))
             box.exec()
 
+    def _open_output_folder(self, folder: str) -> None:
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(folder))):
+            self.statusBar().showMessage(f"文件已写出，但无法自动打开文件夹：{folder}", 10000)
+
     def save(self, save_as: bool = False) -> bool:
         operation = self.store.write_operation(self.ws.pages, WriteOptions(outline=self.ws.outline))
         if not self._allow_operation(operation):
@@ -3756,6 +3827,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
             return False
         path = self.ws.path
+        merged_output = path is None and bool(self.ws.protected_paths)
         if save_as or not path:
             suggested = path or "未命名.pdf"
             path, _ = QFileDialog.getSaveFileName(self, "保存 PDF", suggested, "PDF (*.pdf)")
@@ -3793,6 +3865,8 @@ class MainWindow(QMainWindow):
             self._show_write_notes((result,))
         except Exception:
             QMessageBox.warning(self, "文件已保存", f"文件已成功保存到：\n{result.path}\n界面刷新未完成，请重新打开该文件查看。")
+        if merged_output:
+            self._open_output_folder(os.path.dirname(result.path))
         return True
 
     def print_document(self) -> None:
@@ -3898,6 +3972,8 @@ class MainWindow(QMainWindow):
             if results is not None:
                 self.statusBar().showMessage(f"已写出 {len(results)} 个文件，工作区未改动")
                 self._show_write_notes(results)
+                if results:
+                    self._open_output_folder(os.path.dirname(results[0].path))
         except PdfError as exc:
             QMessageBox.warning(self, "拆分失败", str(exc) + "\n已完整写出的文件会保留。")
 
