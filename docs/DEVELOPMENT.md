@@ -26,6 +26,7 @@ python -m venv .venv
 | `app/printing.py`、`app/pdf2excel/` | 打印和表格转 Excel |
 | `app/compression.py`、`app/imaging.py` | 压缩与图片转换 |
 | `app/wordconvert.py`、`app/wordui.py` | Word 批量转换 |
+| `app/ocr/`、`app/ocrui.py` | 轻量 OCR 增强子包（独立模块，按需加载） |
 | `app/assets/` | 应用资源 |
 | `packaging/`、`pdf-manage.spec` | 打包、安装器和第三方许可文件 |
 | `tests/` | 回归检查，测试文档由代码生成 |
@@ -55,6 +56,18 @@ python -m venv .venv
 2. 修复问题或小改动递增第三段，新增完整功能递增第二段。
 3. 提交后创建同版本的注释标签，例如程序 `0.1.1` 对应 `v0.1.1`。
 4. 同一标签不得移动或覆盖；程序、EXE 文件属性、安装包和 Git 标签使用同一版本。
+
+## OCR 增强子包（增量开发）
+
+针对扫描 PDF 增加轻量 OCR 能力，遵循 PRD（`docs/issues.md` 中的 ISSUE-07 词条）的红线：
+
+* **不重构** PyMuPDF / PyQt6 架构；OCR 模块走独立子包 `app/ocr/`，按需懒加载推理库。
+* **不污染基础安装包**：ONNX Runtime、OpenCV、模型权重仅在独立 OCR 增强包中分发；增强包安装到 `%LOCALAPPDATA%\ZhiXuPDF\ocr\`，由 `app.ocr.model_manager.check_environment()` 校验。
+* **可搜索 PDF 输出**：使用 `render_mode=3` 写入隐藏文字层，不改变页面可见效果；通过现有 `app.searchui` 链路复用 Ctrl+F 搜索。
+* **MVP 关卡**：在 `docs/ocr/POC-CHECKLIST.md` 中逐项核对；Go/No-Go 通过后再发布 v0.4.0。
+* **依赖锁版本**：`docs/ocr/D0-DEPENDENCIES.md` 记录选型与待 D1 实测后锁定的 RapidOCR / ONNX Runtime 版本。
+
+OCR 子包内部职责见 `app/ocr/__init__.py`，PoC 实测完成后会同步更新本文档与 `docs/issues.md`。
 
 `packaging/check_version.py` 会阻止版本与当前提交标签不一致的 Git 工作区打包。GitHub 源码 ZIP 没有 Git 元数据时，使用源文件中的版本。
 
