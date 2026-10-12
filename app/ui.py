@@ -3740,11 +3740,11 @@ class MainWindow(QMainWindow):
 
     def open_word_converter(self, *, direction="word_to_pdf"):
         from app.wordui import WordConverterWindow
+        # 方向以用户点选的菜单为准，不用当前打开的文件类型改写。
         if direction == "pdf_to_word" and self.ws.path and self.ws.dirty and not self.confirm_leave():
             return
         paths = [self.ws.path] if direction == "pdf_to_word" and self.ws.path else []
         window = WordConverterWindow(paths, direction=direction)
-        window.setStyleSheet(STYLESHEET)
         if not hasattr(self, "_word_windows"):
             self._word_windows = []
         self._word_windows.append(window)

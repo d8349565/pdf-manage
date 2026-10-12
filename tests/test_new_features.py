@@ -498,12 +498,324 @@ def test_word_first_use_decline_does_not_change_settings(qapp, tmp_path, monkeyp
     monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
     window = wordui.WordConverterWindow(direction="pdf_to_word")
     window.table.setRowCount(1)
-    window._set_item(0, 0, str(tmp_path / "source.pdf"), editable=False)
-    window._set_item(0, 1, str(tmp_path / "output.docx"), editable=True)
-    window._set_item(0, 2, "待转换", editable=False)
+    window._set_item(0, 0, str(tmp_path / "source.pdf"))
+    window._set_item(0, 1, str(tmp_path / "output.docx"))
+    window._set_item(0, 2, "待转换")
     window.convert()
     assert not changes
     window.close()
+
+
+def _word_converter_fixture(monkeypatch, wordui, tmp_path, sources, direction="pdf_to_word"):
+    sources = [str(s) for s in sources]
+    monkeypatch.setattr(wordui, "collect_files", lambda *args, **kwargs: (list(sources), []))
+    window = wordui.WordConverterWindow(direction=direction)
+    window.inputs = list(sources)
+    window.rescan()
+    return window
+
+
+def test_word_converter_output_selection_and_defaults(qapp, tmp_path, monkeypatch):
+    import app.wordui as wordui
+    from PyQt6.QtWidgets import QFileDialog
+
+    src_dir = tmp_path / "source_folder"
+    src_dir.mkdir()
+    pdf1 = src_dir / "doc1.pdf"
+    pdf2 = src_dir / "doc2.pdf"
+    pdf1.write_text("dummy", encoding="utf-8")
+    pdf2.write_text("dummy", encoding="utf-8")
+
+    window = _word_converter_fixture(monkeypatch, wordui, tmp_path, [pdf1, pdf2])
+
+    # 1. Defaults to same folder as source file
+    assert window.custom_output_dir is None
+    assert window.table.item(0, 1).text() == str(src_dir / "doc1.docx")
+    assert window.table.item(1, 1).text() == str(src_dir / "doc2.docx")
+    assert "与源文件相同文件夹" in window.output_path.toolTip()
+    assert window.btn_reset_dir.isHidden()
+
+    # 2. Choose unified output directory
+    custom_out = tmp_path / "custom_output"
+    custom_out.mkdir()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(custom_out))
+    window.choose_output_dir()
+
+    assert window.custom_output_dir == custom_out
+    assert window.table.item(0, 1).text() == str(custom_out / "doc1.docx")
+    assert window.table.item(1, 1).text() == str(custom_out / "doc2.docx")
+    assert str(custom_out) in window.output_path.toolTip()
+    assert not window.btn_reset_dir.isHidden()
+
+    # 3. Choose single file output; other rows keep following the unified directory
+    custom_single = tmp_path / "renamed.docx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(custom_single), ""))
+    window.browse_row_target(0)
+    assert window.table.item(0, 1).text() == str(custom_single)
+    assert window.table.item(1, 1).text() == str(custom_out / "doc2.docx")
+    assert "已单独指定保存位置" in window.table.item(0, 1).toolTip()
+
+    # 4. Re-picking the unified directory must not wipe the file the user chose by hand
+    other_out = tmp_path / "other_output"
+    other_out.mkdir()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(other_out))
+    window.choose_output_dir()
+    assert window.table.item(0, 1).text() == str(custom_single)
+    assert window.table.item(1, 1).text() == str(other_out / "doc2.docx")
+
+    # 5. Reset clears both the unified directory and the single-file override
+    window.reset_output_dir()
+    assert window.custom_output_dir is None
+    assert window.table.item(0, 1).text() == str(src_dir / "doc1.docx")
+    assert window.table.item(1, 1).text() == str(src_dir / "doc2.docx")
+    assert window.btn_reset_dir.isHidden()
+
+    # 6. Switch direction
+    window.switch_direction("word_to_pdf")
+    assert window.direction == "word_to_pdf"
+    assert window.target_kind == "PDF"
+    assert window.btn_word_to_pdf.isChecked()
+    window.close()
+
+
+def test_word_converter_keeps_manual_target_and_reports_existing(qapp, tmp_path, monkeypatch):
+    import app.wordui as wordui
+    from PyQt6.QtWidgets import QFileDialog
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    pdf = src_dir / "report.pdf"
+    pdf.write_text("dummy", encoding="utf-8")
+    window = _word_converter_fixture(monkeypatch, wordui, tmp_path, [pdf])
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    chosen = elsewhere / "report.docx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(chosen), ""))
+    window.browse_row_target(0)
+    assert window.table.item(0, 1).text() == str(chosen)
+    assert window.table.item(0, 2).text() == "待转换"
+    assert "已单独指定保存位置" in window.table.item(0, 1).toolTip()
+
+    # Re-scanning keeps the hand-picked destination instead of snapping back to the source folder
+    window.rescan()
+    assert window.table.item(0, 1).text() == str(chosen)
+
+    # An existing output is flagged so the user knows it will be skipped by default
+    chosen.write_text("dummy", encoding="utf-8")
+    window.rescan()
+    assert window.table.item(0, 2).text() == "已有 Word · 默认跳过"
+    window.close()
+
+
+def test_word_converter_rejects_drop_of_other_direction(qapp, tmp_path, monkeypatch):
+    import app.wordui as wordui
+    from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
+    from PyQt6.QtGui import QDropEvent
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    doc = src_dir / "notes.docx"
+    doc.write_text("dummy", encoding="utf-8")
+    window = wordui.WordConverterWindow(direction="pdf_to_word")
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(doc))])
+    event = QDropEvent(QPointF(10, 10), Qt.DropAction.CopyAction, mime,
+                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    window.dropEvent(event)
+
+    # Direction must stay put and the file must not be queued
+    assert window.direction == "pdf_to_word"
+    assert window.inputs == []
+    assert "只接收 PDF 文件或文件夹" in window.summary.text()
+    window.close()
+
+
+def test_word_converter_clear_keeps_chosen_output_dir(qapp, tmp_path, monkeypatch):
+    import app.wordui as wordui
+    from PyQt6.QtWidgets import QFileDialog
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    pdf = src_dir / "report.pdf"
+    pdf.write_text("dummy", encoding="utf-8")
+    window = _word_converter_fixture(monkeypatch, wordui, tmp_path, [pdf])
+
+    chosen = tmp_path / "output"
+    chosen.mkdir()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(chosen))
+    window.choose_output_dir()
+
+    window.clear()
+    assert window.table.rowCount() == 0
+    assert window.custom_output_dir == chosen, "清空清单不该丢掉用户刚选好的输出目录"
+
+    # Switching direction is a different reset: it returns to the same-folder default.
+    window.switch_direction("word_to_pdf")
+    assert window.custom_output_dir is None
+    window.close()
+
+
+def test_path_field_elides_instead_of_stretching(qapp):
+    from app.wordui import PathField
+
+    field = PathField("C:/Users/somebody/a/very/long/path/演示材料/演示材料 第 1 章.docx")
+    field.resize(180, 30)
+    assert "…" in field.text()
+    assert field.text() != field.toolTip()
+    assert field.toolTip().endswith("演示材料 第 1 章.docx")
+    field.setFullText("短路径.docx")
+    assert field.text() == "短路径.docx"
+
+
+def test_word_converter_delete_key_removes_selected_row(qapp, tmp_path, monkeypatch):
+    import app.wordui as wordui
+    from PyQt6.QtCore import Qt, QEvent
+    from PyQt6.QtGui import QKeyEvent
+
+    pdf1 = tmp_path / "a.pdf"
+    pdf2 = tmp_path / "b.pdf"
+    pdf1.write_text("1", encoding="utf-8")
+    pdf2.write_text("2", encoding="utf-8")
+    window = _word_converter_fixture(monkeypatch, wordui, tmp_path, [pdf1, pdf2])
+    assert window.table.rowCount() == 2
+
+    window.table.selectRow(0)
+    key_event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
+    handled = window.eventFilter(window.table, key_event)
+    assert handled is True
+    assert window.table.rowCount() == 1
+    assert window.table.item(0, 0).text() == str(pdf2)
+    window.close()
+
+
+def test_image_import_dialog_delete_key_removes_selected_item(qapp, tmp_path):
+    from app.exportdialogs import ImageImportDialog
+    from PyQt6.QtCore import Qt, QEvent
+    from PyQt6.QtGui import QKeyEvent
+
+    img1 = tmp_path / "1.png"
+    img2 = tmp_path / "2.png"
+    img1.write_bytes(b"dummy")
+    img2.write_bytes(b"dummy")
+
+    dialog = ImageImportDialog()
+    dialog.add_paths([str(img1), str(img2)])
+    assert dialog.files.count() == 2
+
+    dialog.files.setCurrentRow(0)
+    key_event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
+    handled = dialog.eventFilter(dialog.files, key_event)
+    assert handled is True
+    assert dialog.files.count() == 1
+    assert dialog.files.item(0).text() == str(img2.resolve())
+    dialog.close()
+
+
+def test_image_import_dialog_button_states_and_tooltips(qapp, tmp_path):
+    from app.exportdialogs import ImageImportDialog
+
+    dialog = ImageImportDialog()
+    # 1. Empty state: all four reorder buttons are disabled
+    assert not dialog.btn_move_up.isEnabled()
+    assert not dialog.btn_move_down.isEnabled()
+    assert not dialog.btn_remove.isEnabled()
+    assert not dialog.btn_clear.isEnabled()
+
+    # 2. Add two images
+    img1 = tmp_path / "first.png"
+    img2 = tmp_path / "second.jpg"
+    img1.write_bytes(b"data1")
+    img2.write_bytes(b"data2")
+    dialog.add_paths([str(img1), str(img2)])
+    assert dialog.files.count() == 2
+    assert dialog.files.item(0).toolTip() == str(img1.resolve())
+    assert dialog.files.item(1).toolTip() == str(img2.resolve())
+
+    # No row selected initially
+    assert not dialog.btn_move_up.isEnabled()
+    assert not dialog.btn_move_down.isEnabled()
+    assert not dialog.btn_remove.isEnabled()
+    assert dialog.btn_clear.isEnabled()
+
+    # Select row 0: can move down, cannot move up
+    dialog.files.setCurrentRow(0)
+    assert not dialog.btn_move_up.isEnabled()
+    assert dialog.btn_move_down.isEnabled()
+    assert dialog.btn_remove.isEnabled()
+    assert dialog.btn_clear.isEnabled()
+
+    # Select row 1: can move up, cannot move down
+    dialog.files.setCurrentRow(1)
+    assert dialog.btn_move_up.isEnabled()
+    assert not dialog.btn_move_down.isEnabled()
+    assert dialog.btn_remove.isEnabled()
+    assert dialog.btn_clear.isEnabled()
+
+    dialog.clear_files()
+    assert dialog.files.count() == 0
+    assert not dialog.btn_clear.isEnabled()
+    dialog.close()
+
+
+def test_image_import_dialog_folder_drop(qapp, tmp_path):
+    from app.exportdialogs import ImageImportDialog
+    from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
+    from PyQt6.QtGui import QDropEvent
+
+    img_dir = tmp_path / "scans"
+    img_dir.mkdir()
+    f1 = img_dir / "01.png"
+    f2 = img_dir / "02.jpg"
+    txt = img_dir / "ignore.txt"
+    f1.write_bytes(b"png")
+    f2.write_bytes(b"jpg")
+    txt.write_text("text", encoding="utf-8")
+
+    dialog = ImageImportDialog()
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(img_dir))])
+    event = QDropEvent(QPointF(10, 10), Qt.DropAction.CopyAction, mime,
+                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    dialog.dropEvent(event)
+    assert dialog.files.count() == 2
+    paths = dialog.paths()
+    assert str(f1.resolve()) in paths
+    assert str(f2.resolve()) in paths
+    dialog.close()
+
+
+def test_word_converter_status_colors_and_mixed_output_hint(qapp, tmp_path, monkeypatch):
+    import app.wordui as wordui
+    from PyQt6.QtWidgets import QFileDialog
+
+    pdf1 = tmp_path / "doc1.pdf"
+    pdf2 = tmp_path / "doc2.pdf"
+    pdf1.write_text("1", encoding="utf-8")
+    pdf2.write_text("2", encoding="utf-8")
+    window = _word_converter_fixture(monkeypatch, wordui, tmp_path, [pdf1, pdf2])
+
+    # Status column colors
+    window._set_item(0, 2, "成功 · 已保存")
+    window._set_item(1, 2, "失败 · 无法写入")
+    assert window.table.item(0, 2).foreground().color().name() == "#059669"
+    assert window.table.item(1, 2).foreground().color().name() == "#dc2626"
+
+    # Mixed output hint
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(out_dir))
+    window.choose_output_dir()
+    assert "所有输出文件统一保存在这个文件夹" in window.output_hint.text()
+
+    # Override one file manually
+    custom_target = tmp_path / "special.docx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(custom_target), ""))
+    window.browse_row_target(0)
+    assert "已单独指定 1 份" in window.output_hint.text()
+    window.close()
+
 
 
 def test_inline_text_replace_in_place_mouse_flow(qapp, tmp_path):
