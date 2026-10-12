@@ -77,13 +77,13 @@ class _ShellController(QObject):
         from app.ui import MainWindow
 
         self.idle_timer.stop()
-        window = MainWindow()
+        window = MainWindow(opening_paths=paths)
         window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.windows.append(window)
         window.destroyed.connect(lambda _=None, w=window: self.forget(w))
         window.show()
         # COM 回调立即返回，读取和错误反馈交给窗口的正常加载流程。
-        QTimer.singleShot(0, lambda: window.open_shell_files(paths, "merge"))
+        QTimer.singleShot(0, lambda: window.open_startup_files(paths, "merge"))
 
     def forget(self, window):
         self.windows.remove(window)

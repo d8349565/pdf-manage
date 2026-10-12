@@ -98,6 +98,10 @@ def main() -> None:
             QMessageBox.critical(None, "右键入口无法启动", f"请重新安装纸序 PDF，并勾选 PDF 右键入口。\n{exc}")
             code = 1
         sys.exit(code)
+    shell_mode = {"--split-pdf": "split", "--merge-pdf": "merge"}.get(sys.argv[1] if len(sys.argv) > 1 else "")
+    paths = sys.argv[2:] if shell_mode else startup_pdf_paths(sys.argv)
+    if paths:
+        _start_pdf_warmup()
     from app.ui import MainWindow, STYLESHEET
     mark("ui_import_ready")
     if len(sys.argv) > 1 and sys.argv[1] == "--word-to-pdf":
@@ -112,18 +116,14 @@ def main() -> None:
         win.setStyleSheet(STYLESHEET)
         win.show()
         sys.exit(app.exec())
-    win = MainWindow()
-    shell_mode = {"--split-pdf": "split", "--merge-pdf": "merge"}.get(sys.argv[1] if len(sys.argv) > 1 else "")
-    paths = sys.argv[2:] if shell_mode else startup_pdf_paths(sys.argv)
+    win = MainWindow(opening_paths=paths)
     if not paths:
         win.first_painted.connect(_start_pdf_warmup, Qt.ConnectionType.QueuedConnection)
     win.show()
     mark("window_shown")
-    if shell_mode:
-        QTimer.singleShot(0, lambda: win.open_shell_files(paths, shell_mode))
-    elif paths:
-        # 窗口先显示，再在事件循环中打开文件，双击大 PDF 时立即有可见反馈。
-        QTimer.singleShot(0, lambda: win._ingest(paths, replace=True))
+    if paths or shell_mode:
+        # 首屏已经是阅读区的加载状态，实际读取继续在后台进行。
+        QTimer.singleShot(0, lambda: win.open_startup_files(paths, shell_mode))
     sys.exit(app.exec())
 
 

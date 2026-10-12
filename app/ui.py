@@ -1624,10 +1624,11 @@ class TitleBar(QWidget):
 class MainWindow(QMainWindow):
     first_painted = pyqtSignal()
 
-    def __init__(self) -> None:
+    def __init__(self, *, opening_paths=()) -> None:
         mark("window_init_started")
         super().__init__()
         self._painted = False
+        self._opening_paths = tuple(opening_paths)
         self.ws = Workspace()
         self.store = PdfStore()
         self._selection_buttons = []
@@ -2011,13 +2012,16 @@ class MainWindow(QMainWindow):
         self.mode_buttons[1].setEnabled(bool(count) or self._in_arrange())
         self.review_button.setEnabled(bool(count))
         self._update_export_controls()
-        name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else "尚未打开文档")
+        name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else
+            os.path.basename(self._opening_paths[0]) if self._opening_paths else "尚未打开文档")
         self.document_name.setText(name)
         self.document_name.setToolTip(self.ws.path or "保存时选择新文件位置")
         state = "未保存 · 保存为新文件" if self.ws.dirty and not self.ws.path else (
             "有未保存的修改" if self.ws.dirty else ("已保存" if self.ws.path else "本机处理"))
         if read_only:
             state = "只读"
+        elif self._opening_paths and not count:
+            state = "正在打开…"
         self.save_state.setText(state)
         self.save_state.setToolTip(read_only or self.ws.path or "文件仅在本机处理")
 
@@ -2170,6 +2174,12 @@ class MainWindow(QMainWindow):
         self.preview_stack = QStackedWidget()
         self.preview_stack.addWidget(self.preview_empty)
         self.preview_stack.addWidget(self.preview_view)
+        self.preview_loading = QLabel("正在打开 PDF…")
+        self.preview_loading.setObjectName("hint")
+        self.preview_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_loading.setTextFormat(Qt.TextFormat.PlainText)
+        self.preview_loading.setWordWrap(True)
+        self.preview_stack.addWidget(self.preview_loading)
         self.details = QLabel("", center)
         self.details.setObjectName("hint")
         self.details.setWordWrap(True)
@@ -2540,7 +2550,8 @@ class MainWindow(QMainWindow):
             self._update_preview()
             if hasattr(self, "outline_panel") and self.sidebar_mode.currentIndex() == 1:
                 self.outline_panel.refresh()
-            name = os.path.basename(self.ws.path) if self.ws.path else "未命名"
+            name = os.path.basename(self.ws.path) if self.ws.path else (
+                os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else "未命名")
             star = " *" if self.ws.dirty else ""
             self.setWindowTitle(f"{name}{star} — {APP_NAME} v{__version__}（吾爱破解）")
             self.statusBar().showMessage(self._status_line())
@@ -2549,6 +2560,8 @@ class MainWindow(QMainWindow):
             self._refreshing = False
 
     def _status_line(self) -> str:
+        if self._opening_paths and not self.ws.pages:
+            return f"正在打开 · {os.path.basename(self._opening_paths[0])}"
         n = len(self.ws.pages)
         sel = len(self.ws.target_indices())
         parts = [f"{n} 页"]
@@ -2999,7 +3012,12 @@ class MainWindow(QMainWindow):
             self._detail_key = None
             self._detail_timer.stop()
             self.preview_view.clear_photo()
-            self.preview_stack.setCurrentIndex(0)
+            if self._opening_paths:
+                name = os.path.basename(self._opening_paths[0])
+                self.preview_loading.setText(f"正在打开 PDF…\n{name}")
+                self.preview_stack.setCurrentWidget(self.preview_loading)
+            else:
+                self.preview_stack.setCurrentIndex(0)
             self.details.setText("")
             self.banner.setText("")
             self._update_render_progress()
@@ -3233,7 +3251,9 @@ class MainWindow(QMainWindow):
             self._render_status_timer.start()
 
     def _update_render_progress(self) -> None:
-        busy = self._preview_busy or self._detail_busy or bool(self.model.inflight)
+        opening = bool(self._opening_paths) and not self.ws.pages
+        busy = opening or self._preview_busy or self._detail_busy or bool(self.model.inflight)
+        self.render_label.setText("正在打开 PDF" if opening else "正在渲染页面")
         self.render_label.setVisible(busy)
         self.render_progress.setVisible(busy)
         if not busy:
@@ -3331,6 +3351,19 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "追加 PDF", "", "PDF (*.pdf)")
         if paths:
             self._ingest(paths, replace=False)
+
+    def open_startup_files(self, paths: list[str], mode: str = "") -> None:
+        try:
+            if mode:
+                self.open_shell_files(paths, mode)
+            else:
+                self._ingest(paths, replace=True)
+        finally:
+            self._opening_paths = ()
+            if not self.ws.pages:
+                self.refresh()
+            else:
+                self._update_render_progress()
 
     def open_shell_files(self, paths: list[str], mode: str) -> bool:
         if mode not in ("split", "merge"):
