@@ -19,10 +19,11 @@ from app.progress import run_operation
 
 
 class MarkdownDialog(QDialog):
-    def __init__(self, host):
+    def __init__(self, host=None, paths=()):
         super().__init__(host)
         self.host = host
         self.paths = []
+        self.setAcceptDrops(True)
         self.setWindowTitle("Markdown 转 PDF")
         self.resize(680, 560)
         layout = QVBoxLayout(self)
@@ -38,7 +39,7 @@ class MarkdownDialog(QDialog):
         files_layout.setSpacing(8)
 
         files_header = QHBoxLayout()
-        files_title = QLabel("待转换 Markdown 文件")
+        files_title = QLabel("待转换 Markdown 文件 · 可直接拖入")
         files_title.setStyleSheet("font-weight: 600; color: #134E4A;")
         files_header.addWidget(files_title)
         files_header.addStretch()
@@ -51,6 +52,8 @@ class MarkdownDialog(QDialog):
 
         self.files = QListWidget()
         self.files.setFrameShape(QListWidget.Shape.NoFrame)
+        self.files.setAcceptDrops(False)
+        self.files.viewport().setAcceptDrops(False)
         files_layout.addWidget(self.files, 1)
         layout.addWidget(files_card, 1)
 
@@ -94,20 +97,60 @@ class MarkdownDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch()
-        start = QPushButton("开始转换")
-        start.setProperty("primary", True)
-        start.setFixedHeight(34)
-        start.clicked.connect(self.convert)
-        footer.addWidget(start)
+        self.start = QPushButton("开始转换")
+        self.start.setProperty("primary", True)
+        self.start.setFixedHeight(34)
+        self.start.setEnabled(False)
+        self.start.clicked.connect(self.convert)
+        footer.addWidget(self.start)
         layout.addLayout(footer)
+        if paths:
+            self.add_paths(paths)
 
     def add(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "添加 Markdown", "", "Markdown (*.md *.markdown)")
-        for path in paths:
-            path = str(Path(path).resolve())
-            if path not in self.paths:
+        if paths:
+            self.add_paths(paths)
+
+    def add_paths(self, paths):
+        seen = {path.casefold() for path in self.paths}
+        added = 0
+        for value in paths:
+            path = Path(value)
+            if path.suffix.lower() not in (".md", ".markdown") or not path.is_file():
+                continue
+            path = str(path.resolve())
+            if path.casefold() not in seen:
+                seen.add(path.casefold())
                 self.paths.append(path)
                 self.files.addItem(path)
+                added += 1
+        self.start.setEnabled(bool(self.paths))
+        self.feedback.setText(f"已添加 {added} 份，共 {len(self.paths)} 份。重复文件自动忽略，已有同名 PDF 默认跳过。"
+                              if self.paths else "请拖入或选择 .md、.markdown 文件。")
+
+    def _drop_paths(self, mime_data):
+        if getattr(self, "_task_dialog", None) is not None:
+            return []
+        return [url.toLocalFile() for url in mime_data.urls()
+                if url.isLocalFile() and Path(url.toLocalFile()).suffix.lower() in (".md", ".markdown")
+                and Path(url.toLocalFile()).is_file()]
+
+    def dragEnterEvent(self, event):
+        if self._drop_paths(event.mimeData()):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        paths = self._drop_paths(event.mimeData())
+        if paths:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            self.add_paths(paths)
+        else:
+            event.ignore()
 
     def convert(self):
         from app.markdownconvert import MarkdownPdfOptions, markdown_font, markdown_to_pdf
@@ -127,7 +170,7 @@ class MarkdownDialog(QDialog):
                 if cancel():
                     break
                 try:
-                    if self.host.store.is_source_destination(str(target)):
+                    if self.host is not None and self.host.store.is_source_destination(str(target)):
                         raise PdfError("不能覆盖主窗口中已打开的来源文件。")
                     if target.exists() and not overwrite:
                         results.append(f"跳过：{target.name}（已存在）")
@@ -143,6 +186,21 @@ class MarkdownDialog(QDialog):
             return results, cancel()
         results, cancelled = run_operation(self, "Markdown 转 PDF", work, cancellable=True)
         self.feedback.setText(("已取消，完整输出已保留。" if cancelled else "转换结束。") + "\n" + "\n".join(results))
+
+    def reject(self):
+        task = getattr(self, "_task_dialog", None)
+        if task is not None:
+            task.request_cancel()
+        else:
+            super().reject()
+
+    def closeEvent(self, event):
+        task = getattr(self, "_task_dialog", None)
+        if task is not None:
+            task.request_cancel()
+            event.ignore()
+        else:
+            super().closeEvent(event)
 
 
 class _PreviewSignals(QObject):

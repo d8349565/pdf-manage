@@ -35,9 +35,20 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式："
 Name: "wordcontext"; Description: "Word 文件和文件夹添加「Word 转 PDF」右键入口"; GroupDescription: "资源管理器："
+Name: "markdowncontext"; Description: "Markdown 文件添加「转换为 PDF」右键入口"; GroupDescription: "资源管理器："
 Name: "pdfcontext"; Description: "PDF 文件添加「用纸序 PDF 拆分 / 合并」右键入口"; GroupDescription: "资源管理器："
 
 [Registry]
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF"; ValueType: none; Flags: deletekey; Tasks: not markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\ZhiXuMarkdownToPDF"; ValueType: none; Flags: deletekey; Tasks: not markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: ""; ValueData: "转换为 PDF"; Flags: uninsdeletekey; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --markdown-to-pdf ""%1"""; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: ""; ValueData: "转换为 PDF"; Flags: uninsdeletekey; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: markdowncontext
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\ZhiXuMarkdownToPDF\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --markdown-to-pdf ""%1"""; Tasks: markdowncontext
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageSplit"; ValueType: none; Flags: deletekey; Tasks: not pdfcontext
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\PDFManageMerge"; ValueType: none; Flags: deletekey; Tasks: not pdfcontext
 Root: HKCU; Subkey: "Software\Classes\CLSID\{{6C0E4D2A-73C6-4D15-AF0E-619C12573B89}"; ValueType: none; Flags: deletekey; Tasks: not pdfcontext

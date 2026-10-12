@@ -106,6 +106,12 @@ def main() -> None:
         win.setStyleSheet(STYLESHEET)
         win.show()
         sys.exit(app.exec())
+    if len(sys.argv) > 1 and sys.argv[1] == "--markdown-to-pdf":
+        from app.outputui import MarkdownDialog
+        win = MarkdownDialog(paths=sys.argv[2:])
+        win.setStyleSheet(STYLESHEET)
+        win.show()
+        sys.exit(app.exec())
     win = MainWindow()
     shell_mode = {"--split-pdf": "split", "--merge-pdf": "merge"}.get(sys.argv[1] if len(sys.argv) > 1 else "")
     paths = sys.argv[2:] if shell_mode else startup_pdf_paths(sys.argv)

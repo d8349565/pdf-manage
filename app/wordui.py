@@ -15,12 +15,13 @@ from app import APP_NAME
 from app.exportdialogs import hint
 from app.output import OperationCancelled
 from app.progress import run_operation
-from app.wordconvert import collect_files, convert_batch, word_available, pdf_import_needs_confirmation, allow_pdf_import
+from app.wordconvert import DIRECTIONS, collect_files, convert_batch, word_available, pdf_import_needs_confirmation, allow_pdf_import
 
 
 class WordConverterWindow(QWidget):
     def __init__(self, paths=(), *, direction="word_to_pdf"):
         super().__init__()
+        self.setAcceptDrops(True)
         self.direction = direction
         self.source_kind = "PDF" if direction == "pdf_to_word" else "Word"
         self.target_kind = "Word" if direction == "pdf_to_word" else "PDF"
@@ -75,6 +76,8 @@ class WordConverterWindow(QWidget):
         layout.addLayout(row)
 
         self.table = QTableWidget(0, 3)
+        self.table.setAcceptDrops(False)
+        self.table.viewport().setAcceptDrops(False)
         self.table.setHorizontalHeaderLabels(["源 Word 文件", "输出 PDF（可修改）", "状态"])
         self.table.setAccessibleName("Word 转换清单，第二列可以调整目标文件名")
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -99,7 +102,7 @@ class WordConverterWindow(QWidget):
         self.recursive.toggled.connect(self.rescan)
         layout.addWidget(self.options)
 
-        self.summary = hint(layout, "添加文件或文件夹后，确认输出位置并开始转换。")
+        self.summary = hint(layout, "拖入文件或文件夹，或点击添加；确认输出位置后开始转换。")
 
         footer = QHBoxLayout()
         hint(footer, "复杂排版和缺失字体请核对转换结果。")
@@ -127,7 +130,8 @@ class WordConverterWindow(QWidget):
         self.overwrite.setText(f"明确覆盖已有 {self.target_kind}（源文件保留）")
         self.intro.setText("使用本机已安装的 Microsoft Word，离线转换。已有输出默认跳过。" +
             ("PDF 需要 Word 2013 或更高版本；复杂版式与扫描页面请核对，扫描图片不保证可编辑。加密文件请先另存解密副本。"
-             if self.direction == "pdf_to_word" else "每份 Word 默认在原目录生成同名 PDF。"))
+             if self.direction == "pdf_to_word" else "每份 Word 默认在原目录生成同名 PDF。") +
+            f"\n可直接拖入 {self.source_kind} 文件或文件夹，重复文件自动忽略。")
 
     def change_direction(self):
         self.direction = self.direction_combo.currentData()
@@ -150,11 +154,41 @@ class WordConverterWindow(QWidget):
             self.inputs.append(path)
             self.rescan()
 
+    def _drop_paths(self, mime_data):
+        if self._task_dialog is not None:
+            return []
+        paths = []
+        for url in mime_data.urls():
+            if not url.isLocalFile():
+                continue
+            path = Path(url.toLocalFile())
+            if path.is_dir() or (path.is_file() and path.suffix.lower() in DIRECTIONS[self.direction][0]
+                                 and not path.name.startswith("~$")):
+                paths.append(str(path))
+        return paths
+
+    def dragEnterEvent(self, event):
+        if self._drop_paths(event.mimeData()):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        paths = self._drop_paths(event.mimeData())
+        if paths:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            self.inputs.extend(paths)
+            QTimer.singleShot(0, self.rescan)
+        else:
+            event.ignore()
+
     def clear(self):
         self.inputs.clear()
         self.table.setRowCount(0)
         self.start.setEnabled(False)
-        self.summary.setText("添加文件或文件夹后开始转换。")
+        self.summary.setText("拖入文件或文件夹，或点击添加后开始转换。")
 
     def rescan(self):
         old_targets = {self.table.item(i, 0).text(): self.table.item(i, 1).text()
