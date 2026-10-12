@@ -12,6 +12,7 @@ from bisect import bisect_left, bisect_right
 
 from PyQt6.QtCore import (
     QAbstractListModel,
+    QByteArray,
     QEvent,
     QItemSelection,
     QItemSelectionModel,
@@ -22,6 +23,7 @@ from PyQt6.QtCore import (
     QRectF,
     QRunnable,
     Qt,
+    QSettings,
     QSize,
     QThreadPool,
     QThread,
@@ -82,7 +84,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app import APP_NAME, APP_EXE_NAME, __version__
+from app import APP_NAME, APP_EXE_NAME, APP_ORGANIZATION, APP_SLUG, __version__
 from app.icons import brand_icon, toolbar_icon
 from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
@@ -1686,6 +1688,10 @@ class MainWindow(QMainWindow):
         self._build()
         mark("window_build_ready")
         self._shortcuts()
+        self._window_settings = QSettings(APP_ORGANIZATION, APP_SLUG)
+        geometry = self._window_settings.value("mainWindow/geometry", QByteArray())
+        if isinstance(geometry, QByteArray):
+            self.restoreGeometry(geometry)
         self.refresh()
         mark("window_ready")
 
@@ -3404,8 +3410,6 @@ class MainWindow(QMainWindow):
             self.ws.reset()
             for path, pages in batches:
                 self.ws.load_first_or_merge(pages, path)
-            if self.ws.pages:
-                self.showMaximized()
             self.refresh()
             # 关闭旧文档时按文档加锁，最多等这一次渲染跑完，而不是整个线程池排空。
             self._release_unused_docs()
@@ -4047,6 +4051,8 @@ class MainWindow(QMainWindow):
                 self.annotation_tools.remove_view_filters()
             QThreadPool.globalInstance().waitForDone(1000)
             run_operation(self, "关闭文档", lambda progress: self.store.close_all())
+            self._window_settings.setValue("mainWindow/geometry", self.saveGeometry())
+            self._window_settings.sync()
             event.accept()
         else:
             event.ignore()

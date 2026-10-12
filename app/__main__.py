@@ -117,10 +117,7 @@ def main() -> None:
     paths = sys.argv[2:] if shell_mode else startup_pdf_paths(sys.argv)
     if not paths:
         win.first_painted.connect(_start_pdf_warmup, Qt.ConnectionType.QueuedConnection)
-    if paths:
-        win.showMaximized()
-    else:
-        win.show()
+    win.show()
     mark("window_shown")
     if shell_mode:
         QTimer.singleShot(0, lambda: win.open_shell_files(paths, shell_mode))

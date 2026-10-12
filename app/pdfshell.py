@@ -81,7 +81,7 @@ class _ShellController(QObject):
         window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.windows.append(window)
         window.destroyed.connect(lambda _=None, w=window: self.forget(w))
-        window.showMaximized()
+        window.show()
         # COM 回调立即返回，读取和错误反馈交给窗口的正常加载流程。
         QTimer.singleShot(0, lambda: window.open_shell_files(paths, "merge"))
 
