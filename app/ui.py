@@ -1879,6 +1879,8 @@ class MainWindow(QMainWindow):
         tools.addAction(self.extract_action)
         tools.addAction(self.split_action)
         tools.addAction(self._act("页码处理…", self.open_page_numbers))
+        self.ocr_action = self._act("OCR 文字识别…", self.open_ocr_dialog)
+        tools.addAction(self.ocr_action)
         tools.addSeparator()
         self.convert_action = self._act("表格转 Excel…", lambda: self.open_export_tool(2))
         self.image_export_action = self._act("PDF 转图片…", lambda: self.open_export_tool(5))
@@ -3650,6 +3652,24 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "已取消", "已取消，完成 0 个导出文件，原件保留。")
         except (PdfError, OSError) as exc:
             QMessageBox.warning(self, "图片转换未完成", str(exc))
+
+    def open_ocr_dialog(self) -> None:
+        if not self.ws.pages or not self.ws.path:
+            QMessageBox.information(self, "OCR 文字识别", "请先打开一个 PDF 文档后再进行 OCR 识别。")
+            return
+        if self.ws.dirty:
+            QMessageBox.warning(
+                self,
+                "存在未保存的修改",
+                "当前文档存在未保存的改动。请先保存当前文档，再进行 OCR 识别，以确保识别内容与文件一致。",
+            )
+            return
+        from app.ocrui import OCRDialog
+
+        current_idx = self.ws.preview_index() or 0
+        dlg = OCRDialog(self, self.ws.path, len(self.ws.pages), current_idx)
+        dlg.exec()
+        dlg.deleteLater()
 
     def pdf_to_images(self):
         if not self._allow_operation("copy") or not self.ws.pages:

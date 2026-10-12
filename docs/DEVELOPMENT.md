@@ -26,6 +26,7 @@ python -m venv .venv
 | `app/printing.py`、`app/pdf2excel/` | 打印和表格转 Excel |
 | `app/compression.py`、`app/imaging.py` | 压缩与图片转换 |
 | `app/wordconvert.py`、`app/wordui.py` | Word 批量转换 |
+| `app/ocr/`、`app/ocrui.py` | 轻量离线 OCR 引擎与文字识别界面 |
 | `app/assets/` | 应用资源 |
 | `packaging/`、`pdf-manage.spec` | 打包、安装器和第三方许可文件 |
 | `tests/` | 回归检查，测试文档由代码生成 |
