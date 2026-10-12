@@ -1776,7 +1776,9 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self.save_action = self._act("保存", self.save, QKeySequence.StandardKey.Save)
         self.save_as_action = self._act("另存为", lambda: self.save(True), QKeySequence.StandardKey.SaveAs)
-        for action in (self.save_action, self.save_as_action):
+        self.close_file_action = self._act("关闭当前文件", self.close_current_file, QKeySequence("Ctrl+W"))
+        self.close_file_action.setStatusTip("关闭当前文件并返回首页")
+        for action in (self.save_action, self.save_as_action, self.close_file_action):
             file_menu.addAction(action)
         file_menu.addSeparator()
         self.print_action = self._act("打印", self.print_document, QKeySequence.StandardKey.Print)
@@ -1969,6 +1971,7 @@ class MainWindow(QMainWindow):
             save_reason = self.store.operation_reason(self.ws.pages, save_operation)
         for action in (self.save_action, self.save_as_action):
             action.setEnabled(bool(count) and not save_reason)
+        self.close_file_action.setEnabled(bool(count) or bool(self.ws.path) or self.ws.dirty)
         self.compress_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
@@ -3289,6 +3292,29 @@ class MainWindow(QMainWindow):
         if clicked is cancel:
             return False
         return True
+
+    def close_current_file(self) -> None:
+        if getattr(self, "_task_dialog", None) is not None:
+            return
+        if getattr(self, "_conv_thread", None) is not None:
+            self.statusBar().showMessage("请结束或取消转换后再关闭当前文件", 5000)
+            return
+        if not self.confirm_leave():
+            return
+        self.search_bar.cancel()
+        self._reading_timer.stop()
+        self._preview_timer.stop()
+        self._detail_timer.stop()
+        self.arrange_view._drop_motion.stop()
+        self.arrange_view._drop_fade.stop()
+        if hasattr(self, "annotation_tools"):
+            self.annotation_tools.deactivate()
+        self.ws.reset()
+        self.refresh()
+        self.stack.setCurrentIndex(0)
+        run_operation(self, "关闭文档", lambda progress: self.store.close_all())
+        self.welcome_open.setFocus()
+        self.statusBar().showMessage("已关闭当前文件，返回首页", 5000)
 
     def open_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF", "", "PDF (*.pdf)")
