@@ -1880,6 +1880,8 @@ class MainWindow(QMainWindow):
         tools.addAction(self.split_action)
         tools.addAction(self._act("页码处理…", self.open_page_numbers))
         tools.addSeparator()
+        self.ocr_action = self._act("OCR 文字识别…", self.open_ocr)
+        tools.addAction(self.ocr_action)
         self.convert_action = self._act("表格转 Excel…", lambda: self.open_export_tool(2))
         self.image_export_action = self._act("PDF 转图片…", lambda: self.open_export_tool(5))
         tools.addAction(self.convert_action)
@@ -2002,6 +2004,24 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(0)
         self.act_tools.setChecked(True)
         self.export_tools.setCurrentIndex(index)
+
+    def open_ocr(self) -> None:
+        """打开 OCR 文字识别弹窗。
+
+        需要当前 PDF 已打开；如未打开则提示用户。
+        """
+        from app.ocrui import open_ocr_for
+
+        source_path = getattr(self.ws, "path", None)
+        if not source_path:
+            QMessageBox.information(self, APP_NAME, "请先打开一个 PDF 文件，再使用 OCR 文字识别。")
+            return
+        current_page = None
+        try:
+            current_page = self.reading_view.current_page() if hasattr(self, "reading_view") else None
+        except Exception:
+            current_page = None
+        open_ocr_for(self, source_path, current_page=current_page)
 
     def _sync_mode(self, index: int) -> None:
         self.mode_buttons[index].setChecked(True)

@@ -1,20 +1,17 @@
 """OCR 推理引擎封装（RapidOCR + ONNX Runtime CPU）。
 
-本模块是按 *MUST* 设计原则实现：
+PoC 之后的正式实现要点：
 
-* 引擎实例只在首次识别时懒加载，避免拖累主程序启动（PRD §1.3）；
-* 引擎异常被转换为业务层 :class:`OCRRuntimeError`，避免堆栈直露给用户；
-* 不主动读取在线仓库；模型缺失直接抛 :class:`OCRModelMissing`，
-  让 :mod:`app.ocr.model_manager` 负责引导用户安装。
-
-PoC 阶段只完成接口与懒加载骨架；具体识别函数 ``recognize_page`` 在 D1 阶段补齐
-并接入 RapidOCR。骨架先写出来的好处：
-
-* 让 :mod:`app.ocr.service` 可以独立编写与单元测试；
-* 让 UI 在模型缺失时也能展示完整错误文案。
+* 引擎实例按需懒加载，首次 ``recognize_page`` 时才实例化 RapidOCR；
+* 所有 RapidOCR 抛出的异常被转换为 :class:`OCREngineError`，
+  避免向 UI 暴露 Python 堆栈；
+* 模型路径完全交给 :mod:`app.ocr.model_manager` 校验；
+* ``recognize_page`` 接受 PyMuPDF Pixmap，返回 :class:`OCRLine` 列表，
+  把 RapidOCR 的 ``[box, text, score]`` 列表转换为契约对象。
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from threading import Lock
 from typing import Iterable
@@ -22,8 +19,11 @@ from typing import Iterable
 from app.ocr.contracts import OCRLine
 
 
+log = logging.getLogger(__name__)
+
+
 class OCREngineError(RuntimeError):
-    """引擎层通用错误基类，向业务层抛出时附带可读文案。"""
+    """引擎层通用错误基类。"""
 
 
 class OCRModelMissing(OCREngineError):
@@ -33,16 +33,19 @@ class OCRModelMissing(OCREngineError):
 class OCREngine:
     """线程安全的 RapidOCR 引擎封装。
 
-    ``recognize_page`` 接收已经渲染好的页面位图数据，返回 :class:`OCRLine` 列表。
-    实例生命周期与主进程一致，按需懒加载。
+    接受已经渲染好的 :class:`pymupdf.Pixmap`，返回 :class:`OCRLine` 列表。
     """
 
     _instance: "OCREngine | None" = None
     _lock = Lock()
 
-    def __init__(self, install_dir: Path) -> None:
+    def __init__(self, install_dir: Path, *, text_score: float = 0.5,
+                 box_thresh: float = 0.5, use_angle_cls: bool = True) -> None:
         self.install_dir = install_dir
-        self._engine = None  # RapidOCR 实例占位
+        self._engine = None
+        self._text_score = text_score
+        self._box_thresh = box_thresh
+        self._use_angle_cls = use_angle_cls
 
     # ------------------------------------------------------------------ #
     # 单例管理
@@ -60,7 +63,7 @@ class OCREngine:
 
     @classmethod
     def reset(cls) -> None:
-        """仅供单元测试与重启场景使用，重置单例。"""
+        """仅供单元测试使用，重置单例。"""
         with cls._lock:
             cls._instance = None
 
@@ -69,59 +72,95 @@ class OCREngine:
     # ------------------------------------------------------------------ #
 
     def _ensure_loaded(self) -> None:
-        """按需加载 RapidOCR；PoC 阶段只做存在性检查。"""
         if self._engine is not None:
             return
         det = self.install_dir / "det.onnx"
         rec = self.install_dir / "rec.onnx"
         keys = self.install_dir / "ppocr_keys_v1.txt"
+        cls_path = self.install_dir / "cls.onnx"
         if not (det.is_file() and rec.is_file() and keys.is_file()):
             raise OCRModelMissing(
-                f"OCR 增强包不完整：{self.install_dir}"
+                f"OCR 增强包不完整：{self.install_dir}（需要 det/rec 模型 + 字典）"
             )
-        # 真正的 RapidOCR 实例化放到 D1 阶段，本接口先保留结构。
-        self._engine = _StubEngine(self.install_dir)
+        # 延迟导入：避免主程序启动时强制加载 OCR 推理库
+        from rapidocr_onnxruntime import RapidOCR  # type: ignore
 
-    def recognize_page(self, image) -> list[OCRLine]:
-        """识别单张页面图，返回 :class:`OCRLine` 列表。
+        kwargs = dict(
+            det_model_path=str(det),
+            rec_model_path=str(rec),
+            rec_keys_path=str(keys),
+            text_score=self._text_score,
+            use_angle_cls=self._use_angle_cls,
+            print_verbose=False,
+        )
+        if cls_path.is_file():
+            kwargs["cls_model_path"] = str(cls_path)
+        try:
+            self._engine = RapidOCR(**kwargs)
+        except Exception as exc:  # noqa: BLE001
+            raise OCREngineError(f"RapidOCR 初始化失败：{exc}") from exc
 
-        ``image`` 为 PIL.Image 或 numpy.ndarray，具体类型由 D1 决定。
-        PoC 阶段仅返回空列表；坐标语义、DPI 换算、置信度阈值等在 D1 实测。
-        """
+    def recognize_page(self, pixmap) -> list[OCRLine]:
+        """识别单张 Pixmap，返回 :class:`OCRLine` 列表。"""
         self._ensure_loaded()
         assert self._engine is not None
-        return self._engine.recognize(image)
+
+        # PyMuPDF Pixmap 转 numpy ndarray（RapidOCR 主路径接受）
+        import numpy as np  # 局部导入，避免引擎未加载时占用主进程
+
+        if hasattr(pixmap, "tobytes") and hasattr(pixmap, "samples"):
+            arr = np.frombuffer(pixmap.samples, dtype=np.uint8)
+            arr = arr.reshape(pixmap.height, pixmap.width, pixmap.n)
+            if pixmap.n == 4:
+                arr = arr[:, :, :3]
+        else:
+            arr = pixmap  # 已经传 ndarray
+
+        try:
+            result, _elapse = self._engine(arr)
+        except Exception as exc:  # noqa: BLE001
+            raise OCREngineError(f"OCR 推理失败：{exc}") from exc
+
+        return _rapid_to_lines(result, page_index=getattr(pixmap, "_page_index", 0))
 
 
-class _StubEngine:
-    """PoC 阶段占位实现，后续替换为 RapidOCR。"""
+def _rapid_to_lines(raw, *, page_index: int) -> list[OCRLine]:
+    """把 RapidOCR 输出 ``[[box, text, score], ...]`` 转换为 :class:`OCRLine`。
 
-    def __init__(self, install_dir: Path) -> None:
-        self.install_dir = install_dir
-
-    def recognize(self, image) -> list[OCRLine]:
-        # PoC 阶段返回空，便于 service 单测结构跑通。
-        return []
-
-
-# --------------------------------------------------------------------------- #
-# 工具函数：RapidOCR 输出 → OCRLine
-# --------------------------------------------------------------------------- #
+    RapidOCR 返回的 box 是 ``[(x0, y0), (x1, y1), (x2, y2), (x3, y3)]`` 四边形。
+    我们把它展开成 ``bbox`` 矩形和 ``polygon`` 八元组。
+    """
+    lines: list[OCRLine] = []
+    if not raw:
+        return lines
+    for entry in raw:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 3:
+            continue
+        box, text, score = entry
+        if not text or not isinstance(text, str):
+            continue
+        pts = [(float(p[0]), float(p[1])) for p in box]
+        if len(pts) < 4:
+            continue
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        polygon: tuple[float, ...] = tuple(
+            v
+            for pair in pts[:4]
+            for v in pair
+        )
+        lines.append(
+            OCRLine(
+                text=text,
+                bbox=(min(xs), min(ys), max(xs), max(ys)),
+                polygon=polygon,
+                confidence=float(score),
+                page_index=page_index,
+            )
+        )
+    return lines
 
 
 def lines_from_rapidocr(raw: Iterable, page_index: int) -> list[OCRLine]:
-    """把 RapidOCR 的 ``(boxes, texts, scores)`` 输出转换为 :class:`OCRLine` 列表。
-
-    该函数仅在 D1 接入 RapidOCR 后启用，先放这里防止接口漂移。
-    """
-    boxes, _, scores = None, None, None
-    return [
-        OCRLine(
-            text="",
-            bbox=(box[0][0], box[0][1], box[2][0], box[2][1]),
-            polygon=tuple(float(v) for v in box),
-            confidence=float(score),
-            page_index=page_index,
-        )
-        for box, score in zip(boxes or [], scores or [])
-    ]
+    """对外暴露的 RapidOCR → :class:`OCRLine` 转换工具。"""
+    return _rapid_to_lines(raw, page_index=page_index)

@@ -16,6 +16,7 @@
 !/app/
 !/tests/
 !/packaging/
+!/scripts/
 !/docs/
 
 # 应用源码与经过检查的图标。私人赞赏码暂留本机。
@@ -45,6 +46,7 @@
 !/docs/REPOSITORY.md
 !/docs/ACCEPTANCE.md
 !/docs/issues.md
+!/docs/OCR.md
 !/docs/images/
 !/docs/images/reading.png
 !/docs/images/arrange.png

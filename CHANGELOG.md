@@ -1,5 +1,18 @@
 # 更新记录
 
+## v0.4.0 · 2026-10-12
+
+- **OCR 文字识别**：新增"工具 → OCR 文字识别"入口，支持识别当前页 / 全部页面 / 指定页码（`1-3,5,8`）；扫描 PDF 生成可搜索、可复制的 PDF，保留原始图像，渲染前后像素差异为 0。
+- **OCR 子包**：新增 `app/ocr/` 子包（contracts / engine / model_manager / page_detector / pdf_export / service），与现有模块解耦，按需懒加载推理库。
+- **OCR 增强包**：基础安装包不携带 ONNX Runtime / OpenCV / 模型权重；OCR 模型与字典由独立增强包分发到 `%LOCALAPPDATA%\ZhiXuPDF\ocr\`，安装时校验 SHA-256 与版本兼容性。
+- **进度与取消**：复用 `app/progress.run_operation` 的进度弹窗与取消机制，取消后不留下损坏文件。
+- **搜索兼容**：识别后的 PDF 可立即通过纸序 PDF 原 Ctrl+F 链路命中关键词（端到端验证）。
+- **未保存修改检查**：启动 OCR 前提示先保存或另存，避免 OCR 处理过期磁盘文件。
+- **扫描件提示**：现有搜索框在扫描 PDF 中已显示"扫描图片需要 OCR 才能搜索"；新增工具菜单直达 OCR。
+- **回归覆盖**：19 项 OCR 单元 + 端到端测试全部通过；6 类 PoC 样本识别全部通过，30 页真实样本归一化 CER 显著低于 5%；详见 `docs/ocr/POC-REPORT.md` 与 `docs/ocr/ACCEPTANCE-REPORT.md`。
+
+依赖：主程序 `requirements.txt` 仍保持轻量（PyMuPDF + PyQt6 + openpyxl + pywin32 + pytest）；RapidOCR 与 ONNX Runtime 仅在 OCR 增强包中分发，不影响基础安装包体积与启动速度。
+
 ## v0.3.6 · 2026-10-12
 
 - **输出与拆分**：合并或拆分写出文件后自动打开输出目录；优化拆分页数选项布局。

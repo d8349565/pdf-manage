@@ -152,7 +152,7 @@ def assemble_searchable_pdf(
                 # 没有识别结果但页面本应扫描 —— 视作失败留记录。
                 failed += 1
                 continue
-            render_w, render_h = render_meta.get(page_index, (page.width, page.height))
+            render_w, render_h = render_meta.get(page_index, (page.rect.width, page.rect.height))
             wrote = write_invisible_text_layer(
                 page,
                 lines,
