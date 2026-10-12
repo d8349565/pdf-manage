@@ -289,12 +289,22 @@ QPushButton[danger="true"]:hover { background: #FEF2F2; }
 QSpinBox, QDoubleSpinBox {
     background: #FFFFFF;
     border: 1px solid #D7E8E4;
-    border-radius: 8px;
-    padding: 4px 8px;
-    min-height: 28px;
+    border-radius: 6px;
+    padding: 2px 4px;
+    min-height: 24px;
     color: #134E4A;
 }
-QSpinBox:focus, QDoubleSpinBox:focus { border: 2px solid #0D9488; }
+QSpinBox:focus, QDoubleSpinBox:focus { border: 1.5px solid #0D9488; }
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    width: 14px;
+    border: none;
+    background: transparent;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+    background: #E1F3EF;
+}
 QComboBox {
     min-height: 32px;
     padding: 4px 10px;
@@ -548,6 +558,22 @@ QRadioButton {
     spacing: 8px;
     color: #134E4A;
     font-size: 14px;
+}
+QRadioButton::indicator {
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid #99B2AC;
+    border-radius: 8px;
+    background: #FFFFFF;
+}
+QRadioButton::indicator:hover {
+    border-color: #0D9488;
+    background: #F0FDFA;
+}
+QRadioButton::indicator:checked {
+    border: 2px solid #0F766E;
+    border-radius: 8px;
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 #0F766E, stop:0.48 #0F766E, stop:0.52 #FFFFFF, stop:1 #FFFFFF);
 }
 QListView {
     background: transparent;
@@ -2264,6 +2290,9 @@ class MainWindow(QMainWindow):
         self.split_count.setValue(5)
         self.split_count.setSuffix(" 页")
         self.split_count.setAccessibleName("每个拆分文件的页数")
+        self.split_count.setFixedWidth(68)
+        self.split_count.setFixedHeight(26)
+        self.split_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.split_count.hide()
         self.split_every.toggled.connect(self.split_count.setVisible)
         self.split_count.valueChanged.connect(self._update_export_controls)
@@ -2275,8 +2304,11 @@ class MainWindow(QMainWindow):
         self.split_each.setChecked(True)
         split.addWidget(self.split_each)
         interval = QHBoxLayout()
+        interval.setContentsMargins(0, 0, 0, 0)
+        interval.setSpacing(6)
         interval.addWidget(self.split_every)
         interval.addWidget(self.split_count)
+        interval.addStretch()
         split.addLayout(interval)
         split.addWidget(self.split_range_mode)
         self.split_range = QLineEdit()
@@ -2288,7 +2320,7 @@ class MainWindow(QMainWindow):
         self.split_feedback = self._caption("")
         self.split_feedback.setWordWrap(True)
         split.addWidget(self.split_feedback)
-        self.split_button = self._btn("拆分到文件夹…", self.split, icon="split")
+        self.split_button = self._btn("拆分到文件夹…", self.split, icon="split", primary=True)
         split.addWidget(self.split_button)
         split.addStretch()
         convert = section("表格转 Excel")
