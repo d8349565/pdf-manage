@@ -113,7 +113,8 @@ def page_figures(page, layout, warnings):
                     red,green,blue=samples[offset*4:offset*4+3]
                     if red>80 and red-green>45 and red-blue>45:
                         pix.set_pixel(offset%pix.width,offset//pix.width,samples[offset*4:offset*4+4])
-            result.append(dict(kind='image',bbox=tuple(box),data=pix.tobytes('png')))
+            role='mark' if is_colour else ('background' if exclude_editable and any(mask.intersects(box) for mask in editable) else 'figure')
+            result.append(dict(kind='image',bbox=tuple(box),data=pix.tobytes('png'),image_role=role))
             if not exclude_editable and any(item['kind']=='text' and p.Rect(item['bbox']).intersects(box) for item in layout):
                 warnings.append('图像与文字区域重叠，已保留图像外观与识别文字，请核对位置。')
     return result

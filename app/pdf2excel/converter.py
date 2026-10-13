@@ -62,6 +62,8 @@ def convert_pdf_to_excel(
                 continue
                 
             page = doc[page_idx]
+            from app.documentlayout import prepare_export_page
+            prepare_export_page(page)
             pages_analyzed += 1
             
             # 1. 分析页面，检查是否为电子版
@@ -76,7 +78,7 @@ def convert_pdf_to_excel(
                                    data=image.tobytes('png'))]
                     page_warnings = [f"第 {page_idx + 1} 页没有可用文本层，已保留整页图片；需要可编辑文字时请先 OCR。"]
                 else:
-                    layout, page_warnings = page_layout(page, include_images=True)
+                    layout, page_warnings = page_layout(page, include_images=True, spatial=True)
                 check_cancelled()
                 warnings.extend(page_warnings)
                 tables = [item['table'] for item in layout if item['kind'] == 'table']

@@ -232,7 +232,110 @@ def order_figures(layout,figures):
     return sorted([*layout,*figures],key=lambda item:(item['bbox'][1],item['bbox'][0]))
 
 
-def page_layout(page, *, include_images=False, preserve_positions=False):
+def _remove_page_rotation(page):
+    """Bake the visible orientation into a private export document, retaining its crop."""
+    import pymupdf as p
+    if not page.rotation:
+        return
+    crop=p.Rect(page.cropbox); media=page.mediabox
+    full=p.Rect(media.x0,0,media.x1,media.height)
+    # remove_rotation uses the media box. Expand temporarily so a rotated
+    # cropped page is not shifted or silently expanded to the whole media box.
+    page.set_cropbox(full)
+    clipped=crop*p.Matrix(1,0,0,1,-full.x0,-full.y0)*page.rotation_matrix
+    page.remove_rotation()
+    new_full=page.cropbox
+    page.set_cropbox(clipped*p.Matrix(1,0,0,1,new_full.x0,new_full.y0))
+
+
+def prepare_export_page(page):
+    """Use one upright coordinate space for text, grids, images and paper size."""
+    import pymupdf as p
+    _remove_page_rotation(page)
+    votes=Counter(); lines=0
+    raw=page.get_text('dict',flags=p.TEXTFLAGS_DICT & ~p.TEXT_PRESERVE_IMAGES)
+    for block in raw.get('blocks',()):
+        for line in block.get('lines',()):
+            text=''.join(span.get('text','') for span in line.get('spans',())).strip()
+            # Genuine vertical writing and isolated rotated headings do not
+            # define the page's reading axis. Use a strong body-text consensus.
+            if line.get('wmode',0)==1 or len(text)<3:
+                continue
+            dx,dy=line.get('dir',(1,0))
+            if max(abs(dx),abs(dy))<.9:
+                continue
+            angle=round(math.degrees(math.atan2(dy,dx))/90)*90%360
+            votes[angle]+=min(40,len(text)); lines+=1
+    if lines>=3 and sum(votes.values())>=20:
+        angle,weight=votes.most_common(1)[0]
+        if angle and weight>=sum(votes.values())*.8:
+            page.set_rotation((-angle)%360)
+            _remove_page_rotation(page)
+
+
+def _raster_colours(page,layout):
+    """Carry a uniform scanned background into editable elements, not white holes."""
+    import pymupdf as p
+    if not page.get_images():
+        return
+    scale=min(1.5,1800/max(page.rect.width,page.rect.height))
+    matrix=p.Matrix(scale,scale)
+    pix=page.get_pixmap(matrix=matrix,colorspace=p.csRGB,alpha=False,annots=False)
+    samples=pix.samples
+    def colours(rectangle):
+        box=p.Rect(rectangle)*page.rotation_matrix*matrix
+        ring=[]
+        for y in range(7):
+            for x in range(7):
+                px=min(pix.width-1,max(0,round(box.x0+box.width*(.03+.94*x/6)-pix.x)))
+                py=min(pix.height-1,max(0,round(box.y0+box.height*(.03+.94*y/6)-pix.y)))
+                offset=(py*pix.width+px)*3
+                value=tuple(samples[offset:offset+3])
+                if x in (0,6) or y in (0,6):
+                    ring.append(value)
+        key,count=Counter(tuple(value//16 for value in rgb) for rgb in ring).most_common(1)[0]
+        if count<len(ring)*.55:
+            return None,None
+        matching=[rgb for rgb in ring if tuple(value//16 for value in rgb)==key]
+        rgb=tuple(round(sum(value[channel] for value in matching)/len(matching)) for channel in range(3))
+        if min(rgb)>240:
+            return None,None
+        fill='#'+''.join(f'{value:02X}' for value in rgb)
+        light=sum(weight*value for weight,value in zip((.299,.587,.114),rgb))
+        foreground=None
+        if light<150:
+            # A sparse grid can miss thin white glyphs. Inspect the inner
+            # pixels only for a confirmed dark uniform background.
+            x0=max(0,math.ceil(box.x0-pix.x)+1); x1=min(pix.width,math.floor(box.x1-pix.x)-1)
+            y0=max(0,math.ceil(box.y0-pix.y)+1); y1=min(pix.height,math.floor(box.y1-pix.y)-1)
+            step=max(1,min(x1-x0,y1-y0)//40); whites=0
+            for y in range(y0,y1,step):
+                for x in range(x0,x1,step):
+                    offset=(y*pix.width+x)*3
+                    whites+=min(samples[offset:offset+3])>230
+                    if whites>=3:
+                        foreground='#FFFFFF'; break
+                if foreground:
+                    break
+        return fill,foreground
+    for item in layout:
+        if item['kind']=='table':
+            table=item['table']; cells=[]
+            for cell in table.cells:
+                fill,foreground=colours(cell.bbox)
+                style=replace(cell.style,fill_color=fill or cell.style.fill_color,
+                              font_color=foreground or cell.style.font_color)
+                cells.append(replace(cell,style=style))
+            item['table']=replace(table,cells=cells)
+        elif item['kind']=='text':
+            fill,foreground=colours(item['bbox'])
+            if fill:
+                item['fill_colour']=fill
+            if foreground:
+                item['colour']=foreground
+
+
+def page_layout(page, *, include_images=False, preserve_positions=False, spatial=False):
     import pymupdf as p
     from app.pdf2excel.analyzer import extract_spans, extract_drawings
     from app.pdf2excel.detector import detect_tables
@@ -254,12 +357,15 @@ def page_layout(page, *, include_images=False, preserve_positions=False):
             unverified.append(table.bbox)
     tables=verified
     if unverified:
-        warnings.append(f'第 {page.number+1} 页部分网格未能完整承载原文，已按原位置保留全部文字，请核对表格。')
+        warnings.append(f'第 {page.number+1} 页部分网格未能完整承载原文，已按原位置保留全部识别文字，请核对表格。')
     hidden=any(span.get('alpha',255)==0 and any(char['c'].isalnum() for char in span.get('chars',()))
                for block in raw.get('blocks',()) for line in block.get('lines',()) for span in line.get('spans',()))
-    fixed=preserve_positions and (hidden or bool(tables) or bool(unverified))
+    page_area=page.cropbox.width*page.cropbox.height
+    scan_area=sum(p.Rect(image['bbox']).get_area() for image in page.get_image_info())
+    fixed=spatial or preserve_positions and (bool(tables) or bool(unverified) or hidden and scan_area>=page_area*.65)
     positions=[(0,0,page.cropbox.width,page.cropbox.height)] if fixed else unverified
     layout=layout_from_raw(raw,tables,positioned_areas=positions)
+    _raster_colours(page,layout)
     if any(abs(item.get('angle',0))>=3 for item in layout):
         warnings.append('存在倾斜或竖排文字，已保留文字内容，段落方向及图像位置请核对。')
     if include_images:
@@ -270,13 +376,15 @@ def page_layout(page, *, include_images=False, preserve_positions=False):
     return layout,warnings
 
 
-def document_layout(doc, *, include_images=False, preserve_positions=False, cancel=None, progress=None):
+def document_layout(doc, *, include_images=False, preserve_positions=False, normalize_orientation=False, cancel=None, progress=None):
     from app.output import check_cancel
     pages=[]; repeats={}
     for page in doc:
         check_cancel(cancel)
         if progress:
             progress(f'正在分析排版 · 第 {len(pages)+1}/{len(doc)} 页')
+        if normalize_orientation:
+            prepare_export_page(page)
         items,warnings=page_layout(page,include_images=include_images,preserve_positions=preserve_positions)
         width,height=page.cropbox.width,page.cropbox.height
         positioned=preserve_positions and any(item.get('positioned') or item['kind']=='table' for item in items)

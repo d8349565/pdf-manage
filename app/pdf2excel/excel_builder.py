@@ -67,7 +67,7 @@ def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str) -> N
 
 
 def _write_cells(ws, table: TableModel, *, row_offset: int = 0,
-                 columns: list[int] | None = None) -> None:
+                 columns: list[int] | None = None, rows: list[int] | None = None) -> None:
     """Write native table cells to their own sheet or a page's shared column grid."""
     # 记录已被合并覆盖的单元格，防止重复处理
     merged_cells = set()
@@ -84,7 +84,7 @@ def _write_cells(ws, table: TableModel, *, row_offset: int = 0,
             cell_list = table.cells
 
     for cell_model in cell_list:
-        row_idx = cell_model.row + 1 + row_offset
+        row_idx = rows[cell_model.row] if rows else cell_model.row + 1 + row_offset
         col_idx = columns[cell_model.col] if columns else cell_model.col + 1
         
         if (row_idx, col_idx) in merged_cells:
@@ -110,8 +110,9 @@ def _write_cells(ws, table: TableModel, *, row_offset: int = 0,
         # 5. 处理合并单元格
         end_col = (columns[cell_model.col + cell_model.col_span] - 1 if columns
                    else col_idx + cell_model.col_span - 1)
-        if cell_model.row_span > 1 or end_col > col_idx:
-            end_row = row_idx + cell_model.row_span - 1
+        end_row = (rows[cell_model.row + cell_model.row_span] - 1 if rows
+                   else row_idx + cell_model.row_span - 1)
+        if end_row > row_idx or end_col > col_idx:
             ws.merge_cells(
                 start_row=row_idx,
                 start_column=col_idx,

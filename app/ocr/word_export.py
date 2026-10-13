@@ -24,10 +24,12 @@ def element(parent, name, **attributes):
     return ET.SubElement(parent, f'{{{W}}}{name}', {f'{{{W}}}{key}': str(value) for key, value in attributes.items()})
 
 
-def paragraph(parent, text='', *, size=11, bold=False, after=4, before=0, first_line_indent=0, colour=None, line_height=None, alignment=None, fit_width=None):
+def paragraph(parent, text='', *, size=11, bold=False, after=4, before=0, first_line_indent=0, colour=None, fill_colour=None, line_height=None, alignment=None, fit_width=None):
     node = element(parent, 'p')
     properties = element(node, 'pPr')
     element(properties, 'widowControl', val=0)
+    if fill_colour:
+        element(properties,'shd',val='clear',fill=fill_colour.lstrip('#'))
     element(properties, 'autoSpaceDE', val=0)
     element(properties, 'autoSpaceDN', val=0)
     element(properties, 'snapToGrid', val=0)
@@ -44,6 +46,8 @@ def paragraph(parent, text='', *, size=11, bold=False, after=4, before=0, first_
     mark=element(properties,'rPr')
     element(mark,'sz',val=max(2,min(144,round(size*2))))
     element(mark,'szCs',val=max(2,min(144,round(size*2))))
+    if not text:
+        return node
     for index, line in enumerate(text.split('\n')):
         run = element(node, 'r')
         run_properties = element(run, 'rPr')
@@ -262,7 +266,7 @@ def write_layout(layout, width, height, margins, references, parts, links, image
                 size=max(1,min(item['size'],(bottom-top)/(1.25*item.get('line_count',1))))
                 node=paragraph(body,item['text'],size=size,bold=item['bold'],after=0,
                                line_height=min(size*1.35,(bottom-top)/item.get('line_count',1)),
-                               colour=item.get('colour'),fit_width=right-left)
+                               colour=item.get('colour'),fill_colour=item.get('fill_colour'),fit_width=right-left)
                 properties=node.find(f'{{{W}}}pPr')
                 frame=element(properties,'framePr',w=max(20,round((right-left+.5)*20)),h=max(20,round((bottom-top)*20)),
                               x=round(left*20),y=round(top*20),hAnchor='page',vAnchor='page',wrap='none',
@@ -385,7 +389,8 @@ def _export_recognized_docx(source, target, overwrite, progress, cancel, *, sour
     temp = None
     try:
         with p.open(source) as doc:
-            pages=document_layout(doc,include_images=True,preserve_positions=True,cancel=cancel,progress=progress)
+            pages=document_layout(doc,include_images=True,preserve_positions=True,normalize_orientation=True,
+                                  cancel=cancel,progress=progress)
             margin_roles={item['role'] for record in pages for item in record['items'] if item.get('role')}
             for index, page in enumerate(doc):
                 check_cancel(cancel)
