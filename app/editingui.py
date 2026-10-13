@@ -1231,7 +1231,10 @@ class AnnotationTools(QWidget):
                 )
                 if self.commit(replacement_edit, page_index=index, expected_ref=ref):
                     self._close_inline_replace()
-                    self._set_feedback("文字修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
+                    if dict(replacement_edit.details).get("font_fallback"):
+                        self._set_feedback("文字已修改；未找到可用的完整原字体，已使用内置替代字体。Ctrl+Z 撤销，Ctrl+S 保存。")
+                    else:
+                        self._set_feedback("文字修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             except (ValueError, PdfError) as exc:
                 QMessageBox.information(self, "修改未应用", str(exc))
                 edit_input.setFocus()

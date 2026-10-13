@@ -1037,6 +1037,155 @@ def test_replacement_allows_longer_text_when_space_permits(qapp, tmp_path):
     store.close_all()
 
 
+def _line_rect(raw):
+    rect = None
+    for char in (c for b in raw["blocks"] for l in b["lines"] for s in l["spans"] for c in s["chars"]):
+        box = p.Rect(char["bbox"])
+        rect = box if rect is None else rect | box
+    return rect
+
+
+def test_replacement_shrinks_font_when_fallback_box_exceeds_original(qapp, tmp_path):
+    """原字体缺字形回退到内置字体后升降沿变高，应按可用高度微调字号而非拒绝。"""
+    from app.pdfio import PdfStore
+    source = tmp_path / "height_fit.pdf"
+    doc = p.open()
+    page = doc.new_page(width=600, height=800)
+    # Courier 的升降沿盒（0.93/-0.32 em）明显小于缺字形时回退的内置中文字体（1.04/-0.27 em）
+    page.insert_text((100, 150), "Report 2024", fontname="cour", fontsize=24)
+    doc.save(str(source))
+    doc.close()
+
+    store = PdfStore()
+    ref = store.load(str(source))[0]
+    rect = _line_rect(store.text_snapshot(ref)["raw"])
+
+    updated = "Report 2024 系统规格"
+    prepared = store.prepare_replacement(ref, rect, updated)
+    assert prepared.text == updated
+    size = dict(prepared.details)["font_size"]
+    assert 24 * 0.85 <= size < 24
+    assert dict(prepared.details)["font_fallback"]
+
+    target = tmp_path / "height_fit_out.pdf"
+    store.write([ref.edited(prepared)], str(target))
+    with p.open(target) as check_doc:
+        assert updated in check_doc[0].get_text()
+    store.close_all()
+
+
+def test_replacement_still_rejects_when_height_fit_would_shrink_too_far(qapp, tmp_path):
+    """缩到 85% 仍放不下原文字高度带时，必须继续拒绝而不是写出重叠文字。"""
+    from app.pdfio import PdfStore
+    source = tmp_path / "height_refuse.pdf"
+    doc = p.open()
+    page = doc.new_page(width=600, height=800)
+    # ZapfDingbats 的升降沿盒（0.82/-0.14 em）对内置回退字体来说过于窄小
+    page.insert_text((100, 400), "Report", fontname="zadb", fontsize=40)
+    doc.save(str(source))
+    doc.close()
+
+    store = PdfStore()
+    ref = store.load(str(source))[0]
+    rect = _line_rect(store.text_snapshot(ref)["raw"])
+    with pytest.raises(ValueError, match="超出原文字高度"):
+        store.prepare_replacement(ref, rect, "Report 系统")
+    store.close_all()
+
+
+def test_replacement_cjk_title_fits_original_band(qapp, tmp_path):
+    """中文标题回退后的可见文字应完整装入原文字带。"""
+    source = tmp_path / "baseline_fit.pdf"
+    with p.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.insert_text((100, 150), "Report", fontname="zadb", fontsize=24)
+        doc.save(source)
+    original_bytes = source.read_bytes()
+    store = PdfStore()
+    try:
+        ref = store.load(str(source))[0]
+        rect = _line_rect(store.text_snapshot(ref)["raw"])
+        text = "系统规格标题"
+        prepared = store.prepare_replacement(ref, rect, text)
+        details = dict(prepared.details)
+        assert 24 * .85 <= details["font_size"] <= 24
+        target = tmp_path / "baseline_fit_out.pdf"
+        store.write([ref.edited(prepared)], str(target))
+        with p.open(target) as doc:
+            span = doc[0].get_texttrace()[-1]
+            assert "".join(chr(char[0]) for char in span["chars"]) == text
+            assert span["opacity"] > 0 and span["type"] == 0
+            written = _line_rect(doc[0].get_text("rawdict"))
+            assert written.y0 >= rect.y0 - 2 - .01
+            assert written.y1 <= rect.y1 + 2 + .01
+        assert source.read_bytes() == original_bytes
+    finally:
+        store.close_all()
+
+
+def test_failed_replacement_write_keeps_original_text(tmp_path, monkeypatch):
+    """写入校验失败时必须保住原文：先演练后落实，红擦除不能先于校验。"""
+    from app.pdfedits import apply_edits, cjk_font_buffer, prepare_replacement, snapshot_page
+    doc = p.open()
+    page = doc.new_page(width=600, height=800)
+    page.insert_font(fontname="SrcCJK", fontbuffer=cjk_font_buffer())
+    page.insert_text((100, 150), "系统技术规格", fontname="SrcCJK", fontsize=14)
+    doc.subset_fonts()
+    rect = _line_rect(snapshot_page(page)["raw"])
+    edit = prepare_replacement(page, rect, "系统技术规格附件")
+
+    monkeypatch.setattr(p.Page, "insert_text", lambda self, *args, **kwargs: 0)
+    with pytest.raises(ValueError, match="新文字未完整写入"):
+        apply_edits(page, [edit])
+    assert "系统技术规格" in page.get_text()
+    doc.close()
+
+
+@pytest.mark.parametrize("destination_kind", ["source", "existing", "new"])
+def test_replacement_save_failure_after_rehearsal_preserves_files(tmp_path, monkeypatch, destination_kind):
+    """演练成功、正式写入失败时，原路径、已有目标和新目标都不能提交残缺输出。"""
+    source = tmp_path / "source.pdf"
+    with p.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.insert_text((100, 150), "Report 2024", fontname="cour", fontsize=24)
+        doc.save(source)
+    original_bytes = source.read_bytes()
+    target = source if destination_kind == "source" else tmp_path / "target.pdf"
+    if destination_kind == "existing":
+        target.write_bytes(original_bytes)
+    target_bytes = target.read_bytes() if target.exists() else None
+
+    store = PdfStore()
+    try:
+        ref = store.load(str(source))[0]
+        rect = _line_rect(store.text_snapshot(ref)["raw"])
+        edit = store.prepare_replacement(ref, rect, "Report 2024 系统规格")
+        insert_text = p.Page.insert_text
+        attempts = 0
+
+        def fail_actual_write(page, *args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            return insert_text(page, *args, **kwargs) if attempts == 1 else 0
+
+        monkeypatch.setattr(p.Page, "insert_text", fail_actual_write)
+        with pytest.raises(PdfError, match="新文字未完整写入"):
+            store.write([ref.edited(edit)], str(target))
+        assert attempts == 2
+        assert source.read_bytes() == original_bytes
+        if target_bytes is None:
+            assert not target.exists()
+        else:
+            assert target.read_bytes() == target_bytes
+        assert not list(tmp_path.glob(".pdfasm-*.pdf"))
+        raw = store.text_snapshot(ref)["raw"]
+        assert "Report 2024" in "".join(
+            char["c"] for block in raw["blocks"]
+            for line in block["lines"] for span in line["spans"] for char in span["chars"])
+    finally:
+        store.close_all()
+
+
 def test_elided_title_label_adapts_to_window_shrink(qapp):
     from app.ui import ElidedTitleLabel
     long_title = "演示材料_非常非常长的一个测试文件名_待合并附件.pdf — 纸序 PDF v0.2.2 (吾爱破解)"

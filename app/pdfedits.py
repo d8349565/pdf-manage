@@ -96,7 +96,7 @@ def update_arrow_appearance(page, annot):
     page.parent.update_stream(xref, appearance.encode("ascii"))
 
 
-def replacement_font(page, text, preferred=""):
+def replacement_font(page, text, preferred="", flags=0):
     import pymupdf as p
     # insert_font reuses an existing resource name even when its font buffer
     # differs. A saved subset may contain none of the replacement's glyphs.
@@ -122,6 +122,19 @@ def replacement_font(page, text, preferred=""):
                     return font, unused_name(f"ZhiXuReplace{xref}"), buffer
             except Exception:
                 pass  # An unsupported source font may still use the built-in fallback.
+    # Saved subsets often omit the new characters. Prefer the same full installed
+    # face before falling back to the built-in Chinese font.
+    from app.systemfonts import installed_font_buffer, font_face
+    buffer = installed_font_buffer(preferred, flags)
+    if buffer:
+        try:
+            font = p.Font(fontbuffer=buffer)
+            _, bold, italic = font_face(preferred, flags)
+            if (bool(font.is_bold) == bold and bool(font.is_italic) == italic
+                    and all(font.has_glyph(ord(c)) for c in text)):
+                return font, unused_name("ZhiXuSystem"), buffer
+        except Exception:
+            pass  # Unreadable or unsupported installed faces still use the safe fallback.
     alias = p.Base14_fontdict.get(preferred.lower(), preferred) if preferred else "Helvetica"
     if alias in p.Base14_fontdict.values():
         font = p.Font(fontname=alias)
@@ -215,7 +228,12 @@ def prepare_replacement(page, rectangle, text, raw=None):
         if span.get("type") == 3 or span.get("opacity", 1) == 0:
             if any(area.intersects(p.Rect(char[3])) for char in span.get("chars", ())):
                 raise ValueError("选区含隐藏文字层，不能作为原文修正。")
-    font, _, _ = replacement_font(page, text, first["font"])
+    flags = first.get("flags", 0)
+    font, font_name, _ = replacement_font(page, text, first["font"], flags)
+    from app.systemfonts import font_face
+    original_family = font_face(first["font"])[0].replace(" ", "").casefold()
+    replacement_family = font_face(font.name)[0].replace(" ", "").casefold()
+    fallback = font_name.startswith("ZhiXuCJK") and original_family != replacement_family
     target_size = first["size"]
     max_right = available_right_boundary(page, raw, area, selected)
     available_width = max(area.width, max_right - area.x0)
@@ -231,13 +249,37 @@ def prepare_replacement(page, rectangle, text, raw=None):
             raise ValueError(f"新文字超出可用空间宽度（可用约 {int(available_width)} pt，需要约 {int(needed_width)} pt），请缩短文字或转 Word 编辑。")
     origin = tuple(chars[0][0]["origin"])
     if origin[1] - font.ascender * target_size < area.y0 - 2 or origin[1] - font.descender * target_size > area.y1 + 2:
-        raise ValueError("替换字体超出原文字高度，请转 Word 编辑。")
+        # 替换字体（如原字体缺字形时回退的内置字体）的升降沿盒与原文字不一致，按可用高度微调字号
+        fit_size = min(
+            (origin[1] - area.y0 + 2) / font.ascender if font.ascender > 0 else target_size,
+            (area.y1 + 2 - origin[1]) / -font.descender if font.descender < 0 else target_size,
+            target_size,
+        )
+        if fit_size < first["size"] * 0.85:
+            raise ValueError("替换字体超出原文字高度，请转 Word 编辑。")
+        target_size = fit_size
     color = first["color"]
     rgb = tuple(((color >> shift) & 255) / 255 for shift in (16, 8, 0))
     return PageEdit("replace", tuple(area), text=text, color=rgb, details=(
         ("font", first["font"]), ("font_size", target_size), ("origin", origin),
         ("old_text", "".join(c["c"] for c, _ in chars)),
+        ("font_flags", flags), ("font_fallback", fallback),
     ))
+
+
+def _write_replacement(page, edit, details, name, buffer):
+    """Remove the old text and write the replacement; raise unless the write verifies."""
+    import pymupdf as p
+    page.add_redact_annot(p.Rect(edit.points), fill=False, cross_out=False)
+    page.apply_redactions(images=p.PDF_REDACT_IMAGE_NONE, graphics=p.PDF_REDACT_LINE_ART_NONE, text=p.PDF_REDACT_TEXT_REMOVE)
+    page.insert_font(fontname=name, fontbuffer=buffer)
+    written = page.insert_text(details["origin"], edit.text, fontname=name,
+                               fontsize=details["font_size"], color=edit.color)
+    traces = page.get_texttrace()
+    if (written != 1 or not traces or traces[-1]["type"] != 0
+            or traces[-1]["opacity"] <= 0
+            or "".join(chr(char[0]) for char in traces[-1]["chars"]) != edit.text):
+        raise ValueError("新文字未完整写入，本次修改未应用，原文已保留。请重新输入或转 Word 编辑。")
 
 
 def apply_edits(page, edits):
@@ -259,18 +301,16 @@ def apply_edits(page, edits):
             prepared = prepare_replacement(page, edit.points, edit.text)
             if dict(prepared.details)["old_text"] != details["old_text"]:
                 raise ValueError("选区文字已发生变化，未应用修正。")
-            font, name, buffer = replacement_font(page, edit.text, details["font"])
+            font, name, buffer = replacement_font(page, edit.text, details["font"], details.get("font_flags", 0))
             subset |= buffer is not None
-            page.add_redact_annot(p.Rect(edit.points), fill=False, cross_out=False)
-            page.apply_redactions(images=p.PDF_REDACT_IMAGE_NONE, graphics=p.PDF_REDACT_LINE_ART_NONE, text=p.PDF_REDACT_TEXT_REMOVE)
-            page.insert_font(fontname=name, fontbuffer=buffer)
-            written = page.insert_text(details["origin"], edit.text, fontname=name,
-                                       fontsize=details["font_size"], color=edit.color)
-            traces = page.get_texttrace()
-            if (written != 1 or not traces or traces[-1]["type"] != 0
-                    or traces[-1]["opacity"] <= 0
-                    or "".join(chr(char[0]) for char in traces[-1]["chars"]) != edit.text):
-                raise ValueError("新文字未完整写入，本次修改未应用，原文已保留。请重新输入或转 Word 编辑。")
+            # 先在草稿页完整演练一遍：写入校验失败绝不能以原文被删为代价。
+            rehearsal = p.open()
+            try:
+                rehearsal.insert_pdf(page.parent, from_page=page.number, to_page=page.number)
+                _write_replacement(rehearsal[0], edit, details, name, buffer)
+            finally:
+                rehearsal.close()
+            _write_replacement(page, edit, details, name, buffer)
             continue
         if edit.kind in ("delete", "style", "note_text", "move"):
             annot = next((a for a in (page.annots() or ()) if a.info.get("id") == edit.annotation_id), None)
