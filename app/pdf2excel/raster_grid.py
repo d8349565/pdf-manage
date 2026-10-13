@@ -38,7 +38,8 @@ def raster_grid_lines(page):
     import pymupdf as p
     if not page.get_images():
         return []
-    scale = min(1.5, 1600 / max(page.rect.width, page.rect.height))
+    # Dense, large tables lose their thin rules when reduced to a 1600px page.
+    scale = min(2, 3200 / max(page.rect.width, page.rect.height))
     pix = page.get_pixmap(matrix=p.Matrix(scale, scale), colorspace=p.csGRAY, alpha=False, annots=False)
     width, height = pix.width, pix.height
     dark = bytes(value < 200 for value in pix.samples)

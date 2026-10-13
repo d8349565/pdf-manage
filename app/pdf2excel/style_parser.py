@@ -68,6 +68,9 @@ def parse_font_style(span: dict) -> tuple[str | None, float | None, bool, bool, 
     """
     font_raw = span.get('font', '')
     size = span.get('size')
+    if size and span.get('alpha', 255) == 0 and span.get('bbox'):
+        # An affine OCR font's scalar size can be much larger than its visible height.
+        size = min(size, (span['bbox'][3] - span['bbox'][1]) / 1.3)
     flags = span.get('flags', 0)
     color_int = span.get('color')
     

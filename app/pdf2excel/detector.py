@@ -257,12 +257,7 @@ def _format_cell_text_and_bbox(spans: list[dict]) -> tuple[str, tuple[float, flo
     if not spans:
         return "", None
 
-    # 按 Y 坐标为主、X 为辅排序
-    sorted_spans = sorted(spans, key=lambda s: (round(s["bbox"][1] / (EPSILON * 2)), s["bbox"][0]))
-
-    lines = []
-    current_line = []
-    current_y = None
+    from app.pdf2excel.analyzer import text_rows
 
     min_x = min(s["bbox"][0] for s in spans)
     min_y = min(s["bbox"][1] for s in spans)
@@ -270,24 +265,7 @@ def _format_cell_text_and_bbox(spans: list[dict]) -> tuple[str, tuple[float, flo
     max_y = max(s["bbox"][3] for s in spans)
     text_bbox = (min_x, min_y, max_x, max_y)
 
-    for s in sorted_spans:
-        txt = s.get("text", "")
-        if not txt:
-            continue
-        sy = s["bbox"][1]
-        if current_y is None:
-            current_y = sy
-            current_line.append(txt)
-        else:
-            if abs(sy - current_y) <= EPSILON * 2:
-                current_line.append(txt)
-            else:
-                lines.append(" ".join(current_line))
-                current_line = [txt]
-                current_y = sy
-
-    if current_line:
-        lines.append(" ".join(current_line))
+    lines = [" ".join(span['text'] for span in row) for row in text_rows(spans)]
 
     return "\n".join(lines).strip(), text_bbox
 

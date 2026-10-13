@@ -16,6 +16,11 @@ python -m venv .venv
 - 构建报告：`build/build-report.json`，仅保留本机。
 - 安装包：安装 Inno Setup 后运行 `build.bat`（或 `build_setup.bat`），输出 `dist-installer/ZhiXuPDF-Setup.exe`。
 
+**安装器构建规则**：所有本地、CI、验收及预览构建，只允许在仓库根目录的 `dist-installer/` 内直接生成安装器，文件名固定为 `ZhiXuPDF-Setup.exe`。
+本仓库位于 `D:\code\pdf-manage` 时，完整路径为 `D:\code\pdf-manage\dist-installer\ZhiXuPDF-Setup.exe`。
+禁止在 `build/`、临时目录或其他目录编译安装器后再搬运，禁止修改 `/O` 为其他目录或使用 `/F` 改名。
+基础程序目录仍为 `dist/ZhiXuPDF/`，OCR 增强包仍在独立的 `dist-ocr/`；这些产物都不加入 Git。
+
 基础安装器只包含 `dist/ZhiXuPDF/`，不打入 OCR 推理依赖或模型。可选增强包的构建命令见 `docs/OCR.md`；
 增强包、模型缓存和构建依赖分别保存在忽略的 `dist-ocr/` 与 `build/`，不能加入 Git。
 升级主程序的主/次版本时必须重建匹配系列的增强包。
@@ -34,6 +39,7 @@ python -m venv .venv
 | `app/compression.py`、`app/imaging.py` | 压缩与图片转换 |
 | `app/ocr/`、`app/ocrui.py` | 可选离线 OCR、文字层输出与操作弹窗 |
 | `app/storage.py`、`app/storageui.py` | 存储偏好、组件迁移、任务临时目录与受限清理 |
+| `app/rasterpdf.py`、`app/rasterui.py` | 图片版 PDF 输出与未知签名的安全影像副本 |
 | `app/textselection.py`、`app/ocr/word_export.py` | 阅读区框选复制与 OCR 文字层导出可编辑 DOCX |
 | `app/wordconvert.py`、`app/wordui.py` | Word 批量转换 |
 | `app/assets/` | 应用资源 |

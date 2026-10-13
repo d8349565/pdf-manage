@@ -17,6 +17,7 @@ DefaultGroupName={#MyAppName}
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; All installer builds use this directory and filename, including preview builds.
 OutputDir=..\dist-installer
 OutputBaseFilename=ZhiXuPDF-Setup
 Compression=lzma2/ultra64

@@ -44,7 +44,8 @@ jobs:
             $setupCompiler = @("${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe", "$env:ProgramFiles/Inno Setup 6/ISCC.exe", "${env:ProgramFiles(x86)}/Inno Setup 7/ISCC.exe", "$env:ProgramFiles/Inno Setup 7/ISCC.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           }
           if (-not $setupCompiler) { throw 'Inno Setup compiler not found on this runner.' }
-          & $setupCompiler packaging/pdf-manage.iss
+          $installerOutput = Join-Path $PWD.Path 'dist-installer'
+          & $setupCompiler "/O$installerOutput" packaging/pdf-manage.iss
           if ($LASTEXITCODE -ne 0) { throw 'Base installer build failed.' }
           python packaging/verify_exe.py --skip-runtime --installer dist-installer/ZhiXuPDF-Setup.exe
           if ($LASTEXITCODE -ne 0) { throw 'Installer version validation failed.' }

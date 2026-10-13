@@ -1750,6 +1750,10 @@ class MainWindow(QMainWindow):
         geometry = self._window_settings.value("mainWindow/geometry", QByteArray())
         if isinstance(geometry, QByteArray):
             self.restoreGeometry(geometry)
+        self._restore_ui_preferences()
+        for signal in (self.act_pages.toggled, self.act_tools.toggled, self.sidebar_mode.currentIndexChanged,
+                       self.export_tools.currentChanged):
+            signal.connect(self._save_ui_preferences)
         self.refresh()
         mark("window_ready")
 
@@ -1791,6 +1795,33 @@ class MainWindow(QMainWindow):
         if panel is not None:
             panel.setVisible(on and bool(self.ws.pages))
 
+    def _save_ui_preferences(self, *_):
+        if not hasattr(self, '_window_settings'):
+            return
+        for key, value in (('pagesVisible', self.act_pages.isChecked()),
+                           ('toolsVisible', self.act_tools.isChecked()),
+                           ('sidebarMode', self.sidebar_mode.currentIndex()),
+                           ('toolIndex', self.export_tools.currentIndex())):
+            self._window_settings.setValue('mainWindow/' + key, value)
+
+    def _restore_ui_preferences(self):
+        self.act_pages.setChecked(self._window_settings.value('mainWindow/pagesVisible', False, type=bool))
+        self.act_tools.setChecked(self._window_settings.value('mainWindow/toolsVisible', False, type=bool))
+        for key, widget in (('sidebarMode', self.sidebar_mode), ('toolIndex', self.export_tools)):
+            try:
+                index = self._window_settings.value('mainWindow/' + key, 0, type=int)
+            except (TypeError, ValueError):
+                index = 0
+            widget.setCurrentIndex(index if 0 <= index < widget.count() else 0)
+
+    def reset_ui_preferences(self):
+        self.act_pages.setChecked(False)
+        self.act_tools.setChecked(False)
+        self.sidebar_mode.setCurrentIndex(0)
+        self.export_tools.setCurrentIndex(0)
+        self._save_ui_preferences()
+        self.statusBar().showMessage('界面已恢复默认，文档与存储设置保留。', 5000)
+
     def _build(self) -> None:
         self._chrome_actions()
         self.stack = QStackedWidget()
@@ -1826,6 +1857,13 @@ class MainWindow(QMainWindow):
         self.protection_label.setWordWrap(True)
         self.protection_label.hide()
         status_layout.addWidget(self.protection_label)
+        self.protection_copy_button = QPushButton('制作影像副本…', status_widgets)
+        self.protection_copy_button.setAccessibleName('为无法确认签名结构的原件制作影像副本')
+        self.protection_copy_button.setStyleSheet('min-height: 0px; padding: 4px 8px;')
+        self.protection_copy_button.setMinimumWidth(self.protection_copy_button.sizeHint().width())
+        self.protection_copy_button.clicked.connect(lambda: self.rasterize_document(recovery=True))
+        self.protection_copy_button.hide()
+        status_layout.addWidget(self.protection_copy_button)
         # 一次注册，避免 QStatusBar 为每个控件重复重建整个布局。
         self.statusBar().addPermanentWidget(status_widgets)
         # 只在真的忙的时候轮询，空闲就停表。
@@ -1897,9 +1935,11 @@ class MainWindow(QMainWindow):
         convert.addAction(self._act("PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
         self.convert_action = self._act("PDF 转 Excel…", lambda: self.open_export_tool(2))
         self.image_export_action = self._act("PDF 转图片…", lambda: self.open_export_tool(5))
+        self.raster_action = self._act('PDF 转图片版…', self.rasterize_document)
         convert.addAction(self.convert_action)
         convert.addAction(self._act("PDF 转 TXT…", self.export_text))
         convert.addAction(self.image_export_action)
+        convert.addAction(self.raster_action)
         view = self._menubar.addMenu("视图")
         view.addAction(self._act("阅读", lambda: self.stack.setCurrentIndex(0)))
         view.addAction(self._act("整理页面", lambda: self.stack.setCurrentIndex(1)))
@@ -1907,6 +1947,7 @@ class MainWindow(QMainWindow):
         view.addSeparator()
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
+        view.addAction(self._act('恢复界面', self.reset_ui_preferences))
         view.addSeparator()
         view.addAction(self._act("放大", self.zoom_in, QKeySequence.StandardKey.ZoomIn))
         view.addAction(self._act("缩小", self.zoom_out, QKeySequence.StandardKey.ZoomOut))
@@ -2037,6 +2078,11 @@ class MainWindow(QMainWindow):
         protection = read_only or copy_reason or self.store.operation_reason(self.ws.pages, "print")
         self.protection_label.setText(protection)
         self.protection_label.setVisible(bool(protection))
+        unknown_signature = any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages)
+        raster_reason = self.store.operation_reason(self.ws.pages, 'raster_copy')
+        self.protection_copy_button.setVisible(unknown_signature)
+        self.protection_copy_button.setEnabled(bool(count) and not raster_reason)
+        self.protection_copy_button.setToolTip(raster_reason or '仅复制页面影像；原件不变，副本不保留签名效力。')
         current = self.ws.preview_index()
         self.page_number.blockSignals(True)
         self.page_number.setRange(1 if count else 0, count)
@@ -2056,8 +2102,12 @@ class MainWindow(QMainWindow):
         self.compress_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.ocr_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
+        self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
-        self.editable_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "editable_copy"))
+        self.editable_action.setText('影像副本…' if unknown_signature else '编辑副本…')
+        self.editable_button.setText('制作影像副本…' if unknown_signature else '制作可编辑副本…')
+        self.editable_action.setEnabled(bool(count) and not (raster_reason if unknown_signature
+                                        else self.store.operation_reason(self.ws.pages, 'editable_copy')))
         self.compress_button.setEnabled(self.compress_action.isEnabled())
         self.image_export_button.setEnabled(self.image_export_action.isEnabled())
         self.encrypt_button.setEnabled(self.encrypt_action.isEnabled())
@@ -3756,6 +3806,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "加密未完成", str(exc))
 
     def editable_copy(self):
+        if any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages):
+            self.rasterize_document(recovery=True)
+            return
         if not self._allow_operation("editable_copy") or not self.ws.pages:
             return
         if not self.confirm_leave():
@@ -3812,6 +3865,10 @@ class MainWindow(QMainWindow):
         dialog = PageNumbersDialog(self)
         dialog.exec()
         dialog.deleteLater()
+
+    def rasterize_document(self, checked=False, *, recovery=False):
+        from app.rasterui import open_raster
+        open_raster(self, recovery=recovery)
 
     def show_outline(self, index):
         if index == 1:
@@ -4195,6 +4252,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.confirm_leave():
+            self._save_ui_preferences()
             self.search_bar.cancel()
             self._reading_timer.stop()
             self._preview_timer.stop()

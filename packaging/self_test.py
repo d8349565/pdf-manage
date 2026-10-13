@@ -89,6 +89,34 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 window.ws.open_replace(pages, str(source))
                 window.refresh()
                 qapp.processEvents()
+                from app.rasterpdf import rasterize_pdf
+                from app.pdfio import PdfStore
+                image_pdf = folder / '影像副本.pdf'
+                rasterize_pdf(window.store, window.ws.pages, image_pdf)
+                with pymupdf.open(image_pdf) as images:
+                    assert images.page_count == 2
+                    assert all(not page.get_text().strip() and page.get_images() for page in images)
+                report['checks'].append('image-only PDF export without text, with source page geometry')
+                unknown = folder / '未知签名.pdf'
+                with pymupdf.open(source) as document:
+                    field = document.get_new_xref()
+                    document.update_object(field, '<< /FT /Sig /V (unrecognized) >>')
+                    document.xref_set_key(document.pdf_catalog(), 'AcroForm', f'<< /Fields [{field} 0 R] /SigFlags 3 >>')
+                    document.save(unknown)
+                before = hashlib.sha256(unknown.read_bytes()).hexdigest()
+                recovery_store = PdfStore()
+                try:
+                    recovery_pages = recovery_store.load(str(unknown))
+                    assert recovery_store.operation_reason(recovery_pages, 'modify')
+                    assert not recovery_store.operation_reason(recovery_pages, 'raster_copy')
+                    recovery = folder / '安全影像副本.pdf'
+                    rasterize_pdf(recovery_store, recovery_pages, recovery)
+                    recovered = recovery_store.load(str(recovery))
+                    assert not recovery_store.operation_reason(recovered, 'modify')
+                    assert hashlib.sha256(unknown.read_bytes()).hexdigest() == before
+                finally:
+                    recovery_store.close_all()
+                report['checks'].append('unknown-signature recovery into an editable image document without touching the original')
                 from PyQt6.QtWidgets import QToolButton
                 toolbar = window.navigation_bar.parentWidget()
                 tools = {b.accessibleName(): b for b in toolbar.findChildren(QToolButton)}

@@ -126,29 +126,19 @@ if not exist "%ZHIXUPDF_SETUP_COMPILER%" (
 )
 
 if not exist "build" mkdir "build"
-set "ZHIXUPDF_SETUP_STAGE=%CD%\build\setup-stage"
-if exist "%ZHIXUPDF_SETUP_STAGE%" rmdir /s /q "%ZHIXUPDF_SETUP_STAGE%"
-mkdir "%ZHIXUPDF_SETUP_STAGE%"
+REM Installers must be compiled directly into this fixed repository directory.
+set "ZHIXUPDF_SETUP_OUTPUT=%CD%\dist-installer"
+if not exist "%ZHIXUPDF_SETUP_OUTPUT%" mkdir "%ZHIXUPDF_SETUP_OUTPUT%"
 if errorlevel 1 goto failed
 set "ZHIXUPDF_SETUP_LOG=%CD%\build\setup-compiler.log"
 
-"%ZHIXUPDF_SETUP_COMPILER%" "/O%ZHIXUPDF_SETUP_STAGE%" "packaging\pdf-manage.iss" >"%ZHIXUPDF_SETUP_LOG%" 2>&1
+"%ZHIXUPDF_SETUP_COMPILER%" "/O%ZHIXUPDF_SETUP_OUTPUT%" "packaging\pdf-manage.iss" >"%ZHIXUPDF_SETUP_LOG%" 2>&1
 set "ZHIXUPDF_SETUP_EXIT=%ERRORLEVEL%"
 type "%ZHIXUPDF_SETUP_LOG%"
 if not "%ZHIXUPDF_SETUP_EXIT%"=="0" goto setup_failed
 findstr /c:"Successful compile" "%ZHIXUPDF_SETUP_LOG%" >nul
 if errorlevel 1 goto setup_failed
-if not exist "%ZHIXUPDF_SETUP_STAGE%\ZhiXuPDF-Setup.exe" goto setup_failed
-if not exist "dist-installer" mkdir "dist-installer"
-if exist "dist-installer\ZhiXuPDF-Setup.exe" del /f /q "dist-installer\ZhiXuPDF-Setup.exe" >nul 2>&1
-move /Y "%ZHIXUPDF_SETUP_STAGE%\ZhiXuPDF-Setup.exe" "dist-installer\ZhiXuPDF-Setup.exe" >nul 2>&1
-if errorlevel 1 (
-    powershell -NoProfile -Command "Start-Sleep -Milliseconds 600"
-    if exist "dist-installer\ZhiXuPDF-Setup.exe" del /f /q "dist-installer\ZhiXuPDF-Setup.exe" >nul 2>&1
-    move /Y "%ZHIXUPDF_SETUP_STAGE%\ZhiXuPDF-Setup.exe" "dist-installer\ZhiXuPDF-Setup.exe" >nul 2>&1
-)
-if errorlevel 1 goto setup_failed
-rmdir /s /q "%ZHIXUPDF_SETUP_STAGE%" >nul 2>&1
+if not exist "%ZHIXUPDF_SETUP_OUTPUT%\ZhiXuPDF-Setup.exe" goto setup_failed
 set "ZHIXUPDF_SETUP_BUILT=1"
 
 :done

@@ -80,7 +80,8 @@ def main() -> None:
     for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell",
                      "win32com.client", "win32com.server.factory", "win32com.server.policy", "win32com.shell.shellcon",
                      "app.documentlayout", "app.documentimages", "app.ocr.export_input", "app.ocr.word_export",
-                     "app.pdf2excel.raster_grid", "app.pdf2excel.alignment_grid", "app.textselection"):
+                     "app.pdf2excel.raster_grid", "app.pdf2excel.alignment_grid", "app.textselection",
+                     "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "markdown"):
         assert required in python_modules, f"Missing module: {required}"
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
     for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "rapidocr", "onnxruntime", "cv2", "pandas", "lxml", "libssl", "libcrypto"):

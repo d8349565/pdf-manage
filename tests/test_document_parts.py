@@ -136,4 +136,5 @@ def test_table_fallback_still_retains_independent_picture(tmp_path,monkeypatch):
         assert 'Every word survives' in ''.join(node.text or '' for node in root.iter(f'{{{W}}}t'))
         assert list(root.iter(f'{{{W}}}drawing'))
         assert len([name for name in archive.namelist() if name.startswith('word/media/')])==1
-    assert '按正文保留全部识别文字' in result[1]
+    assert '按原位置保留全部识别文字' in result[1]
+    assert list(root.iter(f'{{{W}}}framePr'))

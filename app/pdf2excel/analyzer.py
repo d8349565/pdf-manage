@@ -3,6 +3,31 @@ from __future__ import annotations
 import pymupdf
 from app.pdf2excel.models import PageAnalysis
 
+
+def text_rows(spans):
+    """Group overlapping baselines before sorting horizontally, without Y buckets."""
+    rows = []
+    for span in sorted(spans, key=lambda item: (sum(item['bbox'][1::2]) / 2, item['bbox'][0])):
+        if not span.get('text', '').strip():
+            continue
+        box = span['bbox']
+        height = max(.1, box[3] - box[1])
+        center = (box[1] + box[3]) / 2
+        if rows:
+            reference = rows[-1][0]['bbox']
+            overlap = min(box[3], reference[3]) - max(box[1], reference[1])
+            same_row = (overlap >= min(height, reference[3] - reference[1]) * .6
+                        and abs(center - (reference[1] + reference[3]) / 2)
+                        <= max(height, reference[3] - reference[1]) * .45)
+        else:
+            same_row = False
+        if same_row:
+            rows[-1].append(span)
+        else:
+            rows.append([span])
+    return [sorted(row, key=lambda item: item['bbox'][0]) for row in rows]
+
+
 def analyze_page(page: pymupdf.Page) -> PageAnalysis:
     """
     分析页面，判断它是电子版还是扫描版。

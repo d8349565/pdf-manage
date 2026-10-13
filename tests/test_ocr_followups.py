@@ -92,7 +92,7 @@ def test_organization_and_directional_conversion_groups(qapp):
         conversion = menus['转换'].actions()
         assert [action.text() for action in conversion] == [
             'Word 转 PDF…', '图片转 PDF…', 'Markdown 转 PDF…', '',
-            'PDF 转 Word…', 'PDF 转 Excel…', 'PDF 转 TXT…', 'PDF 转图片…']
+            'PDF 转 Word…', 'PDF 转 Excel…', 'PDF 转 TXT…', 'PDF 转图片…', 'PDF 转图片版…']
         assert conversion[3].isSeparator()
         assert all('批量' not in action.text() for action in conversion)
         assert all(action.isSeparator() or action.text().endswith('…') for action in menus['组织'].actions())
@@ -203,4 +203,5 @@ def test_incomplete_table_structure_falls_back_without_losing_ocr_text(tmp_path,
     document, text = read_docx(output)
     assert '采购合同 & ABC123' in text and '12345.67' in text
     assert not list(document.iter(f'{{{W}}}tbl'))
-    assert '按正文保留全部识别文字' in result[1]
+    assert '按原位置保留全部识别文字' in result[1]
+    assert list(document.iter(f'{{{W}}}framePr'))

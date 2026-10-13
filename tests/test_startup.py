@@ -124,7 +124,7 @@ def test_status_widgets_are_registered_once_while_hidden(qapp, monkeypatch):
         return original(status, widget, *args)
     monkeypatch.setattr(QStatusBar, "addPermanentWidget", add)
     win = MainWindow()
-    assert hidden == [[True, True, True]], "empty startup repeatedly lays out unused status widgets"
+    assert hidden == [[True, True, True, True]], "empty startup repeatedly lays out unused status widgets"
     win._preview_busy = True
     win._update_render_progress()
     assert not win.render_label.isHidden()

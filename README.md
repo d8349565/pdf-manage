@@ -20,6 +20,8 @@
 2. 把 PDF 拖进窗口。
 3. 在“阅读”里看，在“整理”里改，完成后点“保存”；想保留原文件就点“另存为”。
 
+> 如果想自己运行源码或参与开发，请参考 [开发说明](docs/DEVELOPMENT.md)。
+
 ## 功能
 
 | 场景 | 能做什么 |
@@ -59,4 +61,17 @@
 
 ## 开源协议
 
-本项目基于 [MIT 许可证](LICENSE) 开源，可免费用于个人及商业用途，支持自由修改与二次分发。
+本项目源码基于 [MIT 许可证](LICENSE) 开源，你可以自由使用、修改或分享。
+
+> **友情提示**：直接下载运行的 Windows 安装包和可执行文件中，集成了 **PyMuPDF**（AGPL-3.0）与 **PyQt6**（GPL-3.0）。如果你打算把打包后的程序改动并重新发布给他人，按照它们的协议要求同样需要公开源码；若计划用于闭源商业软件，请记得单独联系原作者购买商业授权。
+
+### 感谢开源项目
+
+纸序 PDF 站在巨人的肩膀上，特别感谢以下优秀的开源项目：
+
+- [PyMuPDF](https://github.com/pymupdf/PyMuPDF) (AGPL-3.0) — PDF 页面解析、渲染、整理与加密
+- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) (GPL-3.0) — 桌面图形界面与系统打印
+- [openpyxl](https://foss.heptapod.net/openpyxl/openpyxl) (MIT) — 表格导出为 Excel
+- [Python-Markdown](https://github.com/Python-Markdown/markdown) (BSD-3-Clause) — Markdown 排版转 PDF
+- [pywin32](https://github.com/mhammond/pywin32) (PSF) — Windows 右键菜单与系统原生交互
+- [RapidOCR](https://github.com/RapidAI/RapidOCR) (Apache-2.0) — 离线文字识别（可选组件）

@@ -288,7 +288,7 @@ class PdfStore:
         import pymupdf
         for sid in dict.fromkeys(page.source_id for page in pages):
             safety = self._source(sid).safety
-            if operation not in ("print", "editable_copy") and safety.signature != "none":
+            if operation not in ("print", "editable_copy", "raster_copy") and safety.signature != "none":
                 return safety.read_only_reason
             if operation == "editable_copy":
                 if safety.signature != "present":
@@ -298,10 +298,12 @@ class PdfStore:
             if operation == "modify" and safety.read_only_reason:
                 return safety.read_only_reason
             permission = {"print": pymupdf.PDF_PERM_PRINT, "copy": pymupdf.PDF_PERM_COPY,
+                          "raster_copy": pymupdf.PDF_PERM_COPY,
                           "annotate": pymupdf.PDF_PERM_ANNOTATE, "content_edit": pymupdf.PDF_PERM_MODIFY,
                           "outline": pymupdf.PDF_PERM_MODIFY}.get(operation)
             if permission is not None and not safety.allows(permission):
                 return {"print": "当前密码不允许打印。", "copy": "当前密码不允许导出内容。",
+                        "raster_copy": "当前密码不允许导出影像副本，请使用管理密码重新打开。",
                         "annotate": "当前密码不允许添加或修改批注。", "content_edit": "当前密码不允许修改原文。",
                         "outline": "当前密码不允许修改大纲。"}[operation]
         return ""

@@ -34,8 +34,8 @@
 - **典型业务场景**：对外公开发布白皮书、产品手册、报价单、对外合同草案或课件资料。
 - **痛点**：发件人希望接收方**双击直接无感打开阅读**（不需要分发和沟通打开密码），但防止接收方随意一键全选复制内容用于剽窃，或限制高精度打印。
 - **当前设计缺陷**：打开密码被强制必填，共有**两处**校验：
-  1. 界面层 [`exportdialogs.py`](file:///d:/code/pdf-manage/app/exportdialogs.py) 的 `EncryptionDialog.validate()`：`if not self.password.text()` → “请输入打开密码…”；
-  2. 数据层 [`pdfio.py`](file:///d:/code/pdf-manage/app/pdfio.py) 的 `EncryptionOptions.validate()`：`not self.user_password` 时抛出“打开密码须为 1～40 个字符…”。
+  1. 界面层 [`exportdialogs.py`](../app/exportdialogs.py) 的 `EncryptionDialog.validate()`：`if not self.password.text()` → “请输入打开密码…”；
+  2. 数据层 [`pdfio.py`](../app/pdfio.py) 的 `EncryptionOptions.validate()`：`not self.user_password` 时抛出“打开密码须为 1～40 个字符…”。
 
   导致用户想要“限制打印/复制”时，被迫加一个打开密码，违背了开放分发且保护权限的初衷。
 

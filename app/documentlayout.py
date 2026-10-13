@@ -6,7 +6,7 @@ import math
 
 
 def _column_cuts(fragments):
-    body=[item for item in fragments if not item.get('heading')]
+    body=[item for item in fragments if not item.get('heading') and not item.get('positioned')]
     if len(body)<6:
         return [], None
     # Short aligned numeric fields remain rows rather than newspaper columns.
@@ -96,7 +96,7 @@ def _paragraphs(items):
         current['first_line_indent']=max(0,item['bbox'][0]-left) if item['bbox'][0]-left>=item['size']*1.3 else 0
         listed=bool(re.match(r'^(?:[•*]\s|[-]\s|\d+[.)、]\s*|[一二三四五六七八九十]+[、])',item['text']))
         previous=output[-1] if output else None
-        if previous and previous['kind']=='text' and not listed and not previous.get('heading') and not current.get('heading'):
+        if previous and previous['kind']=='text' and not listed and not previous.get('heading') and not current.get('heading') and not previous.get('positioned') and not current.get('positioned'):
             box=previous['last_line_box']; gap=item['bbox'][1]-box[3]
             width=max(1,right-left)
             near_right=right-box[2]<=max(item['size']*1.3,width*.08)
@@ -141,8 +141,9 @@ def canonical_tables(page, tables):
     return output
 
 
-def layout_from_raw(raw, tables):
+def layout_from_raw(raw, tables, *, positioned_areas=()):
     import pymupdf as p
+    from app.pdf2excel.analyzer import text_rows
     areas = [p.Rect(table.bbox) for table in tables]
     fragments = []
     for block in raw.get('blocks', ()):
@@ -160,7 +161,10 @@ def layout_from_raw(raw, tables):
                 for char in chars[1:]:
                     bounds |= p.Rect(char['bbox'])
                 direction=line.get('dir',(1,0))
-                fragments.append(dict(kind='text', text=text, bbox=tuple(bounds), size=median(sizes),angle=math.degrees(math.atan2(direction[1],direction[0])),
+                hidden = all(span.get('alpha', 255) == 0 for span in line.get('spans', ()))
+                size = min(median(sizes), bounds.height / 1.3) if hidden else median(sizes)
+                fragments.append(dict(kind='text', text=text, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
+                                      positioned=any(p.Rect(area).contains((bounds.tl+bounds.br)/2) for area in positioned_areas),
                                       bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ()))))
     body_size=median([item['size'] for item in fragments]) if fragments else 11
     for item in fragments:
@@ -170,17 +174,18 @@ def layout_from_raw(raw, tables):
         item['column']=sum(item['bbox'][0]>=cut for cut in cuts) if cuts else -1
     # Rejoin fragments within the same column, never across a detected gutter.
     rows = []
-    for fragment in sorted(fragments, key=lambda item: (item['bbox'][1], item['bbox'][0])):
-        box = p.Rect(fragment['bbox'])
-        if rows and fragment['column']==rows[-1]['column'] and abs((box.y0+box.y1)/2 - (rows[-1]['bbox'][1]+rows[-1]['bbox'][3])/2) <= min(box.height, rows[-1]['bbox'][3]-rows[-1]['bbox'][1]) * .4:
-            previous = rows[-1]
-            gap = box.x0 - previous['bbox'][2]
-            separator = '\t' if gap > max(previous['size'], fragment['size']) * 2 else (' ' if gap > fragment['size'] * .2 else '')
-            previous['text'] += separator + fragment['text']
-            previous['bbox'] = tuple(p.Rect(previous['bbox']) | box)
-            previous['size'] = max(previous['size'], fragment['size'])
-        else:
-            rows.append(dict(fragment))
+    rows.extend(dict(item) for item in fragments if item['positioned'])
+    for column in sorted({item['column'] for item in fragments}):
+        for group in text_rows([item for item in fragments if item['column']==column and not item['positioned']]):
+            previous = dict(group[0])
+            for fragment in group[1:]:
+                box = p.Rect(fragment['bbox'])
+                gap = box.x0 - previous['bbox'][2]
+                separator = '\t' if gap > max(previous['size'], fragment['size']) * 2 else (' ' if gap > fragment['size'] * .2 else '')
+                previous['text'] += separator + fragment['text']
+                previous['bbox'] = tuple(p.Rect(previous['bbox']) | box)
+                previous['size'] = max(previous['size'], fragment['size'])
+            rows.append(previous)
     body_size = median([item['size'] for item in rows]) if rows else 11
     for item in rows:
         item['heading'] = item['size'] >= body_size * 1.3 and len(item['text']) <= 100

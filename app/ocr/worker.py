@@ -3,6 +3,7 @@ import argparse
 from collections import Counter
 import contextlib
 import json
+import re
 from importlib.metadata import version
 import socket
 import sys
@@ -50,6 +51,7 @@ def load_engine(models):
     if not all(path.is_file() for path in paths.values()):
         raise RuntimeError('OCR 模型缺失，请重新安装增强包。')
     params = {'Global.log_level': 'critical', 'Global.use_cls': True,
+              'Det.max_candidates': 10000,
               'EngineConfig.onnxruntime.intra_op_num_threads': 4,
               'EngineConfig.onnxruntime.inter_op_num_threads': 1}
     for key, path in paths.items():
@@ -73,6 +75,49 @@ def load_engine(models):
     return engine
 
 
+def refine_currency_symbols(engine, image, lines):
+    """Re-read isolated ambiguous symbols with adjacent digits; never rewrite digits."""
+    candidates = []
+    for index, line in enumerate(lines):
+        if line['text'].strip() not in ('夫', '羊', '半', '丰', 'Y', 'y'):
+            continue
+        left, top, right, bottom = line['bbox']
+        height = bottom - top
+        if height <= 0 or right - left > height * 1.8:
+            continue
+        neighbours = [other for other in lines
+                      if re.fullmatch(r'[+-]?\d[\d,]*(?:\.\d+)?', other['text'].strip())
+                      and 0 <= other['bbox'][0] - right <= height * 12
+                      and abs(sum(other['bbox'][1::2]) / 2 - (top + bottom) / 2) <= height * .35
+                      and .65 * height <= other['bbox'][3] - other['bbox'][1] <= 1.5 * height]
+        if neighbours:
+            candidates.append((index, min(neighbours, key=lambda other: other['bbox'][0])))
+    if not candidates:
+        return
+    import cv2
+    import numpy as np
+    from rapidocr.ch_ppocr_rec import TextRecInput
+    from rapidocr.utils.process_img import get_rotate_crop_image
+    pixels = engine.load_img(str(image)) if isinstance(image, (str, Path)) else image
+    probes = []
+    for index, neighbour in candidates:
+        crops = []
+        for line in (lines[index], neighbour):
+            crop = get_rotate_crop_image(pixels, np.array(line['polygon'], dtype=np.float32).reshape(4, 2))
+            crops.append(cv2.resize(crop, (max(1, round(crop.shape[1] * 48 / crop.shape[0])), 48)))
+        combined = np.concatenate((crops[0], np.full((48, 5, 3), 255, dtype=np.uint8), crops[1]), axis=1)
+        probes.extend((combined, cv2.rotate(combined, cv2.ROTATE_180)))
+    reread = engine.text_rec(TextRecInput(img=probes))
+    for offset, (index, neighbour) in enumerate(candidates):
+        for probe in (offset * 2, offset * 2 + 1):
+            text = ''.join(reread.txts[probe].split())
+            score = float(reread.scores[probe])
+            if score >= .9 and text[:1] in ('¥', '￥') and text[1:] == neighbour['text'].strip():
+                lines[index]['text'] = text[0]
+                lines[index]['confidence'] = score
+                break
+
+
 def recognize(engine, image, page_index):
     result = engine(str(image))
     if result.boxes is None or result.txts is None:
@@ -83,6 +128,7 @@ def recognize(engine, image, page_index):
         xs, ys = polygon[::2], polygon[1::2]
         lines.append(dict(text=text, bbox=[min(xs), min(ys), max(xs), max(ys)],
                           polygon=polygon, confidence=float(score), page_index=page_index))
+    refine_currency_symbols(engine, image, lines)
     return lines
 
 
