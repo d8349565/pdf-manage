@@ -110,6 +110,8 @@ THUMB_PAD = THUMB_ITEM_W_PAD + 2 * THUMB_LIST_SPACING
 PREVIEW_MAX_W = 4000
 PREVIEW_REUSE_RATIO = 2.0
 PREVIEW_UPSCALE_SLACK = 1.1
+RENDER_SHOW_DELAY_MS = 200
+RENDER_HIDE_DELAY_MS = 120
 ZOOM_MIN = 0.1
 ZOOM_MAX = 64.0
 ZOOM_STEP = 1.25
@@ -1842,6 +1844,11 @@ class MainWindow(QMainWindow):
         self.render_label = QLabel("正在渲染页面", status_widgets)
         # Match the status message height so rendering does not resize the reader.
         self.render_label.setStyleSheet("font-size: 13px;")
+        self.render_label.ensurePolished()
+        messages = ("正在打开 PDF", "正在渲染页面", "正在生成缩略图")
+        self.render_label.setFixedSize(
+            max(self.render_label.fontMetrics().horizontalAdvance(text) for text in messages) + 2,
+            self.render_label.sizeHint().height())
         for widget in (self.render_label, self.render_progress):
             policy = widget.sizePolicy()
             policy.setRetainSizeWhenHidden(True)
@@ -1870,6 +1877,14 @@ class MainWindow(QMainWindow):
         self._render_status_timer = QTimer(self)
         self._render_status_timer.setInterval(120)
         self._render_status_timer.timeout.connect(self._update_render_progress)
+        self._render_show_timer = QTimer(self)
+        self._render_show_timer.setSingleShot(True)
+        self._render_show_timer.setInterval(RENDER_SHOW_DELAY_MS)
+        self._render_show_timer.timeout.connect(self._show_render_progress)
+        self._render_hide_timer = QTimer(self)
+        self._render_hide_timer.setSingleShot(True)
+        self._render_hide_timer.setInterval(RENDER_HIDE_DELAY_MS)
+        self._render_hide_timer.timeout.connect(self._hide_render_progress)
         self.model.busy.connect(self._note_render_busy)
         self.setMenuWidget(TitleBar(self))
         file_menu = self._menubar.addMenu("文件")
@@ -3028,6 +3043,7 @@ class MainWindow(QMainWindow):
         render_w = self._active_width()
         if abs(render_w - self.model.icon_w) >= 8 or self.model.arrange != self._in_arrange():
             self.model.set_icon_width(render_w, self._in_arrange())
+        self._update_render_progress()
 
     def _in_arrange(self) -> bool:
         return self.stack.currentIndex() == 1
@@ -3380,17 +3396,56 @@ class MainWindow(QMainWindow):
         self._update_render_progress()
 
     def _note_render_busy(self) -> None:
-        if not self._render_status_timer.isActive():
-            self._render_status_timer.start()
+        self._update_render_progress()
+
+    def _render_busy_message(self) -> str:
+        if self._opening_paths and not self.ws.pages:
+            return "正在打开 PDF"
+        if not self.ws.pages:
+            return ""
+        if self._in_arrange():
+            view = self.arrange_view
+            if any(view.visualRect(self.model.index(row)).intersects(view.viewport().rect())
+                   for key in self.model.inflight for row in self.model._rows_by_key.get(key, ())):
+                return "正在生成缩略图"
+            return ""
+        index = self.ws.preview_index()
+        if index is None:
+            return ""
+        key = self.ws.pages[index].render_key
+        if ((self._preview_busy and self._preview_key is not None and self._preview_key[:3] == key)
+                or (self._detail_busy and self._detail_key is not None and self._detail_key[:3] == key)):
+            return "正在渲染页面"
+        return ""
 
     def _update_render_progress(self) -> None:
-        opening = bool(self._opening_paths) and not self.ws.pages
-        busy = opening or self._preview_busy or self._detail_busy or bool(self.model.inflight)
-        self.render_label.setText("正在打开 PDF" if opening else "正在渲染页面")
-        self.render_label.setVisible(busy)
-        self.render_progress.setVisible(busy)
-        if not busy:
+        message = self._render_busy_message()
+        if message:
+            self.render_label.setText(message)
+            self._render_hide_timer.stop()
+            if self.render_label.isHidden() and not self._render_show_timer.isActive():
+                self._render_show_timer.start()
+            if self._in_arrange() and not self._render_status_timer.isActive():
+                self._render_status_timer.start()
+        else:
+            self._render_show_timer.stop()
             self._render_status_timer.stop()
+            if not self.render_label.isHidden() and not self._render_hide_timer.isActive():
+                self._render_hide_timer.start()
+
+    def _show_render_progress(self) -> None:
+        if self._render_busy_message():
+            self.render_label.show()
+            self.render_progress.show()
+        else:
+            self._update_render_progress()
+
+    def _hide_render_progress(self) -> None:
+        if self._render_busy_message():
+            self._update_render_progress()
+        else:
+            self.render_label.hide()
+            self.render_progress.hide()
 
     def _show_preview_image(self) -> None:
         if self._preview_image is None or self._preview_image.isNull():
@@ -4257,6 +4312,9 @@ class MainWindow(QMainWindow):
             self._reading_timer.stop()
             self._preview_timer.stop()
             self._detail_timer.stop()
+            self._render_status_timer.stop()
+            self._render_show_timer.stop()
+            self._render_hide_timer.stop()
             if hasattr(self, "arrange_view"):
                 self.arrange_view._drop_motion.stop()
                 self.arrange_view._drop_fade.stop()

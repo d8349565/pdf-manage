@@ -35,8 +35,12 @@ def test_progress_states_and_cancel_stays_visible(qapp):
     assert not dialog.cancel_button.isEnabled()
     dialog.update_progress(3, 6, '迟到的进度')
     assert dialog.percent.text() == '取消中'
+    completed = []
+    dialog.finished.connect(lambda result: completed.append(result))
+    dialog.complete()
     dialog.complete()
     assert not dialog.isVisible()
+    assert len(completed) == 1
     dialog.deleteLater()
 
 
@@ -89,6 +93,9 @@ def test_quick_task_never_flashes_a_dialog(qapp):
     try:
         assert run_operation(parent, '整理工作区', work) == 'done'
         assert all(widget is None for widget in observations)
+        assert not any(dialog.isVisible() for dialog in parent.findChildren(TaskProgressDialog))
+        from PyQt6.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         assert not parent.findChildren(TaskProgressDialog)
     finally:
         timer.stop()
@@ -120,3 +127,75 @@ def test_pdf_operations_report_page_and_file_progress(tmp_path, qapp):
         assert all(events[i][0] <= events[i + 1][0] for i in range(len(events) - 1))
     finally:
         store.close_all()
+
+
+@pytest.mark.parametrize('fail', [False, True])
+@pytest.mark.parametrize('offset', [-.01, 0, .01])
+def test_finished_task_cannot_reopen_when_delayed_events_arrive(qapp, monkeypatch, fail, offset):
+    """Replay a late timeout inside the error dialog's nested event loop."""
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QMessageBox
+    from app import progress
+    dialogs = []
+    class CapturedDialog(TaskProgressDialog):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            dialogs.append(self)
+        def deleteLater(self):
+            pass  # Keep it alive to reproduce Qt's deferred-delete timing.
+    monkeypatch.setattr(progress, 'TaskProgressDialog', CapturedDialog)
+    parent = QWidget()
+    def work(report):
+        report(0, 0, '正在核对待保存文件')
+        time.sleep(SHOW_DELAY_MS / 1000 + offset)
+        if fail:
+            raise ValueError('目标文件已改变')
+        return 42
+    try:
+        if fail:
+            with pytest.raises(ValueError, match='目标文件已改变'):
+                run_operation(parent, '保存 PDF', work)
+        else:
+            assert run_operation(parent, '保存 PDF', work) == 42
+        dialog = dialogs[-1]
+        old_stage = dialog.stage.text()
+        error_box = QMessageBox(parent)
+        def delayed_events():
+            dialog.findChild(QTimer).timeout.emit()
+            dialog.update_progress(1, 1, '迟到的进度')
+            assert not dialog.isVisible()
+            assert dialog.stage.text() == old_stage
+            assert parent._task_dialog is None
+            error_box.accept()
+        QTimer.singleShot(0, delayed_events)
+        error_box.exec()
+        QTest.qWait(20)
+        assert not dialog.isVisible()
+        assert QApplication.activeModalWidget() is None
+        assert run_operation(parent, '再次保存', lambda report: 'ok') == 'ok'
+    finally:
+        for dialog in dialogs:
+            TaskProgressDialog.deleteLater(dialog)
+        parent.deleteLater()
+
+
+def test_cancelled_task_closes_before_exception_returns(qapp):
+    from app.output import OperationCancelled, check_cancel
+    parent = QWidget()
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(lambda: parent._task_dialog.request_cancel())
+    timer.start(SHOW_DELAY_MS + 50)
+    def work(report, cancel):
+        while not cancel():
+            time.sleep(.005)
+        check_cancel(cancel)
+    try:
+        with pytest.raises(OperationCancelled):
+            run_operation(parent, '可取消任务', work, cancellable=True)
+        assert parent._task_dialog is None
+        assert QApplication.activeModalWidget() is None
+        assert not any(dialog.isVisible() for dialog in parent.findChildren(TaskProgressDialog))
+    finally:
+        timer.stop()
+        parent.deleteLater()

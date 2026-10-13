@@ -122,6 +122,8 @@ class TaskProgressDialog(QDialog):
             event.ignore()
 
     def complete(self):
+        if self._finished:
+            return
         self._finished = True
         self.accept()
 
@@ -164,10 +166,16 @@ def run_operation(parent, title, work, *, cancellable=False):
     # 快操作不该闪一个模态框：先等一会儿，确实干不完才露面。
     opener = QTimer(dialog)
     opener.setSingleShot(True)
-    opener.timeout.connect(dialog.show)
+    def show_pending():
+        if not dialog._finished and thread.isRunning() and parent._task_dialog is dialog:
+            dialog.show()
+    def finish():
+        opener.stop()
+        dialog.complete()
+        loop.quit()
+    opener.timeout.connect(show_pending)
     thread.progress.connect(dialog.update_progress, Qt.ConnectionType.QueuedConnection)
-    thread.finished.connect(dialog.complete, Qt.ConnectionType.QueuedConnection)
-    thread.finished.connect(loop.quit, Qt.ConnectionType.QueuedConnection)
+    thread.finished.connect(finish, Qt.ConnectionType.QueuedConnection)
     parent._task_dialog = dialog
     try:
         opener.start(SHOW_DELAY_MS)
@@ -180,5 +188,8 @@ def run_operation(parent, title, work, *, cancellable=False):
         return thread.result
     finally:
         opener.stop()
+        # Error dialogs may start another event loop before deferred deletion runs.
+        # Always hide this dialog synchronously and reject late progress/show events.
+        dialog.complete()
         parent._task_dialog = previous
         dialog.deleteLater()
