@@ -4,7 +4,6 @@ import ctypes
 import math
 import os
 import sys
-import tempfile
 from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
@@ -92,6 +91,7 @@ from app.pdfio import (NeedPassword, PdfError, PdfStore, WriteNeedsConfirmation,
                        WriteOptions, apply_output_conflicts, is_encrypted_file)
 from app.workspace import Workspace, drop_target, parse_page_range, parse_range_segments
 from app.startup import mark
+from app.storage import TemporaryWorkspace, export_path, output_directory
 
 THUMB_W = 96
 THUMB_MIN_W = 64
@@ -1240,7 +1240,7 @@ class ConversionThread(QThread):
         self._cancelled = True
 
     def run(self) -> None:
-        tmp_pdf = None
+        scratch = None
         try:
             from app.pdf2excel.converter import convert_pdf_to_excel
 
@@ -1259,10 +1259,8 @@ class ConversionThread(QThread):
                 if self.store is None or not self.pages:
                     raise PdfError("缺少转换所需的页面")
                 p_cb(0, 0, "正在准备转换页面...")
-                fd, tmp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=".pdfasm-conv-")
-                os.close(fd)
-                # This is our empty reservation, not an existing PDF to inspect.
-                os.remove(tmp_pdf)
+                scratch = TemporaryWorkspace('excel')
+                tmp_pdf = str(Path(scratch.name) / 'workspace.pdf')
                 self.store.require_operation(self.pages, "copy")
                 self.store.write(self.pages, tmp_pdf, progress_callback=p_cb,
                                  options=WriteOptions(preserve_encryption=False, operation="copy"), cancel=c_check)
@@ -1282,9 +1280,9 @@ class ConversionThread(QThread):
         except Exception as exc:
             self.error_message = f"转换失败：{exc}"
         finally:
-            if tmp_pdf and os.path.exists(tmp_pdf):
+            if scratch:
                 try:
-                    os.remove(tmp_pdf)
+                    scratch.cleanup()
                 except OSError:
                     pass
 
@@ -1849,6 +1847,10 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self.print_action = self._act("打印", self.print_document, QKeySequence.StandardKey.Print)
         file_menu.addAction(self.print_action)
+        file_menu.addSeparator()
+        self.storage_action = self._act('存储管理…', self.manage_storage)
+        self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
+        file_menu.addAction(self.storage_action)
         if sys.platform == "win32":
             file_menu.addSeparator()
             file_menu.addAction(self._act("设为默认 PDF 应用…", self.choose_default_application))
@@ -1926,6 +1928,15 @@ class MainWindow(QMainWindow):
         dialog = AboutDialog(self)
         dialog.exec()
         dialog.deleteLater()
+
+    def manage_storage(self) -> None:
+        from app.storageui import StorageDialog
+        try:
+            dialog = StorageDialog(self)
+            dialog.exec()
+            dialog.deleteLater()
+        except OSError as exc:
+            QMessageBox.warning(self, '存储管理', str(exc))
 
     def _workbench_bar(self) -> QWidget:
         bar = QFrame()
@@ -3634,7 +3645,11 @@ class MainWindow(QMainWindow):
         if not self._allow_operation("modify") or not self._allow_operation("copy") or not self.ws.pages:
             return
         from app.compression import CompressionDialog
-        dialog = CompressionDialog(self)
+        try:
+            dialog = CompressionDialog(self)
+        except OSError as exc:
+            QMessageBox.warning(self, '无法创建压缩缓存', str(exc))
+            return
         dialog.exec()
         dialog.deleteLater()
 
@@ -3649,7 +3664,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, '先保存当前文档', '请先保存或另存当前 PDF，再导出文字。')
             return
         from app.documentlayout import pdf_to_text
-        path, _ = QFileDialog.getSaveFileName(self, '导出 TXT', os.path.splitext(self.ws.path)[0]+'.txt',
+        path, _ = QFileDialog.getSaveFileName(self, '导出 TXT', export_path(os.path.splitext(self.ws.path)[0]+'.txt'),
                                              '文本文件 (*.txt)', options=QFileDialog.Option.DontConfirmOverwrite)
         if not path:
             return
@@ -3700,7 +3715,7 @@ class MainWindow(QMainWindow):
         dpi = 150 if dialog.dpi.currentIndex() == 0 else 300
         overwrite = dialog.overwrite.isChecked()
         dialog.deleteLater()
-        folder = QFileDialog.getExistingDirectory(self, "选择图片输出文件夹")
+        folder = QFileDialog.getExistingDirectory(self, "选择图片输出文件夹", str(output_directory() or ''))
         if not folder:
             return
         prefix = Path(self.ws.path or "文档.pdf").stem
@@ -3865,7 +3880,7 @@ class MainWindow(QMainWindow):
         merged_output = path is None and bool(self.ws.protected_paths)
         if save_as or not path:
             suggested = path or "未命名.pdf"
-            path, _ = QFileDialog.getSaveFileName(self, "保存 PDF", suggested, "PDF (*.pdf)")
+            path, _ = QFileDialog.getSaveFileName(self, "保存 PDF", export_path(suggested), "PDF (*.pdf)")
             if not path:
                 return False
             if not path.lower().endswith(".pdf"):
@@ -3941,7 +3956,7 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.information(self, "抽取", str(exc))
             return
-        path, _ = QFileDialog.getSaveFileName(self, "抽取为", "抽取.pdf", "PDF (*.pdf)")
+        path, _ = QFileDialog.getSaveFileName(self, "抽取为", export_path("抽取.pdf"), "PDF (*.pdf)")
         if not path:
             return
         if not path.lower().endswith(".pdf"):
@@ -3980,7 +3995,7 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.information(self, "拆分", str(exc))
             return
-        folder = QFileDialog.getExistingDirectory(self, "选择输出目录")
+        folder = QFileDialog.getExistingDirectory(self, "选择输出目录", str(output_directory() or ''))
         if not folder:
             return
         stem = os.path.splitext(os.path.basename(self.ws.path or "拆分"))[0]
@@ -4066,7 +4081,7 @@ class MainWindow(QMainWindow):
             default_name = f"{base}.xlsx"
 
         out_path, _ = QFileDialog.getSaveFileName(
-            self, "导出 Excel", default_name, "Excel 工作簿 (*.xlsx)",
+            self, "导出 Excel", export_path(default_name), "Excel 工作簿 (*.xlsx)",
         )
         if not out_path:
             return

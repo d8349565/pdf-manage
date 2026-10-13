@@ -16,6 +16,7 @@ from app.exportdialogs import hint, new_pdf_path
 from app.output import OperationCancelled
 from app.pdfio import PdfError, WriteOptions
 from app.progress import run_operation
+from app.storage import TemporaryWorkspace
 
 
 def size_text(size):
@@ -26,7 +27,7 @@ class CompressionDialog(QDialog):
     def __init__(self, owner):
         super().__init__(owner)
         self.owner = owner
-        self.folder = tempfile.TemporaryDirectory(prefix="pageark-compress-")
+        self.folder = TemporaryWorkspace('compress')
         self.baseline = None
         self.result = None
         self.setWindowTitle("压缩 PDF")

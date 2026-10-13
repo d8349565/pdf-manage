@@ -99,6 +99,24 @@ class DeterministicEngine:
         type(self).closed = True
 
 
+def test_cancel_closes_image_reader_before_removing_scratch(job, monkeypatch):
+    source, target, options = job
+    cancelled = [False]
+    class LockedReader(DeterministicEngine):
+        stream = None
+        def recognize(self, image, index):
+            self.stream = Path(image).open('rb')
+            cancelled[0] = True
+            return super().recognize(image, index)
+        def close(self):
+            if self.stream:
+                self.stream.close()
+    monkeypatch.setattr('app.ocr.service.OCREngine', LockedReader)
+    with pytest.raises(OperationCancelled):
+        run_ocr(source, target, [0], options, cancel_check=lambda: cancelled[0])
+    assert not target.exists()
+
+
 @pytest.fixture
 def job(tmp_path, monkeypatch):
     runtime = make_runtime(tmp_path / 'runtime')

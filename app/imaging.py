@@ -11,6 +11,7 @@ from PyQt6.QtGui import QImageReader
 
 from app.output import OperationCancelled, check_cancel, commit_file, stamp
 from app.pdfio import PdfError, PdfStore
+from app.storage import TemporaryWorkspace
 
 IMAGE_FILTER = "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
@@ -20,7 +21,7 @@ def images_to_pdf(paths, dest, safety_store, progress, cancel):
     if safety_store.is_source_destination(dest):
         raise PdfError("图片转 PDF 请另存新文件，不能覆盖已打开的 PDF。")
     safety_store._check_destination(dest)
-    with tempfile.TemporaryDirectory(prefix="pageark-images-") as folder:
+    with TemporaryWorkspace('images') as folder:
         intermediate = os.path.join(folder, "images.pdf")
         with pymupdf.open() as doc:
             for index, path in enumerate(paths):

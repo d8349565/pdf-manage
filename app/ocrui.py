@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-                            QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+                            QHBoxLayout, QLabel, QLineEdit, QMessageBox,
                             QPushButton, QVBoxLayout)
 
 from app.exportdialogs import hint
@@ -12,15 +12,16 @@ from app.ocr.contracts import OCROptions, OCRError
 from app.ocr.model_manager import default_runtime_dir, install_runtime
 from app.output import OperationCancelled, stamp
 from app.progress import run_operation
+from app.storage import check_directory, export_path, save_directory
 from app.workspace import parse_page_range
 
 
 def unused_output(source):
     source = Path(source)
-    candidate = source.with_name(source.stem + '_OCR.pdf')
+    candidate = Path(export_path(source.with_name(source.stem + '_OCR.pdf')))
     number = 2
     while candidate.exists():
-        candidate = source.with_name(f'{source.stem}_OCR_{number}.pdf')
+        candidate = candidate.with_name(f'{source.stem}_OCR_{number}.pdf')
         number += 1
     return str(candidate)
 
@@ -29,14 +30,24 @@ def install_local_runtime(parent):
     archive,_=QFileDialog.getOpenFileName(parent,'选择可信来源的离线 OCR 增强包','','OCR 增强包 (*.zip)')
     if not archive:
         return False
+    from app.storageui import RuntimeInstallDialog
+    dialog = RuntimeInstallDialog(archive, parent)
     try:
-        run_operation(parent,'安装 OCR 增强包',
-                      lambda progress,cancel:install_runtime(archive,progress=progress,cancel=cancel),cancellable=True)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        target = dialog.directory
+        check_directory('ocr', target)
+        installed = run_operation(parent,'安装 OCR 增强包',
+                      lambda progress,cancel:install_runtime(archive,directory=target,progress=progress,cancel=cancel),cancellable=True)
+        save_directory('ocr', target)
+        QMessageBox.information(parent, 'OCR 增强包已安装', f'组件保存到：\n{installed}\n\n原 ZIP 保留；旧组件备份可在存储管理中查看。')
         return True
     except OperationCancelled:
         QMessageBox.information(parent,'安装已取消','原有 OCR 组件保留。')
     except (OCRError,OSError) as exc:
         QMessageBox.warning(parent,'OCR 增强包未安装',str(exc))
+    finally:
+        dialog.deleteLater()
     return False
 
 
@@ -45,6 +56,9 @@ class OCRDialog(QDialog):
         super().__init__(parent)
         self.count, self.current = count, current
         self.setWindowTitle('OCR 文字识别')
+        from app.storageui import SETTINGS_QSS, settings_form
+        self.setObjectName('ocrSettings')
+        self.setStyleSheet(SETTINGS_QSS)
         self.setMinimumWidth(520)
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -55,8 +69,13 @@ class OCRDialog(QDialog):
         layout.addWidget(self.environment)
         self.install_button = QPushButton('安装本地 OCR 增强包…')
         self.install_button.clicked.connect(self.install_package)
-        layout.addWidget(self.install_button)
-        form = QFormLayout()
+        row = QHBoxLayout()
+        row.addWidget(self.install_button, 1)
+        locations = QPushButton('存储位置…')
+        locations.clicked.connect(self.manage_storage)
+        row.addWidget(locations)
+        layout.addLayout(row)
+        form = settings_form()
         self.scope = QComboBox()
         self.scope.addItems(['当前页', '全部页面', '指定页码'])
         self.scope.setCurrentIndex(1)
@@ -103,11 +122,14 @@ class OCRDialog(QDialog):
 
     def refresh_environment(self):
         try:
-            self.runtime_ready = (default_runtime_dir() / 'manifest.json').is_file()
+            root = default_runtime_dir()
+            self.runtime_ready = (root / 'manifest.json').is_file()
+            location = f'\n组件位置：{root}'
         except OCRError:
             self.runtime_ready = False
-        self.environment.setText('OCR 增强包已安装 · 开始前自动检查完整性' if self.runtime_ready
-                                 else '尚未安装 OCR 增强包，请先安装本地离线 ZIP。')
+            location = ''
+        self.environment.setText(('OCR 增强包已安装 · 开始前自动检查完整性' if self.runtime_ready
+                                 else '尚未安装 OCR 增强包，请先安装本地离线 ZIP。') + location)
         self.install_button.setText('重新安装本地 OCR 增强包…' if self.runtime_ready else '安装本地 OCR 增强包…')
 
     def validate(self):
@@ -138,6 +160,14 @@ class OCRDialog(QDialog):
         if install_local_runtime(self):
             self.refresh_environment()
             self.validate()
+
+    def manage_storage(self):
+        from app.storageui import StorageDialog
+        dialog = StorageDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+        self.refresh_environment()
+        self.validate()
 
     def accept(self):
         self.validate()

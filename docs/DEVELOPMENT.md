@@ -33,6 +33,7 @@ python -m venv .venv
 | `app/printing.py`、`app/pdf2excel/` | 打印和表格转 Excel |
 | `app/compression.py`、`app/imaging.py` | 压缩与图片转换 |
 | `app/ocr/`、`app/ocrui.py` | 可选离线 OCR、文字层输出与操作弹窗 |
+| `app/storage.py`、`app/storageui.py` | 存储偏好、组件迁移、任务临时目录与受限清理 |
 | `app/textselection.py`、`app/ocr/word_export.py` | 阅读区框选复制与 OCR 文字层导出可编辑 DOCX |
 | `app/wordconvert.py`、`app/wordui.py` | Word 批量转换 |
 | `app/assets/` | 应用资源 |

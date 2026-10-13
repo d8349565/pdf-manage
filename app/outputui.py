@@ -78,8 +78,10 @@ class MarkdownDialog(QDialog):
         self.margin.setSuffix(" mm")
         form.addRow("页边距", self.margin)
 
-        self.folder = None
-        folder = QPushButton("输出到各源文件目录 · 点击可统一选择目录")
+        from app.storage import output_directory
+        self.folder = output_directory()
+        folder = QPushButton("输出目录：" + str(self.folder) if self.folder
+                             else "输出到各源文件目录 · 点击可统一选择目录")
         def choose_folder():
             path = QFileDialog.getExistingDirectory(self, "选择 PDF 输出目录")
             if path:

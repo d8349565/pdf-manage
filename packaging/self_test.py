@@ -10,6 +10,7 @@ from pathlib import Path
 
 def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
     report = {"ok": False, "frozen": bool(getattr(sys, "frozen", False)), "checks": []}
+    restore_storage = restore_ui = None
     try:
         import hashlib
         import openpyxl
@@ -39,6 +40,29 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
 
         with tempfile.TemporaryDirectory(prefix="smoke-", dir=report_path.parent) as temp:
             folder = Path(temp)
+            # Never read/write the user's storage or window preferences during a smoke test.
+            from PyQt6.QtCore import QSettings
+            from app import storage
+            import app.ui as ui
+            restore_storage, restore_ui = storage._settings, ui.QSettings
+            preferences = lambda *args: QSettings(str(folder / 'preferences.ini'), QSettings.Format.IniFormat)
+            storage._settings = ui.QSettings = preferences
+            preferences().setValue('storage/cache', str(folder / 'cache'))
+            if ocr_runtime:
+                preferences().setValue('storage/ocr', str(ocr_runtime.resolve()))
+            with storage.TemporaryWorkspace('images') as scratch:
+                assert Path(scratch).parent == folder / 'cache'
+                removed, skipped = storage.clean_storage('cache')
+                assert removed == 0 and skipped
+            assert not Path(scratch).exists()
+            from app.storageui import StorageDialog, RuntimeInstallDialog
+            locations = StorageDialog()
+            installer = RuntimeInstallDialog(folder / 'local-package.zip')
+            assert locations.paths['cache'].text() == str(folder / 'cache')
+            assert installer.target.text() == locations.paths['ocr'].text()
+            locations.close()
+            installer.close()
+            report['checks'].append('storage dialogs, selected cache path, active task protection and cleanup with isolated preferences')
             source = folder / "中文 表格.pdf"
             with pymupdf.open() as doc:
                 page = doc.new_page(width=400, height=400)
@@ -203,5 +227,10 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
         report["ok"] = True
     except Exception:
         report["error"] = traceback.format_exc()
+    finally:
+        if restore_storage is not None:
+            storage._settings = restore_storage
+        if restore_ui is not None:
+            ui.QSettings = restore_ui
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if report["ok"] else 1

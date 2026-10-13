@@ -1,10 +1,10 @@
 """Prepare missing scan text privately inside a conversion task."""
 from contextlib import contextmanager
 from pathlib import Path
-import tempfile
 
 from app.ocr.contracts import OCROptions, OCRError
 from app.output import check_cancel
+from app.storage import TemporaryWorkspace
 
 
 def needs_text_export(source, cancel=None):
@@ -40,7 +40,7 @@ def prepared_text_pdf(source, directory, progress=None, cancel=None, runtime_dir
     if not missing:
         yield str(source)
         return
-    with tempfile.TemporaryDirectory(prefix='.zhixu-recognize-',dir=directory) as folder:
+    with TemporaryWorkspace('recognize') as folder:
         def report(current,total,message):
             if progress:
                 progress(message)

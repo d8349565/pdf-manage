@@ -15,7 +15,12 @@ class OCREngine:
         self.cancel = cancel
         self.messages = Queue()
         self.process = None
+        self.lease = None
         try:
+            from pathlib import Path
+            from app.storage import TemporaryWorkspace
+            self.lease = TemporaryWorkspace('runtime')
+            (Path(self.lease.name) / 'runtime-path.txt').write_text(str(root.resolve()), encoding='utf-8')
             self.process = subprocess.Popen(
                 [str(root / 'runtime' / 'ZhiXuOCR.exe'), '--models', str(root / 'models')],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -84,3 +89,6 @@ class OCREngine:
             reader = getattr(self, 'reader', None)
             if reader:
                 reader.join(timeout=1)
+        if self.lease:
+            self.lease.cleanup()
+            self.lease = None

@@ -107,7 +107,8 @@ class WordConverterWindow(QWidget):
         self.source_kind = "PDF" if direction == "pdf_to_word" else "Word"
         self.target_kind = "Word" if direction == "pdf_to_word" else "PDF"
         self.output_suffix = ".docx" if direction == "pdf_to_word" else ".pdf"
-        self.custom_output_dir: Path | None = None
+        from app.storage import output_directory
+        self.custom_output_dir: Path | None = output_directory()
         # 逐份手动指定的输出位置，切换统一目录时保留，不会被覆盖。
         self._manual_targets: dict[str, str] = {}
         self._message = ""
@@ -285,7 +286,7 @@ class WordConverterWindow(QWidget):
         self.btn_choose_dir.clicked.connect(self.choose_output_dir)
         output_row.addWidget(self.btn_choose_dir)
 
-        self.btn_reset_dir = QPushButton("恢复默认")
+        self.btn_reset_dir = QPushButton("使用源目录")
         self.btn_reset_dir.setFixedHeight(30)
         self.btn_reset_dir.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_reset_dir.setToolTip("取消统一目录，并把单独指定过的位置也恢复成与源文件相同文件夹")
@@ -387,7 +388,8 @@ class WordConverterWindow(QWidget):
         self.btn_word_to_pdf.setChecked(direction == "word_to_pdf")
         self.btn_pdf_to_word.setChecked(direction == "pdf_to_word")
         # 换方向等于换一批输出，清空清单并回到默认输出位置。
-        self.custom_output_dir = None
+        from app.storage import output_directory
+        self.custom_output_dir = output_directory()
         self.clear()
         self._update_direction_labels()
 
@@ -415,7 +417,7 @@ class WordConverterWindow(QWidget):
             else:
                 self.output_hint.setText("所有输出文件统一保存在这个文件夹，已有同名文件默认跳过。")
         else:
-            self.output_path.setFullText("与源文件相同文件夹（默认）")
+            self.output_path.setFullText("与源文件相同文件夹")
             self.btn_reset_dir.setVisible(bool(self._manual_targets))
             self.output_hint.setText(
                 f"每份 {self.source_kind} 与生成的 {self.target_kind} 放在一起，文件名保持一致。"

@@ -1,7 +1,6 @@
 """Validate a complete local runtime before executing it; no downloading."""
 import hashlib
 import json
-import os
 from pathlib import Path, PureWindowsPath
 import shutil
 import tempfile
@@ -19,10 +18,11 @@ MODEL_NAMES = ('PP-OCRv6_det_small.onnx', 'PP-OCRv6_rec_small.onnx',
 
 
 def default_runtime_dir():
-    local = os.environ.get('LOCALAPPDATA')
-    if not local:
-        raise OCRError('无法找到本机应用数据目录，请检查 Windows 用户环境。')
-    return Path(local) / 'ZhiXuPDF' / 'ocr'
+    from app.storage import directory, StorageError
+    try:
+        return directory('ocr')
+    except StorageError as exc:
+        raise OCRError(str(exc)) from None
 
 
 def safe_member(name):
@@ -87,7 +87,12 @@ def _rename_directory(source, destination, cancel=None):
 
 def install_runtime(archive, *, directory=None, progress=None, cancel=None):
     """Stage and validate a trusted local ZIP. Keep the previous installation as backup."""
+    from app.storage import runtime_in_use
     target = Path(directory) if directory else default_runtime_dir()
+    if runtime_in_use(target):
+        raise OCRError('OCR 组件正在使用，请等待识别结束后再安装。')
+    if Path(archive).resolve().is_relative_to(target.resolve()):
+        raise OCRError('请从组件目录之外选择增强包，避免重装时移动原 ZIP 文件。')
     parent = target.parent.resolve()
     parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.ocr-install-', dir=parent))
@@ -118,6 +123,8 @@ def install_runtime(archive, *, directory=None, progress=None, cancel=None):
                     progress(current + 1, len(entries), '正在安装本地 OCR 增强包')
         validate_runtime(staging, cancel=cancel)
         check_cancel(cancel)
+        if runtime_in_use(target):
+            raise OCRError('OCR 组件正在使用，请等待识别结束后再安装。')
         if target.exists():
             _rename_directory(target, backup, cancel)
             moved_old = True
@@ -133,4 +140,53 @@ def install_runtime(archive, *, directory=None, progress=None, cancel=None):
             # Only this uniquely created, contained staging directory is removed.
             if staging.resolve().parent != parent or not staging.name.startswith('.ocr-install-'):
                 raise OCRError('安装临时目录路径异常，请人工核对。')
+            shutil.rmtree(staging)
+
+
+def relocate_runtime(source, destination, progress=None, cancel=None):
+    """Copy, verify, then publish. The old installation is kept for recovery."""
+    from app.storage import tree_files, writable_directory
+    source, destination = Path(source).resolve(), Path(destination).resolve()
+    if source == destination:
+        return str(destination)
+    if source.is_relative_to(destination) or destination.is_relative_to(source):
+        raise OCRError('新位置不能包含原组件目录，也不能位于原组件目录内。')
+    if destination.exists() and any(destination.iterdir()):
+        try:
+            _, existing = validate_runtime(destination, cancel=cancel)
+            if (source / 'manifest.json').is_file():
+                _, previous = validate_runtime(source, cancel=cancel)
+                if previous['files'] != existing['files']:
+                    raise OCRError('所选位置已有另一份组件，请选择空目录或在安装窗口更新该位置。')
+            return str(destination)
+        except OCRError:
+            raise OCRError('新位置已有不同组件或其他文件，请选择空目录；原文件保留。') from None
+    writable_directory(destination.parent)
+    if not (source / 'manifest.json').is_file():
+        writable_directory(destination)
+        return str(destination)
+    validate_runtime(source, cancel=cancel)
+    paths = list(tree_files(source, cancel))
+    staging = Path(tempfile.mkdtemp(prefix='.ocr-install-', dir=destination.parent))
+    try:
+        for index, path in enumerate(paths):
+            check_cancel(cancel)
+            copied = staging / path.relative_to(source)
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            with path.open('rb') as reader, copied.open('xb') as writer:
+                while chunk := reader.read(1024 * 1024):
+                    check_cancel(cancel)
+                    writer.write(chunk)
+            if progress:
+                progress(index + 1, len(paths), '正在复制 OCR 组件到新位置')
+        validate_runtime(staging, cancel=cancel)
+        check_cancel(cancel)
+        if destination.exists():
+            destination.rmdir()  # Only an empty destination may be removed.
+        _rename_directory(staging, destination, cancel)
+        return str(destination)
+    except OSError:
+        raise OCRError('组件迁移失败，请检查磁盘空间和写入权限；原组件保留。') from None
+    finally:
+        if staging.exists():
             shutil.rmtree(staging)

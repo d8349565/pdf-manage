@@ -15,6 +15,7 @@ from app import APP_ORGANIZATION, APP_SLUG
 from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES
 from app.pdfio import EncryptionOptions
 from app.workspace import parse_page_range
+from app.storage import export_path
 
 # The global sheet forces `min-height: 30px` + `padding: 6px` on every QPushButton,
 # which makes a 28px-tall button taller than its neighbours. Compact buttons inside
@@ -514,7 +515,7 @@ class ImageExportDialog(QDialog):
 
 
 def new_pdf_path(parent, store, title, suggested):
-    path, _ = QFileDialog.getSaveFileName(parent, title, suggested, "PDF (*.pdf)")
+    path, _ = QFileDialog.getSaveFileName(parent, title, export_path(suggested), "PDF (*.pdf)")
     if not path:
         return None
     if not path.lower().endswith(".pdf"):

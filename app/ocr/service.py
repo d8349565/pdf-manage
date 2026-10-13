@@ -1,6 +1,7 @@
 """Independent document processing with checked, non-overwriting output."""
 import os
 import hashlib
+from contextlib import ExitStack
 from pathlib import Path
 import tempfile
 
@@ -13,6 +14,7 @@ from app.ocr.page_detector import has_effective_text
 from app.ocr.pdf_export import add_text_layer
 from app.output import check_cancel, commit_file, stamp, OperationCancelled
 from app.pdfstructure import document_signature, inspect_safety
+from app.storage import StorageError, TemporaryWorkspace
 
 DPI = 200
 MAX_PIXELS = 40_000_000
@@ -41,6 +43,11 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
         check_cancel(cancel_check)
         if progress_callback:
             progress_callback(current, total, message)
+    def close_engine():
+        nonlocal engine
+        if engine:
+            engine.close()
+            engine = None
     try:
         report(0, 0, '正在检查 PDF 和 OCR 环境')
         with p.open(source) as doc:
@@ -58,7 +65,7 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
                 raise OCRError('识别页码超出文档范围。')
             structure = document_signature(doc)
             root, _ = validate_runtime(options.runtime_dir, cancel=cancel_check)
-            with tempfile.TemporaryDirectory(prefix='.zhixu-ocr-', dir=destination.parent) as scratch:
+            with TemporaryWorkspace('ocr') as scratch, ExitStack() as resources:
                 image = Path(scratch) / 'page.png'
                 for current, index in enumerate(indices):
                     report(current, len(indices), f'正在识别第 {index + 1} 页')
@@ -75,6 +82,7 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
                         if engine is None:
                             report(current, len(indices), '正在加载本地 CPU 模型')
                             engine = OCREngine(root, cancel_check)
+                            resources.callback(close_engine)
                         try:
                             if page.rect.width * page.rect.height * (DPI / 72) ** 2 > MAX_PIXELS:
                                 raise OCRError('页面尺寸过大，超过轻量 OCR 的 4000 万像素限制。')
@@ -140,10 +148,11 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
         return OCRJobResult(str(destination), tuple(processed), tuple(skipped), tuple(failures), warnings)
     except (OperationCancelled, OCRError):
         raise
+    except StorageError as exc:
+        raise OCRError(str(exc)) from None
     except Exception:
         raise OCRError('OCR 未完成：文件无法读写、磁盘空间不足或 PDF 内容异常。原文件未改动。') from None
     finally:
-        if engine:
-            engine.close()
+        close_engine()
         if temp:
             Path(temp).unlink(missing_ok=True)
