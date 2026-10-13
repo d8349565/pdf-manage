@@ -66,11 +66,13 @@ class OCREngine:
     def recognize(self, image, page_index):
         check_cancel(self.cancel)
         try:
-            self.process.stdin.write(json.dumps({'image': str(image), 'page_index': page_index}) + '\n')
+            self.process.stdin.write(json.dumps({'image': str(image), 'page_index': page_index,
+                                                 'word_boxes': True}) + '\n')
             self.process.stdin.flush()
             result = self._receive()
             return [OCRLine(item['text'], tuple(item['bbox']), tuple(item['polygon']),
-                            item['confidence'], item['page_index']) for item in result['lines']]
+                            item['confidence'], item['page_index'], item.get('word_box', False))
+                    for item in result['lines']]
         except (OSError, KeyError, TypeError):
             raise OCRError('OCR 组件通信失败，请重新安装增强包。') from None
 

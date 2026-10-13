@@ -15,19 +15,23 @@ def _runs(data, minimum):
 def _thin_segments(values):
     groups = []
     for coordinate, start, end in values:
-        matching = None
+        matching = []
         for group in reversed(groups):
             last = group[-1]
             if coordinate - last[0] > 3:
                 break
-            overlap = min(end, last[2]) - max(start, last[1])
-            if overlap >= min(end - start, last[2] - last[1]) * .75:
-                matching = group
-                break
-        if matching is None:
-            groups.append([(coordinate, start, end)])
-        else:
-            matching.append((coordinate, start, end))
+            left = min(value[1] for value in group)
+            right = max(value[2] for value in group)
+            overlap = min(end, right) - max(start, left)
+            if overlap >= min(end - start, right - left) * .25 or -2 <= overlap <= 0:
+                matching.append(group)
+                start, end = min(start, left), max(end, right)
+        combined = [value for group in matching for value in group]
+        for group in matching:
+            groups.remove(group)
+        # Keep groups ordered by their LAST coordinate. Otherwise a finished
+        # short stroke hides a still-active rule behind the early break above.
+        groups.append([*sorted(combined), (coordinate, start, end)])
     return [(mean(value[0] for value in group), min(value[1] for value in group),
              max(value[2] for value in group)) for group in groups
             if group[-1][0] - group[0][0] <= 8]
@@ -41,6 +45,11 @@ def raster_grid_lines(page):
     # Dense, large tables lose their thin rules when reduced to a 1600px page.
     scale = min(2, 3200 / max(page.rect.width, page.rect.height))
     pix = page.get_pixmap(matrix=p.Matrix(scale, scale), colorspace=p.csGRAY, alpha=False, annots=False)
+    return _grid_lines(pix, scale)
+
+
+def _grid_lines(pix, scale):
+    """Recover rule fragments and supported outer edges from grayscale pixels."""
     width, height = pix.width, pix.height
     dark = bytes(value < 200 for value in pix.samples)
     minimum = max(20, min(width, height) // 35)
@@ -74,7 +83,8 @@ def raster_grid_lines(page):
         vs = [vertical[index] for kind, index in component if kind == 'v']
         if len(hs) < 3 or len(vs) < 3:
             continue
-        left, right = min(v[0] for v in vs), max(v[0] for v in vs)
+        left = min(min(v[0] for v in vs), min(h[1] for h in hs))
+        right = max(max(v[0] for v in vs), max(h[2] for h in hs))
         top, bottom = min(h[0] for h in hs), max(h[0] for h in hs)
         if right - left < 40 * scale or bottom - top < 32 * scale:
             continue
@@ -82,9 +92,19 @@ def raster_grid_lines(page):
         if not all(any(abs(h[0] - y) <= 3 and h[1] <= left + 3 and h[2] >= right - 3 for h in hs)
                    for y in (top, bottom)):
             continue
-        if not all(any(abs(v[0] - x) <= 3 and v[1] <= top + 3 and v[2] >= bottom - 3 for v in vs)
-                   for x in (left, right)):
-            continue
-        output.extend([((start / scale, y / scale), (end / scale, y / scale)) for y, start, end in hs])
-        output.extend([((x / scale, start / scale), (x / scale, end / scale)) for x, start, end in vs])
+        borders = []
+        for x, endpoint in ((left, 1), (right, 2)):
+            if any(abs(v[0] - x) <= 3 and v[1] <= top + 3 and v[2] >= bottom - 3 for v in vs):
+                continue
+            # A clipped/faded side is supported only by at least three rules
+            # ending there, including the confirmed top and bottom rules.
+            if sum(abs(h[endpoint] - x) <= 3 for h in hs) < 3:
+                break
+            borders.append((x, top, bottom))
+        else:
+            output.extend([(((start + pix.x) / scale, (y + pix.y) / scale),
+                            ((end + pix.x) / scale, (y + pix.y) / scale)) for y, start, end in hs])
+            output.extend([(((x + pix.x) / scale, (max(start, top) + pix.y) / scale),
+                            ((x + pix.x) / scale, (min(end, bottom) + pix.y) / scale))
+                           for x, start, end in vs + borders])
     return output

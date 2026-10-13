@@ -126,8 +126,12 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
                     for index, written in checks.items():
                         check_cancel(cancel_check)
                         page = check[index]
+                        searches = {}
                         for text, box in written:
-                            hits = page.search_for(text)
+                            check_cancel(cancel_check)
+                            if text not in searches:
+                                searches[text] = page.search_for(text)
+                            hits = searches[text]
                             if not any(hit.intersects(box) and (hit & box).get_area() >= box.get_area() * .4 for hit in hits):
                                 raise OCRError(f'第 {index + 1} 页文字搜索或位置校验失败，未提交结果。')
                         if hashlib.sha256(page.get_pixmap(dpi=72).samples).digest() != appearances[index]:

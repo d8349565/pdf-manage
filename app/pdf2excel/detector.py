@@ -32,12 +32,13 @@ def detect_tables(
     best_tables = []
     best_strategy_name = "lines"
 
+    # Use measured rules even when an optional layout model misses a scan.
     for name, strategy in strategies:
         if name == 'text' and page.get_images():
             from app.pdf2excel.raster_grid import raster_grid_lines
             raster_lines = raster_grid_lines(page)
             if raster_lines:
-                detected = page.find_tables(vertical_strategy='lines_strict', horizontal_strategy='lines_strict',
+                detected = page.find_tables(use_layout=False, vertical_strategy='lines_strict', horizontal_strategy='lines_strict',
                                             add_lines=raster_lines)
                 best_tables = [table for table in detected.tables if table.row_count >= 2 and table.col_count >= 2]
                 if best_tables:
@@ -50,7 +51,7 @@ def detect_tables(
                 from app.pdf2excel.alignment_grid import alignment_grid_lines
                 aligned_lines,header_fills=alignment_grid_lines(page,spans)
                 if aligned_lines:
-                    detected=page.find_tables(vertical_strategy='lines_strict',horizontal_strategy='lines_strict',add_lines=aligned_lines)
+                    detected=page.find_tables(use_layout=False,vertical_strategy='lines_strict',horizontal_strategy='lines_strict',add_lines=aligned_lines)
                     best_tables=[table for table in detected.tables if table.row_count>=2 and table.col_count>=2]
                     if best_tables:
                         best_strategy_name='alignment_grid'
@@ -68,7 +69,7 @@ def detect_tables(
                     warnings.append(f'第 {page.number + 1} 页存在正文分栏，不按整页文字猜测表格。')
                 break
         try:
-            detected = page.find_tables(**strategy)
+            detected = page.find_tables(use_layout=False, **strategy)
         except Exception:
             continue
 

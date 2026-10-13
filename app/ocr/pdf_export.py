@@ -17,6 +17,7 @@ def add_text_layer(page, lines, pixmap, dpi=200, *, protect_existing=True):
             continue
         if (len(line.polygon) != 8 or not all(math.isfinite(v) for v in line.polygon)
                 or '\n' in line.text or '\r' in line.text
+                or type(line.word_box) is not bool
                 or not math.isfinite(line.confidence) or not 0 <= line.confidence <= 1):
             raise OCRError('识别结果含无效文字或坐标，该页未写入。')
         points = [p.Point(line.polygon[i] + pixmap.x, line.polygon[i + 1] + pixmap.y) * inverse
@@ -24,7 +25,8 @@ def add_text_layer(page, lines, pixmap, dpi=200, *, protect_existing=True):
         tl, tr, br, bl = points
         # RapidOCR rotates tall text crops 90 degrees counterclockwise before recognition.
         # Restore that reading direction for scans whose pixels, rather than /Rotate, are rotated.
-        if abs(bl - tl) >= abs(tr - tl) * 1.5:
+        # Word boxes already follow the reading direction; a narrow digit is not a rotated crop.
+        if not line.word_box and abs(bl - tl) >= abs(tr - tl) * 1.5:
             tl, tr, br, bl = tr, br, bl, tl
         area = p.Quad(tl, tr, bl, br).rect
         bounds = page.rect * page.derotation_matrix

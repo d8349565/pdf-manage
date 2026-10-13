@@ -67,6 +67,11 @@ OCR 与缓存使用独立目录，输出不得保存在缓存目录内。
 完整依赖在 `packaging/requirements-ocr.txt`。识别字典来自对应 ONNX 元数据，模型及字典绑定校验。
 推理进程禁止在线下载及网络请求，只接收本地 PNG。
 
+密集表格优先使用模型返回的逐字坐标写入文字层，保留列间空白；逐字内容不完整或方向不适用时保留整行结果。
+扫描表格网格支持合并断续线段，边缘缺失时仅在至少三条横线端点一致且上下边界完整的情况下补齐外框。
+复制、TXT、Word 和 Excel 复用该网格。启用逐字定位需要同时更新主程序与 OCR 增强包，并从原扫描 PDF 重新识别。
+协议仍为 1：主程序显式请求逐字框，旧增强包回退为整行；新增强包收到旧主程序请求时仍返回整行。
+
 ```powershell
 python -m pip install -r packaging/requirements-build.txt
 python -m pip install --target build/ocr-deps -r packaging/requirements-ocr.txt

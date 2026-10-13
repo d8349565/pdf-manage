@@ -3,6 +3,7 @@ import argparse
 from collections import Counter
 import contextlib
 import json
+import math
 import re
 from importlib.metadata import version
 import socket
@@ -30,6 +31,7 @@ def stabilize_short_directions(crops, result, threshold):
     for index,(crop,(label,score)) in enumerate(zip(crops,result.cls_res)):
         if crop.shape[1]/max(1,crop.shape[0])<4 and label!=direction:
             result.img_list[index]=crop.copy() if direction=='0' else crop[::-1,::-1].copy()
+            result.cls_res[index]=(direction,score)
 
 
 def load_engine(models):
@@ -66,6 +68,13 @@ def load_engine(models):
             _,result=super().cls_and_rotate(crops)
             stabilize_short_directions(crops,result,self.text_cls.cls_thresh)
             return result.img_list,result
+        def build_final_output(self, ori_img, det_res, cls_res, rec_res, cropped_img_list, op_record):
+            # RapidOCR's word-box projection does not undo the classifier's
+            # 180-degree rotation. Keep those lines on the existing line path.
+            self.word_box_directions=[label for text,score,(label,_) in
+                                      zip(rec_res.txts or (),rec_res.scores or (),cls_res.cls_res or ())
+                                      if text.strip() and score>=self.text_score]
+            return super().build_final_output(ori_img,det_res,cls_res,rec_res,cropped_img_list,op_record)
     engine = StableDirectionOCR(params=params)
     if not engine.text_rec.session.have_key('character'):
         raise RuntimeError('识别模型缺少绑定的字符字典，拒绝使用其他字典。')
@@ -118,8 +127,38 @@ def refine_currency_symbols(engine, image, lines):
                 break
 
 
-def recognize(engine, image, page_index):
-    result = engine(str(image))
+def positioned_words(line, words):
+    """Keep CTC positions and column whitespace instead of evenly spreading a line."""
+    left,top,right,bottom=line['bbox']
+    if bottom-top >= (right-left)*1.5:
+        return []
+    try:
+        # Spaces may be absent from word boxes, but every other character must
+        # survive unchanged, including decimal points and identifiers.
+        compact=lambda value: ''.join(value.split())
+        if compact(''.join(word[0] for word in words))!=compact(line['text']):
+            return []
+        output=[]
+        for text,score,box in words:
+            polygon=[float(value) for point in box for value in point]
+            if not text or len(polygon)!=8 or not all(math.isfinite(value) for value in polygon):
+                return []
+            xs,ys=polygon[::2],polygon[1::2]
+            bbox=[min(xs),min(ys),max(xs),max(ys)]
+            if (bbox[2]<=bbox[0] or bbox[3]<=bbox[1] or bbox[0]<left-3 or bbox[2]>right+3
+                    or bbox[1]<top-3 or bbox[3]>bottom+3 or not math.isfinite(score) or not 0<=score<=1):
+                return []
+            output.append(dict(line,text=text,bbox=bbox,polygon=polygon,
+                               confidence=min(line['confidence'],float(score)),word_box=True))
+        return output
+    except (TypeError,ValueError,IndexError):
+        return []
+
+
+def recognize(engine, image, page_index, *, word_boxes=False):
+    # Older hosts do not understand the orientation flag on narrow word boxes.
+    # Fine positions are opt-in over protocol 1, so either upgrade order is safe.
+    result = engine(str(image),return_word_box=word_boxes,return_single_char_box=word_boxes)
     if result.boxes is None or result.txts is None:
         return []
     lines = []
@@ -129,7 +168,17 @@ def recognize(engine, image, page_index):
         lines.append(dict(text=text, bbox=[min(xs), min(ys), max(xs), max(ys)],
                           polygon=polygon, confidence=float(score), page_index=page_index))
     refine_currency_symbols(engine, image, lines)
-    return lines
+    if not word_boxes:
+        return lines
+    words=getattr(result,'word_results',())
+    directions=getattr(engine,'word_box_directions',())
+    if len(words)!=len(lines) or len(directions)!=len(lines):
+        return lines
+    output=[]
+    for line,tokens,direction in zip(lines,words,directions):
+        pieces=positioned_words(line,tokens) if direction=='0' else []
+        output.extend(pieces or [line])
+    return output
 
 
 def main():
@@ -153,7 +202,7 @@ def main():
             if not image.is_file() or image.suffix.lower() != '.png':
                 raise ValueError('Only local PNG input is accepted')
             with contextlib.redirect_stdout(sys.stderr):
-                lines = recognize(engine, image, data['page_index'])
+                lines = recognize(engine, image, data['page_index'],word_boxes=data.get('word_boxes') is True)
             response = {'lines': lines}
         except Exception:
             response = {'error': '此页 OCR 推理失败，可重新尝试或更换扫描件。'}

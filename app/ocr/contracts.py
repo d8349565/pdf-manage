@@ -13,6 +13,7 @@ class OCRLine:
     polygon: tuple[float, ...]
     confidence: float
     page_index: int
+    word_box: bool = False
 
 
 @dataclass(frozen=True)
