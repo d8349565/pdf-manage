@@ -56,6 +56,9 @@
 !/docs/images/
 !/docs/images/reading.png
 !/docs/images/arrange.png
+!/docs/images/OCR导出效果图01.png
+!/docs/images/OCR导出效果图02.png
+!/docs/images/OCR导出效果图03.png
 
 # 依赖、缓存、本机配置和产物，任何目录均不入库。
 __pycache__/

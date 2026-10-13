@@ -14,6 +14,12 @@
 
 ![拖动排序整理页面](docs/images/arrange.png)
 
+![OCR导出效果图01](docs/images/OCR导出效果图01.png)
+
+![OCR导出效果图02](docs/images/OCR导出效果图02.png)
+
+![OCR导出效果图03](docs/images/OCR导出效果图03.png)
+
 ## 快速开始
 
 1. 到 [Releases](https://github.com/d8349565/pdf-manage/releases/latest) 下载并运行 `ZhiXuPDF-Setup.exe`。
