@@ -26,8 +26,20 @@ def main() -> None:
     parser.add_argument("executable", nargs="?", type=Path, default=ROOT / "dist" / APP_SLUG / APP_EXE_NAME)
     parser.add_argument("--skip-runtime", action="store_true", help="Only inspect PE resources and packaged files")
     parser.add_argument("--run-runtime", action="store_true", help="Explicitly opt in to functional self-tests")
+    parser.add_argument("--ocr-runtime", type=Path, help="Explicitly verify the optional local OCR runtime")
+    parser.add_argument("--installer", type=Path, help="Verify installer version against the program")
     args = parser.parse_args()
     exe = args.executable.resolve()
+    if args.installer:
+        with pefile.PE(str(args.installer.resolve())) as setup:
+            fixed = setup.VS_FIXEDFILEINFO[0]
+            version = (fixed.FileVersionMS >> 16, fixed.FileVersionMS & 65535,
+                       fixed.FileVersionLS >> 16, fixed.FileVersionLS & 65535)
+            assert version == tuple(map(int, __version__.split('.'))) + (0,), "Installer file version mismatch"
+            strings = next(info.StringTable[0].entries for block in setup.FileInfo for info in block
+                           if info.Key == b"StringFileInfo")
+            assert strings[b"ProductName"].decode('utf-8').strip() == APP_NAME
+            assert strings[b"ProductVersion"].decode('utf-8').strip() == __version__
     with pefile.PE(str(exe), fast_load=False) as pe:
         assert pe.FILE_HEADER.Machine == 0x8664, "EXE must be x64"
         assert pe.OPTIONAL_HEADER.Subsystem == 2, "EXE must not open a console"
@@ -66,10 +78,12 @@ def main() -> None:
         assert any(required in n for n in names), f"Missing conversion dependency: {required}"
     python_modules = archive.open_embedded_archive("PYZ.pyz").toc
     for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell",
-                     "win32com.client", "win32com.server.factory", "win32com.server.policy", "win32com.shell.shellcon"):
+                     "win32com.client", "win32com.server.factory", "win32com.server.policy", "win32com.shell.shellcon",
+                     "app.documentlayout", "app.documentimages", "app.ocr.export_input", "app.ocr.word_export",
+                     "app.pdf2excel.raster_grid", "app.pdf2excel.alignment_grid", "app.textselection"):
         assert required in python_modules, f"Missing module: {required}"
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
-    for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "pandas", "lxml", "libssl", "libcrypto"):
+    for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "rapidocr", "onnxruntime", "cv2", "pandas", "lxml", "libssl", "libcrypto"):
         assert not any(unwanted.lower() in n.lower() for n in names), unwanted
 
     (ROOT / "build").mkdir(exist_ok=True)
@@ -92,7 +106,10 @@ def main() -> None:
         environment["TEMP"] = environment["TMP"] = str(folder)
         result_path = folder / "self-test.json"
         started = time.perf_counter()
-        result = subprocess.run([str(copy), "--self-test", str(result_path)],
+        command = [str(copy), "--self-test", str(result_path)]
+        if args.ocr_runtime:
+            command.extend(["--ocr-runtime", str(args.ocr_runtime.resolve())])
+        result = subprocess.run(command,
                                 cwd=folder, env=environment, timeout=120, check=False)
         assert result_path.is_file(), f"EXE did not produce a report, exit={result.returncode}"
         report = json.loads(result_path.read_text(encoding="utf-8"))

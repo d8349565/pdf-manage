@@ -545,6 +545,9 @@ class PdfStore:
                 return hit[0]
             with self._render_page(ref) as page:
                 snapshot = snapshot_page(page)
+                from app.documentlayout import page_layout
+                layout, _ = page_layout(page)
+                snapshot['tables'] = [item['table'] for item in layout if item['kind'] == 'table']
                 extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
                 rotated = page.rect * extra
                 extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)

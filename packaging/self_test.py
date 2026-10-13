@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 
 
-def self_test(report_path: Path) -> int:
+def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
     report = {"ok": False, "frozen": bool(getattr(sys, "frozen", False)), "checks": []}
     try:
         import hashlib
@@ -54,9 +54,12 @@ def self_test(report_path: Path) -> int:
             assert startup_pdf_paths([sys.executable, str(source)]) == [str(source)]
             window = MainWindow()
             assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}（吾爱破解）")
-            from native_window_check import check_native_window
-            report["native_resize"] = check_native_window(window, qapp)
-            report["checks"].append("real Windows edge hit testing and native drag resize")
+            if ocr_runtime is None:
+                from native_window_check import check_native_window
+                report["native_resize"] = check_native_window(window, qapp)
+                report["checks"].append("real Windows edge hit testing and native drag resize")
+            else:
+                report["native_resize"] = "not_run_in_ocr_pipeline_check"
             try:
                 pages = window.store.load(str(source))
                 window.ws.open_replace(pages, str(source))
@@ -120,6 +123,71 @@ def self_test(report_path: Path) -> int:
                     assert doc.page_count == 2
                     assert doc[1].rect.width > doc[1].rect.height
                 report["checks"].append("print to PDF and automatic landscape orientation")
+
+                if ocr_runtime is not None:
+                    from app.ocr.contracts import OCROptions
+                    from app.ocr.service import run_ocr
+                    from time import monotonic, sleep
+                    scan = folder / "OCR 合成扫描.pdf"
+                    recognized = folder / "OCR 搜索副本.pdf"
+                    with pymupdf.open() as text_doc:
+                        page = text_doc.new_page()
+                        page.insert_font(fontname="SampleCJK", fontbuffer=pymupdf.Font("cjk").buffer)
+                        page.insert_text((70, 120), "中文预算 12345.67", fontname="SampleCJK", fontsize=20)
+                        image = page.get_pixmap(dpi=200).tobytes("png")
+                    with pymupdf.open() as scanned:
+                        page = scanned.new_page()
+                        page.insert_image(page.rect, stream=image)
+                        scanned.save(scan)
+                    result = run_ocr(scan, recognized, [0], OCROptions(runtime_dir=str(ocr_runtime)))
+                    assert result.processed_pages == (0,) and not result.failed_pages
+                    with pymupdf.open(recognized) as doc:
+                        assert doc[0].search_for("预算") and doc[0].search_for("12345.67")
+                    window.ws.open_replace(window.store.load(str(recognized)), str(recognized))
+                    window.refresh()
+                    window.open_search()
+                    window.search_bar.input.setText("预算")
+                    window.search_bar.start()
+                    deadline = monotonic() + 20
+                    while window.search_bar.busy and monotonic() < deadline:
+                        qapp.processEvents()
+                        sleep(.005)
+                    assert not window.search_bar.busy and window.search_bar.results
+                    report["checks"].append("frozen base + offline OCR EXE + CJK extraction and existing search UI")
+                    selector = window.text_selection
+                    ref = window.ws.pages[0]
+                    selector.snapshot = window.store.text_snapshot(ref)
+                    selector.page_index, selector.key = 0, ref.render_key
+                    selector.generation = window.preview_view.layout_generation
+                    bounds = window.preview_view.page_rects[0]
+                    selector.start = bounds.topLeft()
+                    selector.select(bounds.bottomRight())
+                    selector.start = None
+                    # Verify the real copy handler without replacing the user's system clipboard.
+                    from types import SimpleNamespace
+                    import app.textselection as textselection
+                    captured = []
+                    real_application = textselection.QApplication
+                    textselection.QApplication = SimpleNamespace(clipboard=lambda:
+                        SimpleNamespace(setText=captured.append))
+                    try:
+                        selector.copy()
+                    finally:
+                        textselection.QApplication = real_application
+                    assert captured and '中文预算' in captured[0] and '12345.67' in captured[0]
+                    assert not window.ws.dirty
+                    from app.wordconvert import convert_batch
+                    from zipfile import ZipFile
+                    from xml.etree import ElementTree
+                    editable = folder / 'OCR 可编辑正文.docx'
+                    results, cancelled, _ = convert_batch([(str(recognized), str(editable))], False,
+                        lambda *args: None, lambda: False, direction='pdf_to_word')
+                    assert results[0]['state'] == 'success' and not cancelled
+                    with ZipFile(editable) as archive:
+                        xml = ElementTree.fromstring(archive.read('word/document.xml'))
+                        text = ''.join(node.text or '' for node in xml.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'))
+                    assert '中文预算' in text and '12345.67' in text
+                    report['checks'].append('OCR rectangle copy to an in-memory test target and editable DOCX using the recognized text layer')
             finally:
                 QThreadPool.globalInstance().waitForDone()
                 window.ws.reset()

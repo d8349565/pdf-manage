@@ -17,6 +17,10 @@
 !/tests/
 !/packaging/
 !/docs/
+!/.github/
+/.github/**
+!/.github/workflows/
+!/.github/workflows/ocr.yml
 
 # 应用源码与经过检查的图标。私人赞赏码暂留本机。
 /app/**
@@ -37,6 +41,7 @@
 !/packaging/**/*.py
 !/packaging/pdf-manage.iss
 !/packaging/requirements-build.txt
+!/packaging/requirements-ocr.txt
 !/packaging/licenses/*.txt
 
 # 对外维护说明；旧开发记录、验收记录和截图留在本机。
@@ -44,6 +49,9 @@
 !/docs/DEVELOPMENT.md
 !/docs/REPOSITORY.md
 !/docs/ACCEPTANCE.md
+!/docs/OCR.md
+!/docs/DOCUMENT_LAYOUT_PLAN.md
+!/docs/RELEASE_REVIEW_0_4.md
 !/docs/issues.md
 !/docs/images/
 !/docs/images/reading.png
@@ -83,6 +91,14 @@ venv/
 *.pem
 *.pfx
 *.p12
+*.onnx
+*.pt
+*.pth
+*.safetensors
+dist/
+dist-installer/
+dist-ocr*/
+build/
 credentials*
 
 # 真实业务文档和数据导出不作为源文件。

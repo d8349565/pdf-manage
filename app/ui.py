@@ -1873,27 +1873,31 @@ class MainWindow(QMainWindow):
         edit.addAction(self.append_action)
         self.delete_action = self._act("删除页面", self.delete_pages)
         edit.addAction(self.delete_action)
-        tools = self._menubar.addMenu("工具")
+        tools = self._menubar.addMenu("组织")
         self.extract_action = self._act("提取页面…", lambda: self.open_export_tool(0))
         self.split_action = self._act("拆分文件…", lambda: self.open_export_tool(1))
         tools.addAction(self.extract_action)
         tools.addAction(self.split_action)
         tools.addAction(self._act("页码处理…", self.open_page_numbers))
+        self.ocr_action = self._act("文字识别…", self.open_ocr)
+        tools.addAction(self.ocr_action)
         tools.addSeparator()
-        self.convert_action = self._act("表格转 Excel…", lambda: self.open_export_tool(2))
-        self.image_export_action = self._act("PDF 转图片…", lambda: self.open_export_tool(5))
-        tools.addAction(self.convert_action)
-        tools.addAction(self.image_export_action)
-        tools.addAction(self._act("图片转 PDF…", self.images_to_pdf))
-        tools.addAction(self._act("批量 Word 转 PDF…", self.open_word_converter))
-        tools.addAction(self._act("批量 PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
-        tools.addAction(self._act("Markdown 转 PDF…", self.convert_markdown))
-        tools.addSeparator()
-        self.compress_action = self._act("压缩 PDF…", lambda: self.open_export_tool(3))
+        self.compress_action = self._act("文档压缩…", lambda: self.open_export_tool(3))
         self.encrypt_action = self._act("加密另存…", self.encrypt_copy)
-        self.editable_action = self._act("制作可编辑副本…", self.editable_copy)
+        self.editable_action = self._act("编辑副本…", self.editable_copy)
         for action in (self.compress_action, self.encrypt_action, self.editable_action):
             tools.addAction(action)
+        convert = self._menubar.addMenu("转换")
+        convert.addAction(self._act("Word 转 PDF…", self.open_word_converter))
+        convert.addAction(self._act("图片转 PDF…", self.images_to_pdf))
+        convert.addAction(self._act("Markdown 转 PDF…", self.convert_markdown))
+        convert.addSeparator()
+        convert.addAction(self._act("PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
+        self.convert_action = self._act("PDF 转 Excel…", lambda: self.open_export_tool(2))
+        self.image_export_action = self._act("PDF 转图片…", lambda: self.open_export_tool(5))
+        convert.addAction(self.convert_action)
+        convert.addAction(self._act("PDF 转 TXT…", self.export_text))
+        convert.addAction(self.image_export_action)
         view = self._menubar.addMenu("视图")
         view.addAction(self._act("阅读", lambda: self.stack.setCurrentIndex(0)))
         view.addAction(self._act("整理页面", lambda: self.stack.setCurrentIndex(1)))
@@ -2039,6 +2043,7 @@ class MainWindow(QMainWindow):
             action.setEnabled(bool(count) and not save_reason)
         self.close_file_action.setEnabled(bool(count) or bool(self.ws.path) or self.ws.dirty)
         self.compress_action.setEnabled(bool(count) and not read_only and not copy_reason)
+        self.ocr_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
         self.editable_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "editable_copy"))
@@ -2248,6 +2253,8 @@ class MainWindow(QMainWindow):
         zoom_bar.setContentsMargins(0, 0, 0, 0)
         from app.searchui import SearchBar
         self.search_bar = SearchBar(self)
+        from app.textselection import TextSelection
+        self.text_selection = TextSelection(self)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -2441,7 +2448,7 @@ class MainWindow(QMainWindow):
         self.convert_range.setVisible(False)
         self.convert_range_mode.toggled.connect(self.convert_range.setVisible)
         convert.addWidget(self.convert_range)
-        hint = QLabel("适用于电子 PDF 表格，暂不支持扫描件。")
+        hint = QLabel("支持电子 PDF 和已完成 OCR 的扫描表格；金额与行列请核对原件。")
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         convert.addWidget(hint)
@@ -3044,6 +3051,7 @@ class MainWindow(QMainWindow):
         self._sync_controls()
         self.find_action.setEnabled(bool(self.ws.pages))
         self.search_bar.sync_document()
+        self.text_selection.sync()
         if self.ws.pages:
             self._ensure_annotation_tools()
         if hasattr(self, "annotation_tools"):
@@ -3630,6 +3638,32 @@ class MainWindow(QMainWindow):
         dialog.exec()
         dialog.deleteLater()
 
+    def open_ocr(self):
+        from app.ocrui import open_ocr
+        open_ocr(self)
+
+    def export_text(self):
+        if not self.ws.pages or not self._allow_operation('copy'):
+            return
+        if self.ws.dirty or not self.ws.path:
+            QMessageBox.information(self, '先保存当前文档', '请先保存或另存当前 PDF，再导出文字。')
+            return
+        from app.documentlayout import pdf_to_text
+        path, _ = QFileDialog.getSaveFileName(self, '导出 TXT', os.path.splitext(self.ws.path)[0]+'.txt',
+                                             '文本文件 (*.txt)', options=QFileDialog.Option.DontConfirmOverwrite)
+        if not path:
+            return
+        if not path.lower().endswith('.txt'):
+            path += '.txt'
+        try:
+            result = run_operation(self, '导出文字', lambda progress,cancel:
+                pdf_to_text(self.ws.path,path,progress,cancel), cancellable=True)
+            self.statusBar().showMessage(f'文字已导出：{result}', 6000)
+        except OperationCancelled:
+            self.statusBar().showMessage('文字导出已取消。', 4000)
+        except (ValueError, OSError) as exc:
+            QMessageBox.warning(self, '文字未导出', str(exc))
+
     def images_to_pdf(self):
         from app.exportdialogs import ImageImportDialog, new_pdf_path
         from app.imaging import images_to_pdf
@@ -3817,7 +3851,8 @@ class MainWindow(QMainWindow):
         from PyQt6.QtGui import QDesktopServices
 
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(folder))):
-            self.statusBar().showMessage(f"文件已写出，但无法自动打开文件夹：{folder}", 10000)
+            saved = self.statusBar().currentMessage()
+            self.statusBar().showMessage(f"{saved}\n无法自动打开文件夹：{folder}", 10000)
 
     def save(self, save_as: bool = False) -> bool:
         operation = self.store.write_operation(self.ws.pages, WriteOptions(outline=self.ws.outline))

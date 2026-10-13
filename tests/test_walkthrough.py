@@ -922,7 +922,8 @@ def test_icon_toolbar_has_names_and_tooltips(window):
         assert btn.icon() and not btn.icon().isNull()
     from PyQt6.QtWidgets import QPushButton
     labels = {btn.text() for btn in window.findChildren(QPushButton)} | names
-    assert {"打开 PDF", "合并文件", "保存", "另存为", "阅读", "整理页面", "左转", "右转", "删除页面", "全选"} <= labels
+    assert {"打开 PDF", "保存", "另存为", "阅读", "整理页面", "左转", "右转", "删除页面", "全选"} <= labels
+    assert window.append_action.text() == "合并文件…" and window.append_action.isEnabled()
 
 
 def test_toolbar_icon_not_clipped_to_top_left(qapp):

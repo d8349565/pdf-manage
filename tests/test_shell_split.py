@@ -141,6 +141,8 @@ def test_merge_save_opens_output_folder_once(window, tmp_path, monkeypatch):
     target = tmp_path / "merged.pdf"
     opened_folders = []
     monkeypatch.setattr(window, "_open_output_folder", opened_folders.append)
+    # Close merge navigation notes in this output-folder behavior check.
+    monkeypatch.setattr(window, "_show_write_notes", lambda results: None)
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(target), ""))
     assert window.open_shell_files([first, second], "merge")
     assert opened_folders == []

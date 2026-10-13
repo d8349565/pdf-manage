@@ -3,6 +3,7 @@ setlocal DisableDelayedExpansion
 
 set "SKIP_SETUP=0"
 set "SETUP_ONLY=0"
+set "ZHIXUPDF_SETUP_BUILT=0"
 set "EXPLICIT_PYTHON="
 
 :parse_args
@@ -148,13 +149,14 @@ if errorlevel 1 (
 )
 if errorlevel 1 goto setup_failed
 rmdir /s /q "%ZHIXUPDF_SETUP_STAGE%" >nul 2>&1
+set "ZHIXUPDF_SETUP_BUILT=1"
 
 :done
 echo.
 echo ========================================================
 echo Build complete:
 echo   Application: dist\ZhiXuPDF\ZhiXuPDF.exe
-if exist "dist-installer\ZhiXuPDF-Setup.exe" (
+if "%ZHIXUPDF_SETUP_BUILT%"=="1" (
     echo   Installer:   dist-installer\ZhiXuPDF-Setup.exe
 )
 echo   Report:      build\build-report.json

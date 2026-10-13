@@ -1,0 +1,28 @@
+# Windows x64 / Python 3.12 candidate validated by the OCR PoC.
+# Keep these separate from the base application's requirements.txt.
+rapidocr==3.9.2
+onnxruntime==1.23.2
+numpy==2.5.4
+opencv-python==5.0.0.93
+Pillow==12.3.0
+Shapely==2.2.0
+pyclipper==1.4.0
+PyYAML==6.0.3
+omegaconf==2.4.0
+six==1.17.0
+tqdm==4.70.1
+requests==2.34.2
+colorlog==6.12.0
+coloredlogs==15.0.1
+flatbuffers==25.12.19
+packaging==26.3
+protobuf==7.36.2
+sympy==1.14.0
+humanfriendly==10.0
+colorama==0.4.6
+charset-normalizer==3.5.2
+idna==3.20
+urllib3==2.8.0
+certifi==2026.7.22
+mpmath==1.3.0
+pyreadline3==3.5.6

@@ -1,0 +1,345 @@
+"""One geometry-based reading layout shared by text copy and document exports."""
+from dataclasses import replace
+from statistics import median
+import re
+import math
+
+
+def _column_cuts(fragments):
+    body=[item for item in fragments if not item.get('heading')]
+    if len(body)<6:
+        return [], None
+    # Short aligned numeric fields remain rows rather than newspaper columns.
+    if sum(len(item['text'])<13 and any(char.isdigit() for char in item['text']) for item in body)>len(body)*.5:
+        return [], None
+    size=median(item['size'] for item in body)
+    candidates=[]
+    for end in sorted({item['bbox'][2] for item in body}):
+        starts=[item['bbox'][0] for item in body if item['bbox'][0]>=end+max(15,size*1.2)]
+        if not starts:
+            continue
+        start=min(starts)
+        left=[item for item in body if item['bbox'][2]<=end+1]
+        right=[item for item in body if item['bbox'][0]>=start-1]
+        if min(len(left),len(right))<3:
+            continue
+        top=max(min(item['bbox'][1] for item in left),min(item['bbox'][1] for item in right))
+        bottom=min(max(item['bbox'][3] for item in left),max(item['bbox'][3] for item in right))
+        overlap=bottom-top
+        extent=min(max(item['bbox'][3] for item in left)-min(item['bbox'][1] for item in left),
+                   max(item['bbox'][3] for item in right)-min(item['bbox'][1] for item in right))
+        crossing=sum(min(item['bbox'][3],bottom)-max(item['bbox'][1],top) for item in body
+                     if item['bbox'][0]<(end+start)/2<item['bbox'][2] and item['bbox'][1]<bottom and item['bbox'][3]>top)
+        if overlap>0 and overlap>=extent*.5 and crossing<=overlap*.25:
+            candidates.append((start-end,(start+end)/2,top,bottom))
+    chosen=[]
+    for candidate in sorted(candidates,reverse=True):
+        if all(abs(candidate[1]-other[1])>size*3 for other in chosen):
+            chosen.append(candidate)
+        if len(chosen)==3:
+            break
+    return sorted(item[1] for item in chosen), ((min(item[2] for item in chosen),max(item[3] for item in chosen)) if chosen else None)
+
+
+def _reading_order(items, cuts, region):
+    if not cuts:
+        return sorted(items,key=lambda item:(item['bbox'][1],item['bbox'][0]))
+    spanning=[]
+    columns=[]
+    for item in items:
+        box=item['bbox']
+        if box[3]<region[0] or box[1]>region[1] or any(box[0]<cut<box[2] for cut in cuts):
+            item.pop('column',None)
+            spanning.append(item)
+        else:
+            item['column']=sum(box[0]>=cut for cut in cuts)
+            item['column_count']=len(cuts)+1
+            columns.append(item)
+    bounds=[]
+    for column in range(len(cuts)+1):
+        entries=[item['bbox'] for item in columns if item['column']==column]
+        bounds.append((min(box[0] for box in entries),max(box[2] for box in entries)) if entries else (0,0))
+    for item in columns:
+        item['column_bounds']=tuple(bounds)
+    result=[]
+    for barrier in sorted(spanning,key=lambda item:item['bbox'][1]):
+        above=[item for item in columns if item['bbox'][1]<barrier['bbox'][1]]
+        result.extend(sorted(above,key=lambda item:(item['column'],item['bbox'][1],item['bbox'][0])))
+        columns=[item for item in columns if item not in above]
+        result.append(barrier)
+    result.extend(sorted(columns,key=lambda item:(item['column'],item['bbox'][1],item['bbox'][0])))
+    return result
+
+
+def _cjk(char):
+    return '\u3400'<=char<='\u9fff' or '\uf900'<=char<='\ufaff'
+
+
+def _paragraphs(items):
+    text_items=[item for item in items if item['kind']=='text']
+    margins={}
+    for column in {item.get('column',-1) for item in text_items}:
+        entries=[item for item in text_items if item.get('column',-1)==column and not item.get('heading')]
+        if entries:
+            rights=sorted(item['bbox'][2] for item in entries)
+            margins[column]=(min(item['bbox'][0] for item in entries),rights[min(len(rights)-1,int(len(rights)*.85))])
+    output=[]
+    for item in items:
+        if item['kind']!='text':
+            output.append(item)
+            continue
+        current=dict(item)
+        current['source_text']=item['text']
+        current['last_line_box']=item['bbox']
+        current['line_count']=1
+        left,right=margins.get(item.get('column',-1),(item['bbox'][0],item['bbox'][2]))
+        current['first_line_indent']=max(0,item['bbox'][0]-left) if item['bbox'][0]-left>=item['size']*1.3 else 0
+        listed=bool(re.match(r'^(?:[•*]\s|[-]\s|\d+[.)、]\s*|[一二三四五六七八九十]+[、])',item['text']))
+        previous=output[-1] if output else None
+        if previous and previous['kind']=='text' and not listed and not previous.get('heading') and not current.get('heading'):
+            box=previous['last_line_box']; gap=item['bbox'][1]-box[3]
+            width=max(1,right-left)
+            near_right=right-box[2]<=max(item['size']*1.3,width*.08)
+            same_column=previous.get('column',-1)==item.get('column',-1)
+            normal_style=max(previous['size'],item['size'])<=min(previous['size'],item['size'])*1.2 and previous['bold']==item['bold'] and abs(item.get('angle',0))<3 and abs(previous.get('angle',0))<3
+            normal_gap=-item['size']*.2<=gap<=item['size']*.9
+            continuation=item['bbox'][0]-left<item['size']*.8
+            punctuation=previous['text'].rstrip()[-1:] in '。！？!?；;.'
+            clear_stop=punctuation and right-box[2]>item['size']*.6
+            if same_column and normal_style and normal_gap and continuation and near_right and not clear_stop and '\t' not in previous['text']+current['text']:
+                tail=previous['text'].rstrip(); head=current['text'].lstrip()
+                if tail.endswith('\u00ad'):
+                    tail=tail[:-1]; separator=''
+                else:
+                    separator='' if tail.endswith('-') or (_cjk(tail[-1]) and _cjk(head[0])) else ' '
+                previous['text']=tail+separator+head
+                previous['source_text']+='\n'+current['source_text']
+                previous['last_line_box']=item['bbox']
+                previous['bbox']=(min(previous['bbox'][0],item['bbox'][0]),previous['bbox'][1],max(previous['bbox'][2],item['bbox'][2]),item['bbox'][3])
+                previous['line_count']+=1
+                continue
+        output.append(current)
+    return output
+
+
+def canonical_tables(page, tables):
+    import pymupdf as p
+    from app.pdf2excel.detector import _build_grid, _detect_merges
+    if page.rotation == 0:
+        return tables
+    output = []
+    for table in tables:
+        bbox = tuple(p.Rect(table.bbox) * page.derotation_matrix)
+        rectangles = [tuple(p.Rect(cell.bbox) * page.derotation_matrix) for cell in table.cells]
+        xs, ys = _build_grid(rectangles, bbox)
+        cells = []
+        for cell, rectangle in zip(table.cells, rectangles):
+            row, col, rows, cols = _detect_merges(rectangle, xs, ys)
+            cells.append(replace(cell, row=row, col=col, row_span=rows, col_span=cols, bbox=rectangle))
+        output.append(replace(table, bbox=bbox, cells=cells, row_count=len(ys)-1, col_count=len(xs)-1,
+                              col_widths=[b-a for a,b in zip(xs,xs[1:])], row_heights=[b-a for a,b in zip(ys,ys[1:])]))
+    return output
+
+
+def layout_from_raw(raw, tables):
+    import pymupdf as p
+    areas = [p.Rect(table.bbox) for table in tables]
+    fragments = []
+    for block in raw.get('blocks', ()):
+        for line in block.get('lines', ()):
+            chars, sizes = [], []
+            for span in line.get('spans', ()):
+                for char in span.get('chars', ()):
+                    rectangle = p.Rect(char['bbox'])
+                    if not any(area.contains((rectangle.tl + rectangle.br) / 2) for area in areas):
+                        chars.append(char)
+                        sizes.append(span.get('size', 11))
+            text = ''.join(char['c'] for char in chars)
+            if text.strip():
+                bounds = p.Rect(chars[0]['bbox'])
+                for char in chars[1:]:
+                    bounds |= p.Rect(char['bbox'])
+                direction=line.get('dir',(1,0))
+                fragments.append(dict(kind='text', text=text, bbox=tuple(bounds), size=median(sizes),angle=math.degrees(math.atan2(direction[1],direction[0])),
+                                      bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ()))))
+    body_size=median([item['size'] for item in fragments]) if fragments else 11
+    for item in fragments:
+        item['heading']=item['size']>=body_size*1.3 and len(item['text'])<=100
+    cuts,region=_column_cuts(fragments)
+    for item in fragments:
+        item['column']=sum(item['bbox'][0]>=cut for cut in cuts) if cuts else -1
+    # Rejoin fragments within the same column, never across a detected gutter.
+    rows = []
+    for fragment in sorted(fragments, key=lambda item: (item['bbox'][1], item['bbox'][0])):
+        box = p.Rect(fragment['bbox'])
+        if rows and fragment['column']==rows[-1]['column'] and abs((box.y0+box.y1)/2 - (rows[-1]['bbox'][1]+rows[-1]['bbox'][3])/2) <= min(box.height, rows[-1]['bbox'][3]-rows[-1]['bbox'][1]) * .4:
+            previous = rows[-1]
+            gap = box.x0 - previous['bbox'][2]
+            separator = '\t' if gap > max(previous['size'], fragment['size']) * 2 else (' ' if gap > fragment['size'] * .2 else '')
+            previous['text'] += separator + fragment['text']
+            previous['bbox'] = tuple(p.Rect(previous['bbox']) | box)
+            previous['size'] = max(previous['size'], fragment['size'])
+        else:
+            rows.append(dict(fragment))
+    body_size = median([item['size'] for item in rows]) if rows else 11
+    for item in rows:
+        item['heading'] = item['size'] >= body_size * 1.3 and len(item['text']) <= 100
+        item['bold'] |= item['heading']
+    ordered=_reading_order([*rows,*[dict(kind='table',table=table,bbox=table.bbox) for table in tables]],cuts,region)
+    return _paragraphs(ordered)
+
+
+def order_figures(layout,figures):
+    column_items=[item for item in layout if item.get('column_count',1)>1]
+    if column_items:
+        bounds=column_items[0]['column_bounds']
+        cuts=[(left[1]+right[0])/2 for left,right in zip(bounds,bounds[1:])]
+        region=(min(item['bbox'][1] for item in column_items),max(item['bbox'][3] for item in column_items))
+        return _reading_order([*layout,*figures],cuts,region)
+    return sorted([*layout,*figures],key=lambda item:(item['bbox'][1],item['bbox'][0]))
+
+
+def page_layout(page, *, include_images=False):
+    import pymupdf as p
+    from app.pdf2excel.analyzer import extract_spans, extract_drawings
+    from app.pdf2excel.detector import detect_tables
+    warnings = []
+    lines, fills = extract_drawings(page)
+    tables = canonical_tables(page, detect_tables(page, extract_spans(page), lines, fills, warnings))
+    raw = page.get_text('rawdict', flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
+    layout=layout_from_raw(raw,tables)
+    if any(abs(item.get('angle',0))>=3 for item in layout):
+        warnings.append('存在倾斜或竖排文字，已保留文字内容，段落方向及图像位置请核对。')
+    if include_images:
+        from app.documentimages import page_figures
+        figures=page_figures(page,layout,warnings)
+        if figures:
+            layout=order_figures(layout,figures)
+    return layout,warnings
+
+
+def document_layout(doc, *, include_images=False, cancel=None, progress=None):
+    from app.output import check_cancel
+    pages=[]; repeats={}
+    for page in doc:
+        check_cancel(cancel)
+        if progress:
+            progress(f'正在分析排版 · 第 {len(pages)+1}/{len(doc)} 页')
+        items,warnings=page_layout(page,include_images=include_images)
+        width,height=page.cropbox.width,page.cropbox.height
+        pages.append(dict(items=items,warnings=warnings,width=width,height=height))
+        for index,item in enumerate(items):
+            if item['kind']!='text' or len(item['text'])>100:
+                continue
+            box=item['bbox']; position='header' if box[3]<=height*.09 else ('footer' if box[1]>=height*.9 else None)
+            if not position:
+                continue
+            other=[entry for entry in items if entry is not item and entry['kind'] in ('text','table')]
+            gap=min((entry['bbox'][1]-box[3] for entry in other if entry['bbox'][1]>=box[3]),default=0) if position=='header' else min((box[1]-entry['bbox'][3] for entry in other if entry['bbox'][3]<=box[1]),default=0)
+            if gap<item['size']*1.2:
+                continue
+            key=(position,re.sub(r'\d+','#',re.sub(r'\s+','',item['text']).casefold()))
+            repeats.setdefault(key,[]).append((len(pages)-1,index))
+    if len(pages)>=2:
+        for (role,key),entries in repeats.items():
+            if len({page for page,index in entries})>=max(2,math.ceil(len(pages)*.5)):
+                for page,index in entries:
+                    pages[page]['items'][index]['role']=role
+    return pages
+
+
+def layout_text(layout, rectangle=None):
+    import pymupdf as p
+    area = p.Rect(rectangle) if rectangle is not None else None
+    result = []
+    for item in layout:
+        if item['kind'] == 'text':
+            if area is None or area.intersects(p.Rect(item['bbox'])):
+                result.append(item['text'])
+            continue
+        if item['kind']!='table':
+            continue
+        table = item['table']
+        cells = {(cell.row, cell.col): cell for cell in table.cells}
+        selected = [cell for cell in table.cells if area is None or (cell.text.strip() and area.intersects(p.Rect(cell.bbox)))]
+        if not selected:
+            continue
+        first, last = min(cell.col for cell in selected), max(cell.col+cell.col_span-1 for cell in selected)
+        rows = sorted({cell.row for cell in selected})
+        for row in rows:
+            result.append('\t'.join(cells[row,col].text.replace('\n', ' ') if (row,col) in cells and cells[row,col] in selected else ''
+                                    for col in range(first,last+1)))
+    return '\n'.join(result)
+
+
+def selection_text(raw, rectangle, tables):
+    import pymupdf as p
+    area = p.Rect(rectangle)
+    blocks = []
+    for block in raw.get('blocks', ()):
+        lines = []
+        for line in block.get('lines', ()):
+            spans = []
+            for span in line.get('spans', ()):
+                chars = [char for char in span.get('chars', ())
+                         if area.contains((p.Rect(char['bbox']).tl+p.Rect(char['bbox']).br)/2)]
+                if chars:
+                    spans.append(dict(span, chars=chars))
+            if spans:
+                lines.append(dict(line, spans=spans))
+        if lines:
+            blocks.append(dict(block, lines=lines))
+    selected_raw = {'blocks': blocks}
+    clipped = []
+    for table in tables:
+        cells = []
+        for cell in table.cells:
+            pieces = []
+            box = p.Rect(cell.bbox)
+            for block in blocks:
+                for line in block['lines']:
+                    text = ''.join(char['c'] for span in line['spans'] for char in span['chars']
+                                   if box.contains((p.Rect(char['bbox']).tl+p.Rect(char['bbox']).br)/2))
+                    if text.strip():
+                        pieces.append(text)
+            cells.append(replace(cell, text=' '.join(pieces)))
+        clipped.append(replace(table, cells=cells))
+    return layout_text(layout_from_raw(selected_raw, clipped), area)
+
+
+def pdf_to_text(source, destination, progress=None, cancel=None):
+    import os
+    from pathlib import Path
+    import tempfile
+    import pymupdf as p
+    from app.output import check_cancel, commit_file, stamp
+    from app.wordconvert import validate_pdf_for_word
+    validate_pdf_for_word(source)
+    target = Path(destination).resolve()
+    if target.exists():
+        raise ValueError('TXT 输出已存在，请选择新文件名。')
+    if target.suffix.lower() != '.txt':
+        raise ValueError('输出文件必须使用 .txt 扩展名。')
+    original = stamp(source)
+    temp = None
+    try:
+        fd, temp = tempfile.mkstemp(prefix='.zhixu-text-', suffix='.txt', dir=target.parent)
+        with os.fdopen(fd, 'w', encoding='utf-8-sig', newline='') as stream, p.open(source) as doc:
+            for index,page in enumerate(doc):
+                check_cancel(cancel)
+                if not page.get_text().strip() and page.get_images():
+                    raise ValueError(f'第 {index+1} 页需要先进行 OCR。')
+                layout, _ = page_layout(page)
+                if index:
+                    stream.write('\n\f\n')
+                stream.write(layout_text(layout))
+                if progress:
+                    progress(index+1, len(doc), f'正在导出第 {index+1} 页文字')
+        if stamp(source) != original:
+            raise ValueError('源 PDF 在导出期间改变，未提交结果。')
+        commit_file(temp, target, None, cancel=cancel)
+        temp = None
+        return str(target)
+    finally:
+        if temp:
+            Path(temp).unlink(missing_ok=True)

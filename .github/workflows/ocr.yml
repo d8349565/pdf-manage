@@ -1,0 +1,82 @@
+name: Offline OCR Windows checks
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - app/**
+      - tests/**
+      - packaging/**
+      - pdf-manage.spec
+      - .github/workflows/ocr.yml
+permissions:
+  contents: read
+jobs:
+  windows-cpu:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install base build dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Compile and run generated-document regressions
+        id: regressions
+        continue-on-error: true
+        run: |
+          python -m compileall -q app packaging
+          python -m pytest -q --basetemp build/ci-tests --junitxml=build/regressions.xml
+      - name: Build and inspect the base application
+        run: |
+          python packaging/make_icon.py
+          python -m PyInstaller --noconfirm pdf-manage.spec
+          python packaging/verify_exe.py --skip-runtime
+      - name: Build the base installer without optional OCR files
+        shell: pwsh
+        run: |
+          $setupCompiler = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $setupCompiler) {
+            $setupCompiler = @("${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe", "$env:ProgramFiles/Inno Setup 6/ISCC.exe", "${env:ProgramFiles(x86)}/Inno Setup 7/ISCC.exe", "$env:ProgramFiles/Inno Setup 7/ISCC.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          }
+          if (-not $setupCompiler) { throw 'Inno Setup compiler not found on this runner.' }
+          & $setupCompiler packaging/pdf-manage.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Base installer build failed.' }
+          python packaging/verify_exe.py --skip-runtime --installer dist-installer/ZhiXuPDF-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Installer version validation failed.' }
+      - name: Prepare an isolated CPU runtime
+        run: python -m pip install --target build/ocr-deps -r packaging/requirements-ocr.txt
+      - name: Build the optional offline package
+        run: python packaging/build_ocr.py --deps build/ocr-deps --download-models
+      - name: Real-model synthetic PoC and original search UI
+        run: python packaging/ocr_poc.py --runtime dist-ocr/package --output build/ci-poc
+      - name: Frozen base and optional runtime together
+        run: python packaging/verify_exe.py --run-runtime --ocr-runtime dist-ocr/package
+      - name: Measure both packages and reject OCR dependencies in the base
+        run: python packaging/measure_ocr.py --base dist/ZhiXuPDF --ocr dist-ocr --report build/ocr-size-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ocr-validation-reports
+          path: |
+            build/ocr-size-report.json
+            build/ci-poc/report.json
+            build/build-report.json
+            build/regressions.xml
+      - name: Require regression acceptance
+        if: steps.regressions.outcome == 'failure'
+        run: throw 'Regression checks failed; inspect regressions.xml and the documented baseline before release.'
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: base-windows-installer
+          path: dist-installer/ZhiXuPDF-Setup.exe
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: optional-offline-ocr
+          path: dist-ocr/ZhiXuPDF-OCR-win-x64.zip

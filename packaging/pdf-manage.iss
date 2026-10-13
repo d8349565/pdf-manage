@@ -10,6 +10,8 @@
 AppId={{0E4A38D0-8475-4A57-98C2-1AD3F468A0E8}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductVersion={#MyAppVersion}
 DefaultDirName={localappdata}\Programs\PDFManage
 DefaultGroupName={#MyAppName}
 PrivilegesRequired=lowest

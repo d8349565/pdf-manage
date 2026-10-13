@@ -16,6 +16,13 @@ python -m venv .venv
 - 构建报告：`build/build-report.json`，仅保留本机。
 - 安装包：安装 Inno Setup 后运行 `build.bat`（或 `build_setup.bat`），输出 `dist-installer/ZhiXuPDF-Setup.exe`。
 
+基础安装器只包含 `dist/ZhiXuPDF/`，不打入 OCR 推理依赖或模型。可选增强包的构建命令见 `docs/OCR.md`；
+增强包、模型缓存和构建依赖分别保存在忽略的 `dist-ocr/` 与 `build/`，不能加入 Git。
+升级主程序的主/次版本时必须重建匹配系列的增强包。
+没有 Inno Setup 编译器时脚本仅完成基础程序，不将上一轮安装包报告为本次产物。
+版本标签推送后，Windows 检查流程分别构建并保存基础安装 EXE、独立 OCR ZIP 和验收报告，不将二进制加入 Git。
+可用 `python packaging/verify_exe.py --skip-runtime --installer dist-installer/ZhiXuPDF-Setup.exe` 核对安装器与程序的版本一致。
+
 ## 代码位置
 
 | 位置 | 内容 |
@@ -25,6 +32,8 @@ python -m venv .venv
 | `app/workspace.py`、`app/pdfio.py` | 页面状态、撤销和 PDF 读写 |
 | `app/printing.py`、`app/pdf2excel/` | 打印和表格转 Excel |
 | `app/compression.py`、`app/imaging.py` | 压缩与图片转换 |
+| `app/ocr/`、`app/ocrui.py` | 可选离线 OCR、文字层输出与操作弹窗 |
+| `app/textselection.py`、`app/ocr/word_export.py` | 阅读区框选复制与 OCR 文字层导出可编辑 DOCX |
 | `app/wordconvert.py`、`app/wordui.py` | Word 批量转换 |
 | `app/assets/` | 应用资源 |
 | `packaging/`、`pdf-manage.spec` | 打包、安装器和第三方许可文件 |
@@ -44,6 +53,8 @@ python -m venv .venv
 ```
 
 打印机、Microsoft Word、安装器和复杂 PDF 还需要在实际环境中核对。静态打包检查通过不代表全部功能已经验收。
+
+OCR 的 PRD 评估、独立 CPU 增强包构建、合成 PoC、性能记录和未完成的发布验收见 [OCR.md](OCR.md)。OCR 推理依赖只安装到单独构建目录，不添加到基础版依赖清单。
 
 ## 版本与提交规则
 

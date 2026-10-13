@@ -332,8 +332,15 @@ def test_continuous_layout_tracks_rotation_and_deletion(loaded_window):
     assert len(window.preview_view.page_rects) == 5
 
 
-def test_open_pdf_maximizes_window(loaded_window):
-    assert loaded_window.isMaximized()
+def test_open_pdf_preserves_normal_window_size(loaded_window):
+    window = loaded_window
+    window.showNormal()
+    window.resize(1100, 900)
+    QApplication.processEvents()
+    before = window.size()
+    window._ingest([window.ws.path], replace=True)
+    QApplication.processEvents()
+    assert not window.isMaximized() and window.size() == before
 
 
 def test_arrange_can_zoom_past_three_hundred_percent(loaded_window):

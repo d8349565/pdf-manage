@@ -16,10 +16,11 @@ from PyQt6.QtWidgets import (
 from app import APP_NAME
 from app.exportdialogs import hint
 from app.icons import brand_icon
-from app.output import OperationCancelled
+from app.output import OperationCancelled, check_cancel
 from app.progress import run_operation
 from app.ui import STYLESHEET
 from app.wordconvert import DIRECTIONS, collect_files, convert_batch, word_available, pdf_import_needs_confirmation, allow_pdf_import
+from app.ocr.export_input import needs_text_export
 
 # 样式扩展：分段开关、徽标与紧凑路径框
 MODE_QSS = """
@@ -168,6 +169,10 @@ class WordConverterWindow(QWidget):
         seg_layout.addWidget(self.btn_word_to_pdf)
         seg_layout.addWidget(self.btn_pdf_to_word)
         top_row.addWidget(seg_frame)
+        self.ocr_install = QPushButton("安装识别组件…")
+        self.ocr_install.setFixedHeight(28)
+        self.ocr_install.clicked.connect(self.install_ocr)
+        top_row.addWidget(self.ocr_install)
 
         header_layout.addLayout(top_row)
         self.intro = hint(header_layout, "")
@@ -307,8 +312,8 @@ class WordConverterWindow(QWidget):
         self.overwrite = QCheckBox(f"明确覆盖已有 {self.target_kind}（源文件保留）")
         options_layout.addWidget(self.recursive)
         options_layout.addWidget(self.overwrite)
-        opt_hint = hint(options_layout, "单份超时 180 秒；失败继续下一份。源文件只读打开、不保存修改，禁用宏和外链自动更新。")
-        opt_hint.setStyleSheet("font-size: 12px; color: #64748B;")
+        self.engine_hint = hint(options_layout, "")
+        self.engine_hint.setStyleSheet("font-size: 12px; color: #64748B;")
         self.options.hide()
         self.advanced.toggled.connect(self.options.setVisible)
         self.recursive.toggled.connect(self.rescan)
@@ -349,23 +354,31 @@ class WordConverterWindow(QWidget):
 
     # ------------------------------------------------------------ 方向与文案
     def _update_direction_labels(self):
-        self.setWindowTitle(f"批量 {self.source_kind} 转 {self.target_kind} · {APP_NAME}")
-        self.title.setText(f"批量 {self.source_kind} 转 {self.target_kind}")
+        self.setWindowTitle(f"{self.source_kind} 转 {self.target_kind} · {APP_NAME}")
+        self.title.setText(f"{self.source_kind} 转 {self.target_kind}")
         self.add_button.setText(f"添加 {self.source_kind} 文件…")
         self.table.setHorizontalHeaderLabels([f"源 {self.source_kind} 文件", f"输出 {self.target_kind} 文件", "状态"])
         self.table.setAccessibleName(f"{self.source_kind} 转换清单，双击第二列可选择输出位置")
         self.overwrite.setText(f"明确覆盖已有 {self.target_kind}（源文件保留）")
-        primary_hint = (
-            "使用本机已安装的 Microsoft Word 离线转换 · 已有同名输出默认跳过"
-            + (" · 复杂版式或扫描图片请在转换后核对" if self.direction == "pdf_to_word" else "")
-        )
+        self.ocr_install.setVisible(self.direction == "pdf_to_word")
+        primary_hint = ("扫描页自动离线识别，需安装识别组件；已有 OCR 文字直接导出可编辑正文和表格。其他 PDF 使用本机 Word 重排。"
+                        if self.direction == "pdf_to_word" else "使用本机 Microsoft Word 离线转换 · 已有同名输出默认跳过")
+        self.engine_hint.setText("扫描页逐页识别，可随时取消；复杂排版、金额和编号请核对。使用 Word 重排时单份最多等待 180 秒。"
+                                 if self.direction == "pdf_to_word" else "单份超时 180 秒；失败继续下一份。源文件只读打开，禁用宏和外链自动更新。")
         sub_hint = f"可直接拖入 {self.source_kind} 文件或文件夹，重复文件自动忽略。"
         self.intro.setText(f"{primary_hint}\n{sub_hint}")
         self._update_output_field()
         self._update_summary()
 
+    def install_ocr(self):
+        if self._task_dialog is not None:
+            return
+        from app.ocrui import install_local_runtime
+        if install_local_runtime(self):
+            self._set_message("识别组件已安装，可以开始转换扫描 PDF。")
+
     def switch_direction(self, direction: str):
-        if self.direction == direction:
+        if self._task_dialog is not None or self.direction == direction:
             return
         self.direction = direction
         self.source_kind = "PDF" if direction == "pdf_to_word" else "Word"
@@ -418,6 +431,8 @@ class WordConverterWindow(QWidget):
         self._update_summary()
 
     def choose_output_dir(self):
+        if self._task_dialog is not None:
+            return
         path = QFileDialog.getExistingDirectory(self, f"选择 {self.target_kind} 输出目录")
         if not path:
             return
@@ -426,11 +441,15 @@ class WordConverterWindow(QWidget):
         self._refresh_targets()
 
     def reset_output_dir(self):
+        if self._task_dialog is not None:
+            return
         self.custom_output_dir = None
         self._manual_targets.clear()
         self._refresh_targets()
 
     def browse_row_target(self, row: int):
+        if self._task_dialog is not None:
+            return
         if row < 0 or row >= self.table.rowCount():
             return
         source = self.table.item(row, 0).text()
@@ -510,6 +529,8 @@ class WordConverterWindow(QWidget):
 
     # -------------------------------------------------------------------- 输入
     def add_files(self):
+        if self._task_dialog is not None:
+            return
         paths, _ = QFileDialog.getOpenFileNames(
             self, f"添加 {self.source_kind} 文件", "",
             "PDF 文档 (*.pdf)" if self.direction == "pdf_to_word" else "Word 文档 (*.doc *.docx)")
@@ -518,6 +539,8 @@ class WordConverterWindow(QWidget):
             self.rescan()
 
     def add_folder(self):
+        if self._task_dialog is not None:
+            return
         path = QFileDialog.getExistingDirectory(self, "添加待转换文件夹")
         if path:
             self.inputs.append(path)
@@ -580,7 +603,9 @@ class WordConverterWindow(QWidget):
 
     # ------------------------------------------------------------------ 清单维护
     def clear(self):
-        """只清清单。已经选好的统一输出目录会保留，不让用户白点一次目录选择。"""
+        """清空清单时保留已选的统一输出目录。"""
+        if self._task_dialog is not None:
+            return
         self.inputs.clear()
         self._manual_targets.clear()
         self._message = ""
@@ -592,6 +617,8 @@ class WordConverterWindow(QWidget):
         self._update_summary()
 
     def rescan(self):
+        if self._task_dialog is not None:
+            return
         recursive = self.recursive.isChecked()
         inputs = list(self.inputs)
         try:
@@ -642,6 +669,8 @@ class WordConverterWindow(QWidget):
         self.table.setItem(row, column, item)
 
     def remove_selected(self):
+        if self._task_dialog is not None:
+            return
         for row in sorted({index.row() for index in self.table.selectedIndexes()}, reverse=True):
             src_item = self.table.item(row, 0)
             if src_item:
@@ -657,7 +686,9 @@ class WordConverterWindow(QWidget):
 
     # -------------------------------------------------------------------- 转换
     def convert(self):
-        if not word_available():
+        if self._task_dialog is not None:
+            return
+        if self.direction == "word_to_pdf" and not word_available():
             QMessageBox.information(self, "需要 Microsoft Word", "未检测到本机 Microsoft Word。请安装并完成首次启动后再转换。")
             return
         items = [(self.table.item(i, 0).text(), self.table.item(i, 1).text().strip())
@@ -696,7 +727,21 @@ class WordConverterWindow(QWidget):
                 QMessageBox.warning(self, "仍存在冲突",
                     f"请为每份 {self.source_kind} 分别选择不同的 {self.target_kind} 保存位置。")
                 return
-        if self.direction == "pdf_to_word":
+        needs_native_import = False
+        if self.direction == "pdf_to_word" and word_available():
+            def inspect_inputs(progress, cancel):
+                for index, (source, _) in enumerate(items):
+                    check_cancel(cancel)
+                    progress(index, len(items), f"正在检查文字层 · {Path(source).name}")
+                    if not needs_text_export(source, cancel):
+                        return True
+                return False
+            try:
+                needs_native_import = run_operation(self, "检查 PDF 文字层", inspect_inputs, cancellable=True)
+            except OperationCancelled:
+                self._set_message("检查已取消，未开始转换。")
+                return
+        if needs_native_import:
             try:
                 if pdf_import_needs_confirmation():
                     accepted = QMessageBox.question(self, "首次启用 PDF 转 Word",

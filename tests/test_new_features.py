@@ -662,11 +662,15 @@ def test_path_field_elides_instead_of_stretching(qapp):
 
     field = PathField("C:/Users/somebody/a/very/long/path/演示材料/演示材料 第 1 章.docx")
     field.resize(180, 30)
+    field.show()
+    from PyQt6.QtWidgets import QApplication
+    QApplication.processEvents()
     assert "…" in field.text()
     assert field.text() != field.toolTip()
     assert field.toolTip().endswith("演示材料 第 1 章.docx")
     field.setFullText("短路径.docx")
     assert field.text() == "短路径.docx"
+    field.close()
 
 
 def test_word_converter_delete_key_removes_selected_row(qapp, tmp_path, monkeypatch):

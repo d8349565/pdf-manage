@@ -85,6 +85,21 @@ def validate_docx(path):
     from xml.etree import ElementTree
     try:
         with ZipFile(path) as archive:
+            import posixpath
+            from urllib.parse import unquote
+            names=set(archive.namelist())
+            for name in names:
+                if name.endswith(('.xml','.rels')):
+                    parsed=ElementTree.fromstring(archive.read(name))
+                    if name.endswith('.rels'):
+                        base=posixpath.dirname(posixpath.dirname(name))
+                        for relationship in parsed:
+                            if relationship.get('TargetMode')=='External':
+                                continue
+                            target=unquote(relationship.get('Target','').split('#',1)[0])
+                            resolved=target.lstrip('/') if target.startswith('/') else posixpath.normpath(posixpath.join(base,target))
+                            if resolved not in names:
+                                raise ValueError('Word 输出存在缺失的图像或文档部件，未覆盖目标。')
             ElementTree.fromstring(archive.read("[Content_Types].xml"))
             document = ElementTree.fromstring(archive.read("word/document.xml"))
             if document.tag != "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}document":
@@ -161,9 +176,6 @@ def _worker_command(folder):
 
 
 def _convert_one(source, target, overwrite, progress, cancel, *, direction="word_to_pdf"):
-    import win32api
-    import win32con
-    import win32job
     from app.pdfio import PdfStore
 
     if stamp(target) is not None and not overwrite:
@@ -175,8 +187,17 @@ def _convert_one(source, target, overwrite, progress, cancel, *, direction="word
         raise ValueError("源文件或输出文件扩展名与转换方向不一致。")
     if direction == "pdf_to_word":
         validate_pdf_for_word(source)
+        from app.ocr.word_export import convert_ocr_pdf_to_docx
+        from app.ocr.export_input import needs_text_export
+        if needs_text_export(source, cancel):
+            return convert_ocr_pdf_to_docx(source, target, overwrite, progress, cancel)
     else:
         PdfStore()._check_destination(target)
+    if not word_available():
+        raise RuntimeError("此文件需要 Microsoft Word 重排，请安装 Word；扫描件可先完成 OCR 再转为可编辑文字。")
+    import win32api
+    import win32con
+    import win32job
     job = None
     process = None
     owned_word = None
@@ -265,7 +286,7 @@ def _convert_one(source, target, overwrite, progress, cancel, *, direction="word
 def convert_batch(items, overwrite, progress, cancel, *, direction="word_to_pdf"):
     if direction not in DIRECTIONS:
         raise ValueError("不支持的转换方向。")
-    if not word_available():
+    if direction == "word_to_pdf" and not word_available():
         raise RuntimeError("未检测到 Microsoft Word。请安装并完成首次启动后再转换。")
     source_keys = {os.path.normcase(os.path.realpath(source)) for source, _ in items}
     target_keys = [os.path.normcase(os.path.realpath(target)) for _, target in items]
@@ -282,6 +303,8 @@ def convert_batch(items, overwrite, progress, cancel, *, direction="word_to_pdf"
             progress(index, len(items), f"{Path(source).name} · {phase}")
         try:
             state, message, word_version = _convert_one(source, target, overwrite, report, cancel, direction=direction)
+        except OperationCancelled:
+            state, message, word_version = "cancelled", "已取消", ""
         except Exception as exc:
             state, message, word_version = "failed", str(exc), ""
         if word_version:

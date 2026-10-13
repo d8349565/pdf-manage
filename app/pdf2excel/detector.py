@@ -33,6 +33,40 @@ def detect_tables(
     best_strategy_name = "lines"
 
     for name, strategy in strategies:
+        if name == 'text' and page.get_images():
+            from app.pdf2excel.raster_grid import raster_grid_lines
+            raster_lines = raster_grid_lines(page)
+            if raster_lines:
+                detected = page.find_tables(vertical_strategy='lines_strict', horizontal_strategy='lines_strict',
+                                            add_lines=raster_lines)
+                best_tables = [table for table in detected.tables if table.row_count >= 2 and table.col_count >= 2]
+                if best_tables:
+                    best_strategy_name = 'raster_grid'
+                    lines = [*lines, *[{'bbox': (*start, *end), 'width': .8, 'color': '#606060'}
+                                     for start, end in raster_lines]]
+                    break
+        if name == 'text':
+            if any(span.get('alpha', 255) == 0 for span in spans):
+                from app.pdf2excel.alignment_grid import alignment_grid_lines
+                aligned_lines,header_fills=alignment_grid_lines(page,spans)
+                if aligned_lines:
+                    detected=page.find_tables(vertical_strategy='lines_strict',horizontal_strategy='lines_strict',add_lines=aligned_lines)
+                    best_tables=[table for table in detected.tables if table.row_count>=2 and table.col_count>=2]
+                    if best_tables:
+                        best_strategy_name='alignment_grid'
+                        fills=[*fills,*header_fills]
+                        if warnings is not None:
+                            warnings.append(f'第 {page.number+1} 页弱边框表格按重复对齐及底纹推断，请核对行列。')
+                        break
+                if warnings is not None:
+                    warnings.append(f'第 {page.number + 1} 页未确认扫描表格网格，保留正文，不按整页文字猜测表格。')
+                break
+            from app.documentlayout import layout_from_raw
+            raw=page.get_text('rawdict',flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+            if any(item.get('column_count',1)>1 for item in layout_from_raw(raw,[])):
+                if warnings is not None:
+                    warnings.append(f'第 {page.number + 1} 页存在正文分栏，不按整页文字猜测表格。')
+                break
         try:
             detected = page.find_tables(**strategy)
         except Exception:
