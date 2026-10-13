@@ -56,6 +56,7 @@ def detect_tables(
                     if best_tables:
                         best_strategy_name='alignment_grid'
                         fills=[*fills,*header_fills]
+                        lines=[*lines,*[{'bbox':(*start,*end),'width':.5,'color':'#808080'} for start,end in aligned_lines]]
                         if warnings is not None:
                             warnings.append(f'第 {page.number+1} 页弱边框表格按重复对齐及底纹推断，请核对行列。')
                         break
@@ -83,6 +84,31 @@ def detect_tables(
         if best_tables:
             best_strategy_name = name
             break
+
+    # A valid local ruled grid does not prove that the surrounding OCR table
+    # has been covered. Refine only when a stable aligned region materially
+    # contains that grid; retain measured merges for already complete tables.
+    if best_tables and best_strategy_name!='alignment_grid' and page.get_images() and any(span.get('alpha',255)==0 for span in spans):
+        from app.pdf2excel.alignment_grid import alignment_grid_lines
+        aligned_lines,header_fills=alignment_grid_lines(page,spans)
+        if aligned_lines:
+            detected=page.find_tables(use_layout=False,vertical_strategy='lines_strict',horizontal_strategy='lines_strict',add_lines=aligned_lines)
+            for candidate in detected.tables:
+                if candidate.row_count<2 or candidate.col_count<2:
+                    continue
+                area=pymupdf.Rect(candidate.bbox)
+                contained=[table for table in best_tables
+                           if (area&pymupdf.Rect(table.bbox)).get_area()>=pymupdf.Rect(table.bbox).get_area()*.95
+                           and area.get_area()>=pymupdf.Rect(table.bbox).get_area()*1.25]
+                # Never join two separately measured tables merely because
+                # their fields line up across a page gutter.
+                if len(contained)==1:
+                    best_tables=[table for table in best_tables if table not in contained]+[candidate]
+                    fills=[*fills,*header_fills]
+                    lines=[*lines,*[{'bbox':(*start,*end),'width':.5,'color':'#808080'} for start,end in aligned_lines]]
+                    if warnings is not None:
+                        warning=f'第 {page.number+1} 页局部线框已结合重复对齐及表头底色补全，请核对行列。'
+                        if warning not in warnings:warnings.append(warning)
 
     result_models = []
     page_no = page.number + 1  # 1-based 人类可读页码

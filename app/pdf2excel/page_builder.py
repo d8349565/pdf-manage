@@ -113,7 +113,8 @@ def write_page(wb,page):
             ws.row_dimensions[row].height=height/count
         rows.append(rows[-1]+count)
 
-    for item in page['items']:
+    priority={'table':0,'fill':1,'text':2,'image':3}
+    for item in sorted(page['items'],key=lambda item:(priority[item['kind']],item['bbox'][1],item['bbox'][0])):
         left,top,right,bottom=item['bbox']
         column=_nearest(xs,left)+1; end_column=max(column,_nearest(xs,right))
         start_y=_nearest(ys,top); end_y=max(start_y+1,_nearest(ys,bottom))
@@ -131,14 +132,21 @@ def write_page(wb,page):
         elif item['kind']=='text':
             # Glyph bounds are not a text container: allow the whitespace up
             # to the next field, while retaining the field's X/Y anchor.
-            neighbours=[other['bbox'][0] for other in page['items'] if other['kind']=='text'
-                        and other['bbox'][0]>=right and min(bottom,other['bbox'][3])-max(top,other['bbox'][1])>=min(bottom-top,other['bbox'][3]-other['bbox'][1])*.5]
+            neighbours=[other['bbox'][0] for other in page['items'] if other is not item and other['kind'] in ('text','table')
+                        and other['bbox'][0]>left+EPSILON and min(bottom,other['bbox'][3])-max(top,other['bbox'][1])>=min(bottom-top,other['bbox'][3]-other['bbox'][1])*.5]
             available=min(neighbours,default=page['width'])
             bands=[other['bbox'][2] for other in page['items'] if other['kind']=='fill'
                    and other['bbox'][0]<=left and other['bbox'][1]<=(top+bottom)/2<=other['bbox'][3]]
             if bands:
                 available=min(available,min(bands))
-            end_column=max(end_column,_nearest(xs,available))
+            end_column=max(column,_nearest(xs,available))
+            # OCR glyph boxes can overlap the following baseline. Containers
+            # stop at the next field or table, so merges never consume its anchor.
+            following=[other['bbox'][1] for other in page['items'] if other is not item and other['kind'] in ('text','table')
+                       and other['bbox'][1]>top+EPSILON and min(available,other['bbox'][2])>max(left,other['bbox'][0])]
+            if following:
+                end_y=max(start_y+1,_nearest(ys,min(bottom,min(following))))
+                end_row=max(row,rows[min(len(rows)-1,end_y)]-1)
             cell=ws.cell(row,column)
             text=item['text'].replace('\t','    ')
             # Retain both texts if a PDF genuinely overlays text in one grid
@@ -149,7 +157,8 @@ def write_page(wb,page):
                            color=item.get('colour','000000').lstrip('#'))
             if item.get('fill_colour'):
                 cell.fill=PatternFill(fill_type='solid',fgColor=item['fill_colour'].lstrip('#'))
-            cell.alignment=Alignment(wrap_text='\n' in text,shrink_to_fit='\n' not in text,vertical='center')
+            multiline='\n' in str(cell.value)
+            cell.alignment=Alignment(wrap_text=multiline,shrink_to_fit=not multiline,vertical='center')
             if end_column>column or end_row>row:
                 ws.merge_cells(start_row=row,start_column=column,end_row=end_row,end_column=end_column)
         elif item['kind']=='image':

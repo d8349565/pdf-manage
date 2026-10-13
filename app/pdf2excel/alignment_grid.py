@@ -45,7 +45,7 @@ def _header_colour(page,box):
              for fraction in (.1,.2,.3,.4,.5,.6,.7,.8,.9) for vertical in (.25,.6,.8)]
     background=colour(2,2)
     for candidate in samples:
-        if min(candidate)<=170 or max(abs(candidate[channel]-background[channel]) for channel in range(3))<8:
+        if max(abs(candidate[channel]-background[channel]) for channel in range(3))<8:
             continue
         matching=[sample for sample in samples if max(abs(sample[channel]-candidate[channel]) for channel in range(3))<10]
         if len(matching)>=len(samples)*.45:
@@ -90,6 +90,20 @@ def alignment_grid_lines(page,spans):
             aligned=len(row)==count and all(abs(cell['bbox'][0]-anchor)<=size*.9 for cell,anchor in zip(row,anchors))
             if aligned and all(len(cell['text'])<=60 for cell in row):
                 logical.append(list(row)); finish+=1; continue
+            # A new row may have blank cells; do not reinterpret it as a wrapped
+            # continuation when multiple fields align and a row gap is present.
+            assignments=[]
+            for cell in row:
+                choices=[index for index,anchor in enumerate(anchors) if abs(cell['bbox'][0]-anchor)<=size*.9]
+                if len(choices)!=1 or len(cell['text'])>60:
+                    break
+                assignments.append(choices[0])
+            if (2<=len(row)<count and len(assignments)==len(row) and len(set(assignments))==len(row)
+                    and gap>size*.6):
+                y0=min(cell['bbox'][1] for cell in row); y1=max(cell['bbox'][3] for cell in row)
+                sparse=[dict(text='',bbox=(anchor,y0,anchor+.1,y1)) for anchor in anchors]
+                for cell,column in zip(row,assignments):sparse[column]=dict(cell)
+                logical.append(sparse); finish+=1; continue
             # A wrapped cell can continue only inside its existing column.
             matches=[]
             for cell in row:
@@ -107,6 +121,20 @@ def alignment_grid_lines(page,spans):
                 previous=logical[-1][column]
                 logical[-1][column]=dict(text=previous['text']+'\n'+cell['text'],bbox=tuple(p.Rect(previous['bbox'])|p.Rect(cell['bbox'])))
             finish+=1
+        # Body fields establish column starts; centered headers need not share
+        # those starts. Admit the preceding row only with a uniform header band
+        # and a one-to-one assignment to the established body columns.
+        if len(logical)>=2 and cursor and len(rows[cursor-1])==count:
+            previous=rows[cursor-1]
+            box=(min(cell['bbox'][0] for cell in previous),min(cell['bbox'][1] for cell in previous)-size*.5,
+                 max(cell['bbox'][2] for cell in previous),max(cell['bbox'][3] for cell in previous)+size*.8)
+            colour,band=_header_colour(page,box)
+            if band and band[3]<=min(cell['bbox'][1] for cell in seed):
+                padding=min(size,max(2,anchors[0]-band[0]))
+                bounds=[band[0]]+[anchor-padding for anchor in anchors[1:]]+[band[2]]
+                if (all(bounds[index]<=cell['bbox'][0] and cell['bbox'][2]<=bounds[index+1] for index,cell in enumerate(previous))
+                        and all(bounds[index+1]>=row[index]['bbox'][2] for row in logical for index in range(count))):
+                    logical.insert(0,list(previous))
         if len(logical)<3:
             cursor+=1; continue
         data=[cell for row in logical[1:] for cell in row]

@@ -298,7 +298,7 @@ def _raster_colours(page,layout):
             return None,None
         matching=[rgb for rgb in ring if tuple(value//16 for value in rgb)==key]
         rgb=tuple(round(sum(value[channel] for value in matching)/len(matching)) for channel in range(3))
-        if min(rgb)>240:
+        if min(rgb)>240 and max(rgb)-min(rgb)<6:
             return None,None
         fill='#'+''.join(f'{value:02X}' for value in rgb)
         light=sum(weight*value for weight,value in zip((.299,.587,.114),rgb))
