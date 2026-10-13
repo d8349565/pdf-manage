@@ -27,16 +27,18 @@ def element(parent, name, **attributes):
 def paragraph(parent, text='', *, size=11, bold=False, after=4, before=0, first_line_indent=0, colour=None, line_height=None, alignment=None, fit_width=None):
     node = element(parent, 'p')
     properties = element(node, 'pPr')
+    element(properties, 'widowControl', val=0)
+    element(properties, 'autoSpaceDE', val=0)
+    element(properties, 'autoSpaceDN', val=0)
+    element(properties, 'snapToGrid', val=0)
     spacing=element(properties, 'spacing', after=round(after*20), before=round(before*20))
     if line_height:
         spacing.set(f'{{{W}}}line',str(round(max(size*1.25,line_height)*20)))
         spacing.set(f'{{{W}}}lineRule','exact')
-    element(properties, 'autoSpaceDE', val=0)
-    element(properties, 'autoSpaceDN', val=0)
-    if alignment in ('left', 'center', 'right'):
-        element(properties, 'jc', val=alignment)
     if first_line_indent:
         element(properties,'ind',firstLine=round(first_line_indent*20))
+    if alignment in ('left', 'center', 'right'):
+        element(properties, 'jc', val=alignment)
     # Word's paragraph/cell-end mark otherwise keeps the 11pt default and
     # expands dense rows even when every visible run has a smaller font.
     mark=element(properties,'rPr')
@@ -45,19 +47,22 @@ def paragraph(parent, text='', *, size=11, bold=False, after=4, before=0, first_
     for index, line in enumerate(text.split('\n')):
         run = element(node, 'r')
         run_properties = element(run, 'rPr')
-        element(run_properties, 'sz', val=max(2, min(144, round(size*2))))
-        element(run_properties, 'szCs', val=max(2, min(144, round(size*2))))
-        if fit_width:
-            element(run_properties, 'fitText', val=max(20, round(fit_width*20)))
         if bold:
             element(run_properties, 'b')
         if colour:
             element(run_properties,'color',val=colour.lstrip('#'))
+        element(run_properties, 'sz', val=max(2, min(144, round(size*2))))
+        element(run_properties, 'szCs', val=max(2, min(144, round(size*2))))
+        if fit_width:
+            element(run_properties, 'fitText', val=max(20, round(fit_width*20)))
         if index:
             element(run, 'br')
-        value = element(run, 't')
-        value.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
-        value.text = line
+        for field_index, field in enumerate(line.split('\t')):
+            if field_index:
+                element(run, 'tab')
+            value = element(run, 't')
+            value.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            value.text = field
     return node
 
 
@@ -67,7 +72,7 @@ def section(parent, width, height, *, break_type='continuous', references=(), ma
         reference=element(node,role+'Reference',type='default')
         reference.set(f'{{{R}}}id',identity)
     element(node, 'type', val=break_type)
-    element(node, 'pgSz', w=round(width * 20), h=round(height * 20))
+    element(node, 'pgSz', w=round(width * 20), h=round(height * 20),orient='landscape' if width>height else 'portrait')
     left,top,right,bottom=margins
     element(node, 'pgMar', top=round(top*20), bottom=round(bottom*20), left=round(left*20), right=round(right*20), header=180, footer=180, gutter=0)
     if columns:
@@ -98,13 +103,24 @@ def column_settings(item, available):
     return tuple((width*ratio,gap*ratio) for width,gap in zip(widths,gaps))
 
 
-def picture(parent,item,identity,index,available):
+def picture(parent,item,identity,index,available, *, positioned=False):
     width=item['bbox'][2]-item['bbox'][0]; height=item['bbox'][3]-item['bbox'][1]
     ratio=min(1,available/max(1,width))
     cx,cy=round(width*ratio*12700),round(height*ratio*12700)
-    drawing=element(element(element(parent,'p'),'r'),'drawing')
-    inline=ET.SubElement(drawing,f'{{{WP}}}inline',distT='0',distB='0',distL='0',distR='0')
+    drawing=element(element(paragraph(parent,size=1,after=0,line_height=1.3),'r'),'drawing')
+    if positioned:
+        inline=ET.SubElement(drawing,f'{{{WP}}}anchor',distT='0',distB='0',distL='0',distR='0',
+                             simplePos='0',relativeHeight=str(index),behindDoc='0',locked='0',layoutInCell='1',allowOverlap='1')
+        ET.SubElement(inline,f'{{{WP}}}simplePos',x='0',y='0')
+        for direction,coordinate in (('H',item['bbox'][0]),('V',item['bbox'][1])):
+            position=ET.SubElement(inline,f'{{{WP}}}position{direction}',relativeFrom='page')
+            ET.SubElement(position,f'{{{WP}}}posOffset').text=str(round(coordinate*12700))
+    else:
+        inline=ET.SubElement(drawing,f'{{{WP}}}inline',distT='0',distB='0',distL='0',distR='0')
     ET.SubElement(inline,f'{{{WP}}}extent',cx=str(cx),cy=str(cy))
+    if positioned:
+        ET.SubElement(inline,f'{{{WP}}}effectExtent',l='0',t='0',r='0',b='0')
+        ET.SubElement(inline,f'{{{WP}}}wrapNone')
     ET.SubElement(inline,f'{{{WP}}}docPr',id=str(index),name=f'Illustration {index}')
     frame=ET.SubElement(inline,f'{{{WP}}}cNvGraphicFramePr')
     ET.SubElement(frame,f'{{{A}}}graphicFrameLocks',noChangeAspect='1')
@@ -125,7 +141,7 @@ def picture(parent,item,identity,index,available):
     ET.SubElement(geometry,f'{{{A}}}avLst')
 
 
-def write_table(body, table, available=None, available_height=None):
+def write_table(body, table, available=None, available_height=None, *, positioned=False):
     import pymupdf as p
     ratio=min(1,available/max(1,sum(table.col_widths))) if available is not None else 1
     if available_height is not None:
@@ -134,15 +150,21 @@ def write_table(body, table, available=None, available_height=None):
     padding=min(2,min(table.col_widths,default=50)*ratio*.04)
     node = element(body, 'tbl')
     properties = element(node, 'tblPr')
+    if positioned:
+        element(properties,'tblpPr',horzAnchor='page',vertAnchor='page',tblpX=round(table.bbox[0]*20),
+                tblpY=round(table.bbox[1]*20),leftFromText=1,rightFromText=1,topFromText=1,bottomFromText=1)
+        element(properties,'tblOverlap',val='overlap')
     element(properties, 'tblW', w=round(sum(table.col_widths)*ratio*20), type='dxa')
-    element(properties, 'tblLayout', type='fixed')
     cell_margins=element(properties,'tblCellMar')
-    for edge in ('top','bottom','left','right'):
+    for edge in ('top','left','bottom','right'):
         element(cell_margins,edge,w=round((padding if edge in ('left','right') else 0)*20),type='dxa')
     borders = element(properties, 'tblBorders')
     colour='606060' if any(cell.style.border_left or cell.style.border_top for cell in table.cells) else 'E5E7EB'
     for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
         element(borders, edge, val='single', sz=4, color=colour)
+    properties.remove(cell_margins)
+    element(properties, 'tblLayout', type='fixed')
+    properties.append(cell_margins)
     grid = element(node, 'tblGrid')
     for width in table.col_widths:
         element(grid, 'gridCol', w=max(20, round(width * ratio * 20)))
@@ -156,9 +178,11 @@ def write_table(body, table, available=None, available_height=None):
     for row in range(table.row_count):
         tr = element(node, 'tr')
         tr_properties = element(tr, 'trPr')
+        element(tr_properties, 'cantSplit')
         if row < len(table.row_heights):
             # trHeight describes the content; Word adds the half-point grid rule.
-            element(tr_properties, 'trHeight', val=max(20,round((table.row_heights[row]*ratio-.5)*20)), hRule='atLeast')
+            element(tr_properties, 'trHeight', val=max(20,round((table.row_heights[row]*ratio-.5)*20)),
+                    hRule='exact' if positioned else 'atLeast')
         col = 0
         while col < table.col_count:
             cell = coverage.get((row, col), cells.get((row, col)))
@@ -195,13 +219,16 @@ def write_table(body, table, available=None, available_height=None):
             col += span
 
 
-def write_layout(layout, width, height, margins, references, parts, links, image_links, start_type, cancel=None):
+def write_layout(layout, width, height, margins, references, parts, links, image_links, start_type, cancel=None, *, positioned=False):
     body=ET.Element(f'{{{W}}}body')
     available=max(1,width-margins[0]-margins[2])
     current_columns=(); current_column=0
+    if positioned:
+        # Floating tables attach to a normal paragraph on this PDF page.
+        paragraph(body,size=1,after=0,line_height=1.3)
     for offset,item in enumerate(layout):
         check_cancel(cancel)
-        columns=column_settings(item,available) if item.get('column_count',1)>1 else ()
+        columns=column_settings(item,available) if not positioned and item.get('column_count',1)>1 else ()
         if columns!=current_columns:
             if len(body):
                 boundary=paragraph(body,size=1,after=0,line_height=1.3)
@@ -215,7 +242,12 @@ def write_layout(layout, width, height, margins, references, parts, links, image
             current_column=item['column']
         item_width=columns[current_column][0] if columns else available
         if item['kind']=='table':
-            write_table(body,item['table'],item_width,height-margins[3]-max(margins[1],item['bbox'][1])-3)
+            if positioned:
+                left,top,right,bottom=item['bbox']
+                write_table(body,item['table'],right-left,bottom-top,positioned=True)
+                paragraph(body,size=1,after=0,line_height=1.3)
+            else:
+                write_table(body,item['table'],item_width,height-margins[3]-max(margins[1],item['bbox'][1])-3)
         elif item['kind']=='image':
             if id(item) not in image_links:
                 count=1+len(image_links)
@@ -223,16 +255,18 @@ def write_layout(layout, width, height, margins, references, parts, links, image
                 parts['word/'+name]=item['data']; links.append((identity,'image',name))
                 image_links[id(item)]=(identity,count)
             identity,count=image_links[id(item)]
-            picture(body,item,identity,count,item_width)
+            picture(body,item,identity,count,width if positioned else item_width,positioned=positioned)
         else:
-            if item.get('positioned'):
+            if positioned or item.get('positioned'):
                 left,top,right,bottom=item['bbox']
-                size=max(1,min(item['size'],(bottom-top)/1.35))
-                node=paragraph(body,item['text'],size=size,bold=item['bold'],after=0,line_height=size*1.35,
-                               fit_width=right-left)
+                size=max(1,min(item['size'],(bottom-top)/(1.25*item.get('line_count',1))))
+                node=paragraph(body,item['text'],size=size,bold=item['bold'],after=0,
+                               line_height=min(size*1.35,(bottom-top)/item.get('line_count',1)),
+                               colour=item.get('colour'),fit_width=right-left)
                 properties=node.find(f'{{{W}}}pPr')
-                frame=element(properties,'framePr',w=max(20,round((right-left)*20)),h=max(20,round((bottom-top)*20)),
-                              x=round(left*20),y=round(top*20),hAnchor='page',vAnchor='page',wrap='none',hRule='atLeast')
+                frame=element(properties,'framePr',w=max(20,round((right-left+.5)*20)),h=max(20,round((bottom-top)*20)),
+                              x=round(left*20),y=round(top*20),hAnchor='page',vAnchor='page',wrap='none',
+                              hRule='atLeast',hSpace=0,vSpace=0,anchorLock=1)
                 properties.remove(frame); properties.insert(0,frame)
                 continue
             following=layout[offset+1] if offset+1<len(layout) else None
@@ -241,6 +275,10 @@ def write_layout(layout, width, height, margins, references, parts, links, image
             paragraph(body,item['text'],size=item['size'],bold=item['bold'],
                       after=max(4,min(40,gap)),before=before,first_line_indent=item.get('first_line_indent',0),
                       line_height=(item['bbox'][3]-item['bbox'][1])/item.get('line_count',1))
+    if positioned or any(item.get('positioned') for item in layout):
+        # Text frames anchor to the next non-frame paragraph, including on the
+        # last page where there is no section-break paragraph to act as anchor.
+        paragraph(body,size=1,after=0,line_height=1.3)
     return body,current_columns,start_type
 
 
@@ -270,7 +308,7 @@ def character_counts(text):
     return Counter(char for char in text if not char.isspace() and char!='\u00ad')
 
 
-def preserve_table_regions(raw, layout, warnings, page_index):
+def preserve_table_regions(raw, layout, warnings, page_index, *, positioned=False):
     """Downgrade only an unverified region, retaining every other native table."""
     import pymupdf as p
     from app.documentlayout import layout_from_raw, order_figures
@@ -287,7 +325,7 @@ def preserve_table_regions(raw, layout, warnings, page_index):
     dense=not tables and sum(item['kind']=='text' and item['text'].count('\t')>=2 for item in layout)>=8
     if not bad and not dense:
         return layout
-    areas=[table.bbox for table in bad] if bad else [(0,0,raw['width'],raw['height'])]
+    areas=[table.bbox for table in bad] if bad and not positioned else [(0,0,raw['width'],raw['height'])]
     recovered=layout_from_raw(raw,good,positioned_areas=areas)
     recovered=order_figures(recovered,[item for item in layout if item['kind']=='image'])
     warnings.append(f'第 {page_index+1} 页部分表格未能完整还原网格，已按原位置保留全部识别文字，其他表格保持可编辑结构。')
@@ -331,6 +369,7 @@ def _export_recognized_docx(source, target, overwrite, progress, cancel, *, sour
     import pymupdf as p
     from app.wordconvert import validate_docx, validate_pdf_for_word
     from app.documentlayout import document_layout, layout_from_raw, order_figures
+    from app.documentimages import page_figures
     validate_pdf_for_word(source)
     source, target = Path(source).resolve(), Path(target).resolve()
     expected = stamp(target)
@@ -346,7 +385,7 @@ def _export_recognized_docx(source, target, overwrite, progress, cancel, *, sour
     temp = None
     try:
         with p.open(source) as doc:
-            pages=document_layout(doc,include_images=True,cancel=cancel,progress=progress)
+            pages=document_layout(doc,include_images=True,preserve_positions=True,cancel=cancel,progress=progress)
             margin_roles={item['role'] for record in pages for item in record['items'] if item.get('role')}
             for index, page in enumerate(doc):
                 check_cancel(cancel)
@@ -358,15 +397,16 @@ def _export_recognized_docx(source, target, overwrite, progress, cancel, *, sour
                     if not page.get_text().strip() and page.get_images():
                         raise ValueError(f'第 {index + 1} 页没有可提取文字，请先完成该页 OCR 再转换。')
                     record=pages[index]
+                    positioned=record.get('positioned',False)
                     all_items=record['items']
-                    layout=[item for item in all_items if not item.get('role')]
+                    layout=list(all_items) if positioned else [item for item in all_items if not item.get('role')]
                     source_width,source_height=page.rect.width,page.rect.height
                     page_ratio=min(1,1584/max(source_width,source_height))
                     if page_ratio<1:
                         warnings.append(f'第 {index+1} 页超出 Word 纸张尺寸，已等比例缩放页面、表格和文字。')
                     warnings.extend(record['warnings'])
                     references=[]
-                    marginal=[item for item in all_items if item.get('role')]
+                    marginal=[] if positioned else [item for item in all_items if item.get('role')]
                     for role,root_name in (('header','hdr'),('footer','ftr')):
                         entries=[item for item in marginal if item['role']==role]
                         if role not in margin_roles:
@@ -400,20 +440,25 @@ def _export_recognized_docx(source, target, overwrite, progress, cancel, *, sour
                         if filtered_lines:
                             filtered_blocks.append(dict(block,lines=filtered_lines))
                     filtered_raw=dict(raw,blocks=filtered_blocks)
-                    layout=preserve_table_regions(filtered_raw,layout,warnings,index)
-                    figures=[item for item in layout if item['kind']=='image']
+                    table_count=sum(item['kind']=='table' for item in layout)
+                    layout=preserve_table_regions(filtered_raw,layout,warnings,index,positioned=positioned)
+                    if sum(item['kind']=='table' for item in layout)!=table_count:
+                        # A downgraded table needs its source grid back. The
+                        # earlier figure pass masked that grid as a native table.
+                        content=[item for item in layout if item['kind']!='image']
+                        layout=order_figures(content,page_figures(page,content,warnings))
                     margins=tuple(value*page_ratio for value in page_margins(layout,source_width,source_height))
                     width,height=source_width*page_ratio,source_height*page_ratio
                     layout=scaled_layout(layout,page_ratio)
                     start_type='nextPage' if index else 'continuous'
-                    page_body,columns,end_type=write_layout(layout,width,height,margins,references,parts,links,image_links,start_type,cancel)
+                    page_body,columns,end_type=write_layout(layout,width,height,margins,references,parts,links,image_links,start_type,cancel,positioned=positioned)
                     expected_text = ''.join(originals)
                     actual_text = ''.join(node.text or '' for node in page_body.iter(f'{{{W}}}t'))
                     if character_counts(expected_text) != character_counts(actual_text):
                         warnings.append(f'第 {index + 1} 页结构校验未通过，已按原位置保留全部识别文字。')
                         fallback=layout_from_raw(filtered_raw,[],positioned_areas=[(0,0,source_width,source_height)])
-                        fallback=scaled_layout(order_figures(fallback,figures),page_ratio)
-                        page_body,columns,end_type=write_layout(fallback,width,height,margins,references,parts,links,image_links,start_type,cancel)
+                        fallback=scaled_layout(order_figures(fallback,page_figures(page,fallback,warnings)),page_ratio)
+                        page_body,columns,end_type=write_layout(fallback,width,height,margins,references,parts,links,image_links,start_type,cancel,positioned=True)
                         actual_text=''.join(node.text or '' for node in page_body.iter(f'{{{W}}}t'))
                         if character_counts(expected_text)!=character_counts(actual_text):
                             raise ValueError(f'第 {index+1} 页文字完整性校验失败，未提交 Word。')
@@ -469,7 +514,7 @@ def _export_recognized_docx(source, target, overwrite, progress, cancel, *, sour
             raise ValueError('源 PDF 在识别或转换期间发生变化，未提交本次输出。')
         commit_file(temp, target, expected, cancel=cancel)
         temp = None
-        message = '已使用 OCR 文字层生成可编辑正文和识别到的表格；图片及复杂版式请核对。'
+        message = '已按原页位置生成可编辑识别文字和表格；正文页保留段落结构，复杂版式请核对。'
         if warnings:
             message += ' ' + '；'.join(dict.fromkeys(warnings))
         return 'success', message, ''

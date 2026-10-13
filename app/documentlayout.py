@@ -1,5 +1,6 @@
 """One geometry-based reading layout shared by text copy and document exports."""
 from dataclasses import replace
+from collections import Counter
 from statistics import median
 import re
 import math
@@ -141,10 +142,29 @@ def canonical_tables(page, tables):
     return output
 
 
+def _positioned_line_parts(chars, sizes, direction):
+    """Keep distant fields in separate editable frames, with their own coordinates."""
+    if abs(direction[1]) > .1 or direction[0] <= 0:
+        return [(chars,sizes)]
+    groups=[]; current=[]; current_sizes=[]
+    for char,size in zip(chars,sizes):
+        box=char['bbox']
+        wide_space=char['c'].isspace() and box[2]-box[0]>size*.8
+        separated=current and box[0]-current[-1]['bbox'][2]>min(box[3]-box[1],current[-1]['bbox'][3]-current[-1]['bbox'][1])*.65
+        if (wide_space or separated) and current:
+            groups.append((current,current_sizes)); current=[]; current_sizes=[]
+        if not wide_space:
+            current.append(char); current_sizes.append(size)
+    if current:
+        groups.append((current,current_sizes))
+    return groups
+
+
 def layout_from_raw(raw, tables, *, positioned_areas=()):
     import pymupdf as p
     from app.pdf2excel.analyzer import text_rows
     areas = [p.Rect(table.bbox) for table in tables]
+    positions = [p.Rect(area) for area in positioned_areas]
     fragments = []
     for block in raw.get('blocks', ()):
         for line in block.get('lines', ()):
@@ -155,16 +175,24 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
                     if not any(area.contains((rectangle.tl + rectangle.br) / 2) for area in areas):
                         chars.append(char)
                         sizes.append(span.get('size', 11))
-            text = ''.join(char['c'] for char in chars)
-            if text.strip():
-                bounds = p.Rect(chars[0]['bbox'])
-                for char in chars[1:]:
+            if not chars:
+                continue
+            direction=line.get('dir',(1,0))
+            line_box=p.Rect(chars[0]['bbox'])
+            for char in chars[1:]:
+                line_box |= p.Rect(char['bbox'])
+            parts=_positioned_line_parts(chars,sizes,direction) if any(area.intersects(line_box) for area in positions) else [(chars,sizes)]
+            for part,part_sizes in parts:
+                text=''.join(char['c'] for char in part)
+                if not text.strip():
+                    continue
+                bounds = p.Rect(part[0]['bbox'])
+                for char in part[1:]:
                     bounds |= p.Rect(char['bbox'])
-                direction=line.get('dir',(1,0))
                 hidden = all(span.get('alpha', 255) == 0 for span in line.get('spans', ()))
-                size = min(median(sizes), bounds.height / 1.3) if hidden else median(sizes)
+                size = min(median(part_sizes), bounds.height / 1.3) if hidden else median(part_sizes)
                 fragments.append(dict(kind='text', text=text, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
-                                      positioned=any(p.Rect(area).contains((bounds.tl+bounds.br)/2) for area in positioned_areas),
+                                      positioned=any(area.contains((bounds.tl+bounds.br)/2) for area in positions),
                                       bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ()))))
     body_size=median([item['size'] for item in fragments]) if fragments else 11
     for item in fragments:
@@ -204,7 +232,7 @@ def order_figures(layout,figures):
     return sorted([*layout,*figures],key=lambda item:(item['bbox'][1],item['bbox'][0]))
 
 
-def page_layout(page, *, include_images=False):
+def page_layout(page, *, include_images=False, preserve_positions=False):
     import pymupdf as p
     from app.pdf2excel.analyzer import extract_spans, extract_drawings
     from app.pdf2excel.detector import detect_tables
@@ -212,7 +240,26 @@ def page_layout(page, *, include_images=False):
     lines, fills = extract_drawings(page)
     tables = canonical_tables(page, detect_tables(page, extract_spans(page), lines, fills, warnings))
     raw = page.get_text('rawdict', flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
-    layout=layout_from_raw(raw,tables)
+    verified=[]; unverified=[]
+    for table in tables:
+        area=p.Rect(table.bbox)
+        source=''.join(char['c'] for block in raw.get('blocks',()) for line in block.get('lines',())
+                       for span in line.get('spans',()) for char in span.get('chars',())
+                       if area.contains((p.Rect(char['bbox']).tl+p.Rect(char['bbox']).br)/2))
+        exported=''.join(cell.text for cell in table.cells)
+        counts=lambda text: Counter(char for char in text if not char.isspace() and char!='\u00ad')
+        if counts(source)==counts(exported):
+            verified.append(table)
+        else:
+            unverified.append(table.bbox)
+    tables=verified
+    if unverified:
+        warnings.append(f'第 {page.number+1} 页部分网格未能完整承载原文，已按原位置保留全部文字，请核对表格。')
+    hidden=any(span.get('alpha',255)==0 and any(char['c'].isalnum() for char in span.get('chars',()))
+               for block in raw.get('blocks',()) for line in block.get('lines',()) for span in line.get('spans',()))
+    fixed=preserve_positions and (hidden or bool(tables) or bool(unverified))
+    positions=[(0,0,page.cropbox.width,page.cropbox.height)] if fixed else unverified
+    layout=layout_from_raw(raw,tables,positioned_areas=positions)
     if any(abs(item.get('angle',0))>=3 for item in layout):
         warnings.append('存在倾斜或竖排文字，已保留文字内容，段落方向及图像位置请核对。')
     if include_images:
@@ -223,16 +270,17 @@ def page_layout(page, *, include_images=False):
     return layout,warnings
 
 
-def document_layout(doc, *, include_images=False, cancel=None, progress=None):
+def document_layout(doc, *, include_images=False, preserve_positions=False, cancel=None, progress=None):
     from app.output import check_cancel
     pages=[]; repeats={}
     for page in doc:
         check_cancel(cancel)
         if progress:
             progress(f'正在分析排版 · 第 {len(pages)+1}/{len(doc)} 页')
-        items,warnings=page_layout(page,include_images=include_images)
+        items,warnings=page_layout(page,include_images=include_images,preserve_positions=preserve_positions)
         width,height=page.cropbox.width,page.cropbox.height
-        pages.append(dict(items=items,warnings=warnings,width=width,height=height))
+        positioned=preserve_positions and any(item.get('positioned') or item['kind']=='table' for item in items)
+        pages.append(dict(items=items,warnings=warnings,width=width,height=height,positioned=positioned))
         for index,item in enumerate(items):
             if item['kind']!='text' or len(item['text'])>100:
                 continue

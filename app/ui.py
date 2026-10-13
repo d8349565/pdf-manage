@@ -1226,6 +1226,7 @@ class ConversionThread(QThread):
         *,
         store: PdfStore | None = None,
         pages=None,
+        include_all_content=False,
     ) -> None:
         super().__init__(parent)
         self.pdf_path = pdf_path
@@ -1234,6 +1235,7 @@ class ConversionThread(QThread):
         self._cancelled = False
         self.store = store
         self.pages = list(pages) if pages is not None else None
+        self.include_all_content = include_all_content
         self.result = None
         self.report = None
         self.error_message = None
@@ -1276,6 +1278,7 @@ class ConversionThread(QThread):
                 page_indices=indices,
                 progress_callback=p_cb,
                 cancel_check=c_check,
+                include_all_content=self.include_all_content,
             )
         except (InterruptedError, OperationCancelled):
             self.error_message = "转换已被取消"
@@ -2059,7 +2062,7 @@ class MainWindow(QMainWindow):
             self._selection_buttons.append(button)
             layout.addWidget(button)
         self.split_tool_button = self._icon_btn("split", "拆分文件", lambda: self.open_export_tool(1))
-        self.convert_tool_button = self._icon_btn("table", "表格转 Excel", lambda: self.open_export_tool(2))
+        self.convert_tool_button = self._icon_btn("table", "PDF 转 Excel", lambda: self.open_export_tool(2))
         for button in (self.split_tool_button, self.convert_tool_button):
             button.setFixedSize(30, 30)
             layout.addWidget(button)
@@ -2507,7 +2510,15 @@ class MainWindow(QMainWindow):
         self.split_button.setObjectName("splitSubmit")
         split.addWidget(self.split_button)
         split.addStretch()
-        convert = section("表格转 Excel")
+        convert = section("PDF 转 Excel")
+        content_label = QLabel("导出内容")
+        self.convert_content = QComboBox()
+        self.convert_content.addItem("全部内容（按页导出）", True)
+        self.convert_content.addItem("仅表格", False)
+        self.convert_content.setAccessibleName("Excel 导出内容")
+        content_label.setBuddy(self.convert_content)
+        convert.addWidget(content_label)
+        convert.addWidget(self.convert_content)
         self.convert_all = QRadioButton("全部页面")
         self.convert_selected = QRadioButton("所选页面")
         self.convert_range_mode = QRadioButton("按页码范围")
@@ -2524,7 +2535,7 @@ class MainWindow(QMainWindow):
         self.convert_range.setVisible(False)
         self.convert_range_mode.toggled.connect(self.convert_range.setVisible)
         convert.addWidget(self.convert_range)
-        hint = QLabel("支持电子 PDF 和已完成 OCR 的扫描表格；金额与行列请核对原件。")
+        hint = QLabel("全部内容按页保留文字、表格和图片。扫描文字需先完成 OCR；金额与行列请核对原件。")
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         convert.addWidget(hint)
@@ -4187,7 +4198,8 @@ class MainWindow(QMainWindow):
             indices = list(range(len(self.ws.pages)))
 
         # 建议的输出文件名
-        default_name = "表格导出.xlsx"
+        include_all_content = bool(self.convert_content.currentData())
+        default_name = "内容导出.xlsx" if include_all_content else "表格导出.xlsx"
         if self.ws.path:
             base = os.path.splitext(os.path.basename(self.ws.path))[0]
             default_name = f"{base}.xlsx"
@@ -4199,6 +4211,11 @@ class MainWindow(QMainWindow):
             return
         if not out_path.lower().endswith(".xlsx"):
             out_path += ".xlsx"
+            if os.path.exists(out_path) and QMessageBox.question(
+                    self, "覆盖现有 Excel？", "补全扩展名后的 Excel 文件已存在，是否覆盖？",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
 
         # 如果工作区未改动、且非加密文件、且是单文档全选，直接使用源文件；
         # 否则（有旋转/删页/重排/合并/原文件加密），先将当前所见页面写入临时解密 PDF 进行分析
@@ -4219,7 +4236,7 @@ class MainWindow(QMainWindow):
         prog.show()
 
         thread = ConversionThread(source_pdf, out_path, None, self,
-                                  store=self.store, pages=target_pages)
+                                  store=self.store, pages=target_pages, include_all_content=include_all_content)
         self._conv_thread = thread
         self._conv_prog = prog
 
@@ -4244,19 +4261,21 @@ class MainWindow(QMainWindow):
             if error_message:
                 QMessageBox.warning(self, "转换提示", error_message)
                 return
-            if not result.tables:
+            if not result.tables and not result.pages_exported:
                 QMessageBox.warning(
                     self,
                     "未检测到表格",
-                    f"所选页面中未检测到有效的电子表格，未生成或覆盖 Excel 文件。\n"
-                    f"跳过页面：{result.pages_skipped}（可能为扫描件或无表格图文）。\n"
-                    f"提示：V1 版本仅支持具有文本层与矢量线的电子 PDF 表格。",
+                    f"所选页面中未检测到可提取的表格，未生成或覆盖 Excel 文件。\n"
+                    f"跳过页面：{result.pages_skipped}。\n"
+                    f"可选择“全部内容”保留正文与图片；扫描文字需先完成 OCR。",
                 )
                 return
 
+            page_summary = f"共导出页面：{result.pages_exported} 页\n" if result.include_all_content else ""
             msg = (
                 f"转换完成！\n"
                 f"已生成：{os.path.basename(out_path)}\n"
+                f"{page_summary}"
                 f"共提取表格：{len(result.tables)} 个\n"
                 f"转换摘要：{report.summary_text}"
             )

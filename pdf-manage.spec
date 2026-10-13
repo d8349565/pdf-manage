@@ -162,7 +162,12 @@ a = Analysis(
         "onnxruntime",
         "cv2",
         "pandas",
-        "PIL",
+        # Excel embeds the locally rendered PNG regions through Pillow.
+        "PIL.AvifImagePlugin",
+        "PIL._avif",
+        "PIL._imagingft",
+        "PIL._imagingcms",
+        "PIL._webp",
         "lxml",
         "IPython",
         # 应用只处理本机文件；hashlib 可使用 CPython 自带的算法实现。

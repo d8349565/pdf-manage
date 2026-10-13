@@ -45,12 +45,13 @@ OCR 与缓存使用独立目录，输出不得保存在缓存目录内。
 
 ## 文档导出
 
-- PDF 转 Word：扫描页在任务临时目录中自动补识别；已有 OCR 文本直接生成可编辑 DOCX，无需 Word。
+- PDF 转 Word：扫描页在任务临时目录中自动补识别；已有 OCR 文本直接生成可编辑 DOCX，无需 Word。OCR 和表单页面优先按原页定位文字、表格和图片，普通正文保留段落结构。
 - 普通电子 PDF 重排、Word 转 PDF：使用本机 Microsoft Word；PDF 原生导入要求 Word 2013 或更高版本。
 - PDF 转 TXT：保留阅读顺序、自然段和表格制表符，不包含字体或边框。
-- PDF 表格转 Excel：支持电子表格和已完成 OCR 的扫描表格，输出有证据的行列及合并单元格。
+- PDF 转 Excel：可选“全部内容（按页导出）”与“仅表格”。全部内容保留正文、表格、图片和无表格页面；表格仍保留数值格式与合并结构。未完成 OCR 的扫描页保留图像，先 OCR 后才能编辑文字。
 
 可编辑导出恢复自然段、缩进、原生分栏、表格、重复页眉页脚和可确认的图像区域。
+Word 定位版式适合保留扫描表单外观，新增较长内容时可能需要调整文字框或表格尺寸；Excel 全部内容按阅读顺序组织，压缩空白，不承诺像素一致的页面外观。
 严重倾斜、透视、手写、不规则表格及任意复杂版面的精确外观恢复尚未验收。
 具体算法与边界见 [文档导出优化方案](DOCUMENT_LAYOUT_PLAN.md)。
 
@@ -71,6 +72,8 @@ OCR 与缓存使用独立目录，输出不得保存在缓存目录内。
 扫描表格网格支持合并断续线段，边缘缺失时仅在至少三条横线端点一致且上下边界完整的情况下补齐外框。
 复制、TXT、Word 和 Excel 复用该网格。启用逐字定位需要同时更新主程序与 OCR 增强包，并从原扫描 PDF 重新识别。
 协议仍为 1：主程序显式请求逐字框，旧增强包回退为整行；新增强包收到旧主程序请求时仍返回整行。
+
+Word 排版与 Excel 组织参考 [Adobe 的文字流与页面版式说明](https://helpx.adobe.com/ph_fil/acrobat/how-to/convert-pdf-retain-page-layout.html) 和 [Excel 工作表设置](https://helpx.adobe.com/acrobat/desktop/save-export-documents/convert-to-other-formats/pdf-to-excel.html)，本项目的坐标放置与文字完整性校验为独立实现。
 
 ```powershell
 python -m pip install -r packaging/requirements-build.txt

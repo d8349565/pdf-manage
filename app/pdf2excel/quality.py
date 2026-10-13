@@ -93,12 +93,20 @@ def assess_conversion(result: ConversionResult) -> QualityReport:
     num_tables = len(result.tables)
     overall_score = total_score / num_tables if num_tables > 0 else 0.0
     
-    summary_text = (
-        f"成功分析了 {result.pages_analyzed} 页，"
-        f"在 {result.pages_with_tables} 页中提取到 {num_tables} 个表格。"
-        f"跳过页面: {result.pages_skipped}。"
-        "结构检查仅供参考，不代表数据准确率，请对照原文核对。"
-    )
+    if result.include_all_content:
+        summary_text = (
+            f"已按页导出 {result.pages_exported} 页全部内容，包含 {num_tables} 个表格、"
+            f"{result.text_blocks_exported} 段文字和 {result.images_exported} 个图像区域。"
+            "表格单元格保留数值与合并结构，正文与图片按阅读顺序排列。"
+            "图片中的文字需先 OCR 才能编辑；请对照原文核对内容与位置。"
+        )
+    else:
+        summary_text = (
+            f"成功分析了 {result.pages_analyzed} 页，"
+            f"在 {result.pages_with_tables} 页中提取到 {num_tables} 个表格。"
+            f"跳过页面: {result.pages_skipped}。"
+            "结构检查仅供参考，不代表数据准确率，请对照原文核对。"
+        )
     
     return QualityReport(
         tables=table_qualities,

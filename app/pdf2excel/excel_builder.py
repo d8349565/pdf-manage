@@ -7,15 +7,23 @@ from openpyxl.utils import get_column_letter
 
 from app.pdf2excel.models import TableModel, CellModel, CellStyle
 
-def build_workbook(tables: list[TableModel]) -> openpyxl.Workbook:
+def build_workbook(tables: list[TableModel], *, pages: list[dict] | None = None) -> openpyxl.Workbook:
     """
     将 TableModel 列表转换为 openpyxl Workbook。
-    每个表格生成一个单独的工作表。
+    默认每个表格一张工作表；提供 pages 时保留各页全部内容。
     """
     wb = openpyxl.Workbook()
     # 移除默认的 Sheet
     if wb.sheetnames:
         del wb[wb.sheetnames[0]]
+
+    if pages is not None:
+        from app.pdf2excel.page_builder import write_page
+        for page in pages:
+            write_page(wb, page)
+        if not pages:
+            wb.create_sheet(title="Sheet1")
+        return wb
         
     if not tables:
         wb.create_sheet(title="Sheet1")
@@ -54,7 +62,13 @@ def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str) -> N
     if table.row_heights:
         for row_idx, height_pt in enumerate(table.row_heights, start=1):
             ws.row_dimensions[row_idx].height = height_pt
-            
+
+    _write_cells(ws, table)
+
+
+def _write_cells(ws, table: TableModel, *, row_offset: int = 0,
+                 columns: list[int] | None = None) -> None:
+    """Write native table cells to their own sheet or a page's shared column grid."""
     # 记录已被合并覆盖的单元格，防止重复处理
     merged_cells = set()
     
@@ -70,8 +84,8 @@ def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str) -> N
             cell_list = table.cells
 
     for cell_model in cell_list:
-        row_idx = cell_model.row + 1
-        col_idx = cell_model.col + 1
+        row_idx = cell_model.row + 1 + row_offset
+        col_idx = columns[cell_model.col] if columns else cell_model.col + 1
         
         if (row_idx, col_idx) in merged_cells:
             continue
@@ -94,9 +108,10 @@ def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str) -> N
             _apply_style(cell, cell_model.style)
             
         # 5. 处理合并单元格
-        if cell_model.row_span > 1 or cell_model.col_span > 1:
+        end_col = (columns[cell_model.col + cell_model.col_span] - 1 if columns
+                   else col_idx + cell_model.col_span - 1)
+        if cell_model.row_span > 1 or end_col > col_idx:
             end_row = row_idx + cell_model.row_span - 1
-            end_col = col_idx + cell_model.col_span - 1
             ws.merge_cells(
                 start_row=row_idx,
                 start_column=col_idx,

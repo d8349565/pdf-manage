@@ -66,3 +66,7 @@ class ConversionResult:
     pages_with_tables: int
     pages_skipped: int                 # 扫描等跳过的页面
     warnings: list[str]
+    include_all_content: bool = False
+    pages_exported: int = 0
+    text_blocks_exported: int = 0
+    images_exported: int = 0
