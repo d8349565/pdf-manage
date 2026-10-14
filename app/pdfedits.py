@@ -19,11 +19,14 @@ def annotation_token(annot, ordinal):
 
 
 def annotation_summary(page):
+    from app.pdfmarks import text_settings, is_watermark
     annotations = []
     for ordinal, annot in enumerate(page.annots() or ()):
         annotations.append(dict(id=annotation_token(annot, ordinal), kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
-            color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2)))
+            color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
+            text_settings=text_settings(page, annot) if annot.type[0] == 2 else None,
+            watermark=is_watermark(page, annot)))
     return annotations
 
 
@@ -299,6 +302,18 @@ def apply_edits(page, edits):
     for edit in edits:
         if not all(math.isfinite(float(v)) for v in (*edit.color, edit.width)) or len(edit.color) != 3 or not all(0 <= c <= 1 for c in edit.color) or not .1 <= edit.width <= 30:
             raise ValueError("批注颜色或线宽无效。")
+        if edit.kind in ("freetext", "freetext_update"):
+            from app.pdfmarks import add_text_box
+            subset |= add_text_box(page, edit)
+            continue
+        if edit.kind == "watermark":
+            from app.pdfmarks import add_watermark
+            add_watermark(page, edit)
+            continue
+        if edit.kind == "watermark_remove":
+            from app.pdfmarks import remove_watermarks
+            remove_watermarks(page)
+            continue
         if edit.kind == "replace":
             details = dict(edit.details)
             # Recheck the private output before removing any text.
@@ -320,9 +335,16 @@ def apply_edits(page, edits):
             annot = next((a for a in (page.annots() or ()) if a.info.get("id") == edit.annotation_id), None)
             if annot is None:
                 raise ValueError("要修改的批注已不存在。")
+            from app.pdfmarks import is_watermark
+            if edit.kind != "delete" and is_watermark(page, annot):
+                raise ValueError("水印请在水印工具中移除后重新添加。")
             if edit.kind == "delete":
                 page.delete_annot(annot)
                 continue
+            appearance = None
+            if edit.kind == "move" and page.parent.xref_get_key(annot.xref, "ZhiXuText")[0] != "null":
+                xref = int(page.parent.xref_get_key(annot.xref, "AP/N")[1].split()[0])
+                appearance = (xref, page.parent.xref_object(xref), page.parent.xref_stream(xref))
             if edit.kind == "note_text":
                 annot.set_info(content=edit.text)
             elif edit.kind == "move":
@@ -338,6 +360,11 @@ def apply_edits(page, edits):
                 if annot.type[0] == p.PDF_ANNOT_LINE and annot.line_ends == (p.PDF_ANNOT_LE_NONE, p.PDF_ANNOT_LE_CLOSED_ARROW):
                     annot.set_colors(fill=edit.color)
             annot.update()
+            if appearance is not None:
+                xref, definition, stream = appearance
+                page.parent.update_object(xref, definition)
+                page.parent.update_stream(xref, stream)
+                page.parent.xref_set_key(annot.xref, "AP/N", f"{xref} 0 R")
             update_arrow_appearance(page, annot)
             continue
         if edit.kind in ("highlight", "underline"):

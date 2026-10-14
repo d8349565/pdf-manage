@@ -339,6 +339,14 @@ class Workspace:
         pages[index] = prepared if prepared is not None else pages[index].edited(edit)
         self._push(pages, self.path, text)
 
+    def edit_pages(self, changes, text):
+        pages = list(self.pages)
+        for index, ref in changes.items():
+            if not 0 <= index < len(pages) or ref.page_id != pages[index].page_id:
+                raise ValueError("页面已不在工作区。")
+            pages[index] = ref
+        self._push(pages, self.path, text)
+
     def set_outline(self, entries):
         previous = 0
         for entry in entries:

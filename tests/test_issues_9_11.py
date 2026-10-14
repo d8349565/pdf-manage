@@ -1,6 +1,7 @@
 """Generated PDFs prove panel persistence and safe image-copy recovery."""
 from dataclasses import replace
 from pathlib import Path
+from random import Random
 
 import pymupdf as p
 import pytest
@@ -54,7 +55,7 @@ def test_raster_geometry_order_pixels_and_original_preserved(tmp_path, rotation,
     try:
         pages = store.load(str(source))
         selected = [pages[1].rotated(90), pages[0]]
-        rasterize_pdf(store, selected, target)
+        rasterize_pdf(store, selected, target, RasterOptions(image_format='png'))
         with p.open(source) as original, p.open(target) as output:
             assert output.page_count == 2 and output.get_toc() == [[1, 'First', 2], [1, 'Second', 1]]
             for index, ref in enumerate(selected):
@@ -172,6 +173,39 @@ def test_jpeg_and_duplicate_workspace_edits_use_independent_pages(tmp_path):
         store.close_all()
 
 
+def test_default_watermarked_scan_uses_jpeg_and_is_smaller_than_lossless(tmp_path):
+    source = tmp_path / 'scan.pdf'
+    target, lossless = tmp_path / 'compact.pdf', tmp_path / 'lossless.pdf'
+    # Fixed continuous-tone pixels expose the PNG expansion of an already compressed scan.
+    scan = p.Pixmap(p.csGRAY, 600, 800, Random(0).randbytes(600 * 800), False)
+    with p.open() as doc:
+        page = doc.new_page(width=216, height=288)
+        page.insert_image(page.rect, stream=scan.tobytes('jpg', jpg_quality=80))
+        doc.save(source)
+    before = source.read_bytes()
+    store = PdfStore()
+    try:
+        pages = store.load(str(source))
+        edited = pages[0].edited(PageEdit('watermark', text='Sample', color=(.3, .4, .5),
+            annotation_id='zhixu-watermark-size', details=(('opacity', .2), ('tile', True))))
+        rasterize_pdf(store, [edited], target)
+        rasterize_pdf(store, [edited], lossless, RasterOptions(image_format='png'))
+        with p.open(target) as output, p.open(source) as original:
+            from app.pdfedits import apply_edits
+            page = original[0]
+            apply_edits(page, edited.edits)
+            expected = p.Pixmap(page.get_pixmap(dpi=200, colorspace=p.csRGB, alpha=False)
+                               .tobytes('jpg', jpg_quality=90))
+            xref = output[0].get_images()[0][0]
+            assert output.xref_get_key(xref, 'Filter') == ('name', '/DCTDecode')
+            assert p.Pixmap(output, xref).samples == expected.samples
+            assert not output[0].get_text().strip() and not list(output[0].annots() or ())
+        assert target.stat().st_size < lossless.stat().st_size
+        assert source.read_bytes() == before
+    finally:
+        store.close_all()
+
+
 def test_nonzero_media_box_and_visible_signature_appearance_are_retained(tmp_path):
     source, target = tmp_path / 'appearance.pdf', tmp_path / 'copy.pdf'
     with p.open() as doc:
@@ -196,7 +230,7 @@ def test_nonzero_media_box_and_visible_signature_appearance_are_retained(tmp_pat
     try:
         pages = store.load(str(source))
         assert store._source(pages[0].source_id).safety.signature == 'unknown'
-        rasterize_pdf(store, pages, target)
+        rasterize_pdf(store, pages, target, RasterOptions(image_format='png'))
         with p.open(source) as original, p.open(target) as copied:
             original[0].set_rotation(0)
             expected = original[0].get_pixmap(dpi=200, colorspace=p.csRGB, alpha=False)
@@ -266,6 +300,10 @@ def test_raster_dialog_ranges_and_collision_prevention(qapp, tmp_path):
     (tmp_path / 'source_影像副本.pdf').write_bytes(b'keep')
     dialog = RasterDialog(6, 2, [1, 4], source)
     try:
+        assert dialog.options() == RasterOptions(200, 'jpeg')
+        for index, expected in enumerate(((200, 'jpeg'), (300, 'png'), (150, 'jpeg'), (200, 'png'))):
+            dialog.quality.setCurrentIndex(index)
+            assert dialog.options() == RasterOptions(*expected)
         assert dialog.output.text().endswith('source_影像副本_2.pdf')
         assert dialog.indices() == list(range(6))
         dialog.scope.setCurrentIndex(1)

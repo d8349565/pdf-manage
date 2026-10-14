@@ -82,6 +82,10 @@ class PrintOptions:
     page_indices: list[int] = field(default_factory=list)
     paper: QPageSize.PageSizeId | None = None  # None = 跟随打印机当前纸张
     margin_mm: float = 0.0
+    pages_per_face: int = 1
+    cell_order: str = "row"
+    borders: bool = False
+    reverse: bool = False
 
 
 @dataclass(frozen=True)
@@ -116,6 +120,8 @@ class Sheet:
     back: int | None
     front_portrait: bool
     back_portrait: bool
+    front_pages: tuple[int, ...] = ()
+    back_pages: tuple[int, ...] = ()
 
     @property
     def mixed(self) -> bool:
@@ -159,6 +165,21 @@ def build_sheets(
     valid = [i for i in options.page_indices if 0 <= i < len(pages)]
     if not valid:
         return []
+    if options.pages_per_face not in (1, 2, 4, 6, 9, 16) or options.cell_order not in ("row", "column"):
+        raise ValueError("不支持的多页排版设置。")
+    if options.reverse:
+        valid.reverse()
+    if options.pages_per_face > 1:
+        count = options.pages_per_face
+        faces = [tuple(valid[i:i + count]) for i in range(0, len(valid), count)]
+        portrait = (options.orientation == "portrait" if options.orientation != "auto" else count not in (2, 6))
+        stride = 1 if options.duplex == "none" else 2
+        sheets = []
+        for i in range(0, len(faces), stride):
+            front = faces[i]
+            back = faces[i + 1] if stride == 2 and i + 1 < len(faces) else ()
+            sheets.append(Sheet(front[0], back[0] if back else None, portrait, portrait, front, back))
+        return sheets
 
     def orient(index: int) -> bool:
         return page_is_portrait(pages[index], options.orientation, store)
@@ -173,6 +194,25 @@ def build_sheets(
         back_p = orient(back) if back is not None else front_p
         sheets.append(Sheet(front, back, front_p, back_p))
     return sheets
+
+
+def face_pages(sheet, back=False):
+    indices = sheet.back_pages if back else sheet.front_pages
+    index = sheet.back if back else sheet.front
+    return indices or (() if index is None else (index,))
+
+
+def face_cells(outer, indices, options):
+    """The same grid and ordering drive preview and printer output."""
+    columns, rows = {1: (1, 1), 2: (2, 1), 4: (2, 2), 6: (3, 2),
+                     9: (3, 3), 16: (4, 4)}[options.pages_per_face]
+    width, height = outer.width() / columns, outer.height() / rows
+    gap = min(width, height) * .02 if options.pages_per_face > 1 else 0
+    for position, index in enumerate(indices):
+        row, column = (divmod(position, columns) if options.cell_order == "row"
+                       else (position % rows, position // rows))
+        yield index, QRectF(outer.x() + column * width + gap / 2,
+                           outer.y() + row * height + gap / 2, width - gap, height - gap)
 
 
 def binding_flip_axis(duplex: str, portrait: bool) -> str:
@@ -275,12 +315,12 @@ def render_pages_to_printer(
     if not sheets:
         return
 
-    faces: list[tuple[int, bool]] = []
+    faces: list[tuple[tuple[int, ...], bool]] = []
     for sheet in sheets:
         if sheet.front is not None:
-            faces.append((sheet.front, sheet.front_portrait))
+            faces.append((face_pages(sheet), sheet.front_portrait))
         if sheet.back is not None:
-            faces.append((sheet.back, sheet.back_portrait))
+            faces.append((face_pages(sheet, True), sheet.back_portrait))
     if not faces:
         return
     check_cancel(cancel_check)
@@ -304,7 +344,7 @@ def render_pages_to_printer(
     try:
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         applied_portrait = faces[0][1]
-        for position, (page_index, portrait) in enumerate(faces):
+        for position, (indices, portrait) in enumerate(faces):
             check_cancel(cancel_check)
             if position > 0:
                 # 朝向变了才回写打印机：每次回写都是一趟驱动往返，长文档上很费时间。
@@ -325,20 +365,24 @@ def render_pages_to_printer(
             elif not portrait and draw_rect.height() > draw_rect.width():
                 draw_rect = QRectF(draw_rect.x(), draw_rect.y(), draw_rect.height(), draw_rect.width())
 
-            wanted = int(geometry.content_width / 25.4 * PRINT_DPI)
-            render_w = max(320, min(wanted, int(draw_rect.width()), MAX_PRINT_PX))
-            width_pt, height_pt = store.page_size(pages[page_index])
-            render_w = min(render_w, max(1, int(math.sqrt(MAX_PRINT_PIXELS * width_pt / max(height_pt, 1)))))
-            try:
-                image = store.render_qimage(pages[page_index], render_w)
-            except Exception as exc:
-                raise PdfError(f"工作区第 {page_index + 1} 页渲染失败：{exc}") from exc
-            if image.isNull():
-                raise PdfError(f"工作区第 {page_index + 1} 页无法渲染，打印已停止。")
-
-            check_cancel(cancel_check)
-            target = fit_rect(draw_rect, image.width() / image.height())
-            painter.drawImage(target, image)
+            for page_index, cell in face_cells(draw_rect, indices, options):
+                check_cancel(cancel_check)
+                wanted = int(geometry.content_width / 25.4 * PRINT_DPI * cell.width() / draw_rect.width())
+                render_w = max(1, min(wanted, int(cell.width()), MAX_PRINT_PX))
+                width_pt, height_pt = store.page_size(pages[page_index])
+                render_w = min(render_w, max(1, int(math.sqrt(MAX_PRINT_PIXELS * width_pt / max(height_pt, 1)))))
+                try:
+                    image = store.render_qimage(pages[page_index], render_w)
+                except Exception as exc:
+                    raise PdfError(f"工作区第 {page_index + 1} 页渲染失败：{exc}") from exc
+                if image.isNull():
+                    raise PdfError(f"工作区第 {page_index + 1} 页无法渲染，打印已停止。")
+                check_cancel(cancel_check)
+                painter.drawImage(fit_rect(cell, image.width() / image.height()), image)
+                if options.borders:
+                    painter.setPen(QPen(QColor("#64748B"), max(1, draw_rect.width() * .0007)))
+                    painter.drawRect(cell)
+                del image
             if progress_callback:
                 progress_callback(position + 1, len(faces), f"已发送 {position + 1} / {len(faces)} 页")
         check_cancel(cancel_check)
@@ -402,6 +446,7 @@ class SheetPreview(QWidget):
         self.sheets: list[Sheet] = []
         self.geometries: dict[bool, SheetGeometry] = {}
         self.duplex = "none"
+        self.options = PrintOptions()
         self.scale = 1.0  # 像素 / 毫米
         self._rows: list[SheetPreview._Row] = []
         self._row_bottoms: list[float] = []
@@ -423,6 +468,7 @@ class SheetPreview(QWidget):
         sheets: list[Sheet],
         geometries: dict[bool, SheetGeometry],
         duplex: str,
+        options: PrintOptions | None = None,
     ) -> None:
         if tuple(p.render_key for p in pages) != tuple(p.render_key for p in self.pages):
             self._generation += 1
@@ -434,6 +480,7 @@ class SheetPreview(QWidget):
         self.sheets = sheets
         self.geometries = geometries
         self.duplex = duplex
+        self.options = options or PrintOptions(duplex=duplex)
         self._relayout()
 
     def set_scale(self, scale: float) -> None:
@@ -564,7 +611,7 @@ class SheetPreview(QWidget):
             f"第 {index + 1} 张纸",
         )
 
-        front_label = self._page_label(sheet.front)
+        front_label = self._face_label(face_pages(sheet))
         front_y = row.top + (row.row_h - row.front_h) / 2
         front_rect = QRectF(x0, front_y, row.front_w, row.front_h)
         self._paint_face(
@@ -574,6 +621,7 @@ class SheetPreview(QWidget):
             sheet.front,
             binding=front_binding_edge(self.duplex, sheet.front_portrait),
             caption=f"正面 · {front_label}" if duplex else front_label,
+            page_indices=face_pages(sheet),
         )
 
         if not duplex:
@@ -599,11 +647,15 @@ class SheetPreview(QWidget):
             row.back_geo,
             sheet.back,
             binding=back_binding,
-            caption=f"背面 · {self._page_label(sheet.back)}",
+            caption=f"背面 · {self._face_label(face_pages(sheet, True))}",
+            page_indices=face_pages(sheet, True),
         )
 
     def _page_label(self, page_index: int | None) -> str:
         return "空白" if page_index is None else f"第 {page_index + 1} 页"
+
+    def _face_label(self, indices):
+        return "第 " + ", ".join(str(i + 1) for i in indices) + " 页" if indices else "空白"
 
     def _paint_face(
         self,
@@ -614,6 +666,7 @@ class SheetPreview(QWidget):
         *,
         binding: str,
         caption: str,
+        page_indices=None,
     ) -> None:
         painter.fillRect(rect.translated(4, 4), QColor(15, 23, 42, 26))
         painter.fillRect(rect, QColor("#FFFFFF"))
@@ -632,7 +685,12 @@ class SheetPreview(QWidget):
             if min(geometry.left, geometry.top, geometry.right, geometry.bottom) * self.scale > 2:
                 painter.setPen(QPen(QColor("#DCE7E4"), 1, Qt.PenStyle.DashLine))
                 painter.drawRect(content)
-            self._paint_content(painter, content, page_index)
+            indices = (page_index,) if page_indices is None else page_indices
+            for index, cell in face_cells(content, indices, self.options):
+                self._paint_content(painter, cell, index)
+                if self.options.borders:
+                    painter.setPen(QPen(QColor("#64748B"), max(.5, content.width() * .0007)))
+                    painter.drawRect(cell)
 
         painter.setPen(QPen(QColor("#9AA8B2"), 1))
         painter.drawRect(rect)
@@ -1028,6 +1086,25 @@ class PrintDialog(QDialog):
         copies_row.addWidget(self.spin_copies)
         lay.addLayout(copies_row)
 
+        lay.addWidget(self._caption("每面排列"))
+        self.combo_nup = QComboBox()
+        for count in (1, 2, 4, 6, 9, 16):
+            self.combo_nup.addItem(f"{count} 页", count)
+        self.combo_nup.currentIndexChanged.connect(self._refresh)
+        lay.addWidget(self.combo_nup)
+        self.combo_cell_order = QComboBox()
+        self.combo_cell_order.addItem("先横向，再纵向", "row")
+        self.combo_cell_order.addItem("先纵向，再横向", "column")
+        self.combo_cell_order.currentIndexChanged.connect(self._refresh)
+        lay.addWidget(self.combo_cell_order)
+        from PyQt6.QtWidgets import QCheckBox
+        self.check_borders = QCheckBox("显示页面边框")
+        self.check_borders.toggled.connect(self._refresh)
+        lay.addWidget(self.check_borders)
+        self.check_reverse = QCheckBox("按相反页序打印")
+        self.check_reverse.toggled.connect(self._refresh)
+        lay.addWidget(self.check_reverse)
+
         # 4. 纸张
         lay.addWidget(self._caption("纸张大小"))
         self.combo_paper = QComboBox()
@@ -1054,12 +1131,12 @@ class PrintDialog(QDialog):
         # 7. 纸张面数
         lay.addWidget(self._caption("纸张面数"))
         self.btn_duplex_group = QButtonGroup(self)
-        self.radio_single = QRadioButton("单面打印（每页一张纸）")
+        self.radio_single = QRadioButton("单面打印")
         self.radio_single.setChecked(True)
         self.btn_duplex_group.addButton(self.radio_single)
         lay.addWidget(self.radio_single)
 
-        self.radio_double = QRadioButton("双面打印（两页一张纸）")
+        self.radio_double = QRadioButton("双面打印")
         self.btn_duplex_group.addButton(self.radio_double)
         lay.addWidget(self.radio_double)
 
@@ -1279,6 +1356,10 @@ class PrintDialog(QDialog):
             page_indices=self._collect_indices(),
             paper=self.combo_paper.currentData(),
             margin_mm=float(self.combo_margin.currentData() or 0.0),
+            pages_per_face=self.combo_nup.currentData() or 1,
+            cell_order=self.combo_cell_order.currentData() or "row",
+            borders=self.check_borders.isChecked(),
+            reverse=self.check_reverse.isChecked(),
         )
 
     def _geometries(self, options: PrintOptions) -> dict[bool, SheetGeometry]:
@@ -1301,7 +1382,9 @@ class PrintDialog(QDialog):
 
         geometries = self._geometries(options)
         sheets = build_sheets(self.pages, options, self.store)
-        self.canvas.set_data(self.pages, sheets, geometries, duplex)
+        self.canvas.set_data(self.pages, sheets, geometries, duplex, options)
+        self.combo_cell_order.setVisible(options.pages_per_face > 1)
+        self.check_borders.setVisible(options.pages_per_face > 1)
         if getattr(self, "_auto_fit", False) and self.isVisible():
             self._fit_window()
 
@@ -1309,8 +1392,9 @@ class PrintDialog(QDialog):
         sheets_n = len(sheets)
         if sheets_n:
             text = f"{pages_n} 页内容 → 需要 {sheets_n} 张纸"
-            if is_double and pages_n > sheets_n:
-                text += f"（双面，比单面省 {pages_n - sheets_n} 张）"
+            single_sheets = math.ceil(pages_n / options.pages_per_face)
+            if is_double and single_sheets > sheets_n:
+                text += f"（双面，比单面省 {single_sheets - sheets_n} 张）"
             if options.copies > 1:
                 text += f" × {options.copies} 份 = {sheets_n * options.copies} 张"
             geometry = geometries[sheets[0].front_portrait]

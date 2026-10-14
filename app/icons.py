@@ -124,6 +124,26 @@ _PATHS: dict[str, str] = {
         '<line x1="9" y1="20" x2="15" y2="20"/>'
         '<line x1="12" y1="4" x2="12" y2="20"/>'
     ),
+    "text-box": (
+        '<rect x="3" y="4" width="18" height="16" rx="1" stroke-dasharray="2 2"/>'
+        '<path d="M8 9V8h8v1M12 8v9M10 17h4"/>'
+    ),
+    "text-edit": (
+        '<path d="M3 7V5h10v2M8 5v11M5 16h6M3 20h8"/>'
+        '<path d="m13 17 6-6 3 3-6 6-4 1zM18 12l3 3"/>'
+    ),
+    "annotation-select": (
+        '<path d="M4 8V4h4M12 4h4M20 4v4M4 12v4M4 20h4M12 20h3"/>'
+        '<path d="m13 10 2 10 2-4 4-2z"/>'
+    ),
+    "note-comment": (
+        '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3V6a2 2 0 0 1 1-2z"/>'
+        '<path d="M8 9h9M8 13h6"/>'
+    ),
+    "ink-pen": (
+        '<path d="M3 17c3-8 5 5 8-2M3 21h10"/>'
+        '<path d="m12 12 7-7 3 3-7 7-4 1zM18 6l3 3"/>'
+    ),
     "mouse-pointer": (
         '<path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>'
         '<path d="m13 13 6 6"/>'

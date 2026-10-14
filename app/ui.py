@@ -1916,6 +1916,8 @@ class MainWindow(QMainWindow):
         tools.addAction(self.extract_action)
         tools.addAction(self.split_action)
         tools.addAction(self._act("页码处理…", self.open_page_numbers))
+        self.watermark_action = self._act("水印…", self.open_watermarks)
+        tools.addAction(self.watermark_action)
         self.ocr_action = self._act("文字识别…", self.open_ocr)
         tools.addAction(self.ocr_action)
         tools.addSeparator()
@@ -2059,7 +2061,9 @@ class MainWindow(QMainWindow):
     def _sync_mode(self, index: int) -> None:
         self.mode_buttons[index].setChecked(True)
         if index == 1 and hasattr(self, "annotation_tools"):
-            self.annotation_tools.deactivate()
+            if self.annotation_tools.deactivate() is False:
+                self.stack.setCurrentIndex(0)
+                return
         if index == 0:
             self._reading_settle_timer.stop()
             self.rendering.scrolling = self._scrolling = False
@@ -2100,6 +2104,7 @@ class MainWindow(QMainWindow):
         self.close_file_action.setEnabled(bool(count) or bool(self.ws.path) or self.ws.dirty)
         self.compress_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.ocr_action.setEnabled(bool(count) and not read_only and not copy_reason)
+        self.watermark_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "annotate"))
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
@@ -2376,7 +2381,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.arrange_zoom_label)
         bar.addWidget(self._icon_btn("zoom-in", "放大", self.arrange_zoom_in, shortcut="Ctrl+="))
         bar.addWidget(self._icon_btn("fit-width", "适合窗口", self.arrange_zoom_fit, shortcut="Ctrl+0"))
-        hint = QLabel("拖动调整顺序，双击页面进入阅读。Ctrl 加选，Shift 连选。Ctrl + 滚轮可缩放。")
+        hint = QLabel("拖动排序，双击阅读。按住 Alt 悬停可放大，或右键选择放大预览。Ctrl 加选，Shift 连选；Ctrl + 滚轮缩放。")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         card = QFrame()
@@ -2385,6 +2390,8 @@ class MainWindow(QMainWindow):
         self.arrange_view = self._list_view(True)
         self.arrange_view.zoom_steps.connect(self._on_arrange_zoom_steps)
         self.arrange_view.doubleClicked.connect(self.read_arranged_page)
+        from app.arrangepreview import ArrangePreview
+        self.arrange_preview = ArrangePreview(self, self.arrange_view)
         c_l.addWidget(self.arrange_view)
         lay.addLayout(bar)
         lay.addWidget(hint)
@@ -3157,6 +3164,7 @@ class MainWindow(QMainWindow):
         layout_changed = self._layout_pages is not self.ws.pages
         geometry_changed = False
         if layout_changed:
+            self.arrange_preview.hide()
             self._layout_pages = self.ws.pages
             self.rendering.set_pages(self.ws.pages)
             signature = tuple((p.source_id, p.source_page, p.rotation) for p in self.ws.pages)
@@ -3604,6 +3612,9 @@ class MainWindow(QMainWindow):
         self.ws.delete_selected()
 
     def confirm_leave(self) -> bool:
+        tools = getattr(self, "annotation_tools", None)
+        if tools is not None and not tools.finish_text_box():
+            return False
         if not self.ws.dirty:
             return True
         box = QMessageBox(self)
@@ -3823,7 +3834,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _write_pdf(self, pages, path, title, *, register_result=False, groups=None, dests=None,
-                   options=None, cancellable=False):
+                   options=None, cancellable=True):
         options = options or WriteOptions()
         if options.outline is None and self.ws.outline is not None:
             options = replace(options, outline=self.ws.outline)
@@ -3838,6 +3849,9 @@ class MainWindow(QMainWindow):
                     return write_pdf(self.store, pages, path, progress_callback=progress, options=options,
                                      register_result=register_result, cancel=cancel)
                 return run_operation(self, title, work, cancellable=cancellable)
+            except OperationCancelled as exc:
+                self.statusBar().showMessage(str(exc), 8000)
+                return None
             except WriteNeedsConfirmation as exc:
                 if exc.kind == "encryption":
                     from app.exportdialogs import EncryptionDialog
@@ -3873,6 +3887,14 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, '无法创建压缩缓存', str(exc))
             return
+        dialog.exec()
+        dialog.deleteLater()
+
+    def open_watermarks(self):
+        if not self.ws.pages or not self._allow_operation("annotate"):
+            return
+        from app.watermarkui import WatermarkDialog
+        dialog = WatermarkDialog(self)
         dialog.exec()
         dialog.deleteLater()
 
@@ -4100,6 +4122,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{saved}\n无法自动打开文件夹：{folder}", 10000)
 
     def save(self, save_as: bool = False) -> bool:
+        tools = getattr(self, "annotation_tools", None)
+        if tools is not None and not tools.finish_text_box():
+            return False
         operation = self.store.write_operation(self.ws.pages, WriteOptions(outline=self.ws.outline))
         if not self._allow_operation(operation):
             return False

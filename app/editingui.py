@@ -9,7 +9,7 @@ from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, QTimer, Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QButtonGroup, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
+    QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QGridLayout, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -463,6 +463,8 @@ class AnnotationHoverBar(QFrame):
         kind = annot.get("kind", -1)
         names = {0: "便签", 2: "文本", 3: "线条", 4: "矩形", 5: "椭圆", 8: "高亮", 9: "下划线", 15: "画笔"}
         kind_name = names.get(kind, "批注")
+        self.edit_btn.setVisible(not annot.get("watermark"))
+        self.style_btn.setVisible(not annot.get("watermark"))
 
         if content or kind == 0:
             self.content_box.show()
@@ -473,7 +475,13 @@ class AnnotationHoverBar(QFrame):
             self.content_box.hide()
             self.edit_btn.setToolTip("添加备注")
 
-        self.move_btn.setVisible(kind in (0, 4))
+        self.move_btn.setVisible(kind in (0, 2, 4))
+        if kind == 2:
+            self.title_label.setText("页面文本框")
+            self.edit_btn.setToolTip("编辑文本框")
+            self.style_btn.setToolTip("设置字体、字号与颜色")
+        else:
+            self.style_btn.setToolTip("应用当前选择的颜色与线宽")
         self.move_btn.setToolTip("拖动可实时预览位置；也可点击后选位置，Esc 取消")
 
         self.adjustSize()
@@ -524,15 +532,16 @@ class AnnotationHoverBar(QFrame):
 class AnnotationTools(QWidget):
     TOOL_DEFS = (
         ("browse", "mouse-pointer", "浏览／移动"),
-        ("select", "select-all", "选择页面批注"),
+        ("select", "annotation-select", "选择页面批注"),
         ("highlight", "highlighter", "文字高亮"),
         ("underline", "underline", "下划线"),
-        ("ink", "pen", "自由画笔"),
-        ("note", "sticky-note", "便签备注"),
+        ("ink", "ink-pen", "自由画笔"),
+        ("note", "note-comment", "便签备注"),
+        ("freetext", "text-box", "页面文本框"),
         ("rect", "square", "矩形框"),
         ("ellipse", "circle", "椭圆"),
         ("arrow", "arrow-up-right", "箭头"),
-        ("replace", "type", "单行文字修正"),
+        ("replace", "text-edit", "单行文字修正"),
     )
 
     def __init__(self, host):
@@ -570,9 +579,19 @@ class AnnotationTools(QWidget):
         # Visual tool button group with crisp SVG icons
         self.tool_group = QButtonGroup(self)
         self.tool_buttons = []
+        tool_layout = QGridLayout()
+        tool_layout.setContentsMargins(0, 0, 0, 0)
+        tool_layout.setHorizontalSpacing(4)
+        tool_layout.setVerticalSpacing(4)
+        short_names = {"browse": "浏览", "select": "选批注", "highlight": "高亮", "underline": "下划线",
+                       "ink": "画笔", "note": "便签", "freetext": "文本框", "rect": "矩形",
+                       "ellipse": "椭圆", "arrow": "箭头", "replace": "改原文"}
         for idx, (kind, icon_name, name) in enumerate(self.TOOL_DEFS):
             btn = QToolButton(self.bar)
-            btn.setFixedSize(28, 28)
+            btn.setFixedHeight(28)
+            btn.setMinimumWidth(66)
+            btn.setText(short_names[kind])
+            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             btn.setIconSize(QSize(18, 18))
             btn.setIcon(toolbar_icon(icon_name, "#0F766E", 18))
             btn.setToolTip(name)
@@ -582,7 +601,8 @@ class AnnotationTools(QWidget):
             btn.clicked.connect(lambda checked=False, i=idx: self.tool.setCurrentIndex(i))
             self.tool_group.addButton(btn, idx)
             self.tool_buttons.append(btn)
-            bar_layout.addWidget(btn)
+            tool_layout.addWidget(btn, idx // 6, idx % 6)
+        bar_layout.addLayout(tool_layout)
         self.tool_buttons[0].setChecked(True)
 
         sep1 = self.options_separator = QFrame()
@@ -714,6 +734,8 @@ class AnnotationTools(QWidget):
             vp.setCursor(cursor)
 
     def deactivate(self):
+        if not self.finish_text_box():
+            return False
         self.cancel_move_annot()
         self._set_view_cursor(Qt.CursorShape.ArrowCursor)
         if hasattr(self, "hover_bar"):
@@ -725,8 +747,12 @@ class AnnotationTools(QWidget):
         self.hide()
         if hasattr(self.host, "review_button"):
             self.host.review_button.setChecked(False)
+        return True
 
     def closeEvent(self, event):
+        if not self.finish_text_box():
+            event.ignore()
+            return
         self.cancel_move_annot()
         self._close_inline_replace()
         self.remove_view_filters()
@@ -734,6 +760,8 @@ class AnnotationTools(QWidget):
 
     def choose_tool(self):
         try:
+            if not self.finish_text_box():
+                return
             self.cancel_move_annot()
             self._set_view_cursor(Qt.CursorShape.ArrowCursor)
             if hasattr(self, "hover_bar"):
@@ -842,6 +870,12 @@ class AnnotationTools(QWidget):
         index = self.snapshot_index
         ref = self.host.ws.pages[index]
         content = annot.get("content", "")
+        if annot.get("watermark"):
+            self._set_feedback("水印请在「组织 → 水印」中移除后重新添加。")
+            return
+        if annot.get("kind") == 2:
+            self.edit_text_box(annot, index, ref)
+            return
         can_edit = self.host._allow_operation("annotate")
         dialog = NoteViewerDialog(self, content, can_edit=can_edit)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -851,6 +885,11 @@ class AnnotationTools(QWidget):
                 self.commit(PageEdit("delete", annotation_id=identifier), page_index=index, expected_ref=ref)
 
     def sync_page(self):
+        box = getattr(self, "_inline_text_box", None)
+        if box and not box.committing and (box.index >= len(self.host.ws.pages)
+                                          or self.host.ws.pages[box.index] is not box.ref):
+            box.close()
+            self._set_feedback("页面已改变，未完成的文本框输入已退出。")
         move = self._move_state
         if move and (move["index"] >= len(self.host.ws.pages)
                      or self.host.ws.pages[move["index"]] is not move["ref"]
@@ -869,6 +908,47 @@ class AnnotationTools(QWidget):
             self.snapshot_key = None
         if not self.host.ws.pages:
             self.deactivate()
+
+    def edit_text_box(self, annot, index, ref):
+        self.start_text_box(annot["rect"], index, ref, annot.get("content", ""),
+                             annot.get("text_settings"), annot["id"])
+
+    def start_text_box(self, area, index, ref, text="", settings=None, identifier=None):
+        from app.textboxui import InlineTextBox
+        if not self.host._allow_operation("annotate"):
+            return
+        if not self.finish_text_box():
+            return
+        self._close_inline_replace()
+        self.hover_bar.hide()
+        self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self._inline_text_box = InlineTextBox(self, area, index, ref, text, settings, identifier)
+        self._set_feedback("直接输入文字；Enter 换行。右下角设置字体、字号与颜色；点击框外或 Ctrl+Enter 完成，Esc 取消。")
+
+    def apply_text_box(self, box, text, settings):
+        settings = dict(settings)
+        settings["rotation"] = (self.host.store._source(box.ref.source_id).page_rotation(box.ref.source_page) + box.ref.rotation) % 360
+        edit = PageEdit("freetext_update" if box.identifier else "freetext", tuple(box.area),
+                       text=text, color=settings.pop("color"),
+                       annotation_id=box.identifier or "zhixu-text-" + uuid.uuid4().hex,
+                       details=tuple(settings.items()))
+        return self.commit(edit, page_index=box.index, expected_ref=box.ref, on_error=box.show_error)
+
+    def finish_text_box(self):
+        box = getattr(self, "_inline_text_box", None)
+        return box is None or box.apply()
+
+    def text_box_closed(self, box):
+        if getattr(self, "_inline_text_box", None) is box:
+            self._inline_text_box = None
+        if self.tool.currentData() == "freetext":
+            self.tool.blockSignals(True)
+            self.tool.setCurrentIndex(0)
+            self.tool.blockSignals(False)
+            self.tool_buttons[0].setChecked(True)
+            self._update_options()
+        self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.view.setFocus()
 
     def clear_overlay(self):
         self.cancel_move_annot()
@@ -905,6 +985,10 @@ class AnnotationTools(QWidget):
             return False
         if watched is not self.view.viewport():
             return False
+        box = getattr(self, "_inline_text_box", None)
+        if box and not box.closed and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseMove,
+                                                       QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick):
+            return True
         if event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self._position_inline_replace)
         if event.type() == QEvent.Type.Leave and not self._move_state:
@@ -1277,6 +1361,16 @@ class AnnotationTools(QWidget):
         area = p.Rect(canonical[0], canonical[-1]).normalize()
         color = (self.color.redF(), self.color.greenF(), self.color.blueF())
         identifier = "zhixu-" + uuid.uuid4().hex
+        if kind == "freetext":
+            visible = self.view.page_rects[index]
+            if area.width < 16 or area.height < 8:
+                start = points[0] - visible.topLeft()
+                area = p.Rect(start.x(), start.y(), min(start.x() + 220, visible.width()),
+                              min(start.y() + 48, visible.height())) * ~p.Matrix(self.snapshot["matrix"])
+            if area.width < 16 or area.height < 8:
+                raise ValueError("请在页面内留出文本框空间。")
+            self.start_text_box(area, index, ref)
+            return
         if kind == "note":
             text, accepted = QInputDialog.getMultiLineText(self, "添加备注", "备注内容")
             if not accepted or not text.strip():
@@ -1324,7 +1418,7 @@ class AnnotationTools(QWidget):
             edit = PageEdit(kind, tuple(tuple(pos) for pos in chosen), color=color, width=self.width.value(), annotation_id=identifier)
         self.commit(edit, confirm=kind == "replace")
 
-    def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None):
+    def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None):
         index = self.host.ws.preview_index() if page_index is None else page_index
         if index is None or not 0 <= index < len(self.host.ws.pages) or not self.host._allow_operation("content_edit" if edit.kind == "replace" else "annotate"):
             return False
@@ -1334,7 +1428,8 @@ class AnnotationTools(QWidget):
             return False
         candidate = ref.edited(edit)
         try:
-            image = run_operation(self.host, "预览本次修改", lambda progress: self.host.store.render_qimage(candidate, self.host._preview_render_width()))
+            width = self.host._preview_render_width()
+            image = run_operation(self.host, "预览本次修改", lambda progress: self.host.store.render_qimage(candidate, width))
             if confirm:
                 dialog = QDialog(self)
                 dialog.setWindowTitle("文字修正预览")
@@ -1377,7 +1472,10 @@ class AnnotationTools(QWidget):
             self._set_feedback("修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             return True
         except (ValueError, PdfError) as exc:
-            QMessageBox.information(self, "本次操作未应用", str(exc))
+            if on_error:
+                on_error(str(exc))
+            else:
+                QMessageBox.information(self, "本次操作未应用", str(exc))
             return False
 
     def delete_annot(self, identifier: str):
@@ -1385,6 +1483,13 @@ class AnnotationTools(QWidget):
             self.commit(PageEdit("delete", annotation_id=identifier), page_index=self.snapshot_index)
 
     def apply_style_to(self, identifier: str):
+        annot = next((a for a in self.snapshot.get("annotations", ()) if a["id"] == identifier), None) if self.snapshot else None
+        if annot and annot.get("kind") == 2:
+            self.open_note_dialog(identifier)
+            return
+        if annot and annot.get("watermark"):
+            self._set_feedback("水印请在「组织 → 水印」中调整。")
+            return
         if identifier:
             self.commit(PageEdit("style", annotation_id=identifier,
                                  color=(self.color.redF(), self.color.greenF(), self.color.blueF()),
@@ -1406,7 +1511,7 @@ class AnnotationTools(QWidget):
         if not self.host._allow_operation("annotate") or not self.ensure_snapshot(index):
             return False
         annot = next((a for a in self.snapshot["annotations"] if a["id"] == identifier), None)
-        if not annot or annot["kind"] not in (0, 4):
+        if not annot or annot["kind"] not in (0, 2, 4):
             self._set_feedback("当前批注不支持移动。")
             return False
         self.cancel_move_annot()

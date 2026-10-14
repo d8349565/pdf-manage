@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from PyQt6.QtGui import QImage
 
 from app.workspace import PageRef
-from app.output import check_cancel, commit_file, OperationCancelled
+from app.output import check_cancel, commit_file, OperationCancelled, cancellable_lock
 from app.startup import mark
 
 
@@ -562,23 +562,23 @@ class PdfStore:
             self._text_cache_bytes = 0
 
     @contextmanager
-    def _render_page(self, ref):
+    def _render_page(self, ref, cancel=None):
         src = self._source(ref.source_id)
         if not ref.edits:
-            with src.lock:
+            with cancellable_lock(src.lock, cancel):
                 yield src.doc_locked().load_page(ref.source_page)
             return
         import pymupdf
         from app.pdfedits import apply_edits
         key = (ref.source_id, ref.source_page, ref.page_id, ref.revision)
-        with self._draft_lock:
+        with cancellable_lock(self._draft_lock, cancel):
             if key != self._draft_key:
                 if self._draft is not None:
                     self._draft.close()
                 self._draft = self._draft_key = None
                 draft = pymupdf.open()
                 try:
-                    with src.lock:
+                    with cancellable_lock(src.lock, cancel):
                         original = src.doc_locked()
                         original_page = original[ref.source_page]
                         draft.insert_pdf(original, from_page=ref.source_page, to_page=ref.source_page)
@@ -773,7 +773,7 @@ class PdfStore:
         try:
             with ExitStack() as locks:
                 for source in sources.values():
-                    locks.enter_context(source.lock)
+                    locks.enter_context(cancellable_lock(source.lock, cancel))
                     source.doc_locked()
                 out, password, keep_encryption, warnings = self._assemble(pages, sources, options, progress_callback)
             check_cancel(cancel)
@@ -926,6 +926,7 @@ class PdfStore:
         options = options or WriteOptions()
         # 所有输出先检查保护边界与需要确认的内容，再开始落盘，避免确认时重跑已完成输出。
         for dest, group in zip(dests, groups):
+            check_cancel(cancel)
             subset = [pages[i] for i in group]
             self.require_operation(subset, options.operation)
             self._check_destination(dest)
@@ -937,7 +938,7 @@ class PdfStore:
             source = self._source(sid)
             numbers = {page.source_page for page in all_pages if page.source_id == sid}
             try:
-                with source.lock:
+                with cancellable_lock(source.lock, cancel):
                     capture_navigation(source.doc_locked(), numbers,
                                        allow_structure_loss=options.allow_structure_loss)
             except ValueError as exc:

@@ -10,8 +10,9 @@ import sys
 import tempfile
 import threading
 import time
+import hashlib
 
-from app.output import OperationCancelled, check_cancel, commit_file, stamp
+from app.output import OperationCancelled, check_cancel, commit_file, stamp, cancellable_lock
 from app.pdfio import PdfError, WriteNeedsConfirmation, WriteOptions, WriteResult
 from app.storage import TemporaryWorkspace
 from app.wordconvert import _read_json, _write_json
@@ -68,6 +69,8 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
         raise PdfError("没有可保存的页面")
     options = options or WriteOptions()
     check_cancel(cancel)
+    if progress_callback:
+        progress_callback(0, 0, "正在准备保存位置")
     candidate = None
     try:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -89,7 +92,9 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
             for index, sid in enumerate(snapshot_ids):
                 check_cancel(cancel)
                 source = store._source(sid)
-                with source.lock:
+                if progress_callback:
+                    progress_callback(0, 0, "正在等待页面处理完成，可取消任务")
+                with cancellable_lock(source.lock, cancel):
                     if source.closed:
                         raise PdfError("源文档已关闭")
                     data = source.data
@@ -103,12 +108,29 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
                         check_cancel(cancel)
                         stream.write(view[offset:offset + 4 * 1024 * 1024])
                 sources[sid] = dict(record, snapshot=str(snapshot))
-            result = _worker(folder, dict(operation="write", sources=sources,
-                pages=[asdict(page) for page in pages], options=asdict(options), dest=dest,
+            payload, assets, asset_tokens = [], {}, {}
+            for page in pages:
+                check_cancel(cancel)
+                item = asdict(page)
+                for edit in item["edits"]:
+                    details = dict(edit["details"])
+                    image = details.pop("image", "")
+                    if image:
+                        token = asset_tokens.get(id(image))
+                        if token is None:
+                            token = hashlib.sha256(image.encode("ascii")).hexdigest()
+                            asset_tokens[id(image)] = token
+                        assets[token] = image
+                        details["image_asset"] = token
+                        edit["details"] = tuple(details.items())
+                payload.append(item)
+            result = _worker(folder, dict(operation="write", sources=sources, assets=assets,
+                pages=payload, options=asdict(options), dest=dest,
                 staging=staging, written_stamps=dict(store._written_stamps)), progress_callback, cancel)
             # A cancelled/killed child can only leave owned temporary files.
             # Build a lightweight preview handle from the child's validated metadata.
             if register_result:
+                check_cancel(cancel)
                 import pymupdf
                 from app.pdfstructure import PdfSafety
                 data = Path(result["temp"]).read_bytes()
@@ -160,6 +182,17 @@ def _tuples(value):
     return tuple(_tuples(item) for item in value) if isinstance(value, list) else value
 
 
+def render_watermark_asset(text, color, image="", cancel=None):
+    """Generate only the watermark in a child process, never process a business page."""
+    from PyQt6.QtGui import QImage
+    with TemporaryWorkspace("watermark") as folder:
+        result = _worker(folder, dict(operation="watermark_asset", text=text, color=color, image=image), None, cancel)
+        asset = QImage(str(Path(folder) / "watermark.png"))
+        if asset.isNull():
+            raise PdfError("水印预览素材无法加载，请重试。")
+        return asset, result["width"], result["height"]
+
+
 def worker_main(folder):
     from app.pdfio import EncryptionOptions, PdfStore
     from app.workspace import OutlineEntry, PageEdit, PageRef
@@ -175,7 +208,16 @@ def worker_main(folder):
         last_report = now
         _write_json(root / "event.json", dict(current=current, total=total, message=message))
     try:
-        if request.get("operation") == "preview":
+        if request.get("operation") == "watermark_asset":
+            import pymupdf
+            from app.pdfmarks import watermark_base
+            data, width, height = watermark_base(request["text"], tuple(request["color"]), request.get("image", ""))
+            with pymupdf.open(stream=data, filetype="pdf") as doc:
+                scale = min(1600 / max(width, 1), 2048 / max(width, height, 1),
+                            math.sqrt(4_000_000 / max(1, width * height)))
+                doc[0].get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=True).save(root / "watermark.png")
+            result = dict(width=width, height=height)
+        elif request.get("operation") == "preview":
             import pymupdf
             for index, item in enumerate(request["pages"]):
                 report(index, len(request["pages"]), "正在渲染压缩前后预览")
@@ -201,6 +243,12 @@ def worker_main(folder):
             store._written_stamps = {key: tuple(value) for key, value in request["written_stamps"].items()}
             pages = []
             for item in request["pages"]:
+                for edit in item["edits"]:
+                    details = dict(edit["details"])
+                    asset = details.pop("image_asset", None)
+                    if asset is not None:
+                        details["image"] = request["assets"][asset]
+                        edit["details"] = list(details.items())
                 edits = tuple(PageEdit(**{key: _tuples(value) for key, value in edit.items()})
                               for edit in item.pop("edits"))
                 pages.append(PageRef(**item, edits=edits))

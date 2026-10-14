@@ -10,6 +10,84 @@ from app.ui import MainWindow
 from app.workspace import PageEdit
 
 
+def test_text_box_edits_in_page_and_commits_from_inline_controls(reader, qapp):
+    win = reader
+    win.open_annotation_tools()
+    tools = win.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("freetext"))
+    assert tools.ensure_snapshot()
+    top = win.preview_view.page_rects[0].topLeft()
+    before = win.ws.pages[0]
+    tools.finish("freetext", [top + QPointF(60, 220), top + QPointF(320, 280)])
+    box = tools._inline_text_box
+    assert box.frame.parentWidget() is win.preview_view.viewport()
+    assert box.toolbar.parentWidget() is win.preview_view.viewport()
+    assert QApplication.activeModalWidget() is None
+    box.editor.setPlainText("申请说明\n仅作测试")
+    box.size.setCurrentIndex(box.size.findData(16.0))
+    qapp.processEvents()
+    QTest.keyClick(box.editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert box.closed and tools._inline_text_box is None
+    assert any(edit.kind == "freetext" for edit in win.ws.pages[0].edits)
+    win.ws.undo_stack.undo()
+    assert win.ws.pages[0] is before
+
+
+def test_text_box_escape_preserves_the_original_page(reader, qapp):
+    win = reader
+    win.open_annotation_tools()
+    tools = win.annotation_tools
+    assert tools.ensure_snapshot()
+    before = win.ws.pages[0]
+    tools.start_text_box((60, 220, 320, 280), 0, before)
+    box = tools._inline_text_box
+    box.editor.setPlainText("取消的文字")
+    QTest.keyClick(box.editor, Qt.Key.Key_Escape)
+    assert tools._inline_text_box is None
+    assert win.ws.pages[0] is before
+
+
+def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
+    from app.rendering import RenderResult
+    from app.watermarkui import WatermarkDialog
+    from PyQt6.QtGui import QImage
+    requests = []
+    monkeypatch.setattr(reader.rendering, "request", lambda ref, width, key, *args, **kwargs: requests.append(key))
+    dialog = WatermarkDialog(reader)
+    try:
+        reader._page_images.clear()
+        color = (dialog.color.redF(), dialog.color.greenF(), dialog.color.blueF())
+        sprite = QImage(200, 72, QImage.Format.Format_ARGB32_Premultiplied)
+        sprite.fill(Qt.GlobalColor.transparent)
+        asset_key = (dialog.text.text(), color, "")
+        dialog._asset_cache[asset_key] = (sprite, 200, 72)
+        dialog.preview()
+        old = requests[-1]
+        image = QImage(100, 150, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.white)
+        dialog.preview_ready(old, RenderResult(reader.rendering.generation, value=image))
+        assert dialog.apply_button.isEnabled()
+        assert dialog.preview_label.image is image
+        dialog.opacity.setValue(40)
+        dialog.angle.setValue(90)
+        dialog.preview()
+        assert requests == [old]
+        assert dialog._asset_job is None
+        dialog.move_watermark(.2, .8)
+        edit = dialog.edit(reader.ws.pages[0])
+        assert dict(edit.details)["offset"] == (.2, .8)
+        assert dict(edit.details)["position"] == "custom"
+        dialog.kind.setCurrentIndex(dialog.kind.findData("remove"))
+        dialog.preview()
+        current = requests[-1]
+        dialog.preview_ready(old, RenderResult(reader.rendering.generation, error="render_failed"))
+        assert not dialog.apply_button.isEnabled()
+        dialog.preview_ready(current, RenderResult(reader.rendering.generation, value=image))
+        assert dialog.apply_button.isEnabled()
+    finally:
+        dialog.reject()
+
+
 @pytest.fixture(scope="session")
 def qapp():
     return QApplication.instance() or QApplication([])

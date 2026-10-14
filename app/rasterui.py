@@ -51,10 +51,12 @@ class RasterDialog(QDialog):
         self.range.setAccessibleName('影像副本指定页码')
         form.addRow('指定页码', self.range)
         self.quality = QComboBox()
-        self.quality.addItems(['清晰 · 200 DPI，无损图片', '更清晰 · 300 DPI，无损图片', '较小文件 · 150 DPI，JPEG'])
+        self.quality.addItems(['清晰 · 200 DPI，JPEG（推荐）', '更清晰 · 300 DPI，无损图片（文件较大）',
+                               '较小文件 · 150 DPI，JPEG', '无损图片 · 200 DPI（文件较大）'])
         self.quality.setAccessibleName('影像副本清晰度')
         form.addRow('清晰程度', self.quality)
         layout.addLayout(form)
+        hint(layout, '推荐档位适度压缩图片以兼顾清晰度与体积；无损图片可能使文件明显变大。')
         self.output = QLineEdit(unused_path(source))
         self.output.setAccessibleName('影像副本 PDF 保存路径')
         self.output.setCursorPosition(0)
@@ -96,7 +98,7 @@ class RasterDialog(QDialog):
         return list(dict.fromkeys(parse_page_range(self.range.text(), self.count)))
 
     def options(self, encryption=None, unencrypted_confirmed=False):
-        dpi, image_format = ((200, 'png'), (300, 'png'), (150, 'jpeg'))[self.quality.currentIndex()]
+        dpi, image_format = ((200, 'jpeg'), (300, 'png'), (150, 'jpeg'), (200, 'png'))[self.quality.currentIndex()]
         return RasterOptions(dpi, image_format, encryption, unencrypted_confirmed)
 
     def validate(self):

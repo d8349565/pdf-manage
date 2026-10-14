@@ -17,7 +17,7 @@ from app.pdfstructure import signature_state
 @dataclass(frozen=True)
 class RasterOptions:
     dpi: int = 200
-    image_format: str = 'png'
+    image_format: str = 'jpeg'
     encryption: EncryptionOptions | None = None
     unencrypted_confirmed: bool = False
 
@@ -90,7 +90,7 @@ def rasterize_pdf(store, pages, destination, options=None, progress_callback=Non
                     copied = out.new_page(width=page.mediabox.width, height=page.mediabox.height)
                     copied.set_mediabox(page.mediabox)
                     copied.set_cropbox(page.cropbox)
-                    image = pix.tobytes('png') if options.image_format == 'png' else pix.tobytes('jpg', jpg_quality=95)
+                    image = pix.tobytes('png') if options.image_format == 'png' else pix.tobytes('jpg', jpg_quality=90)
                     copied.insert_image(copied.rect, stream=image, keep_proportion=False)
                     # Record the output pixels before serialization; JPEG has an explicitly chosen quality ceiling.
                     appearances.append(hashlib.sha256(copied.get_pixmap(dpi=72, colorspace=p.csRGB, alpha=False).samples).digest())
