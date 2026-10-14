@@ -4,6 +4,7 @@ import os
 import math
 import tempfile
 import threading
+from collections import OrderedDict
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 
@@ -195,6 +196,8 @@ class PdfStore:
         self._draft_key = None
         self._text_cache = None
         self._text_cache_bytes = 0
+        self._annotation_cache = OrderedDict()
+        self._annotation_lock = threading.Lock()
 
     def _source(self, sid: str) -> _Source:
         src = self._sources.get(sid)
@@ -204,6 +207,8 @@ class PdfStore:
 
     def close_all(self) -> None:
         self._clear_edit_caches()
+        with self._annotation_lock:
+            self._annotation_cache.clear()
         sources = list(self._sources.values())
         self._sources.clear()
         self._written_stamps.clear()
@@ -216,6 +221,10 @@ class PdfStore:
         for sid in [s for s in self._sources if s not in keep]:
             src = self._sources.pop(sid)
             src.close()
+        with self._annotation_lock:
+            for key in list(self._annotation_cache):
+                if key[0].split(":edit:", 1)[0] not in keep:
+                    self._annotation_cache.pop(key)
 
     def _register(self, path: str, doc: pymupdf.Document, data: bytes, password,
                   authentication, disk_stamp, progress_callback=None) -> str:
@@ -483,10 +492,47 @@ class PdfStore:
             zoom = max(int(width), 1) / (base or 1)
             matrix = pymupdf.Matrix(zoom, zoom).prerotate(ref.rotation)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
+            try:
+                self._cache_annotations(ref, page)
+            except Exception:
+                # A malformed annotation must not prevent the page image loading.
+                pass
         image = _to_qimage(pix)
         if image.isNull():
             raise PdfError("无法渲染页面")
         return image
+
+    def _cache_annotations(self, ref, page):
+        from app.pdfedits import annotation_summary
+        import pymupdf
+        with self._annotation_lock:
+            if ref.render_key in self._annotation_cache:
+                return
+        extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
+        rotated = page.rect * extra
+        extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
+        summary = dict(annotations=annotation_summary(page),
+                       matrix=tuple(page.rotation_matrix * extra))
+        with self._annotation_lock:
+            self._annotation_cache[ref.render_key] = summary
+            while len(self._annotation_cache) > 128:
+                self._annotation_cache.popitem(last=False)
+
+    def cached_annotations(self, ref):
+        """GUI-safe metadata lookup: no native PDF access or document lock."""
+        with self._annotation_lock:
+            hit = self._annotation_cache.get(ref.render_key)
+            if hit is not None:
+                self._annotation_cache.move_to_end(ref.render_key)
+            return hit
+
+    def remap_annotations(self, mapping):
+        with self._annotation_lock:
+            for before, after in mapping.items():
+                if before in self._annotation_cache:
+                    self._annotation_cache[after] = self._annotation_cache[before]
+            while len(self._annotation_cache) > 128:
+                self._annotation_cache.popitem(last=False)
 
     def render_region(self, ref: PageRef, region: tuple[float, float, float, float], scale: float):
         """按屏幕像素密度重绘可见区域，坐标为最终旋转后的 PDF 点坐标。"""

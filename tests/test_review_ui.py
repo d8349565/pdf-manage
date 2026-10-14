@@ -16,8 +16,9 @@ def qapp():
 
 
 def settle(qapp):
-    QThreadPool.globalInstance().waitForDone(30000)
-    qapp.processEvents()
+    for _ in range(60):
+        QThreadPool.globalInstance().waitForDone(30000)
+        QTest.qWait(5)
 
 
 @pytest.fixture
@@ -154,6 +155,8 @@ def test_notes_hover_in_reader_and_single_click_does_not_open_dialog(reader, qap
     reader._set_zoom(.5)
     page_top = reader.preview_view.page_rects[1].topLeft()
     reader.preview_view.centerOn(page_top + QPointF(348, 158))
+    QTest.qWait(160)
+    settle(qapp)
     pos = reader.preview_view.mapFromScene(page_top + QPointF(348, 158))
     QTest.mouseMove(reader.preview_view.viewport(), pos)
     assert tools.snapshot_index == 1
@@ -161,6 +164,31 @@ def test_notes_hover_in_reader_and_single_click_does_not_open_dialog(reader, qap
     tools.delete_annot(tools.hover_bar.annot_id)
     assert not reader.ws.pages[0].edits
     assert reader.ws.pages[1].edits[-1].kind == "delete"
+
+
+def test_reader_hover_uses_cached_annotations_without_text_or_table_analysis(reader, qapp, monkeypatch):
+    tools = reader.annotation_tools
+    tools.snapshot = None
+    tools.snapshot_key = None
+    def unexpected_snapshot(ref):
+        raise AssertionError('Hover must not parse a full text snapshot')
+    monkeypatch.setattr(reader.store, 'text_snapshot', unexpected_snapshot)
+    point = reader.preview_view.page_rects[0].topLeft() + QPointF(348, 158)
+    pos = reader.preview_view.mapFromScene(point)
+    QTest.mouseMove(reader.preview_view.viewport(), pos)
+    qapp.processEvents()
+    assert tools.hover_bar.isVisible()
+    assert 'raw' not in tools.snapshot
+    assert '第 1 页备注' in tools.hover_bar.content_label.text()
+
+
+def test_explicit_edit_upgrades_annotation_summary_to_full_snapshot(reader):
+    tools = reader.annotation_tools
+    tools.snapshot_key = None
+    assert tools.ensure_annotation_summary(0)
+    assert 'raw' not in tools.snapshot
+    assert tools.ensure_snapshot(0)
+    assert 'raw' in tools.snapshot
 
 
 def test_review_button_and_toolbar_alignment_at_minimum_window(reader, qapp):

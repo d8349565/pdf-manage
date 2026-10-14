@@ -767,7 +767,7 @@ class AnnotationTools(QWidget):
         if index is None or not 0 <= index < len(self.host.ws.pages):
             return False
         ref = self.host.ws.pages[index]
-        if self.snapshot_key == ref.render_key:
+        if self.snapshot_key == ref.render_key and self.snapshot is not None and "raw" in self.snapshot:
             self.snapshot_index = index
             return True
         try:
@@ -775,6 +775,23 @@ class AnnotationTools(QWidget):
         except Exception as exc:
             self._set_feedback(str(exc))
             return False
+        return self._use_snapshot(ref, index, snapshot)
+
+    def ensure_annotation_summary(self, index):
+        """Hover only consumes metadata prepared by rendering, never PDF parsing."""
+        if not 0 <= index < len(self.host.ws.pages):
+            return False
+        ref = self.host.ws.pages[index]
+        if self.snapshot_key == ref.render_key and self.snapshot is not None:
+            self.snapshot_index = index
+            return True
+        summary = self.host.store.cached_annotations(ref)
+        if summary is None:
+            self.hover_bar.hide()
+            return False
+        return self._use_snapshot(ref, index, summary)
+
+    def _use_snapshot(self, ref, index, snapshot):
         self.snapshot, self.snapshot_key = snapshot, ref.render_key
         self.snapshot_index = index
         self.annotations.blockSignals(True)
@@ -946,7 +963,8 @@ class AnnotationTools(QWidget):
                 return False
 
         # 便签与批注悬停操作条
-        if event.type() == QEvent.Type.MouseMove and not self.stroke and kind in ("browse", "select"):
+        if (event.type() == QEvent.Type.MouseMove and not self.stroke
+                and kind in ("browse", "select") and not self.host._scrolling):
             try:
                 pos = event.position().toPoint()
                 if hover_bar and hover_bar.isVisible() and hover_bar.geometry().contains(pos):
@@ -955,7 +973,7 @@ class AnnotationTools(QWidget):
                     point = self.view.mapToScene(pos)
                     index = self.view.page_at_y(point.y())
                     if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
-                        if self.ensure_snapshot(index):
+                        if self.ensure_annotation_summary(index):
                             hit_annot = self.find_annotation_at(point)
                             if hit_annot:
                                 if hover_bar:
@@ -975,7 +993,7 @@ class AnnotationTools(QWidget):
                 point = self.view.mapToScene(event.position().toPoint())
                 index = self.view.page_at_y(point.y())
                 if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
-                    if self.ensure_snapshot(index):
+                    if self.ensure_annotation_summary(index):
                         hit_annot = self.find_annotation_at(point)
                         if hit_annot and (hit_annot.get("kind") == 0 or hit_annot.get("content")):
                             self.annotations.setCurrentIndex(self.annotations.findData(hit_annot["id"]))

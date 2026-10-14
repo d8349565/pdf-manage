@@ -61,6 +61,23 @@ python -m venv .venv
 
 打印机、Microsoft Word、安装器和复杂 PDF 还需要在实际环境中核对。静态打包检查通过不代表全部功能已经验收。
 
+### 阅读性能诊断
+
+阅读渲染共用串行优先队列，快速滚动时优先显示缓存或低清预览，停稳约 120ms 后请求清晰图。正文缓存仍为 64MiB；缩略图的原始缓存和显示位图合计按 128MiB 预算淘汰。普通批注悬停使用渲染时准备的摘要，不提取整页文字或分析表格。
+
+诊断默认关闭。需要在本机比较阅读表现时，可仅为本次源码运行设置日志位置：
+
+```powershell
+New-Item -ItemType Directory -Path build -Force | Out-Null
+$env:PAGEARK_READING_LOG = Join-Path $PWD 'build\reading-performance.jsonl'
+.venv\Scripts\python.exe -m app
+Remove-Item Env:PAGEARK_READING_LOG
+```
+
+日志只追加界面事件间隔、排队与渲染耗时、缓存命中、淘汰数量和位图缓存占用，不记录路径、页码、关键词、密码或文档内容。诊断不会自行打开 PDF 或开展模拟测试；设置该变量后，由用户打开需要核对的文件并操作。
+
+实际验收应保持电脑、文档、窗口尺寸、系统显示缩放及阅读缩放一致，比较快速上下滚动、立即反向滚动、返回刚读过的页、停稳后的清晰等待，并检查搜索、复制、批注、撤销和关闭文档。源码静态检查通过不代表已获得真实文档的提速结果。
+
 OCR 的 PRD 评估、独立 CPU 增强包构建、合成 PoC、性能记录和未完成的发布验收见 [OCR.md](OCR.md)。OCR 推理依赖只安装到单独构建目录，不添加到基础版依赖清单。
 
 ## 版本与提交规则

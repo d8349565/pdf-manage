@@ -18,15 +18,19 @@ def annotation_token(annot, ordinal):
     return annot.info.get("id") or f"zhixu-original-{ordinal}"
 
 
-def snapshot_page(page):
-    import pymupdf as p
-    raw = page.get_text("rawdict", flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
+def annotation_summary(page):
     annotations = []
     for ordinal, annot in enumerate(page.annots() or ()):
         annotations.append(dict(id=annotation_token(annot, ordinal), kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2)))
-    return dict(raw=raw, annotations=annotations)
+    return annotations
+
+
+def snapshot_page(page):
+    import pymupdf as p
+    raw = page.get_text("rawdict", flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
+    return dict(raw=raw, annotations=annotation_summary(page))
 
 
 def selected_lines(raw, rectangle):

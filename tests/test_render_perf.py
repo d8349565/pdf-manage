@@ -52,8 +52,10 @@ def _render_count(win) -> dict:
 
 
 def _settle(qapp):
-    QThreadPool.globalInstance().waitForDone(30000)
-    qapp.processEvents()
+    # Serial rendering dispatches the next job after GUI completion delivery.
+    for _ in range(60):
+        QThreadPool.globalInstance().waitForDone(30000)
+        QTest.qWait(5)
 
 
 def test_detail_reuses_covered_image_and_rerenders_when_cleared(window, tmp_path, qapp, monkeypatch):
@@ -128,6 +130,7 @@ def test_thumbnail_completion_invalidates_only_its_own_row(window, tmp_path, qap
     _make_pdf(src, 12)
     assert window._load_one(str(src))
     window.refresh()
+    window.model.thumb_visible = lambda key: True
 
     ranges: list[tuple[int, int]] = []
     window.model.dataChanged.connect(
@@ -331,6 +334,7 @@ def test_saving_reuses_the_thumbnail_cache(window, tmp_path, qapp):
     _make_pdf(src, 6)
     assert window._load_one(str(src))
     window.refresh()
+    window.model.thumb_visible = lambda key: True
     for i in range(window.model.rowCount()):
         window.model.data(window.model.index(i), Qt.ItemDataRole.DecorationRole)
     _settle(qapp)
@@ -480,6 +484,76 @@ def test_reading_cache_has_a_byte_budget(window):
     assert window._page_image_bytes <= READING_CACHE_BYTES
     assert ('test', 0, 0) not in window._page_images
     assert ('test', 11, 0) in window._page_images
+
+
+def test_scroll_displays_small_cached_page_before_requesting_a_draft(window, tmp_path, qapp, monkeypatch):
+    src = tmp_path / 'draft.pdf'
+    _make_pdf(src)
+    assert window._load_one(str(src))
+    window.refresh()
+    _settle(qapp)
+    page = window.ws.pages[1]
+    image = QImage(96, 128, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    window._page_images.clear()
+    window._page_image_bytes = 0
+    window._cache_page_image(page.render_key, image)
+    window.ws.select_index(1)
+    window.preview_view.active_page = 1
+    window._scrolling = True
+    requested = []
+    monkeypatch.setattr(window.rendering, 'request', lambda *args, **kwargs: requested.append(args))
+    window._request_preview(page)
+    assert window.preview_view.photo().width() == 96
+    assert requested and requested[0][1] <= 640
+    assert window._preview_busy
+
+
+def test_sharp_result_keeps_scroll_position_and_zoom(window, tmp_path, qapp):
+    src = tmp_path / 'anchor.pdf'
+    _make_pdf(src)
+    window.resize(1100, 720)
+    window.show()
+    assert window._load_one(str(src))
+    window.refresh()
+    _settle(qapp)
+    view = window.preview_view
+    page = window.ws.pages[window.ws.preview_index()]
+    width = window._preview_render_width()
+    window._preview_key = (*page.render_key, width)
+    image = QImage(width, int(width * 4 / 3), QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    before = (view.horizontalScrollBar().value(), view.verticalScrollBar().value(), view.transform().m11())
+    from app.rendering import RenderResult
+    window._on_preview(window._preview_key, RenderResult(window.rendering.generation, image))
+    assert before == (view.horizontalScrollBar().value(), view.verticalScrollBar().value(), view.transform().m11())
+
+
+def test_scroll_updates_page_number_without_full_permission_sync(window, tmp_path, qapp, monkeypatch):
+    src = tmp_path / 'navigation.pdf'
+    _make_pdf(src)
+    window.resize(1100, 720)
+    window.show()
+    assert window._load_one(str(src))
+    window.refresh()
+    _settle(qapp)
+    def unexpected_sync():
+        raise AssertionError('Scrolling must not rescan document permissions')
+    monkeypatch.setattr(window, '_sync_controls', unexpected_sync)
+    window.preview_view.jump_to_page(1)
+    window._reading_scrolled()
+    assert window.ws.preview_index() == 1
+    assert window.page_number.value() == 2
+
+
+def test_old_generation_cannot_replace_a_current_preview(window):
+    from app.rendering import RenderResult
+    key = ('source', 0, 0, 640)
+    window._preview_key = key
+    window._preview_busy = True
+    image = QImage(640, 800, QImage.Format.Format_RGB32)
+    window._on_preview(key, RenderResult(window.rendering.generation - 1, image))
+    assert window._preview_image is None and window._preview_busy
 
 
 def test_old_neighbor_completion_after_reset_is_discarded(window, tmp_path, qapp):
