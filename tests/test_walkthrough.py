@@ -57,7 +57,7 @@ def test_excel_preparation_keeps_ui_responsive(window, qapp, tmp_path, monkeypat
     def save_dialog(*args, **kwargs):
         observed['options'] = kwargs.get('options')
         return str(tmp_path / 'output.xlsx'), ''
-    def prepare(pages, dest, *, progress_callback=None, options=None, cancel=None):
+    def prepare(store, pages, dest, *, progress_callback=None, options=None, cancel=None):
         observed['thread'] = threading.get_ident()
         observed['temp'] = dest
         observed['rotation'] = pages[0].rotation
@@ -68,7 +68,8 @@ def test_excel_preparation_keeps_ui_responsive(window, qapp, tmp_path, monkeypat
         result = ConversionResult([], 2, 0, 0, [])
         return result, assess_conversion(result)
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', save_dialog)
-    monkeypatch.setattr(window.store, 'write', prepare)
+    from app import pdfworker
+    monkeypatch.setattr(pdfworker, 'write_pdf', prepare)
     monkeypatch.setattr(converter, 'convert_pdf_to_excel', convert)
     monkeypatch.setattr(QMessageBox, 'warning', lambda *args: None)
     ticks = []
@@ -132,6 +133,7 @@ def test_excel_real_worker_exports(window, qapp, tmp_path, monkeypatch, selected
                     page.insert_text((55 + c * 100, 75 + r * 50), value)
         doc.save(source)
     assert window._load_one(str(source))
+    window.convert_content.setCurrentIndex(window.convert_content.findData(False))
     if selected:
         window.ws.select_index(0)
         window.convert_selected.setChecked(True)
@@ -168,11 +170,12 @@ def test_excel_preparation_failure_cleans_up(window, qapp, tmp_path, monkeypatch
     window.ws.select_index(0)
     window.ws.rotate(90)
     paths, messages = [], []
-    def fail(pages, dest, *, progress_callback=None, options=None, cancel=None):
+    def fail(store, pages, dest, *, progress_callback=None, options=None, cancel=None):
         assert callable(progress_callback)
         paths.append(dest)
         raise OSError('preparation failed')
-    monkeypatch.setattr(window.store, 'write', fail)
+    from app import pdfworker
+    monkeypatch.setattr(pdfworker, 'write_pdf', fail)
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *a, **k: (str(tmp_path / 'out.xlsx'), ''))
     monkeypatch.setattr(QMessageBox, 'warning', lambda *a: messages.append(a[-1]))
     window.convert_to_excel()
@@ -1004,7 +1007,7 @@ def test_tools_panel_uses_one_type_size(window):
     texts = {w.text() for w in window.tools_panel.findChildren(QLabel) if w.objectName() == "caption"}
     assert "导出与转换" in texts
     assert [window.export_tools.itemText(i) for i in range(3)] == [
-        "提取页面 · 一个新文件", "拆分文件 · 多个 PDF", "表格转 Excel",
+        "提取页面 · 一个新文件", "拆分文件 · 多个 PDF", "PDF 转 Excel",
     ]
 
 

@@ -251,7 +251,7 @@ def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, t
     window = loaded_window
     toolbar = window.navigation_bar.parentWidget()
     buttons = {b.accessibleName(): b for b in toolbar.findChildren(QToolButton)}
-    for name in ('左转所选页', '右转所选页', '删除所选页', '提取所选页', '拆分文件', '表格转 Excel'):
+    for name in ('左转所选页', '右转所选页', '删除所选页', '提取所选页', '拆分文件', 'PDF 转 Excel'):
         assert name in buttons
     assert window.tools_panel.isHidden()
     QTest.mouseClick(buttons['右转所选页'], Qt.MouseButton.LeftButton)
@@ -276,7 +276,7 @@ def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, t
     QTest.mouseClick(buttons['拆分文件'], Qt.MouseButton.LeftButton)
     QApplication.processEvents()
     assert window.tools_panel.isVisible() and window.export_tools.currentIndex() == 1
-    QTest.mouseClick(buttons['表格转 Excel'], Qt.MouseButton.LeftButton)
+    QTest.mouseClick(buttons['PDF 转 Excel'], Qt.MouseButton.LeftButton)
     QApplication.processEvents()
     assert window.export_tools.currentIndex() == 2
     window.act_tools.setChecked(False)

@@ -1266,7 +1266,8 @@ class ConversionThread(QThread):
                 scratch = TemporaryWorkspace('excel')
                 tmp_pdf = str(Path(scratch.name) / 'workspace.pdf')
                 self.store.require_operation(self.pages, "copy")
-                self.store.write(self.pages, tmp_pdf, progress_callback=p_cb,
+                from app.pdfworker import write_pdf
+                write_pdf(self.store, self.pages, tmp_pdf, progress_callback=p_cb,
                                  options=WriteOptions(preserve_encryption=False, operation="copy"), cancel=c_check)
                 source_pdf = tmp_pdf
                 indices = None
@@ -2546,7 +2547,7 @@ class MainWindow(QMainWindow):
         convert.addWidget(self.convert_button)
         convert.addStretch()
         compress = section("压缩 PDF")
-        hint = QLabel("保持画质或适合外发；先查看大小和页面预览，再另存结果。")
+        hint = QLabel("无损、高质量、均衡或自定义压缩；查看大小与页面预览后另存。")
         hint.setWordWrap(True)
         compress.addWidget(hint)
         self.compress_button = self._btn("压缩并预览…", self.compress_pdf)
@@ -3725,11 +3726,13 @@ class MainWindow(QMainWindow):
         while True:
             try:
                 def work(progress, cancel=None):
+                    from app.pdfworker import write_pdf
                     if groups is not None:
                         return self.store.write_groups(pages, groups, dests, progress_callback=progress,
-                                                       options=options, cancel=cancel)
-                    return self.store.write(pages, path, progress_callback=progress, options=options,
-                                            register_result=register_result, cancel=cancel)
+                            options=options, cancel=cancel,
+                            _writer=lambda subset, target, **kwargs: write_pdf(self.store, subset, target, **kwargs))
+                    return write_pdf(self.store, pages, path, progress_callback=progress, options=options,
+                                     register_result=register_result, cancel=cancel)
                 return run_operation(self, title, work, cancellable=cancellable)
             except WriteNeedsConfirmation as exc:
                 if exc.kind == "encryption":

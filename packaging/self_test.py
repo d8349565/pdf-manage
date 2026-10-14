@@ -121,8 +121,18 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 toolbar = window.navigation_bar.parentWidget()
                 tools = {b.accessibleName(): b for b in toolbar.findChildren(QToolButton)}
                 assert all(name in tools for name in ("左转所选页", "右转所选页", "删除所选页",
-                                                       "提取所选页", "拆分文件", "表格转 Excel"))
+                                                       "提取所选页", "拆分文件", "PDF 转 Excel"))
                 report["checks"].append("common page tools in the top toolbar")
+                from app.compression import CompressionDialog
+                compression = CompressionDialog(window)
+                try:
+                    compression.prepare()
+                    assert compression.result is not None and compression.export.isEnabled()
+                    assert all(not label.pixmap().isNull() for label in compression.images)
+                finally:
+                    compression.reject()
+                    compression.deleteLater()
+                report["checks"].append("frozen parent/child PDF compression and PNG comparison previews")
                 assert not window.store.render_qimage(pages[0], 800).isNull()
                 report["checks"].append("main window, Chinese path, PDF load and rendering")
                 window.ws.rotate(90)

@@ -93,7 +93,7 @@ def test_image_rotation_save_as_and_repeated_save(qapp, tmp_path, monkeypatch, s
 
 @pytest.mark.parametrize('failure', ['target_changed', 'write_denied'])
 def test_save_failure_keeps_edits_closes_progress_and_allows_save_as(window, tmp_path, monkeypatch, failure):
-    from app import pdfio
+    from app import pdfworker
     win = window
     source = tmp_path / 'scan.pdf'
     original = source.read_bytes()
@@ -110,29 +110,26 @@ def test_save_failure_keeps_edits_closes_progress_and_allows_save_as(window, tmp
         replacement = tmp_path / 'external.pdf'
         make_image_pdf(replacement, 180)
         expected_source = replacement.read_bytes()
-        write = win.store.write
+        worker = pdfworker._worker
         def changed(*args, **kwargs):
-            report = kwargs['progress_callback']
-            def update(current, total, message):
-                if message == '正在重新打开并核对待保存文件':
-                    source.write_bytes(expected_source)
-                report(current, total, message)
-            kwargs['progress_callback'] = update
-            return write(*args, **kwargs)
+            prepared = worker(*args, **kwargs)
+            source.write_bytes(expected_source)
+            return prepared
         with monkeypatch.context() as context:
-            context.setattr(win.store, 'write', changed)
+            context.setattr(pdfworker, '_worker', changed)
             assert not win.save()
     else:
         expected_source = original
         with monkeypatch.context() as context:
             def denied(*args, **kwargs):
                 raise PermissionError('写入被拒绝')
-            context.setattr(pdfio, 'commit_file', denied)
+            context.setattr(pdfworker, 'commit_file', denied)
             assert not win.save()
     assert len(warnings) == 1
     assert win.ws.dirty and win.ws.pages == edits
     assert source.read_bytes() == expected_source
     assert not list(tmp_path.glob('.pdfasm-*'))
+    assert not list(tmp_path.glob('.zhixu-write-*'))
     target = tmp_path / 'recovered.pdf'
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *args: (str(target), 'PDF'))
     assert win.save(True)

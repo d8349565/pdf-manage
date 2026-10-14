@@ -47,9 +47,17 @@ class WriteOptions:
     operation: str = "modify"
     encryption: "EncryptionOptions | None" = None
     compression: str = ""
+    compression_dpi: int = 300
+    compression_quality: int = 92
+    compression_grayscale: bool = False
     editable_copy: bool = False
     page_numbers: "PageNumberOptions | None" = None
     outline: tuple | None = None
+
+
+# Colour/grayscale images only; keep monochrome scans at their original resolution.
+COMPRESSION_PRESETS = {"high": (300, 92), "balanced": (200, 85),
+                       "send": (150, 80), "small": (120, 72)}
 
 
 @dataclass(frozen=True)
@@ -148,7 +156,9 @@ class _Source:
     def close(self) -> None:
         with self.lock:
             self.closed = True
-            self.doc.close()
+            if self.doc is not None:
+                self.doc.close()
+                self.doc = None
             self.data = b""
             self.password = None
 
@@ -156,6 +166,15 @@ class _Source:
         """调用方需已持有 self.lock。关闭与渲染可能交错，这里挡掉已关闭的文档。"""
         if self.closed:
             raise PdfError("源文档已关闭")
+        if self.doc is None:
+            # Outputs already validated in the worker need no second eager parse
+            # in the GUI process. Open their native preview handle on first use.
+            import pymupdf
+            doc = pymupdf.open(stream=self.data, filetype="pdf")
+            if doc.is_encrypted and doc.authenticate(self.password or "") <= 0:
+                doc.close()
+                raise PdfError("处理结果密码验证失败。")
+            self.doc = doc
         return self.doc
 
     def page_rotation(self, index: int) -> int:
@@ -657,7 +676,8 @@ class PdfStore:
         return options.operation
 
     def write(self, pages: list[PageRef], dest: str, *, progress_callback=None,
-              options: WriteOptions | None = None, register_result: bool = False, cancel=None) -> WriteResult:
+              options: WriteOptions | None = None, register_result: bool = False, cancel=None,
+              _prepare_only=False, _staging_dir=None) -> WriteResult | dict:
         if not pages:
             raise PdfError("没有可保存的页面")
         import pymupdf
@@ -715,11 +735,38 @@ class PdfStore:
                 from app.pdfsecurity import freeze_signatures
                 freeze_signatures(out, progress_callback, cancel)
                 warnings.append("签名外观已冻结，原数字签名效力不会保留；其他表单仍可填写。")
-            if options.compression == "send":
+            if options.compression in (*COMPRESSION_PRESETS, "custom"):
+                dpi, quality = COMPRESSION_PRESETS.get(options.compression,
+                    (options.compression_dpi, options.compression_quality))
+                if not 72 <= dpi <= 600 or not 40 <= quality <= 100:
+                    raise PdfError("图片分辨率须为 72～600 DPI，图片质量须为 40～100。")
                 if progress_callback:
-                    progress_callback(0, 0, "正在将高分辨率图片降采样至 150 DPI · JPEG 质量 80")
-                out.rewrite_images(dpi_threshold=151, dpi_target=150, quality=80,
-                                   bitonal=False)
+                    progress_callback(0, 0, f"正在优化图片 · {dpi} DPI / 质量 {quality}")
+                image_options = pymupdf.mupdf.PdfImageRewriterOptions()
+                lossless_method = pymupdf.mupdf.FZ_RECOMPRESS_JPEG
+                if options.compression == "high":
+                    # Re-encoding an already compressed 300-DPI PNG can spend tens
+                    # of seconds without reducing size. Only rewrite lossless
+                    # images when this document needs resolution reduction.
+                    needs_resample = any(
+                        max(72 * info["width"] / max(.001, math.hypot(*info["transform"][:2])),
+                            72 * info["height"] / max(.001, math.hypot(*info["transform"][2:4]))) > dpi * 1.2
+                        for page in out for info in page.get_image_info())
+                    lossless_method = (pymupdf.mupdf.FZ_RECOMPRESS_SAME if needs_resample
+                                       else pymupdf.mupdf.FZ_RECOMPRESS_NEVER)
+                for colour in ("color", "gray"):
+                    for kind in ("lossy", "lossless"):
+                        prefix = f"{colour}_{kind}_image_"
+                        # High quality keeps lossless line art lossless. Other profiles
+                        # trade some image quality for size, while text stays native.
+                        method = lossless_method if kind == "lossless" else pymupdf.mupdf.FZ_RECOMPRESS_JPEG
+                        setattr(image_options, prefix + "recompress_method", method)
+                        setattr(image_options, prefix + "recompress_quality", str(quality))
+                        setattr(image_options, prefix + "subsample_method", pymupdf.mupdf.FZ_SUBSAMPLE_BICUBIC)
+                        setattr(image_options, prefix + "subsample_threshold", round(dpi * 1.2))
+                        setattr(image_options, prefix + "subsample_to", dpi)
+                image_options.bitonal_image_recompress_method = pymupdf.mupdf.FZ_RECOMPRESS_FAX
+                out.rewrite_images(options=image_options, set_to_gray=options.compression_grayscale)
             elif options.compression not in ("", "quality"):
                 raise PdfError("未知压缩档位")
             check_cancel(cancel)
@@ -740,7 +787,7 @@ class PdfStore:
                 out.subset_fonts()
             expected = document_signature(out)
             os.makedirs(folder, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(suffix=".pdf", prefix=".pdfasm-", dir=folder)
+            fd, tmp = tempfile.mkstemp(suffix=".pdf", prefix=".pdfasm-", dir=_staging_dir or folder)
             os.close(fd)
             if progress_callback:
                 progress_callback(0, 0, f"正在压缩并写入 · {os.path.basename(dest)}")
@@ -751,7 +798,9 @@ class PdfStore:
                 encryption_args = dict(encryption=setting.algorithm,
                                        user_pw=password, owner_pw=setting.owner_password or password,
                                        permissions=setting.permissions)
-            out.save(tmp, garbage=4, deflate=True, raise_on_repair=True, **encryption_args)
+            out.save(tmp, garbage=4, deflate=True, deflate_images=bool(options.compression),
+                     deflate_fonts=bool(options.compression), use_objstms=int(bool(options.compression)),
+                     raise_on_repair=True, **encryption_args)
             out.close()
             out = None
             if progress_callback:
@@ -778,6 +827,14 @@ class PdfStore:
             current_stamp = _file_stamp(dest) if os.path.exists(dest) else None
             if current_stamp != target_stamp:
                 raise PdfError("保存过程中目标文件已改变，原文件未覆盖，请另存新文件。")
+            if _prepare_only:
+                from dataclasses import asdict
+                prepared = dict(temp=tmp, expected=target_stamp, warnings=warnings,
+                    password=password, safety=asdict(candidate.safety),
+                    sizes=[tuple(rect) for rect in candidate.sizes], rotations=candidate.rotations,
+                    label_rules=candidate.label_rules, label_starts=candidate.label_starts)
+                tmp = None
+                return prepared
             result_pages = ()
             if register_result:
                 self._n += 1
@@ -810,7 +867,8 @@ class PdfStore:
                     pass
 
     def write_groups(self, pages: list[PageRef], groups: list[list[int]], dests: list[str], *,
-                     progress_callback=None, options: WriteOptions | None = None, cancel=None) -> tuple[WriteResult, ...]:
+                     progress_callback=None, options: WriteOptions | None = None, cancel=None,
+                     _writer=None) -> tuple[WriteResult, ...]:
         from app.pdfstructure import capture_navigation
         if len(groups) != len(dests):
             raise PdfError("拆分范围与输出文件数量不一致")
@@ -844,7 +902,7 @@ class PdfStore:
                 if progress_callback:
                     progress_callback(index, len(dests), f"文件 {index + 1} / {len(dests)} · {message}")
             try:
-                result = self.write(subset, dest, progress_callback=report, options=options, cancel=cancel)
+                result = (_writer or self.write)(subset, dest, progress_callback=report, options=options, cancel=cancel)
             except OperationCancelled as exc:
                 raise OperationCancelled(f"已取消，已完整写出 {len(results)} 个文件。") from exc
             except WriteNeedsConfirmation:

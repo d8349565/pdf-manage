@@ -77,7 +77,7 @@ def main() -> None:
     for required in ("qjpeg.dll", "qtiff.dll", "pythoncom", "pywintypes", "win32job", "win32process"):
         assert any(required in n for n in names), f"Missing conversion dependency: {required}"
     python_modules = archive.open_embedded_archive("PYZ.pyz").toc
-    for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell",
+    for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell", "app.pdfworker",
                      "win32com.client", "win32com.server.factory", "win32com.server.policy", "win32com.shell.shellcon",
                      "app.documentlayout", "app.documentimages", "app.ocr.export_input", "app.ocr.word_export",
                      "app.pdf2excel.raster_grid", "app.pdf2excel.alignment_grid", "app.textselection",

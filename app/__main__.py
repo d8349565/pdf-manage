@@ -69,6 +69,10 @@ def _start_pdf_warmup() -> None:
 
 def main() -> None:
     mark("qt_imports_ready")
+    if len(sys.argv) == 3 and sys.argv[1] == "--pdf-worker":
+        from app.pdfworker import worker_main
+        worker_main(sys.argv[2])
+        return
     if len(sys.argv) == 3 and sys.argv[1] == "--word-worker":
         from app.wordconvert import worker_main
         worker_main(sys.argv[2])
