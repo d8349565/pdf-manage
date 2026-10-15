@@ -527,8 +527,13 @@ class PdfStore:
         extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
         rotated = page.rect * extra
         extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
-        summary = dict(annotations=annotation_summary(page),
-                       matrix=tuple(page.rotation_matrix * extra))
+        matrix = page.rotation_matrix * extra
+        # Prepared off the GUI thread. Mouse hover never builds text/table snapshots.
+        boxes = tuple(tuple(pymupdf.Rect(word[:4]) * matrix)
+                      for word in page.get_text('words', flags=pymupdf.TEXTFLAGS_WORDS)
+                      if str(word[4]).strip())
+        summary = dict(annotations=annotation_summary(page), text_boxes=boxes,
+                       matrix=tuple(matrix))
         with self._annotation_lock:
             self._annotation_cache[ref.render_key] = summary
             while len(self._annotation_cache) > 128:

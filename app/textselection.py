@@ -23,7 +23,7 @@ class TextSelection(QObject):
         self.view.installEventFilter(self)
         self.view.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.viewport().customContextMenuRequested.connect(self.menu)
-        self.view.setToolTip('拖动框选文字；Ctrl+C 复制；Alt+拖动移动页面')
+        self.view.setToolTip('拖动框选文字；Ctrl+C 复制；按住空格拖动页面（也可 Alt+拖动）')
 
     def clear(self):
         if self.overlay is not None:

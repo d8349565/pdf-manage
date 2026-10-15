@@ -467,7 +467,7 @@ def test_outline_and_annotation_mouse_flow(qapp, tmp_path, monkeypatch):
         tools.delete()
         assert win.ws.pages[0].edits[-1].kind == "delete"
         tools.deactivate()
-        assert win.preview_view.dragMode() == win.preview_view.DragMode.ScrollHandDrag
+        assert win.preview_view.dragMode() == win.preview_view.DragMode.NoDrag
         assert not messages
     finally:
         QThreadPool.globalInstance().waitForDone(30000)

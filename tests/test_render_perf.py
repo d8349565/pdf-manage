@@ -64,7 +64,7 @@ def test_detail_reuses_covered_image_and_rerenders_when_cleared(window, tmp_path
     assert window._load_one(str(source))
     window.refresh()
     _settle(qapp)
-    window._zoom = 4
+    window._set_zoom(4)
     window._apply_view_zoom()
     view = window.preview_view
     page = window.ws.pages[0]
@@ -150,7 +150,7 @@ def test_zoom_out_reuses_the_rendered_image(window, tmp_path, qapp):
     _make_pdf(src)
     assert window._load_one(str(src))
     window.resize(1100, 720)
-    window._zoom = 1.0
+    window._set_zoom(1.0)
     window._update_preview()
     _settle(qapp)
     base = window._preview_image.width()
@@ -193,7 +193,7 @@ def test_zoom_in_still_sharpens(window, tmp_path, qapp):
     _make_pdf(src)
     assert window._load_one(str(src))
     window.resize(1100, 720)
-    window._zoom = 1.0
+    window._set_zoom(1.0)
     window._update_preview()
     _settle(qapp)
     first = window._preview_image.width()

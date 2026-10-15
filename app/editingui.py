@@ -743,7 +743,7 @@ class AnnotationTools(QWidget):
         self._close_inline_replace()
         self.tool.setCurrentIndex(0)
         self.clear_overlay()
-        self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.hide()
         if hasattr(self.host, "review_button"):
             self.host.review_button.setChecked(False)
@@ -770,7 +770,7 @@ class AnnotationTools(QWidget):
             kind = self.tool.currentData()
             self._update_options()
             self.clear_overlay()
-            self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag if kind == "browse" else QGraphicsView.DragMode.NoDrag)
+            self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
             if kind == "browse":
                 self._set_feedback("悬浮查看便签；双击或点击浮层中的编辑按钮修改备注。")
                 return

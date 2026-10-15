@@ -357,7 +357,8 @@ def test_arrange_can_zoom_past_three_hundred_percent(loaded_window):
 
 def test_double_click_arranged_page_opens_it_for_reading(loaded_window):
     window = loaded_window
-    window._set_zoom(0.09)
+    window._set_zoom(1.25)
+    window.stack.setCurrentIndex(1)
     QApplication.processEvents()
     index = window.model.index(2)
     window.arrange_view.scrollTo(index)
@@ -369,13 +370,31 @@ def test_double_click_arranged_page_opens_it_for_reading(loaded_window):
     assert window.stack.currentIndex() == 0
     assert window.page_number.value() == 3
     assert window.ws.selected == {2}
-    assert window._zoom == 1.0
+    assert window._zoom == 1.25
     window._reading_scrolled()
     assert window.ws.preview_index() == 2
     assert not window.ws.dirty
 
 
-def test_zoom_below_ten_percent_enters_arrange_once(loaded_window):
+def test_reading_zoom_selector_stays_inside_toolbar(loaded_window):
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtWidgets import QFrame
+    window = loaded_window
+    selector = window.zoom_mode
+    toolbar = window.findChild(QFrame, 'workbench')
+    for target in (selector, window.preview_view):
+        target.setFocus()
+        QApplication.processEvents()
+        geometry = QRect(selector.mapTo(toolbar, QPoint()), selector.size())
+        assert toolbar.rect().contains(geometry), '缩放下拉框不得超出工具栏或被裁切'
+        assert selector.height() == window.previous_page.height() == 30
+        mode_center = selector.mapTo(window.navigation_bar, selector.rect().center())
+        button_center = window.previous_page.mapTo(window.navigation_bar, window.previous_page.rect().center())
+        assert abs(mode_center.y() - button_center.y()) <= 1
+        assert selector.fontMetrics().height() + 2 <= selector.height()
+
+
+def test_zoom_below_ten_percent_stays_in_reading_at_minimum(loaded_window):
     window = loaded_window
     window.go_to_page(3)
     window._set_zoom(0.20)
@@ -383,7 +402,7 @@ def test_zoom_below_ten_percent_enters_arrange_once(loaded_window):
     window._set_zoom(0.10)
     assert window.stack.currentIndex() == 0
     window.zoom_out()
-    assert window.stack.currentIndex() == 1
+    assert window.stack.currentIndex() == 0
     assert window._zoom == 0.10
     assert window.zoom_label.text() == '10%'
     assert window.ws.preview_index() == 2
@@ -391,5 +410,6 @@ def test_zoom_below_ten_percent_enters_arrange_once(loaded_window):
     window.stack.setCurrentIndex(0)
     assert window.stack.currentIndex() == 0
     assert window._zoom == 0.10
-    expected = window._preview_viewport_width() * 0.10 / window.preview_view.content_width()
+    from app.ui import PDF_LOGICAL_SCALE
+    expected = PDF_LOGICAL_SCALE * 0.10
     assert abs(window.preview_view.transform().m11() - expected) < 0.001

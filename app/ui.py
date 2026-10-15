@@ -117,6 +117,7 @@ RENDER_HIDE_DELAY_MS = 120
 ZOOM_MIN = 0.1
 ZOOM_MAX = 64.0
 ZOOM_STEP = 1.25
+PDF_LOGICAL_SCALE = 96 / 72
 ARRANGE_ZOOM_MIN = 0.5
 ARRANGE_ZOOM_MAX = 10.0
 ARRANGE_ZOOM_STEP = 1.25
@@ -1030,7 +1031,7 @@ class PreviewView(QGraphicsView):
         # 让等待重渲染的这段时间不再是锯齿块。
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
-        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -1083,6 +1084,9 @@ class PreviewView(QGraphicsView):
     def jump_to_page(self, index) -> None:
         if 0 <= index < len(self.page_rects):
             rect = self.page_rects[index]
+            if getattr(self, 'fit_page', False):
+                self.centerOn(rect.center())
+                return
             height = self.viewport().height() / self.transform().m11()
             self.centerOn(rect.center().x(), rect.top() + height / 2 - 4)
 
@@ -1717,6 +1721,7 @@ class MainWindow(QMainWindow):
         self._neighbor_signals = RenderSignals()
         self._neighbor_signals.done.connect(self._on_neighbor)
         self._zoom = 1.0
+        self._zoom_mode = 'page'
         self._arrange_zoom = 1.0
         self._sidebar_w = THUMB_W
         self._last_vp_w = 0
@@ -2320,6 +2325,23 @@ class MainWindow(QMainWindow):
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_bar.addWidget(self.zoom_label)
         zoom_bar.addWidget(self._icon_btn("zoom-in", "放大", self.zoom_in, shortcut="Ctrl+="))
+        self.zoom_mode = QComboBox()
+        self.zoom_mode.setObjectName('readingZoomMode')
+        self.zoom_mode.setAccessibleName("阅读缩放模式")
+        self.zoom_mode.setFixedHeight(30)
+        self.zoom_mode.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.zoom_mode.setStyleSheet('''
+            QComboBox#readingZoomMode {
+                min-height: 28px; max-height: 28px; padding: 0 26px 0 8px; border-radius: 6px;
+                border: 1px solid #D7E8E4;
+            }
+            QComboBox#readingZoomMode:focus { border: 1px solid #0D9488; }
+            QComboBox#readingZoomMode::drop-down { width: 22px; }
+        ''')
+        for label, mode in (("适合页面", "page"), ("适合宽度", "width"), ("自定义缩放", "custom")):
+            self.zoom_mode.addItem(label, mode)
+        self.zoom_mode.currentIndexChanged.connect(lambda: self._set_zoom_mode(self.zoom_mode.currentData()))
+        zoom_bar.addWidget(self.zoom_mode, 0, Qt.AlignmentFlag.AlignVCenter)
         zoom_bar.addWidget(self._icon_btn("fit-width", "适合宽度", self.zoom_fit, shortcut="Ctrl+0"))
         zoom_bar.addWidget(self._action_btn(self.act_pages))
         zoom_bar.addWidget(self._action_btn(self.act_tools))
@@ -2366,6 +2388,8 @@ class MainWindow(QMainWindow):
         self.search_bar = SearchBar(self)
         from app.textselection import TextSelection
         self.text_selection = TextSelection(self)
+        from app.readerinteraction import ReaderInteraction
+        self.reader_interaction = ReaderInteraction(self)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -2435,9 +2459,8 @@ class MainWindow(QMainWindow):
         if not index.isValid() or not 0 <= index.row() < len(self.ws.pages):
             return
         self.ws.select_index(index.row())
-        self._zoom = 1.0
-        self.zoom_label.setText("100%")
         self.stack.setCurrentIndex(0)
+        self._update_preview()
         self.preview_view.jump_to_page(index.row())
         self.preview_view.setFocus()
 
@@ -2737,6 +2760,7 @@ class MainWindow(QMainWindow):
     def refresh(self, *_args) -> None:
         if getattr(self, "_refreshing", False):
             return
+        self.reader_interaction.reset()
         self._refreshing = True
         self._syncing = True
         try:
@@ -3114,28 +3138,26 @@ class MainWindow(QMainWindow):
         if self._in_arrange():
             self.arrange_zoom_fit()
             return
-        self._set_zoom(1.0)
+        self._set_zoom_mode('width')
+
+    def _set_zoom_mode(self, mode) -> None:
+        self._zoom_mode = mode
+        self.zoom_mode.blockSignals(True)
+        self.zoom_mode.setCurrentIndex(self.zoom_mode.findData(mode))
+        self.zoom_mode.blockSignals(False)
+        self._apply_view_zoom()
+        self._preview_timer.start()
+        index = self.ws.preview_index()
+        if index is not None and mode != 'custom':
+            self.preview_view.jump_to_page(index)
 
     def _on_zoom_steps(self, steps: int) -> None:
         self._set_zoom(zoom_by_steps(self._zoom, steps, ZOOM_STEP))
 
     def _set_zoom(self, value: float) -> None:
-        if value < ZOOM_MIN and self.ws.pages and not self._in_arrange():
-            self._zoom = ZOOM_MIN
-            self.zoom_label.setText(f"{int(round(ZOOM_MIN * 100))}%")
-            self._preview_timer.stop()
-            self._detail_timer.stop()
-            self._reading_timer.stop()
-            self.stack.setCurrentIndex(1)
-            self.statusBar().showMessage("已切换到整理页面 · 点击「阅读」返回", 4000)
-            return
         zoom = max(ZOOM_MIN, min(ZOOM_MAX, round(value, 3)))
-        if abs(zoom - self._zoom) < 0.001:
-            return
         self._zoom = zoom
-        self.zoom_label.setText(f"{int(round(self._zoom * 100))}%")
-        self._apply_view_zoom()
-        self._preview_timer.start()
+        self._set_zoom_mode('custom')
 
     def arrange_zoom_in(self) -> None:
         self._set_arrange_zoom(self._arrange_zoom * ARRANGE_ZOOM_STEP)
@@ -3165,8 +3187,10 @@ class MainWindow(QMainWindow):
 
     def _preview_render_width(self) -> int:
         dpr = max(self.devicePixelRatioF(), 1.0)
-        raw = int(self._preview_viewport_width() * dpr * self._zoom)
-        snapped = max(64, (raw // 64) * 64)
+        index = self.ws.preview_index()
+        page_width = self.store.page_size(self.ws.pages[index])[0] if index is not None else 480
+        raw = math.ceil(page_width * self._zoom * PDF_LOGICAL_SCALE * dpr)
+        snapped = max(64, ((raw + 63) // 64) * 64)
         limit = PREVIEW_MAX_W
         index = self.ws.preview_index()
         if index is not None:
@@ -3221,6 +3245,7 @@ class MainWindow(QMainWindow):
         if arrange_sel is not None:
             arrange_sel.setText(caption)
         if not self.ws.pages:
+            self._zoom_mode = 'page'
             self._preview_busy = False
             self._detail_busy = False
             self._preview_image = None
@@ -3322,8 +3347,9 @@ class MainWindow(QMainWindow):
         if self._scroll_y is not None and abs(visible.top() - self._scroll_y) > .1:
             self._scroll_direction = 1 if visible.top() > self._scroll_y else -1
         self._scroll_y = visible.top()
-        # 顶部四分之一区域决定当前页，页间空隙仍归最近的页面。
-        y = visible.top() + min(visible.height() / 4, 100)
+        # 整页居中时短页上方可能仍露出上一页，必须按中心判断当前页。
+        y = (visible.center().y() if self._zoom_mode == 'page'
+             else visible.top() + min(visible.height() / 4, 100))
         index = view.page_at_y(y)
         if index != self.ws.preview_index():
             self._scroll_navigation = True
@@ -3614,22 +3640,41 @@ class MainWindow(QMainWindow):
         self._apply_view_zoom()
 
     def _apply_view_zoom(self) -> None:
-        scene_w = self.preview_view.content_width()
-        if scene_w <= 0:
+        view = self.preview_view
+        index = self.ws.preview_index()
+        if (getattr(self, '_applying_zoom', False) or index is None
+                or not 0 <= index < len(view.page_rects)):
             return
-        factor = (self._preview_viewport_width() * self._zoom) / scene_w
-        if abs(self.preview_view.transform().m11() - factor) > 0.00001:
-            center = self.preview_view.mapToScene(self.preview_view.viewport().rect().center())
-            self.preview_view.clear_detail()
+        self._applying_zoom = True
+        try:
+            rect = view.page_rects[index]
+            mode = self._zoom_mode
+            factor = self._zoom * PDF_LOGICAL_SCALE
+            if mode in ('width', 'page'):
+                factor = max(1, view.viewport().width() - 24) / max(1, rect.width())
+                if mode == 'page':
+                    factor = min(factor, max(1, view.viewport().height() - 24) / max(1, rect.height()))
+                self._zoom = factor / PDF_LOGICAL_SCALE
+            view.fit_page = mode == 'page'
+            self.zoom_label.setText(f"{self._zoom * 100:.0f}%")
+            self.zoom_mode.blockSignals(True)
+            self.zoom_mode.setCurrentIndex(self.zoom_mode.findData(mode))
+            self.zoom_mode.blockSignals(False)
+            if abs(view.transform().m11() - factor) <= 0.00001:
+                return
+            center = view.mapToScene(view.viewport().rect().center())
+            view.clear_detail()
             self._detail_key = None
             updating = self._reader_updating
             self._reader_updating = True
             try:
-                self.preview_view.setTransform(QTransform.fromScale(factor, factor))
-                self.preview_view.centerOn(center)
-                self.preview_view.view_changed.emit()
+                view.setTransform(QTransform.fromScale(factor, factor))
+                view.centerOn(rect.center() if mode == 'page' else center)
+                view.view_changed.emit()
             finally:
                 self._reader_updating = updating
+        finally:
+            self._applying_zoom = False
         if not self._scrolling:
             self._detail_timer.start()
 
@@ -3794,6 +3839,7 @@ class MainWindow(QMainWindow):
                         self._release_unused_docs()
                         return False
             self.ws.reset()
+            self._zoom_mode = 'page'
             for path, pages in batches:
                 self.ws.load_first_or_merge(pages, path)
             self.refresh()
@@ -3847,6 +3893,7 @@ class MainWindow(QMainWindow):
             return None
         incoming_outline = self.store.outline_entries(pages, group_sources=True) if self.ws.outline is not None else None
         if not self.ws.pages:
+            self._zoom_mode = 'page'
             self.ws.open_replace(pages, os.path.abspath(path))
         elif insert_at is not None:
             self.ws.insert_pages(pages, at_index=insert_at, outline=incoming_outline)

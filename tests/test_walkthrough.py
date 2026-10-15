@@ -385,13 +385,16 @@ def test_zoom_in_renders_wider(window, tmp_path):
     _make_pdf(src, 1, "C")
     assert window._load_one(str(src))
     window.resize(1100, 720)
-    window._zoom = 1.0
+    window._set_zoom(1.0)
     base = window._preview_render_width()
     window.zoom_in()
     assert window._zoom > 1
     assert window._preview_render_width() > base
     window.zoom_fit()
-    assert window._zoom == 1.0
+    assert window._zoom_mode == 'width'
+    width = window.preview_view.page_rects[window.ws.preview_index()].width()
+    assert window.preview_view.transform().m11() * width == pytest.approx(
+        window.preview_view.viewport().width() - 24, abs=2)
 
 
 def test_wheel_zoom_is_debounced(window, tmp_path):
@@ -408,7 +411,7 @@ def test_wheel_zoom_is_debounced(window, tmp_path):
 
     window._update_preview = wrapped
     calls["n"] = 0
-    window._zoom = 1.0
+    window._set_zoom(1.0)
     for _ in range(8):
         window._set_zoom(min(ZOOM_MAX, window._zoom * ZOOM_STEP))
     assert calls["n"] == 0
@@ -499,13 +502,15 @@ def test_arrange_wheel_zoom_uses_the_same_steps(window, tmp_path):
 
 def test_zoom_shortcuts_follow_the_visible_view(window, tmp_path):
     _enter_arrange(window, tmp_path)
+    reading_zoom = window._zoom
     window.zoom_in()
     assert window._arrange_zoom > 1.0
-    assert window._zoom == 1.0
+    assert window._zoom == reading_zoom
 
     window.stack.setCurrentIndex(0)
+    before = window._zoom
     window.zoom_out()
-    assert window._zoom < 1.0
+    assert window._zoom < before
     assert window._arrange_zoom > 1.0
 
 
