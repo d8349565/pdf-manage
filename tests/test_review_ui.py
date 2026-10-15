@@ -55,6 +55,9 @@ def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
     monkeypatch.setattr(reader.rendering, "request", lambda ref, width, key, *args, **kwargs: requests.append(key))
     dialog = WatermarkDialog(reader)
     try:
+        assert dialog.color.name() == "#666666"
+        assert dialog.size.value() == 50 and dialog.opacity.value() == 15
+        assert dialog.angle.value() == 30
         reader._page_images.clear()
         color = (dialog.color.redF(), dialog.color.greenF(), dialog.color.blueF())
         sprite = QImage(200, 72, QImage.Format.Format_ARGB32_Premultiplied)
@@ -77,6 +80,13 @@ def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
         edit = dialog.edit(reader.ws.pages[0])
         assert dict(edit.details)["offset"] == (.2, .8)
         assert dict(edit.details)["position"] == "custom"
+        dialog.kind.setCurrentIndex(dialog.kind.findData("image"))
+        assert dialog.angle.value() == 0
+        dialog.angle.setValue(-15)
+        dialog.kind.setCurrentIndex(dialog.kind.findData("text"))
+        assert dialog.angle.value() == 90
+        dialog.kind.setCurrentIndex(dialog.kind.findData("image"))
+        assert dialog.angle.value() == -15
         dialog.kind.setCurrentIndex(dialog.kind.findData("remove"))
         dialog.preview()
         current = requests[-1]

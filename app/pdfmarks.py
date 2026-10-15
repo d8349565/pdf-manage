@@ -169,6 +169,15 @@ def watermark_base(text, color, image=""):
             original.insert_font(fontname=name, fontbuffer=buffer)
             if original.insert_textbox(original.rect, text, fontname=name, fontsize=36, color=color, align=1) < 0:
                 raise ValueError("文字水印放不下，请减少内容。")
+            # 用实际字形边界定位，避免文本框下方的空白让旋转水印看起来偏心。
+            ink = p.Rect()
+            for kind, bounds in original.get_bboxlog():
+                if kind in ("fill-text", "stroke-text"):
+                    ink |= p.Rect(bounds)
+            if ink.is_empty or not all(math.isfinite(value) for value in ink):
+                raise ValueError("水印文字没有可显示的内容。")
+            original.set_cropbox((ink + (-3, -3, 3, 3)) & original.rect)
+            width, height = original.rect.width, original.rect.height
             base.delete_page(0)
             base.subset_fonts()
         return base.tobytes(), float(width), float(height)

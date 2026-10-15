@@ -49,11 +49,12 @@ class WatermarkDialog(QDialog):
     def __init__(self, host):
         super().__init__(host)
         self.host, self.image = host, ""
-        self.color = QColor("#64748B")
+        self.color = QColor("#666666")
         self._closed = self._applying = False
         self._version = 0
         self._ready_version = None
         self._mode = None
+        self._angles = {"text": 30, "image": 0}
         self.custom_position = (.5, .5)
         self.tile_offset = (.5, .5)
         self._background_key = None
@@ -120,13 +121,13 @@ class WatermarkDialog(QDialog):
         self.appearance_group, appearance = self.group("外观", left)
         self.size = QSpinBox()
         self.size.setRange(10, 90)
-        self.size.setValue(35)
+        self.size.setValue(50)
         self.size.setSuffix("%")
         self.size.setToolTip("水印宽度占页面宽度的比例")
         appearance.addRow("大小", self.slider_row(self.size))
         self.opacity = QSpinBox()
         self.opacity.setRange(5, 100)
-        self.opacity.setValue(20)
+        self.opacity.setValue(15)
         self.opacity.setSuffix("%")
         self.opacity.setToolTip("数值越小，水印越淡")
         appearance.addRow("不透明度", self.slider_row(self.opacity))
@@ -155,7 +156,7 @@ class WatermarkDialog(QDialog):
         placement.addRow("位置", position_row)
         self.angle = QSpinBox()
         self.angle.setRange(-180, 180)
-        self.angle.setValue(45)
+        self.angle.setValue(self._angles["text"])
         self.angle.setSuffix("°")
         placement.addRow("旋转", self.angle)
         self.tile = QCheckBox("平铺到整页")
@@ -289,7 +290,11 @@ class WatermarkDialog(QDialog):
     def sync(self, *_):
         kind = self.kind.currentData()
         if kind != self._mode:
+            if self._mode in self._angles:
+                self._angles[self._mode] = self.angle.value()
             self._mode = kind
+            if kind in self._angles:
+                self.angle.setValue(self._angles[kind])
             self._content_pending = False
             self.content_timer.stop()
             self.preview_label.asset = None

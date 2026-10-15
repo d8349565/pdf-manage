@@ -9,7 +9,7 @@ from PyQt6.QtCore import QRectF
 from app.output import OperationCancelled, cancellable_lock
 from app.pdfedits import apply_edits
 from app.pdfmarks import is_watermark
-from app.pdfmarks import set_appearance, watermark_layout
+from app.pdfmarks import set_appearance, watermark_base, watermark_layout
 from app.printing import PrintOptions, build_sheets, face_cells, face_pages
 from app.ui import MainWindow
 from app.workspace import PageEdit, PageRef
@@ -35,6 +35,24 @@ def test_custom_watermark_position_adapts_to_each_page(width, height):
     assert x / (width - mw) == pytest.approx(.2)
     assert y / (height - mh) == pytest.approx(.8)
     assert 0 <= x <= width - mw and 0 <= y <= height - mh
+
+
+@pytest.mark.parametrize("text", ["仅供参考", "CONFIDENTIAL", "Agyp", "仅供\n内部参考"])
+def test_text_watermark_uses_glyph_bounds_for_visual_center(text):
+    data, width, height = watermark_base(text, (.4, .4, .4))
+    with p.open(stream=data, filetype="pdf") as doc:
+        page = doc[0]
+        assert page.rect.width == pytest.approx(width)
+        assert page.rect.height == pytest.approx(height)
+        ink = p.Rect()
+        for kind, bounds in page.get_bboxlog():
+            if kind in ("fill-text", "stroke-text"):
+                ink |= p.Rect(bounds)
+        assert not ink.is_empty
+        assert 0 <= width - ink.width <= 6.1
+        assert 0 <= height - ink.height <= 6.1
+        assert abs((ink.x0 + ink.x1) / 2 - width / 2) <= 3.1
+        assert abs((ink.y0 + ink.y1) / 2 - height / 2) <= 3.1
 
 
 def test_tiled_watermark_drag_moves_the_pattern_and_keeps_edge_coverage():
