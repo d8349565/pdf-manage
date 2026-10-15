@@ -74,7 +74,8 @@ def main() -> None:
                                 for p in internal.rglob("*") if p.is_file()}
     assert any("qwindows.dll" in n for n in names)
     assert any("Qt6PrintSupport.dll" in n for n in names)
-    for required in ("qjpeg.dll", "qtiff.dll", "pythoncom", "pywintypes", "win32job", "win32process"):
+    for required in ("qjpeg.dll", "qtiff.dll", "pythoncom", "pywintypes", "win32job", "win32process",
+                     "Qt6Network.dll", "qschannelbackend.dll", "QtNetwork.pyd"):
         assert any(required in n for n in names), f"Missing conversion dependency: {required}"
     python_modules = archive.open_embedded_archive("PYZ.pyz").toc
     for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell", "app.pdfworker",
@@ -82,7 +83,7 @@ def main() -> None:
                      "app.documentlayout", "app.documentimages", "app.ocr.export_input", "app.ocr.word_export",
                      "app.pdf2excel.raster_grid", "app.pdf2excel.alignment_grid", "app.textselection",
                      "app.pdf2excel.page_builder", "PIL.Image", "PIL.PngImagePlugin",
-                     "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "markdown"):
+                     "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "app.updates", "markdown"):
         assert required in python_modules, f"Missing module: {required}"
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
     for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "rapidocr", "onnxruntime", "cv2", "pandas", "lxml", "libssl", "libcrypto"):

@@ -1740,6 +1740,11 @@ class MainWindow(QMainWindow):
         if isinstance(geometry, QByteArray):
             self.restoreGeometry(geometry)
         self._restore_ui_preferences()
+        from app.updates import UpdateChecker
+        self.updates = UpdateChecker(self._window_settings, self)
+        self.updates.changed.connect(self._update_release_notice)
+        self._notified_update_tag = ""
+        self._update_release_notice()
         for signal in (self.act_pages.toggled, self.act_tools.toggled, self.sidebar_mode.currentIndexChanged,
                        self.export_tools.currentChanged):
             signal.connect(self._save_ui_preferences)
@@ -1958,7 +1963,7 @@ class MainWindow(QMainWindow):
         view.addAction(self._act("缩小", self.zoom_out, QKeySequence.StandardKey.ZoomOut))
         view.addAction(self._act("适合宽度", self.zoom_fit, QKeySequence("Ctrl+0")))
         self.about_action = self._act("关于", self.show_about)
-        self.about_action.setStatusTip("查看版本、项目地址与赞赏信息")
+        self.about_action.setStatusTip("查看版本、检查更新、项目地址与赞赏信息")
         self._menubar.addAction(self.about_action)
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -1971,9 +1976,19 @@ class MainWindow(QMainWindow):
 
     def show_about(self) -> None:
         from app.aboutui import AboutDialog
-        dialog = AboutDialog(self)
+        dialog = AboutDialog(self, updates=self.updates)
         dialog.exec()
         dialog.deleteLater()
+
+    def _update_release_notice(self) -> None:
+        available = self.updates.update_available
+        self.about_action.setText("关于 · 有新版本" if available else "关于")
+        self.about_action.setStatusTip(
+            f"发现新版本 {self.updates.latest_tag}，点击获取" if available
+            else "查看版本、检查更新、项目地址与赞赏信息")
+        if available and self._notified_update_tag != self.updates.latest_tag:
+            self._notified_update_tag = self.updates.latest_tag
+            self.statusBar().showMessage(f"发现新版本 {self.updates.latest_tag}，点击“关于 · 有新版本”获取。", 15000)
 
     def manage_storage(self) -> None:
         from app.storageui import StorageDialog
@@ -4524,6 +4539,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self.confirm_leave():
+            self.updates.stop()
             self._save_ui_preferences()
             self.search_bar.cancel()
             self._reading_timer.stop()

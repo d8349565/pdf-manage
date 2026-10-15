@@ -82,6 +82,7 @@ class _ShellController(QObject):
         self.windows.append(window)
         window.destroyed.connect(lambda _=None, w=window: self.forget(w))
         window.show()
+        window.updates.start()
         # COM 回调立即返回，读取和错误反馈交给窗口的正常加载流程。
         QTimer.singleShot(0, lambda: window.open_startup_files(paths, "merge"))
 

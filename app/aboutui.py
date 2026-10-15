@@ -3,20 +3,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSettings, QSize, Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
-from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, __version__
+from app import APP_NAME, APP_ORGANIZATION, APP_PROJECT_URL, APP_SLUG, __version__
 from app.icons import brand_icon, toolbar_icon
+from app.updates import UpdateChecker
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, updates=None):
         super().__init__(parent)
+        self.updates = updates if updates is not None else UpdateChecker(QSettings(APP_ORGANIZATION, APP_SLUG), self)
         self.setObjectName("aboutDialog")
         self.setWindowTitle(f"关于 {APP_NAME}")
         self.setWindowIcon(brand_icon())
@@ -51,6 +53,9 @@ class AboutDialog(QDialog):
             }
             QDialog#aboutDialog QPushButton:hover { background: #0D9488; }
             QDialog#aboutDialog QPushButton:focus { border: 2px solid #173C36; }
+            QDialog#aboutDialog QPushButton:disabled {
+                background: #E3EBE6; color: #65796E; border-color: #D6E3DD;
+            }
         """)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -134,6 +139,40 @@ class AboutDialog(QDialog):
         details.addWidget(project, 1, 1)
         content.addWidget(info)
 
+        updates_card = QFrame()
+        updates_card.setObjectName("aboutCard")
+        updates_layout = QVBoxLayout(updates_card)
+        updates_layout.setContentsMargins(16, 12, 16, 12)
+        updates_layout.setSpacing(10)
+        self.update_status = QLabel()
+        self.update_status.setObjectName("aboutUpdateStatus")
+        self.update_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.update_status.setWordWrap(True)
+        updates_layout.addWidget(self.update_status)
+        update_buttons = QHBoxLayout()
+        self.check_update_button = QPushButton("检查更新")
+        self.check_update_button.setObjectName("aboutCheckUpdates")
+        self.check_update_button.clicked.connect(self.updates.check)
+        update_buttons.addWidget(self.check_update_button)
+        self.get_update_button = QPushButton("打开发布页")
+        self.get_update_button.setObjectName("aboutGetUpdate")
+        self.get_update_button.clicked.connect(self.updates.open_release_page)
+        update_buttons.addWidget(self.get_update_button)
+        update_buttons.addStretch()
+        updates_layout.addLayout(update_buttons)
+        self.auto_updates = QCheckBox("自动检查更新（每天最多一次）")
+        self.auto_updates.setObjectName("aboutAutoUpdates")
+        self.auto_updates.setChecked(self.updates.automatic)
+        self.auto_updates.toggled.connect(self.updates.set_automatic)
+        updates_layout.addWidget(self.auto_updates)
+        update_note = QLabel("手动检查或开启自动检查时向 GitHub 查询版本，不上传文档。下载后请关闭软件，再运行安装包。")
+        update_note.setObjectName("aboutMuted")
+        update_note.setWordWrap(True)
+        updates_layout.addWidget(update_note)
+        content.addWidget(updates_card)
+        self.updates.changed.connect(self._refresh_updates)
+        self._refresh_updates()
+
         support = QVBoxLayout()
         support.setSpacing(8)
         heading = QLabel("♡  赞赏项目")
@@ -191,8 +230,17 @@ class AboutDialog(QDialog):
         footer.addWidget(close_button)
         layout.addLayout(footer)
         close_button.setFocus()
-        height = 780 if not pixmap.isNull() else 400
+        height = 960 if not pixmap.isNull() else 610
         self.resize(620, min(height, self.screen().availableGeometry().height() - 48))
+
+    def _refresh_updates(self) -> None:
+        message = self.updates.message
+        if self.updates.update_available and not self.updates.busy and not message.startswith("发现新版本"):
+            message = f"可获取新版本 {self.updates.latest_tag}。\n{message}"
+        self.update_status.setText(message)
+        self.check_update_button.setEnabled(not self.updates.busy)
+        self.check_update_button.setText("正在检查…" if self.updates.busy else "检查更新")
+        self.get_update_button.setText("获取新版本 ↗" if self.updates.update_available else "打开发布页 ↗")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 68:

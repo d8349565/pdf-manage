@@ -125,6 +125,7 @@ def main() -> None:
         win.first_painted.connect(_start_pdf_warmup, Qt.ConnectionType.QueuedConnection)
     win.show()
     mark("window_shown")
+    win.updates.start()
     if paths or shell_mode:
         # 首屏已经是阅读区的加载状态，实际读取继续在后台进行。
         QTimer.singleShot(0, lambda: win.open_startup_files(paths, shell_mode))

@@ -31,6 +31,10 @@ PE_VERSION = VSVersionInfo(
 )
 
 DROP = (
+    # QtNetwork's hook can discover unrelated OpenSSL DLLs in the build environment.
+    # The packaged Windows TLS backend only needs system Schannel.
+    "libssl",
+    "libcrypto",
     "qt6quick",
     "qt6qml",
     "qt6pdf",
@@ -79,6 +83,7 @@ KEEP_PLUGIN = (
     "plugins/imageformats/qtiff",
     "plugins/iconengines/qsvgicon",
     "plugins/styles/qmodernwindowsstyle",
+    "plugins/tls/qschannelbackend",
 )
 
 
@@ -136,6 +141,7 @@ a = Analysis(
         "PyQt6.QtWidgets",
         "PyQt6.QtSvg",
         "PyQt6.QtPrintSupport",
+        "PyQt6.QtNetwork",
         "PyQt6.sip",
         "ctypes.wintypes",
         "win32com.client",
@@ -170,8 +176,8 @@ a = Analysis(
         "PIL._webp",
         "lxml",
         "IPython",
-        # 应用只处理本机文件；hashlib 可使用 CPython 自带的算法实现。
-        # 不收集未使用的 Python TLS / OpenSSL，MuPDF 的 PDF 加密不受影响。
+        # 更新检查使用 Qt Network + Windows Schannel；不携带 Python TLS / OpenSSL。
+        # hashlib 可使用 CPython 自带的算法实现，MuPDF 的 PDF 加密不受影响。
         "ssl",
         "_ssl",
         "_hashlib",

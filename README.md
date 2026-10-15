@@ -2,11 +2,11 @@
 
 **免费、开源、离线的 Windows PDF 工具箱。** 阅读、整理、打印、压缩加密、格式转换，一个窗口搞定。
 
-文件只在你的电脑上处理，不联网、不上传、不用登录。
+文件只在你的电脑上处理，不上传文档、不用登录。默认不自动联网；手动检查更新或主动开启自动检查时，会向 GitHub 查询版本。
 
 [![下载](https://img.shields.io/badge/下载-Windows%20安装包-0078d4?labelColor=444c56)](https://github.com/d8349565/pdf-manage/releases/latest)
 [![License MIT](https://img.shields.io/badge/License-MIT-0078d4?labelColor=444c56)](LICENSE)
-[![隐私 不联网不上传](https://img.shields.io/badge/隐私-不联网不上传-2ea043?labelColor=444c56)](#使用前请注意)
+[![隐私 文档本地处理](https://img.shields.io/badge/隐私-文档本地处理-2ea043?labelColor=444c56)](#使用前请注意)
 
 [更新记录](CHANGELOG.md)
 
@@ -22,7 +22,7 @@
 
 ## 快速开始
 
-1. 到 [Releases](https://github.com/d8349565/pdf-manage/releases/latest) 下载并运行 `ZhiXuPDF-Setup.exe`。
+1. 到 [Releases](https://github.com/d8349565/pdf-manage/releases/latest) 下载并运行 `ZhiXuPDF-Setup.exe`。下载[OCR包](https://github.com/d8349565/pdf-manage/releases/download/v0.5.6/ZhiXuPDF-OCR-win-x64.zip)在软件中导入才能使用OCR功能。
 2. 把 PDF 拖进窗口。
 3. 在“阅读”里看，在“整理”里改，完成后点“保存”；想保留原文件就点“另存为”。
 
