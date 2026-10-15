@@ -385,15 +385,27 @@ class Workspace:
             self.select_all = False
 
     def move_page(self, src: int, dst: int) -> None:
+        self.move_pages([src], dst)
+
+    def move_pages(self, sources: list[int], dst: int) -> None:
+        """整组选区按原顺序移动；向前落在目标之前，向后落在目标之后。"""
         n = len(self.pages)
-        dst = drop_target(src, dst, n)
-        if src < 0 or src >= n or src == dst:
+        rows = sorted(set(sources))
+        if not rows or any(row < 0 or row >= n for row in rows):
             return
-        after = list(self.pages)
-        page = after.pop(src)
-        after.insert(dst, page)
+        if 0 <= dst < n and dst in rows:
+            return
+        boundary = n if dst < 0 or dst >= n else dst + (dst > rows[0])
+        start = boundary - sum(row < boundary for row in rows)
+        chosen = set(rows)
+        moving = [self.pages[row] for row in rows]
+        after = [page for row, page in enumerate(self.pages) if row not in chosen]
+        after[start:start] = moving
+        if after == self.pages:
+            return
+        current = start + (rows.index(self.selected_index) if self.selected_index in chosen else 0)
         self._push(after, self.path, "重排")
-        self.select_index(dst)
+        self.set_selection(set(range(start, start + len(rows))), current)
 
     def insert_pages(self, incoming: list[PageRef], at_index: int | None = None, outline=None) -> None:
         if not incoming:

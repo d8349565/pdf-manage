@@ -88,7 +88,7 @@ from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
 from app.pdfio import (NeedPassword, PdfError, PdfStore, WriteNeedsConfirmation,
                        WriteOptions, apply_output_conflicts, is_encrypted_file)
-from app.workspace import Workspace, drop_target, parse_page_range, parse_range_segments
+from app.workspace import Workspace, parse_page_range, parse_range_segments
 from app.startup import mark
 from app.storage import TemporaryWorkspace, export_path, output_directory
 from app.rendering import RenderResult, RenderScheduler, RenderSignals
@@ -831,13 +831,6 @@ class PageListView(QListView):
             self.setResizeMode(QListView.ResizeMode.Adjust)
             self.setSpacing(12)
             self.setGridSize(QSize())
-            self.setDragEnabled(True)
-            self.setAcceptDrops(True)
-            # 落点由 paintEvent 自己画：Qt 自带的指示器只在 dragMoveEvent 交给基类
-            # 处理时才会更新，而这里的落点规则是自己定的。
-            self.setDropIndicatorShown(False)
-            self.setDragDropMode(QListView.DragDropMode.DragDrop)
-            self.setDefaultDropAction(Qt.DropAction.MoveAction)
         else:
             self.setViewMode(QListView.ViewMode.IconMode)
             self.setFlow(QListView.Flow.TopToBottom)
@@ -847,8 +840,13 @@ class PageListView(QListView):
             # 竖条常驻：viewport 宽度就不会随内容变，缩略图宽度也就定得死。宽度里已经
             # 留出滚动条的位置，条目正好占满，不会再多出一条横向滚动条。
             self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-            self.setDragEnabled(False)
-            self.setAcceptDrops(False)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        # 落点由 paintEvent 自己画：Qt 自带的指示器只在 dragMoveEvent 交给基类
+        # 处理时才会更新，而这里的落点规则是自己定的。
+        self.setDropIndicatorShown(False)
+        self.setDragDropMode(QListView.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
 
     def _drop_row_at(self, pos) -> int:
         """落点格：拖到空白处按「落到末尾」算，与 drop_target 的口径一致。"""
@@ -908,16 +906,19 @@ class PageListView(QListView):
         self._drop_fade.start()
 
     def startDrag(self, supportedActions) -> None:
+        indexes = self.selectedIndexes()
         index = self.currentIndex()
-        if not self._arrange or not index.isValid():
+        if not indexes:
             return
+        if index not in indexes:
+            index = indexes[0]
         # 抓取已显示的缩略图，不为拖动重新解析或渲染 PDF。
         rect = self.visualRect(index).intersected(self.viewport().rect())
         if rect.isEmpty():
             return
         pix = self.viewport().grab(rect)
         drag = QDrag(self)
-        drag.setMimeData(self.model().mimeData([index]))
+        drag.setMimeData(self.model().mimeData(indexes))
         drag.setPixmap(pix)
         drag.setHotSpot(rect.center() - rect.topLeft())
         try:
@@ -927,14 +928,14 @@ class PageListView(QListView):
             drag.deleteLater()
 
     def dragEnterEvent(self, event) -> None:
-        if self._arrange and event.mimeData().hasFormat(MIME):
+        if event.mimeData().hasFormat(MIME):
             self._set_drop_row(self._drop_row_at(event.position().toPoint()))
             event.acceptProposedAction()
             return
         event.ignore()
 
     def dragMoveEvent(self, event) -> None:
-        if self._arrange and event.mimeData().hasFormat(MIME):
+        if event.mimeData().hasFormat(MIME):
             self._set_drop_row(self._drop_row_at(event.position().toPoint()))
             event.acceptProposedAction()
             return
@@ -945,7 +946,7 @@ class PageListView(QListView):
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event) -> None:
-        if not self._arrange or not event.mimeData().hasFormat(MIME):
+        if not event.mimeData().hasFormat(MIME):
             event.ignore()
             return
         model = self.model()
@@ -954,7 +955,7 @@ class PageListView(QListView):
             event.ignore()
             return
         try:
-            src = int(bytes(event.mimeData().data(MIME)).decode("utf-8"))
+            sources = [int(row) for row in bytes(event.mimeData().data(MIME)).decode("utf-8").split(",")]
         except (ValueError, UnicodeDecodeError):
             self._set_drop_row(None)
             event.ignore()
@@ -964,11 +965,15 @@ class PageListView(QListView):
         dest = hit.row() if hit.isValid() else -1
         count = model.rowCount()
         self._set_drop_row(None)
-        model.ws.move_page(src, drop_target(src, dest, count))
+        if not sources or any(row < 0 or row >= count for row in sources):
+            event.ignore()
+            return
+        model.ws.move_pages(sources, dest)
         event.acceptProposedAction()
         model.reordered.emit()
-        if 0 <= src < count:
-            QTimer.singleShot(0, lambda: self._show_landing(drop_target(src, dest, count)))
+        landing = model.ws.selected_index
+        if landing is not None:
+            QTimer.singleShot(0, lambda: self._show_landing(landing))
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -1309,7 +1314,7 @@ class PageListModel(QAbstractListModel):
         mime = QMimeData()
         rows = sorted({i.row() for i in indexes if i.isValid()})
         if rows:
-            mime.setData(MIME, str(rows[0]).encode("utf-8"))
+            mime.setData(MIME, ",".join(map(str, rows)).encode("utf-8"))
         return mime
 
     def dropMimeData(self, data, action, row, column, parent):
@@ -2122,8 +2127,9 @@ class MainWindow(QMainWindow):
             self.insert_action.setEnabled(not read_only)
         if hasattr(self, "insert_button"):
             self.insert_button.setEnabled(not read_only)
-        self.arrange_view.setDragEnabled(not read_only)
-        self.arrange_view.setAcceptDrops(not read_only)
+        for view in (self.left_view, self.arrange_view):
+            view.setDragEnabled(not read_only)
+            view.setAcceptDrops(not read_only)
         selected = bool(self.ws.target_indices())
         self.delete_action.setEnabled(selected and not read_only)
         for button in self._selection_buttons:

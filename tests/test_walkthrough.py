@@ -712,6 +712,56 @@ def test_animated_drop_moves_page_and_supports_undo(window, tmp_path, qapp):
     assert window.ws.pages == before
 
 
+@pytest.mark.parametrize("arrange", [False, True])
+@pytest.mark.parametrize("rows, order", [
+    ([0], [1, 2, 3, 0]),
+    ([0, 1], [2, 3, 0, 1]),
+    ([0, 2], [1, 3, 0, 2]),
+])
+def test_page_drag_moves_whole_selection(window, tmp_path, qapp, monkeypatch, arrange, rows, order):
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtGui import QDrag, QDropEvent
+    import app.ui as ui
+
+    _enter_arrange(window, tmp_path)
+    window.stack.setCurrentIndex(1 if arrange else 0)
+    qapp.processEvents()
+    view = window.arrange_view if arrange else window.left_view
+    assert view.dragEnabled() and view.acceptDrops()
+    window.ws.set_selection(set(rows), rows[-1])
+    window._sync_selection()
+    before = list(window.ws.pages)
+    payloads = []
+
+    class CaptureDrag(QDrag):
+        def exec(self, *_args):
+            payloads.append(bytes(self.mimeData().data(MIME)))
+            return Qt.DropAction.IgnoreAction
+
+    monkeypatch.setattr(ui, "QDrag", CaptureDrag)
+    view.startDrag(Qt.DropAction.MoveAction)
+    assert payloads == [",".join(map(str, rows)).encode("utf-8")]
+    mime = QMimeData()
+    mime.setData(MIME, payloads[0])
+    target = window.model.index(3)
+    view.scrollTo(target)
+    qapp.processEvents()
+    event = QDropEvent(QPointF(view.visualRect(target).center()),
+                      Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    view.dropEvent(event)
+    qapp.processEvents()
+    assert event.isAccepted()
+    assert window.ws.pages == [before[row] for row in order]
+    expected_selection = {order.index(row) for row in rows}
+    assert window.ws.selected == expected_selection
+    assert window.ws.pages[window.ws.preview_index()] is before[rows[-1]]
+    for page_view in (window.left_view, window.arrange_view):
+        assert {index.row() for index in page_view.selectedIndexes()} == expected_selection
+    window.undo_action.trigger()
+    qapp.processEvents()
+    assert window.ws.pages == before
+
+
 def test_arrange_extended_selection_writes_workspace(window, tmp_path, qapp):
     _enter_arrange(window, tmp_path)
     view = window.arrange_view

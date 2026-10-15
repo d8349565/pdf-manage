@@ -28,6 +28,36 @@ def test_drop_target_never_grows(qapp):
     assert len(ws.pages) == 4
 
 
+@pytest.mark.parametrize("sources, dest, order", [
+    ([1, 2], 4, [0, 3, 4, 1, 2, 5]),
+    ([3, 4], 0, [3, 4, 0, 1, 2, 5]),
+    ([3, 1, 3], 4, [0, 2, 4, 1, 3, 5]),
+    ([1, 5], -1, [0, 2, 3, 4, 1, 5]),
+    ([0, 2], 99, [1, 3, 4, 5, 0, 2]),
+    ([1, 3], 3, list(range(6))),
+    (list(range(6)), -1, list(range(6))),
+    ([1, 6], 0, list(range(6))),
+    ([], 0, list(range(6))),
+])
+def test_move_pages_preserves_group_and_undo(qapp, sources, dest, order):
+    ws = Workspace()
+    before = _pages("a", "b", "c", "d", "e", "f")
+    ws.open_replace(before, "C:/tmp/a.pdf")
+    ws.set_selection(set(sources), max(sources) if sources else None)
+    ws.move_pages(sources, dest)
+    assert [page.source_page for page in ws.pages] == order
+    if order == list(range(6)):
+        assert ws.undo_stack.count() == 0
+        return
+    assert ws.undo_stack.count() == 1
+    assert [ws.pages[row].source_page for row in sorted(ws.selected)] == sorted(set(sources))
+    assert ws.pages[ws.selected_index].source_page == max(sources)
+    ws.undo_stack.undo()
+    assert ws.pages == before
+    ws.undo_stack.redo()
+    assert [page.source_page for page in ws.pages] == order
+
+
 def test_parse_range():
     assert parse_page_range("1-3,5", 5) == [0, 1, 2, 4]
     assert parse_range_segments("1-3,5", 5) == [[0, 1, 2], [4]]
