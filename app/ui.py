@@ -1928,8 +1928,9 @@ class MainWindow(QMainWindow):
         tools.addSeparator()
         self.compress_action = self._act("文档压缩…", lambda: self.open_export_tool(3))
         self.encrypt_action = self._act("加密另存…", self.encrypt_copy)
+        self.decrypt_action = self._act("解密另存…", self.decrypt_copy)
         self.editable_action = self._act("编辑副本…", self.editable_copy)
-        for action in (self.compress_action, self.encrypt_action, self.editable_action):
+        for action in (self.compress_action, self.encrypt_action, self.decrypt_action, self.editable_action):
             tools.addAction(action)
         convert = self._menubar.addMenu("转换")
         convert.addAction(self._act("Word 转 PDF…", self.open_word_converter))
@@ -2113,6 +2114,15 @@ class MainWindow(QMainWindow):
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
+        sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
+        encrypted = any(source.safety.encrypted for source in sources)
+        signature_reason = next((source.safety.read_only_reason for source in sources
+                                 if source.safety.signature != "none"), "")
+        decrypt_hint = ("请先打开加密 PDF。" if not count else
+                        signature_reason or ("另存未加密副本；有权限限制时需输入管理密码。" if encrypted
+                                             else "当前文档未加密，无需解密。"))
+        self.decrypt_action.setEnabled(encrypted and not signature_reason)
+        self.decrypt_action.setToolTip(decrypt_hint)
         self.editable_action.setText('影像副本…' if unknown_signature else '编辑副本…')
         self.editable_button.setText('制作影像副本…' if unknown_signature else '制作可编辑副本…')
         self.editable_action.setEnabled(bool(count) and not (raster_reason if unknown_signature
@@ -2120,6 +2130,8 @@ class MainWindow(QMainWindow):
         self.compress_button.setEnabled(self.compress_action.isEnabled())
         self.image_export_button.setEnabled(self.image_export_action.isEnabled())
         self.encrypt_button.setEnabled(self.encrypt_action.isEnabled())
+        self.decrypt_button.setEnabled(self.decrypt_action.isEnabled())
+        self.decrypt_button.setToolTip(decrypt_hint)
         self.editable_button.setEnabled(self.editable_action.isEnabled())
         self.print_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "print"))
         self.append_action.setEnabled(not read_only)
@@ -2572,11 +2584,16 @@ class MainWindow(QMainWindow):
         self.image_export_button = self._btn("选择范围并导出…", self.pdf_to_images)
         export_images.addWidget(self.image_export_button)
         export_images.addStretch()
-        security = section("加密与签名保护")
+        security = section("加密、解密与签名保护")
         self.encrypt_button = self._btn("加密另存…", self.encrypt_copy)
+        self.decrypt_button = self._btn("解密另存…", self.decrypt_copy)
         self.editable_button = self._btn("制作可编辑副本…", self.editable_copy)
         security.addWidget(self.encrypt_button)
+        security.addWidget(self.decrypt_button)
         security.addWidget(self.editable_button)
+        hint = QLabel("解密后另存为无需密码的副本，原加密文件保留；解除权限限制需要管理密码。")
+        hint.setWordWrap(True)
+        security.addWidget(hint)
         hint = QLabel("签名原件只读。可编辑副本保留签名外观，原数字签名效力不会保留。")
         hint.setWordWrap(True)
         security.addWidget(hint)
@@ -4004,6 +4021,49 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "已取消", "已取消，完成 0 个输出文件。")
         except PdfError as exc:
             QMessageBox.warning(self, "加密未完成", str(exc))
+
+    def decrypt_copy(self):
+        if not self.ws.pages:
+            return
+        sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
+        if not any(source.safety.encrypted for source in sources):
+            QMessageBox.information(self, "无需解密", "当前文档未加密。")
+            return
+        for source in sources:
+            if source.safety.signature != "none":
+                QMessageBox.information(self, "文件保护", source.safety.read_only_reason)
+                return
+        for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages):
+            source = self.store._source(sid)
+            while source.safety.needs_owner_for_decryption:
+                password, ok = QInputDialog.getText(self, "解密需要管理密码",
+                    f"{Path(source.path).name} 限制了文档权限，请输入管理密码：", QLineEdit.EchoMode.Password)
+                if not ok:
+                    return
+                try:
+                    run_operation(self, "验证管理密码", lambda progress:
+                                  self.store.authenticate_owner(sid, password))
+                except PdfError as exc:
+                    QMessageBox.warning(self, "密码验证未通过", str(exc))
+                finally:
+                    password = None
+                self.refresh()
+        if not self._allow_operation("decrypt"):
+            return
+        from app.exportdialogs import new_pdf_path
+        path = new_pdf_path(self, self.store, "解密另存", Path(self.ws.path or "文档.pdf").stem + "_解密.pdf")
+        if not path:
+            return
+        try:
+            result = self._write_pdf(list(self.ws.pages), path, "解密另存", cancellable=True,
+                                     options=WriteOptions(preserve_encryption=False, operation="decrypt"))
+            if result is not None:
+                QMessageBox.information(self, "解密另存完成", f"已保存无需密码的 PDF 副本，原加密文件保留：\n{result.path}")
+                self._show_write_notes((result,))
+        except OperationCancelled:
+            QMessageBox.information(self, "已取消", "已取消解密，原加密文件保留。")
+        except PdfError as exc:
+            QMessageBox.warning(self, "解密未完成", str(exc))
 
     def editable_copy(self):
         if any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages):

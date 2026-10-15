@@ -50,6 +50,46 @@ def test_permission_only_round_trip(qapp, tmp_path, algorithm):
     store.close_all()
 
 
+@pytest.mark.parametrize("algorithm", [p.PDF_ENCRYPT_AES_128, p.PDF_ENCRYPT_AES_256])
+@pytest.mark.parametrize("user_password, permissions", [
+    ("open", 4095), ("open", 4095 & ~p.PDF_PERM_PRINT), ("", 0),
+])
+def test_decrypt_copy_requires_authorization_and_keeps_original(qapp, tmp_path, algorithm, user_password, permissions):
+    source, target = tmp_path / "encrypted.pdf", tmp_path / "decrypted.pdf"
+    with p.open() as doc:
+        doc.new_page().insert_text((50, 90), "DECRYPT KEEP")
+        doc.new_page().insert_text((50, 90), "SECOND PAGE")
+        doc.save(source, encryption=algorithm, user_pw=user_password, owner_pw="owner", permissions=permissions)
+    original = source.read_bytes()
+    store = PdfStore()
+    try:
+        pages = store.load(str(source), user_password or None)
+        sid = pages[0].source_id
+        options = WriteOptions(preserve_encryption=False, operation="decrypt")
+        if permissions != 4095:
+            assert store.operation_reason(pages, "decrypt")
+            with pytest.raises(PdfError, match="管理密码"):
+                store.write(pages, str(target), options=options)
+            assert not target.exists()
+            for wrong in ("wrong", user_password):
+                with pytest.raises(PdfError, match="管理密码"):
+                    store.authenticate_owner(sid, wrong)
+                assert store.operation_reason(pages, "decrypt")
+            store.authenticate_owner(sid, "owner")
+        assert not store.operation_reason(pages, "decrypt")
+        with pytest.raises(PdfError, match="不能覆盖加密原件"):
+            store.write(pages, str(source), options=options)
+        store.write([replace(pages[1], rotation=90), pages[0]], str(target), options=options)
+        with p.open(target) as doc:
+            assert doc.xref_get_key(-1, "Encrypt")[0] == "null"
+            assert not doc.needs_pass and len(doc) == 2
+            assert "SECOND PAGE" in doc[0].get_text() and doc[0].rotation == 90
+            assert "DECRYPT KEEP" in doc[1].get_text()
+        assert source.read_bytes() == original
+    finally:
+        store.close_all()
+
+
 def test_protection_modes_use_same_validation(qapp, tmp_path, monkeypatch):
     from app import exportdialogs
     monkeypatch.setattr(exportdialogs, "QSettings", lambda *args: QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat))

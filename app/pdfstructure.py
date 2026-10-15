@@ -21,6 +21,14 @@ class PdfSafety:
         return self.owner_authenticated or bool(self.permissions & permission)
 
     @property
+    def needs_owner_for_decryption(self) -> bool:
+        permissions = (pymupdf.PDF_PERM_PRINT, pymupdf.PDF_PERM_PRINT_HQ,
+                       pymupdf.PDF_PERM_COPY, pymupdf.PDF_PERM_MODIFY,
+                       pymupdf.PDF_PERM_ANNOTATE, pymupdf.PDF_PERM_FORM,
+                       pymupdf.PDF_PERM_ACCESSIBILITY, pymupdf.PDF_PERM_ASSEMBLE)
+        return self.encrypted and not all(self.allows(permission) for permission in permissions)
+
+    @property
     def read_only_reason(self) -> str:
         if self.signature == "present":
             return "检测到数字签名，未验证有效性 · 原件只读"

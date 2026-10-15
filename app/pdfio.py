@@ -6,7 +6,7 @@ import tempfile
 import threading
 from collections import OrderedDict
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from PyQt6.QtGui import QImage
 
@@ -310,6 +310,20 @@ class PdfStore:
         number = ref.source_page - rule["startpage"] + rule.get("firstpagenum", 1) - int(style in ("a", "A"))
         return pymupdf.utils.construct_label(style, rule.get("prefix", ""), number)
 
+    def authenticate_owner(self, sid: str, password: str) -> None:
+        """仅在管理密码验证成功后，更新内存中的来源权限和后续写出凭证。"""
+        import pymupdf
+        source = self._source(sid)
+        with source.lock:
+            if source.closed:
+                raise PdfError("源文档已关闭")
+            with pymupdf.open(stream=source.data, filetype="pdf") as doc:
+                authentication = doc.authenticate(password)
+                if authentication <= 0 or not authentication & 4:
+                    raise PdfError("管理密码不正确，无法解除权限限制。")
+            source.password = password
+            source.safety = replace(source.safety, owner_authenticated=True)
+
     def operation_reason(self, pages: list[PageRef], operation: str) -> str:
         if not pages:
             return ""
@@ -318,6 +332,8 @@ class PdfStore:
             safety = self._source(sid).safety
             if operation not in ("print", "editable_copy", "raster_copy") and safety.signature != "none":
                 return safety.read_only_reason
+            if operation == "decrypt" and safety.needs_owner_for_decryption:
+                return "解除打印、复制等权限限制需要管理密码。"
             if operation == "editable_copy":
                 if safety.signature != "present":
                     return "只有已识别的签名文件可以制作可编辑副本；无法判断的签名结构继续只读保护。"

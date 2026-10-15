@@ -248,6 +248,41 @@ def test_open_arrange_save(window, tmp_path):
         assert written[0].rotation == 90
 
 
+@pytest.mark.parametrize("permissions", [4095, 0])
+def test_decrypt_entry_and_owner_prompt(window, tmp_path, monkeypatch, permissions):
+    from app import exportdialogs
+    from app.pdfio import WriteResult
+    source, target = tmp_path / "encrypted.pdf", tmp_path / "decrypted.pdf"
+    assert not window.decrypt_action.isEnabled()
+    with pymupdf.open() as doc:
+        doc.new_page()
+        doc.save(source, encryption=pymupdf.PDF_ENCRYPT_AES_256,
+                 user_pw="", owner_pw="owner", permissions=permissions)
+    assert window._load_one(str(source))
+    assert window.decrypt_action.isEnabled() and window.decrypt_button.isEnabled()
+    assert window.decrypt_action.text() == "解密另存…"
+    prompts, writes = [], []
+    def password(*args):
+        prompts.append(args)
+        return "owner", True
+    def write(pages, path, title, **kwargs):
+        writes.append((pages, path, kwargs["options"]))
+        return WriteResult(path)
+    monkeypatch.setattr(QInputDialog, "getText", password)
+    monkeypatch.setattr(exportdialogs, "new_pdf_path", lambda *args: str(target))
+    monkeypatch.setattr(window, "_write_pdf", write)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+    window.decrypt_action.trigger()
+    assert len(prompts) == (0 if permissions == 4095 else 1)
+    assert len(writes) == 1
+    pages, path, options = writes[0]
+    assert pages == window.ws.pages and path == str(target)
+    assert not options.preserve_encryption and options.encryption is None
+    assert options.operation == "decrypt"
+    assert window.ws.path == str(source) and not window.ws.dirty
+    assert window.store._source(pages[0].source_id).safety.encrypted
+
+
 def test_details_separate_source_rotation_from_this_session(window, tmp_path):
     """源文件自带 /Rotate 时，面板要把「本次旋转」和「源文件旋转」分开说清楚。"""
     src = tmp_path / "scan.pdf"
