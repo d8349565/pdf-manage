@@ -3841,11 +3841,10 @@ class MainWindow(QMainWindow):
         while True:
             try:
                 def work(progress, cancel=None):
-                    from app.pdfworker import write_pdf
+                    from app.pdfworker import write_pdf, write_pdf_groups
                     if groups is not None:
-                        return self.store.write_groups(pages, groups, dests, progress_callback=progress,
-                            options=options, cancel=cancel,
-                            _writer=lambda subset, target, **kwargs: write_pdf(self.store, subset, target, **kwargs))
+                        return write_pdf_groups(self.store, pages, groups, dests,
+                            progress_callback=progress, options=options, cancel=cancel)
                     return write_pdf(self.store, pages, path, progress_callback=progress, options=options,
                                      register_result=register_result, cancel=cancel)
                 return run_operation(self, title, work, cancellable=cancellable)

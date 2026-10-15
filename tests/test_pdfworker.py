@@ -1,5 +1,6 @@
 """Process-write regressions using only generated temporary PDFs."""
 from io import BytesIO
+from pathlib import Path
 from threading import Event
 
 import pymupdf as p
@@ -9,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QWidget
 
 from app.output import OperationCancelled
 from app.pdfio import PdfError, PdfStore, WriteOptions
-from app.pdfworker import write_pdf
+from app.pdfworker import write_pdf, write_pdf_groups
 from app.progress import run_operation
 from app.workspace import OutlineEntry, PageEdit
 
@@ -62,6 +63,110 @@ def test_process_write_keeps_gui_events_edits_and_registered_metadata(qapp, tmp_
         timer.stop()
         store.close_all()
         parent.close()
+
+
+def test_split_reuses_one_worker_and_one_source_snapshot(tmp_path, monkeypatch):
+    from app import pdfworker
+    source = tmp_path / "source.pdf"
+    source_pdf(source)
+    original = source.read_bytes()
+    store = PdfStore()
+    worker = pdfworker._worker
+    requests = []
+    def record(folder, request, *args, **kwargs):
+        requests.append(request)
+        assert len(list(Path(folder).glob("source-*.pdf"))) == 1
+        return worker(folder, request, *args, **kwargs)
+    monkeypatch.setattr(pdfworker, "_worker", record)
+    try:
+        pages = store.load(str(source))
+        targets = [str(tmp_path / f"part-{i}.pdf") for i in range(3)]
+        results = write_pdf_groups(store, pages, [[0], [1], [1, 0]], targets)
+        assert len(requests) == 1 and requests[0]["operation"] == "write_groups"
+        assert [result.path for result in results] == targets
+        for target, texts in zip(targets, [("Alpha",), ("Beta",), ("Beta", "Alpha")]):
+            with p.open(target) as doc:
+                assert len(doc) == len(texts)
+                assert all(text in doc[i].get_text() for i, text in enumerate(texts))
+        assert source.read_bytes() == original
+        assert not list(tmp_path.glob(".zhixu-write-*"))
+    finally:
+        store.close_all()
+
+
+def test_cancel_split_keeps_only_committed_outputs(tmp_path, monkeypatch):
+    from app import pdfworker
+    source = tmp_path / "source.pdf"
+    source_pdf(source)
+    targets = [str(tmp_path / f"part-{i}.pdf") for i in range(2)]
+    stop = Event()
+    worker = pdfworker._worker
+    def cancel_after_first(folder, request, progress, cancel, *, on_prepared):
+        def commit_then_cancel(index, prepared):
+            on_prepared(index, prepared)
+            stop.set()
+        return worker(folder, request, progress, cancel, on_prepared=commit_then_cancel)
+    monkeypatch.setattr(pdfworker, "_worker", cancel_after_first)
+    store = PdfStore()
+    try:
+        with pytest.raises(OperationCancelled, match="已完整写出 1 个文件"):
+            write_pdf_groups(store, store.load(str(source)), [[0], [1]], targets, cancel=stop.is_set)
+        with p.open(targets[0]) as doc:
+            assert "Alpha" in doc[0].get_text()
+        assert not Path(targets[1]).exists()
+        assert not list(tmp_path.glob(".zhixu-write-*"))
+    finally:
+        store.close_all()
+
+
+def test_split_preserves_a_target_changed_before_parent_commit(tmp_path, monkeypatch):
+    from app import pdfworker
+    source, target = tmp_path / "source.pdf", tmp_path / "target.pdf"
+    source_pdf(source)
+    source_pdf(target)
+    worker = pdfworker._worker
+    def change_target(folder, request, progress, cancel, *, on_prepared):
+        def change_then_commit(index, prepared):
+            target.write_bytes(b"external change")
+            on_prepared(index, prepared)
+        return worker(folder, request, progress, cancel, on_prepared=change_then_commit)
+    monkeypatch.setattr(pdfworker, "_worker", change_target)
+    store = PdfStore()
+    try:
+        with pytest.raises(PdfError, match="目标文件"):
+            write_pdf_groups(store, store.load(str(source)), [[0]], [str(target)])
+        assert target.read_bytes() == b"external change"
+        assert not list(tmp_path.glob(".zhixu-write-*"))
+    finally:
+        store.close_all()
+
+
+@pytest.mark.parametrize("has_baseline", [False, True])
+def test_cancelled_compression_clears_calculating_feedback(qapp, tmp_path, monkeypatch, has_baseline):
+    from app.compression import CompressionDialog
+    from app.pdfio import WriteResult
+    from app.ui import MainWindow
+    source = tmp_path / "source.pdf"
+    source_pdf(source)
+    window = MainWindow()
+    dialog = None
+    try:
+        pages = window.store.load(str(source))
+        window.ws.open_replace(pages, str(source))
+        dialog = CompressionDialog(window)
+        if has_baseline:
+            dialog.baseline = WriteResult(str(source), tuple(pages))
+        monkeypatch.setattr(window, "_write_pdf", lambda *args, **kwargs: None)
+        dialog.prepare()
+        assert "取消" in dialog.summary.text()
+        assert all("取消" in label.text() for label in dialog.images)
+        assert dialog.calculate.isEnabled() and not dialog.export.isEnabled() and not dialog._busy
+    finally:
+        if dialog is not None:
+            dialog.reject()
+        window.ws.reset()
+        window.store.close_all()
+        window.close()
 
 
 @pytest.mark.parametrize("cancelled", [False, True])

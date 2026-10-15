@@ -173,6 +173,7 @@ class CompressionDialog(QDialog):
                     "准备无损压缩基准", register_result=True, cancellable=True,
                     options=WriteOptions(compression="quality"))
                 if self.baseline is None:
+                    self._show_cancelled()
                     return
                 self._preview_sources.update(page.source_id for page in self.baseline.pages)
             key = self.profile.currentData()
@@ -189,6 +190,7 @@ class CompressionDialog(QDialog):
                     compression_grayscale=key == "custom" and self.grayscale.isChecked()),
                 cancellable=True)
             if self.result is None:
+                self._show_cancelled()
                 return
             self._preview_sources.update(page.source_id for page in self.result.pages)
             before = os.path.getsize(self.baseline.path)
@@ -210,7 +212,7 @@ class CompressionDialog(QDialog):
             baseline_note = "（工作区基准）" if self.owner.ws.dirty else ""
             self.summary.setText(f"压缩前{baseline_note} {size_text(before)} → 压缩后 {size_text(after)} · {change}{fallback_note}")
         except OperationCancelled:
-            self.summary.setText("已取消，完成 0 个导出文件，原件保留。")
+            self._show_cancelled()
         except PdfError as exc:
             QMessageBox.warning(self, "压缩未完成", str(exc))
         finally:
@@ -218,6 +220,12 @@ class CompressionDialog(QDialog):
             self._set_busy(False)
         if self.result is not None:
             self.preview()
+
+    def _show_cancelled(self):
+        self.summary.setText("计算已取消，原件保留；可重新计算。")
+        for image in self.images:
+            image.clear()
+            image.setText("计算已取消")
 
     def preview(self):
         if self._busy or not self.result or not self.baseline:

@@ -2,6 +2,20 @@
 import math
 
 
+MAX_EXPORT_IMAGE_PIXELS = 4_000_000
+MAX_EXPORT_IMAGE_SIDE = 8190
+
+
+def export_image_scale(width, height, requested=1.5):
+    """Bound native bitmap allocation before rendering an export image."""
+    if not all(math.isfinite(value) and value > 0 for value in (width, height)):
+        raise ValueError('页面或图像区域尺寸无效。')
+    # Leave room for integer-pixel rounding on both sides of a clipped region.
+    return min(requested, (MAX_EXPORT_IMAGE_SIDE - 2) / max(width, height),
+               math.sqrt((MAX_EXPORT_IMAGE_PIXELS - 4 * MAX_EXPORT_IMAGE_SIDE - 4)
+                         / (width * height)))
+
+
 def _regions(active, width, height, cell=6):
     occupied=set()
     for y in range(height):
@@ -86,7 +100,8 @@ def page_figures(page, layout, warnings):
         merged=sorted(merged,key=lambda entry:entry[0].get_area(),reverse=True)[:20]
     result=[]
     for box,is_colour in merged:
-        matrix=p.Matrix(1.5,1.5).prerotate(-page.rotation)
+        scale=export_image_scale(box.width,box.height)
+        matrix=p.Matrix(scale,scale).prerotate(-page.rotation)
         pix=page.get_pixmap(matrix=matrix,clip=box*page.rotation_matrix,colorspace=p.csRGB,alpha=True,annots=False)
         if pix.width and pix.height:
             if is_colour:

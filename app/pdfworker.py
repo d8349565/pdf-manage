@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from contextlib import ExitStack
 import math
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ from app.storage import TemporaryWorkspace
 from app.wordconvert import _read_json, _write_json
 
 
-def _worker(folder, request, progress, cancel):
+def _worker(folder, request, progress, cancel, *, on_prepared=None):
     check_cancel(cancel)
     root = Path(folder)
     _write_json(root / "request.json", request)
@@ -30,6 +31,7 @@ def _worker(folder, request, progress, cancel):
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     started = time.monotonic()
     previous = None
+    acknowledged = -1
     try:
         while process.poll() is None:
             check_cancel(cancel)
@@ -40,7 +42,13 @@ def _worker(folder, request, progress, cancel):
                 if progress:
                     progress(event["current"], event["total"], event["message"])
                 previous = event
-            time.sleep(.05)
+            if on_prepared is not None:
+                prepared = _read_json(root / "prepared.json")
+                if prepared and prepared["index"] > acknowledged:
+                    on_prepared(prepared["index"], prepared["result"])
+                    acknowledged = prepared["index"]
+                    _write_json(root / "ack.json", dict(index=acknowledged))
+            time.sleep(.01 if on_prepared is not None else .05)
         check_cancel(cancel)
         result = _read_json(root / "result.json")
         if not result:
@@ -60,6 +68,66 @@ def _worker(folder, request, progress, cancel):
         process.wait()
 
 
+def _snapshot_sources(store, pages, dests, folder, progress, cancel):
+    from app.pdfio import _path_key
+    sources = {}
+    snapshot_ids = list(dict.fromkeys(page.source_id for page in pages))
+    # Keep guards for opened destinations even if they contribute no pages.
+    for sid, source in list(store._sources.items()):
+        if sid in snapshot_ids:
+            continue
+        for dest in dests:
+            same = _path_key(source.path) == _path_key(dest)
+            if not same:
+                try:
+                    same = os.path.samefile(source.path, dest)
+                except OSError:
+                    pass
+            if same:
+                snapshot_ids.append(sid)
+                break
+    for index, sid in enumerate(snapshot_ids):
+        check_cancel(cancel)
+        source = store._source(sid)
+        if progress:
+            progress(0, 0, "正在等待页面处理完成，可取消任务")
+        with cancellable_lock(source.lock, cancel):
+            if source.closed:
+                raise PdfError("源文档已关闭")
+            data = source.data
+            record = dict(path=source.path, password=source.password, stamp=source.disk_stamp)
+        if progress:
+            progress(0, 0, f"正在准备来源快照 · {os.path.basename(source.path)}")
+        snapshot = Path(folder) / f"source-{index}.pdf"
+        with snapshot.open("wb") as stream:
+            view = memoryview(data)
+            for offset in range(0, len(view), 4 * 1024 * 1024):
+                check_cancel(cancel)
+                stream.write(view[offset:offset + 4 * 1024 * 1024])
+        sources[sid] = dict(record, snapshot=str(snapshot))
+    return sources
+
+
+def _encode_pages(pages, cancel):
+    payload, assets, asset_tokens = [], {}, {}
+    for page in pages:
+        check_cancel(cancel)
+        item = asdict(page)
+        for edit in item["edits"]:
+            details = dict(edit["details"])
+            image = details.pop("image", "")
+            if image:
+                token = asset_tokens.get(id(image))
+                if token is None:
+                    token = hashlib.sha256(image.encode("ascii")).hexdigest()
+                    asset_tokens[id(image)] = token
+                assets[token] = image
+                details["image_asset"] = token
+                edit["details"] = tuple(details.items())
+        payload.append(item)
+    return payload, assets
+
+
 def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
               register_result=False, cancel=None):
     """Use immutable source bytes so workspace edits and external-file guards survive."""
@@ -76,54 +144,8 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with TemporaryWorkspace("pdfwrite") as folder, tempfile.TemporaryDirectory(
                 prefix=".zhixu-write-", dir=os.path.dirname(dest)) as staging:
-            sources = {}
-            snapshot_ids = list(dict.fromkeys(page.source_id for page in pages))
-            # Keep overwrite/encryption guards for an opened destination even when
-            # it contributes no pages to this export (including hard-link aliases).
-            for sid, source in list(store._sources.items()):
-                same = _path_key(source.path) == _path_key(dest)
-                if not same:
-                    try:
-                        same = os.path.samefile(source.path, dest)
-                    except OSError:
-                        pass
-                if same and sid not in snapshot_ids:
-                    snapshot_ids.append(sid)
-            for index, sid in enumerate(snapshot_ids):
-                check_cancel(cancel)
-                source = store._source(sid)
-                if progress_callback:
-                    progress_callback(0, 0, "正在等待页面处理完成，可取消任务")
-                with cancellable_lock(source.lock, cancel):
-                    if source.closed:
-                        raise PdfError("源文档已关闭")
-                    data = source.data
-                    record = dict(path=source.path, password=source.password, stamp=source.disk_stamp)
-                if progress_callback:
-                    progress_callback(0, 0, f"正在准备来源快照 · {os.path.basename(source.path)}")
-                snapshot = Path(folder) / f"source-{index}.pdf"
-                with snapshot.open("wb") as stream:
-                    view = memoryview(data)
-                    for offset in range(0, len(view), 4 * 1024 * 1024):
-                        check_cancel(cancel)
-                        stream.write(view[offset:offset + 4 * 1024 * 1024])
-                sources[sid] = dict(record, snapshot=str(snapshot))
-            payload, assets, asset_tokens = [], {}, {}
-            for page in pages:
-                check_cancel(cancel)
-                item = asdict(page)
-                for edit in item["edits"]:
-                    details = dict(edit["details"])
-                    image = details.pop("image", "")
-                    if image:
-                        token = asset_tokens.get(id(image))
-                        if token is None:
-                            token = hashlib.sha256(image.encode("ascii")).hexdigest()
-                            asset_tokens[id(image)] = token
-                        assets[token] = image
-                        details["image_asset"] = token
-                        edit["details"] = tuple(details.items())
-                payload.append(item)
+            sources = _snapshot_sources(store, pages, [dest], folder, progress_callback, cancel)
+            payload, assets = _encode_pages(pages, cancel)
             result = _worker(folder, dict(operation="write", sources=sources, assets=assets,
                 pages=payload, options=asdict(options), dest=dest,
                 staging=staging, written_stamps=dict(store._written_stamps)), progress_callback, cancel)
@@ -165,6 +187,51 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
     finally:
         if candidate is not None:
             candidate.close()
+
+
+def write_pdf_groups(store, pages, groups, dests, *, options=None, progress_callback=None, cancel=None):
+    """Share source snapshots and one child; commit each verified output in the parent."""
+    from app.pdfio import _path_key
+    if len(groups) != len(dests):
+        raise PdfError("拆分范围与输出文件数量不一致")
+    if not groups:
+        return ()
+    dests = [os.path.abspath(dest) for dest in dests]
+    results = []
+    try:
+        with ExitStack() as resources:
+            folder = resources.enter_context(TemporaryWorkspace("pdfsplit"))
+            staging = {}
+            for dest in dests:
+                check_cancel(cancel)
+                directory = os.path.dirname(dest)
+                if directory not in staging:
+                    os.makedirs(directory, exist_ok=True)
+                    staging[directory] = resources.enter_context(tempfile.TemporaryDirectory(
+                        prefix=".zhixu-write-", dir=directory))
+            used_pages = [pages[index] for index in sorted({i for group in groups for i in group})
+                          if 0 <= index < len(pages)]
+            sources = _snapshot_sources(store, used_pages, dests, folder, progress_callback, cancel)
+            payload, assets = _encode_pages(pages, cancel)
+            def commit(index, prepared):
+                if index != len(results) or index >= len(dests):
+                    raise PdfError("拆分任务返回顺序异常，已停止提交。")
+                dest = dests[index]
+                expected = tuple(prepared["expected"]) if prepared["expected"] is not None else None
+                commit_file(prepared["temp"], dest, expected, cancel=cancel)
+                store._written_stamps[_path_key(dest)] = stamp(dest)
+                results.append(WriteResult(dest, warnings=tuple(prepared["warnings"])))
+            _worker(folder, dict(operation="write_groups", sources=sources, assets=assets,
+                pages=payload, options=asdict(options or WriteOptions()), groups=groups,
+                dests=dests, staging=staging, written_stamps=dict(store._written_stamps)),
+                progress_callback, cancel, on_prepared=commit)
+        return tuple(results)
+    except OperationCancelled as exc:
+        raise OperationCancelled(f"已取消，已完整写出 {len(results)} 个文件。") from exc
+    except WriteNeedsConfirmation:
+        raise
+    except Exception as exc:
+        raise PdfError(f"已完整写出 {len(results)} 个文件。\n{exc}") from exc
 
 
 def render_preview(refs, passwords, progress, cancel=None):
@@ -232,7 +299,7 @@ def worker_main(folder):
                     matrix = pymupdf.Matrix(scale, scale).prerotate(item["rotation"])
                     page.get_pixmap(matrix=matrix, alpha=False).save(root / f"preview-{index}.png")
             result = dict(success=True)
-        elif request.get("operation") == "write":
+        elif request.get("operation") in ("write", "write_groups"):
             loaded = {}
             for sid, record in request["sources"].items():
                 refs = store.load(record["snapshot"], record["password"], progress_callback=report)
@@ -261,8 +328,30 @@ def worker_main(folder):
             if settings["outline"] is not None:
                 settings["outline"] = tuple(OutlineEntry(**dict(entry, destination=_tuples(entry["destination"])))
                                             for entry in settings["outline"])
-            result = store.write(pages, request["dest"], options=WriteOptions(**settings),
-                progress_callback=report, _prepare_only=True, _staging_dir=request["staging"])
+            if request["operation"] == "write":
+                result = store.write(pages, request["dest"], options=WriteOptions(**settings),
+                    progress_callback=report, _prepare_only=True, _staging_dir=request["staging"])
+            else:
+                from app.pdfio import _path_key
+                completed = 0
+                def prepare(subset, dest, **kwargs):
+                    nonlocal completed
+                    prepared = store.write(subset, dest, **kwargs, _prepare_only=True,
+                        _staging_dir=request["staging"][os.path.dirname(dest)])
+                    _write_json(root / "prepared.json", dict(index=completed, result=prepared))
+                    # Do not prepare the next file until the parent has committed
+                    # this one. A killed worker can only leave owned staging files.
+                    deadline = time.monotonic() + 30
+                    while _read_json(root / "ack.json") != dict(index=completed):
+                        if time.monotonic() > deadline:
+                            raise PdfError("主进程未确认拆分结果，后台任务已停止。")
+                        time.sleep(.01)
+                    store._written_stamps[_path_key(dest)] = stamp(dest)
+                    completed += 1
+                    return WriteResult(dest, warnings=tuple(prepared["warnings"]))
+                store.write_groups(pages, request["groups"], request["dests"],
+                    options=WriteOptions(**settings), progress_callback=report, _writer=prepare)
+                result = dict(success=True)
         else:
             raise PdfError("不支持的 PDF 工作任务。")
         _write_json(root / "result.json", result)

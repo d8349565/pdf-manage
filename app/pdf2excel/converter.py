@@ -2,8 +2,10 @@ from __future__ import annotations
 from typing import Callable
 import os
 import tempfile
+from zipfile import ZipFile, ZIP_DEFLATED
 import pymupdf
-from app.output import commit_file, stamp
+from openpyxl.writer.excel import ExcelWriter
+from app.output import OperationCancelled, commit_file, stamp
 from app.pdf2excel.models import TableModel, ConversionResult
 from app.pdf2excel.analyzer import analyze_page, extract_spans, extract_drawings
 from app.pdf2excel.detector import detect_tables
@@ -13,6 +15,24 @@ from app.pdf2excel.quality import assess_conversion, QualityReport
 
 ProgressCallback = Callable[[int, int, str], None]  # (current_page, total_pages, status_msg)
 CancelCheck = Callable[[], bool]
+
+
+class _CancellableOutput:
+    """Let ZIP writes observe cancellation without committing a partial workbook."""
+    def __init__(self, stream, cancel):
+        self.stream, self.cancel = stream, cancel
+        self.cancelling = False
+
+    def write(self, data):
+        if not self.cancelling and self.cancel and self.cancel():
+            # ZIP may still write its directory while unwinding. Let cleanup
+            # finish; the cancelled temporary workbook will never be committed.
+            self.cancelling = True
+            raise OperationCancelled("任务已取消，未完成的临时文件已清理。")
+        return self.stream.write(data)
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
 
 def convert_pdf_to_excel(
     pdf_path: str,
@@ -51,6 +71,18 @@ def convert_pdf_to_excel(
     content_pages: list[dict] = []
     
     try:
+        annotated_scans = set()
+        if include_all_content:
+            for page_idx in page_indices:
+                check_cancelled()
+                if 0 <= page_idx < total_pages:
+                    page = doc[page_idx]
+                    if page.first_annot and not page.get_text().strip() and page.get_images():
+                        annotated_scans.add(page_idx)
+            # This document is private to the conversion. Make visible text-box
+            # appearances extractable, while keeping the source PDF untouched.
+            doc.bake(annots=True, widgets=False)
+            check_cancelled()
         for idx, page_idx in enumerate(page_indices):
             check_cancelled()
                 
@@ -70,13 +102,17 @@ def convert_pdf_to_excel(
             page_analysis = analyze_page(page)
             if include_all_content:
                 from app.documentlayout import page_layout
-                if page_analysis.text_length == 0 and page_analysis.image_count:
+                if page_idx in annotated_scans or page_analysis.text_length == 0 and page_analysis.image_count:
                     # Unrecognized scans still retain their appearance, with no invented OCR text.
-                    matrix = pymupdf.Matrix(1.25, 1.25).prerotate(-page.rotation)
+                    from app.documentimages import export_image_scale
+                    scale = export_image_scale(page.rect.width, page.rect.height, 1.25)
+                    matrix = pymupdf.Matrix(scale, scale).prerotate(-page.rotation)
                     image = page.get_pixmap(matrix=matrix, alpha=False, annots=False)
                     layout = [dict(kind='image', bbox=(0, 0, page.cropbox.width, page.cropbox.height),
                                    data=image.tobytes('png'))]
-                    page_warnings = [f"第 {page_idx + 1} 页没有可用文本层，已保留整页图片；需要可编辑文字时请先 OCR。"]
+                    page_warnings = [f"第 {page_idx + 1} 页扫描正文没有可用文本层，已保留整页图片与可见批注；需要可编辑正文时请先 OCR。"]
+                    if scale < 1.25:
+                        page_warnings.append(f"第 {page_idx + 1} 页尺寸较大，图片已按像素预算降低分辨率，页面范围完整保留。")
                 else:
                     layout, page_warnings = page_layout(page, include_images=True, spatial=True)
                 check_cancelled()
@@ -135,7 +171,8 @@ def convert_pdf_to_excel(
             if progress_callback:
                 progress_callback(0, 0, "正在生成 Excel 文件...")
             check_cancelled()
-            wb = build_workbook(merged_tables, pages=content_pages if include_all_content else None)
+            wb = build_workbook(merged_tables, pages=content_pages if include_all_content else None,
+                                cancel=cancel_check)
             temp_path = None
             try:
                 check_cancelled()
@@ -143,7 +180,10 @@ def convert_pdf_to_excel(
                     prefix=".pdf2excel-", suffix=".xlsx", dir=os.path.dirname(output_path)
                 )
                 os.close(fd)
-                wb.save(temp_path)
+                with open(temp_path, 'w+b') as stream:
+                    with ZipFile(_CancellableOutput(stream, cancel_check), 'w', ZIP_DEFLATED,
+                                 allowZip64=True) as archive:
+                        ExcelWriter(wb, archive).write_data()
                 check_cancelled()
                 if stamp(pdf_path) != original_source:
                     raise OSError("源 PDF 在转换期间发生变化，未提交结果。")

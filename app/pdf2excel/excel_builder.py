@@ -6,40 +6,47 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from app.pdf2excel.models import TableModel, CellModel, CellStyle
+from app.output import check_cancel
 
-def build_workbook(tables: list[TableModel], *, pages: list[dict] | None = None) -> openpyxl.Workbook:
+def build_workbook(tables: list[TableModel], *, pages: list[dict] | None = None, cancel=None) -> openpyxl.Workbook:
     """
     将 TableModel 列表转换为 openpyxl Workbook。
     默认每个表格一张工作表；提供 pages 时保留各页全部内容。
     """
     wb = openpyxl.Workbook()
-    # 移除默认的 Sheet
-    if wb.sheetnames:
-        del wb[wb.sheetnames[0]]
+    try:
+        check_cancel(cancel)
+        # 移除默认的 Sheet
+        if wb.sheetnames:
+            del wb[wb.sheetnames[0]]
 
-    if pages is not None:
-        from app.pdf2excel.page_builder import write_page
-        for page in pages:
-            write_page(wb, page)
-        if not pages:
+        if pages is not None:
+            from app.pdf2excel.page_builder import write_page
+            for page in pages:
+                check_cancel(cancel)
+                write_page(wb, page, cancel=cancel)
+            if not pages:
+                wb.create_sheet(title="Sheet1")
+            return wb
+
+        if not tables:
             wb.create_sheet(title="Sheet1")
-        return wb
-        
-    if not tables:
-        wb.create_sheet(title="Sheet1")
-        return wb
+            return wb
 
-    page_table_counts: dict[int, int] = {}
-    for table in tables:
-        p_no = table.page_no
-        page_table_counts[p_no] = page_table_counts.get(p_no, 0) + 1
-        sub_idx = page_table_counts[p_no]
-        sheet_name = _sheet_name(sub_idx, table, len(tables))
-        _write_table(wb, table, sheet_name)
-        
-    return wb
+        page_table_counts: dict[int, int] = {}
+        for table in tables:
+            check_cancel(cancel)
+            p_no = table.page_no
+            page_table_counts[p_no] = page_table_counts.get(p_no, 0) + 1
+            sub_idx = page_table_counts[p_no]
+            sheet_name = _sheet_name(sub_idx, table, len(tables))
+            _write_table(wb, table, sheet_name, cancel=cancel)
+        return wb
+    except Exception:
+        wb.close()
+        raise
 
-def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str) -> None:
+def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str, *, cancel=None) -> None:
     """
     将单个表格写入新工作表。
     步骤：
@@ -63,11 +70,11 @@ def _write_table(wb: openpyxl.Workbook, table: TableModel, sheet_name: str) -> N
         for row_idx, height_pt in enumerate(table.row_heights, start=1):
             ws.row_dimensions[row_idx].height = height_pt
 
-    _write_cells(ws, table)
+    _write_cells(ws, table, cancel=cancel)
 
 
 def _write_cells(ws, table: TableModel, *, row_offset: int = 0,
-                 columns: list[int] | None = None, rows: list[int] | None = None) -> None:
+                 columns: list[int] | None = None, rows: list[int] | None = None, cancel=None) -> None:
     """Write native table cells to their own sheet or a page's shared column grid."""
     # 记录已被合并覆盖的单元格，防止重复处理
     merged_cells = set()
@@ -84,6 +91,7 @@ def _write_cells(ws, table: TableModel, *, row_offset: int = 0,
             cell_list = table.cells
 
     for cell_model in cell_list:
+        check_cancel(cancel)
         row_idx = rows[cell_model.row] if rows else cell_model.row + 1 + row_offset
         col_idx = columns[cell_model.col] if columns else cell_model.col + 1
         

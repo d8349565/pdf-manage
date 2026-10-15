@@ -3,7 +3,7 @@ from io import BytesIO
 from math import ceil
 
 from openpyxl.drawing.image import Image
-from PIL import Image as RasterImage
+from PIL import Image as RasterImage, ImageChops
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
 from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from app.pdf2excel.excel_builder import _write_cells
 from app.pdf2excel.detector import EPSILON
+from app.output import check_cancel
 
 
 def _table_edges(table, vertical=False):
@@ -47,47 +48,63 @@ def _nearest(edges,value):
     return min(range(len(edges)),key=lambda index:abs(edges[index]-value))
 
 
-def _backgrounds(page):
+def _backgrounds(page, cancel=None):
     """Transfer evidenced table tint to cells; residual paper must not cover text."""
     owners=[]
     for item in page['items']:
+        check_cancel(cancel)
         if item['kind']=='text' and item.get('fill_colour'):
             owners.append((item['bbox'],item['fill_colour']))
         elif item['kind']=='table':
             owners.extend((cell.bbox,cell.style.fill_color) for cell in item['table'].cells if cell.style.fill_color)
     output=[]; fills=[]
     for item in page['items']:
+        check_cancel(cancel)
         if item['kind']!='image' or item.get('image_role')!='background':
             output.append(item); continue
         image=RasterImage.open(BytesIO(item['data'])).convert('RGBA')
-        pixels=list(image.get_flattened_data()); width,height=image.size
+        width,height=image.size
+        red,green,blue,_=image.split()
         left,top,right,bottom=item['bbox']; sx=(right-left)/width; sy=(bottom-top)/height
         for colour in {colour for _,colour in owners}:
+            check_cancel(cancel)
             rgb=tuple(int(colour.lstrip('#')[offset:offset+2],16) for offset in (0,2,4))
-            runs=[]; start=None; indices=[]
+            # Pillow applies these masks in native code. Keep byte-sized masks,
+            # rather than a Python tuple and index list for every image pixel.
+            mask=image.getchannel('A').point([0]+[255]*255)
+            for channel,target in zip((red,green,blue),rgb):
+                check_cancel(cancel)
+                mask=ImageChops.multiply(mask,channel.point([255 if abs(value-target)<=16 else 0 for value in range(256)]))
+            start=None; run_left=width; run_right=0
             for y in range(height+1):
-                matches=[x for x in range(width) if pixels[y*width+x][3] and max(abs(pixels[y*width+x][c]-rgb[c]) for c in range(3))<=16] if y<height else []
-                if len(matches)>=width*.3:
+                if y%32==0:
+                    check_cancel(cancel)
+                row=mask.crop((0,y,width,y+1)).tobytes() if y<height else b''
+                if row.count(255)>=width*.3:
                     if start is None:start=y
-                    indices.extend(y*width+x for x in matches)
+                    run_left=min(run_left,row.find(b'\xff'))
+                    run_right=max(run_right,row.rfind(b'\xff')+1)
                 elif start is not None:
-                    runs.append((start,y,indices));start=None;indices=[]
-            for y0,y1,indices in runs:
-                x0=min(index%width for index in indices);x1=max(index%width for index in indices)+1
-                box=(left+x0*sx,top+y0*sy,left+x1*sx,top+y1*sy)
-                if any(value==colour and area[0]<box[2] and area[2]>box[0] and area[1]<box[3] and area[3]>box[1]
-                       for area,value in owners):
-                    fills.append(dict(kind='fill',bbox=box,colour=colour))
-                    for index in indices:pixels[index]=(0,0,0,0)
-        pixels=[(0,0,0,0) if min(value[:3])>240 else value for value in pixels]
-        image.putdata(pixels); stream=BytesIO(); image.save(stream,format='PNG')
+                    box=(left+run_left*sx,top+start*sy,left+run_right*sx,top+y*sy)
+                    if any(value==colour and area[0]<box[2] and area[2]>box[0] and area[1]<box[3] and area[3]>box[1]
+                           for area,value in owners):
+                        fills.append(dict(kind='fill',bbox=box,colour=colour))
+                        image.paste((0,0,0,0),(0,start,width,y),mask.crop((0,start,width,y)))
+                    start=None; run_left=width; run_right=0
+        white=red.point([255 if value>240 else 0 for value in range(256)])
+        for channel in (green,blue):
+            check_cancel(cancel)
+            white=ImageChops.multiply(white,channel.point([255 if value>240 else 0 for value in range(256)]))
+        image.paste((0,0,0,0),(0,0,width,height),white)
+        check_cancel(cancel)
+        stream=BytesIO(); image.save(stream,format='PNG')
         output.append(dict(item,data=stream.getvalue()))
     return dict(page,items=[*fills,*output])
 
 
-def write_page(wb,page):
+def write_page(wb,page, *, cancel=None):
     """Use geometry for placement; item iteration never determines the next row."""
-    page=_backgrounds(page)
+    page=_backgrounds(page,cancel)
     xs=_grid(page); ys=_grid(page,True)
     last_column=max(1,len(xs)-1)
     ws=wb.create_sheet(title=f"第{page['page_no']}页")
@@ -106,6 +123,7 @@ def write_page(wb,page):
     # Split only Excel's oversized rows; compress empty gaps, never content.
     rows=[2]
     for top,bottom in zip(ys,ys[1:]):
+        check_cancel(cancel)
         occupied=any(item['bbox'][1]<bottom and item['bbox'][3]>top for item in page['items'])
         height=max(1,bottom-top) if occupied else min(24,max(1,bottom-top))
         count=max(1,ceil(height/200))
@@ -115,6 +133,7 @@ def write_page(wb,page):
 
     priority={'table':0,'fill':1,'text':2,'image':3}
     for item in sorted(page['items'],key=lambda item:(priority[item['kind']],item['bbox'][1],item['bbox'][0])):
+        check_cancel(cancel)
         left,top,right,bottom=item['bbox']
         column=_nearest(xs,left)+1; end_column=max(column,_nearest(xs,right))
         start_y=_nearest(ys,top); end_y=max(start_y+1,_nearest(ys,bottom))
@@ -124,10 +143,11 @@ def write_page(wb,page):
             table=item['table']
             columns=[_nearest(xs,edge)+1 for edge in _table_edges(table)]
             table_rows=[rows[_nearest(ys,edge)] for edge in _table_edges(table,True)]
-            _write_cells(ws,table,columns=columns,rows=table_rows)
+            _write_cells(ws,table,columns=columns,rows=table_rows,cancel=cancel)
         elif item['kind']=='fill':
             fill=PatternFill(fill_type='solid',fgColor=item['colour'].lstrip('#'))
             for cell_row in ws.iter_rows(min_row=row,max_row=end_row,min_col=column,max_col=end_column):
+                check_cancel(cancel)
                 for cell in cell_row:cell.fill=fill
         elif item['kind']=='text':
             # Glyph bounds are not a text container: allow the whitespace up
