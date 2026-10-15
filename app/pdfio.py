@@ -348,7 +348,7 @@ class PdfStore:
             if permission is not None and not safety.allows(permission):
                 return {"print": "当前密码不允许打印。", "copy": "当前密码不允许导出内容。",
                         "raster_copy": "当前密码不允许导出影像副本，请使用管理密码重新打开。",
-                        "annotate": "当前密码不允许添加或修改批注。", "content_edit": "当前密码不允许修改原文。",
+                        "annotate": "当前密码不允许添加或修改批注。", "content_edit": "当前密码不允许修改页面内容。",
                         "outline": "当前密码不允许修改大纲。"}[operation]
         return ""
 
@@ -547,6 +547,37 @@ class PdfStore:
                 self._annotation_cache.move_to_end(ref.render_key)
             return hit
 
+    def image_editor_preview(self, ref, identifier, width):
+        """Prepare a bounded source preview and a backdrop once per selection."""
+        import pymupdf as p
+        from PyQt6.QtCore import Qt
+        from app.pdfimages import IMAGE_SOURCE, MAX_IMAGE_PIXELS, image_settings
+        from app.workspace import PageEdit
+        self.require_operation([ref], 'content_edit')
+        with self._render_page(ref) as page:
+            annot = next((a for a in (page.annots() or ()) if a.info.get('id') == identifier), None)
+            if annot is None or image_settings(page, annot) is None:
+                raise PdfError('要编辑的图片已不存在。')
+            source = int(page.parent.xref_get_key(annot.xref, IMAGE_SOURCE)[1].split()[0])
+            w = int(page.parent.xref_get_key(source, 'Width')[1])
+            h = int(page.parent.xref_get_key(source, 'Height')[1])
+            if w <= 0 or h <= 0 or w * h > MAX_IMAGE_PIXELS:
+                raise PdfError('图片像素过多，无法编辑。')
+            pix = p.Pixmap(page.parent, source)
+            mask_kind, mask = page.parent.xref_get_key(source, 'SMask')
+            if mask_kind == 'xref':
+                pix = p.Pixmap(pix, p.Pixmap(page.parent, int(mask.split()[0])))
+            if pix.colorspace and pix.colorspace.n not in (1, 3):
+                pix = p.Pixmap(p.csRGB, pix)
+            if pix.colorspace and pix.colorspace.n == 1:
+                pix = p.Pixmap(p.csRGB, pix)
+            fmt = QImage.Format.Format_RGBA8888_Premultiplied if pix.alpha else QImage.Format.Format_RGB888
+            image = QImage(pix.samples_mv, pix.width, pix.height, pix.stride, fmt).scaled(
+                1024, 1024, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation).copy()
+        hidden = ref.edited(PageEdit('image_delete', annotation_id=identifier))
+        background = self.render_qimage(hidden, width)
+        return image, background
+
     def remap_annotations(self, mapping):
         with self._annotation_lock:
             for before, after in mapping.items():
@@ -736,7 +767,7 @@ class PdfStore:
     def write_operation(self, pages, options):
         if options.operation != "modify" or options.outline is not None or options.page_numbers is not None:
             return options.operation
-        if pages and any(page.edits for page in pages) and not any(e.kind == "replace" for page in pages for e in page.edits):
+        if pages and any(page.edits for page in pages) and not any(e.operation == 'content_edit' for page in pages for e in page.edits):
             sid = pages[0].source_id
             if all(page.source_id == sid and page.source_page == i and page.rotation == 0 for i, page in enumerate(pages)) and len(pages) == len(self._source(sid).sizes):
                 return "annotate"
@@ -759,7 +790,7 @@ class PdfStore:
         self.require_operation(pages, self.write_operation(pages, options))
         for ref in pages:
             for edit in ref.edits:
-                self.require_operation([ref], "content_edit" if edit.kind == "replace" else "annotate")
+                self.require_operation([ref], edit.operation)
         if options.outline is not None:
             self.require_operation(pages, "outline")
         if options.page_numbers is not None:

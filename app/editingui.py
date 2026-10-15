@@ -603,6 +603,13 @@ class AnnotationTools(QWidget):
             self.tool_buttons.append(btn)
             tool_layout.addWidget(btn, idx // 6, idx % 6)
         bar_layout.addLayout(tool_layout)
+        self.insert_image_button = QToolButton(self.bar)
+        self.insert_image_button.setText('插入图片')
+        self.insert_image_button.setAccessibleName('插入图片')
+        self.insert_image_button.setToolTip('插入 PNG/JPEG 图片，可拖动、调整尺寸和旋转')
+        self.insert_image_button.setMinimumHeight(28)
+        self.insert_image_button.clicked.connect(lambda: self.host.image_tools.choose_image())
+        tool_layout.addWidget(self.insert_image_button, 1, 5)
         self.tool_buttons[0].setChecked(True)
 
         sep1 = self.options_separator = QFrame()
@@ -760,6 +767,8 @@ class AnnotationTools(QWidget):
 
     def choose_tool(self):
         try:
+            if hasattr(self.host, 'image_tools'):
+                self.host.image_tools.clear()
             if not self.finish_text_box():
                 return
             self.cancel_move_annot()
@@ -824,7 +833,7 @@ class AnnotationTools(QWidget):
         self.snapshot_index = index
         self.annotations.blockSignals(True)
         self.annotations.clear()
-        annots = snapshot.get("annotations", ())
+        annots = [item for item in snapshot.get("annotations", ()) if not item.get('image_settings')]
         if annots:
             self.annotations.addItem("选择当前页批注…", None)
             self.annotations.setEnabled(True)
@@ -855,6 +864,8 @@ class AnnotationTools(QWidget):
             return None
         local = self.canonical(point)
         for item in reversed(self.snapshot["annotations"]):
+            if item.get('image_settings'):
+                continue
             rect = p.Rect(item["rect"])
             expanded = p.Rect(rect.x0 - 6, rect.y0 - 6, rect.x1 + 6, rect.y1 + 6)
             if expanded.contains(local):
@@ -1420,7 +1431,7 @@ class AnnotationTools(QWidget):
 
     def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None):
         index = self.host.ws.preview_index() if page_index is None else page_index
-        if index is None or not 0 <= index < len(self.host.ws.pages) or not self.host._allow_operation("content_edit" if edit.kind == "replace" else "annotate"):
+        if index is None or not 0 <= index < len(self.host.ws.pages) or not self.host._allow_operation(edit.operation):
             return False
         ref = self.host.ws.pages[index]
         if expected_ref is not None and ref is not expected_ref:

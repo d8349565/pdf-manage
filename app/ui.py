@@ -3218,6 +3218,8 @@ class MainWindow(QMainWindow):
         self.find_action.setEnabled(bool(self.ws.pages))
         self.search_bar.sync_document()
         self.text_selection.sync()
+        if hasattr(self, 'image_tools'):
+            self.image_tools.sync()
         if self.ws.pages:
             self._ensure_annotation_tools()
         if hasattr(self, "annotation_tools"):
@@ -4211,6 +4213,8 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "annotation_tools"):
             from app.editingui import AnnotationTools
             self.annotation_tools = AnnotationTools(self)
+            from app.imageui import ImageTools
+            self.image_tools = ImageTools(self)
             self._reader_layout.insertWidget(0, self.annotation_tools)
             self.annotation_tools.hide()
         return self.annotation_tools

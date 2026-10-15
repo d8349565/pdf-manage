@@ -20,13 +20,14 @@ def annotation_token(annot, ordinal):
 
 def annotation_summary(page):
     from app.pdfmarks import text_settings, is_watermark
+    from app.pdfimages import image_settings
     annotations = []
     for ordinal, annot in enumerate(page.annots() or ()):
         annotations.append(dict(id=annotation_token(annot, ordinal), kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
             text_settings=text_settings(page, annot) if annot.type[0] == 2 else None,
-            watermark=is_watermark(page, annot)))
+            watermark=is_watermark(page, annot), image_settings=image_settings(page, annot)))
     return annotations
 
 
@@ -300,6 +301,10 @@ def apply_edits(page, edits):
         identifiers.add(token)
         page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
     for edit in edits:
+        if edit.kind in ('image', 'image_update', 'image_delete'):
+            from app.pdfimages import apply_image
+            apply_image(page, edit)
+            continue
         if not all(math.isfinite(float(v)) for v in (*edit.color, edit.width)) or len(edit.color) != 3 or not all(0 <= c <= 1 for c in edit.color) or not .1 <= edit.width <= 30:
             raise ValueError("批注颜色或线宽无效。")
         if edit.kind in ("freetext", "freetext_update"):
@@ -336,6 +341,9 @@ def apply_edits(page, edits):
             if annot is None:
                 raise ValueError("要修改的批注已不存在。")
             from app.pdfmarks import is_watermark
+            from app.pdfimages import image_settings
+            if image_settings(page, annot) is not None:
+                raise ValueError('插入的图片请使用图片工具调整或删除。')
             if edit.kind != "delete" and is_watermark(page, annot):
                 raise ValueError("水印请在水印工具中移除后重新添加。")
             if edit.kind == "delete":
