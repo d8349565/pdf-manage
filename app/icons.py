@@ -176,6 +176,7 @@ _PATHS: dict[str, str] = {
         '<line x1="18" y1="6" x2="6" y2="18"/>'
         '<line x1="6" y1="6" x2="18" y2="18"/>'
     ),
+    "plus": '<path d="M12 5v14M5 12h14"/>',
     "check": '<path d="m5 12 4 4L19 6"/>',
     "move": (
         '<path d="M12 3v18M3 12h18"/>'

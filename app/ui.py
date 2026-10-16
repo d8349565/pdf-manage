@@ -5,7 +5,8 @@ import math
 import os
 import sys
 from collections import OrderedDict
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from itertools import count
 from pathlib import Path
 from bisect import bisect_left, bisect_right
 
@@ -47,6 +48,7 @@ from PyQt6.QtGui import (
     QPixmap,
     QShortcut,
     QTransform,
+    QUndoGroup,
     QWheelEvent,
     QDrag,
 )
@@ -733,7 +735,74 @@ QMenu::separator {
     background: #E2EEEC;
     margin: 4px 10px;
 }
+QFrame#documentTabBar {
+    background: #EEF4F2;
+    border: none;
+    border-bottom: 1px solid #DCE8E5;
+}
+QFrame#docTabPill {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 7px;
+}
+QFrame#docTabPill:hover {
+    background: #E2EEEB;
+}
+QFrame#docTabPill[active="true"] {
+    background: #FFFFFF;
+    border: 1px solid #C5D8D5;
+}
+QFrame#docTabPill[dropTarget="true"] {
+    background: #F0FDFA;
+    border: 1.5px dashed #0D9488;
+}
+QLabel#docTabTitle {
+    color: #4D6B67;
+    font-size: 12px;
+    padding: 0 2px;
+    background: transparent;
+}
+QLabel#docTabTitle[active="true"] {
+    color: #134E4A;
+    font-weight: 600;
+}
+QToolButton#docTabClose {
+    min-width: 18px;
+    max-width: 18px;
+    min-height: 18px;
+    max-height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+}
+QToolButton#docTabClose:hover {
+    background: #DDECE8;
+}
+QToolButton#docTabNew {
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+}
+QToolButton#docTabNew:hover {
+    background: #E2EEEB;
+}
 """
+
+
+def _pdf_paths_from_mime(mime: QMimeData) -> list[str]:
+    if not mime.hasUrls():
+        return []
+    return [
+        u.toLocalFile()
+        for u in mime.urls()
+        if u.toLocalFile().lower().endswith(".pdf")
+    ]
 
 
 class PageThumbDelegate(QStyledItemDelegate):
@@ -833,6 +902,7 @@ class PageListView(QListView):
     def __init__(self, arrange: bool, parent=None) -> None:
         super().__init__(parent)
         self._arrange = arrange
+        self._host = None
         self._acc = 0
         self._drop_row: int | None = None
         self._highlight_rect = QRectF()
@@ -889,7 +959,7 @@ class PageListView(QListView):
         self._drop_motion.stop()
         self._drop_fade.stop()
         self._highlight_opacity = 1.0
-        if row is None:
+        if row is None or row < 0 or self.model() is None or row >= self.model().rowCount():
             self._clear_highlight()
             return
         target = QRectF(self.visualRect(self.model().index(row, 0)))
@@ -918,7 +988,7 @@ class PageListView(QListView):
             self.viewport().update(old.adjusted(-5, -5, 5, 5).toAlignedRect())
 
     def _relocate_highlight(self) -> None:
-        if self._drop_row is not None:
+        if self._drop_row is not None and self.model() is not None and 0 <= self._drop_row < self.model().rowCount():
             self._drop_motion.stop()
             self._move_highlight(QRectF(self.visualRect(self.model().index(self._drop_row, 0))))
 
@@ -946,10 +1016,13 @@ class PageListView(QListView):
         if rect.isEmpty():
             return
         pix = self.viewport().grab(rect)
+        if pix.width() > 56 or pix.height() > 72:
+            pix = pix.scaled(56, 72, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         drag = QDrag(self)
         drag.setMimeData(self.model().mimeData(indexes))
         drag.setPixmap(pix)
-        drag.setHotSpot(rect.center() - rect.topLeft())
+        drag.setHotSpot(QPoint(pix.width() // 2, pix.height() // 2))
+        self.model().drag_source_ws = self.model().ws
         try:
             drag.exec(Qt.DropAction.MoveAction)
         finally:
@@ -961,6 +1034,12 @@ class PageListView(QListView):
             self._set_drop_row(self._drop_row_at(event.position().toPoint()))
             event.acceptProposedAction()
             return
+        if _pdf_paths_from_mime(event.mimeData()):
+            model = self.model()
+            if model is not None and not model.store.operation_reason(model.ws.pages, "modify"):
+                self._set_drop_row(self._drop_row_at(event.position().toPoint()))
+                event.acceptProposedAction()
+                return
         event.ignore()
 
     def dragMoveEvent(self, event) -> None:
@@ -968,6 +1047,12 @@ class PageListView(QListView):
             self._set_drop_row(self._drop_row_at(event.position().toPoint()))
             event.acceptProposedAction()
             return
+        if _pdf_paths_from_mime(event.mimeData()):
+            model = self.model()
+            if model is not None and not model.store.operation_reason(model.ws.pages, "modify"):
+                self._set_drop_row(self._drop_row_at(event.position().toPoint()))
+                event.acceptProposedAction()
+                return
         event.ignore()
 
     def dragLeaveEvent(self, event) -> None:
@@ -975,10 +1060,24 @@ class PageListView(QListView):
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event) -> None:
+        model = self.model()
+        pdf_paths = _pdf_paths_from_mime(event.mimeData())
+        if pdf_paths:
+            pos = event.position().toPoint()
+            hit = self.indexAt(pos)
+            at_index = hit.row() if hit.isValid() else (model.rowCount() if model is not None else 0)
+            self._set_drop_row(None)
+            host = self._host or self.window()
+            if hasattr(host, "insert_dropped_files") and host.insert_dropped_files(
+                pdf_paths, at_index=at_index, target_view=self
+            ):
+                event.acceptProposedAction()
+                return
+            event.ignore()
+            return
         if not event.mimeData().hasFormat(MIME):
             event.ignore()
             return
-        model = self.model()
         if model.store.operation_reason(model.ws.pages, "modify"):
             self._set_drop_row(None)
             event.ignore()
@@ -994,6 +1093,18 @@ class PageListView(QListView):
         dest = hit.row() if hit.isValid() else -1
         count = model.rowCount()
         self._set_drop_row(None)
+        source_ws = getattr(model, "drag_source_ws", None) or model.ws
+        model.drag_source_ws = None
+        if source_ws is not model.ws:
+            at_index = hit.row() if hit.isValid() else count
+            host = self._host or self.window()
+            if hasattr(host, "insert_pages_from_workspace") and host.insert_pages_from_workspace(
+                source_ws, sources, at_index=at_index, target_view=self
+            ):
+                event.acceptProposedAction()
+                return
+            event.ignore()
+            return
         if not sources or any(row < 0 or row >= count for row in sources):
             event.ignore()
             return
@@ -1073,6 +1184,8 @@ class PreviewView(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setAcceptDrops(False)
+        self.viewport().setAcceptDrops(False)
         self.horizontalScrollBar().valueChanged.connect(self.view_changed)
         self.verticalScrollBar().valueChanged.connect(self.view_changed)
 
@@ -1434,6 +1547,8 @@ class PageListModel(QAbstractListModel):
         self.store = store
         self.rendering = rendering or RenderScheduler(store, self)
         self.thumb_visible = lambda key: True
+        self.live_keys = lambda: {page.render_key for page in self.ws.pages}
+        self.drag_source_ws: Workspace | None = None
         # 按最近使用排序，超出预算就从最久没用过的那头丢，防止放大后一直占着内存。
         self.thumbs: OrderedDict[tuple, tuple[QPixmap, int]] = OrderedDict()
         self._thumb_bytes = 0
@@ -1493,6 +1608,7 @@ class PageListModel(QAbstractListModel):
         mime = QMimeData()
         rows = sorted({i.row() for i in indexes if i.isValid()})
         if rows:
+            self.drag_source_ws = self.ws
             mime.setData(MIME, ",".join(map(str, rows)).encode("utf-8"))
         return mime
 
@@ -1510,9 +1626,7 @@ class PageListModel(QAbstractListModel):
         self._rows_by_key = {}
         for row, page in enumerate(self.ws.pages):
             self._rows_by_key.setdefault(self._thumb_key(page), []).append(row)
-        live = {
-            page.render_key for page in self.ws.pages
-        }
+        live = self.live_keys()
         if any(key not in live for key in self.thumbs):
             self.thumbs = OrderedDict(
                 (k, v) for k, v in self.thumbs.items() if k in live
@@ -1832,6 +1946,242 @@ class TitleBar(QWidget):
         super().mousePressEvent(event)
 
 
+_TAB_ID_COUNTER = count(1)
+
+
+@dataclass
+class _DocumentTab:
+    ws: Workspace
+    tab_id: int = 0
+    zoom: float = 1.0
+    zoom_mode: str = "page"
+    reading_layout: str = "single"
+    arrange_zoom: float = 1.0
+    mode_index: int = 0
+    scroll_y: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.tab_id:
+            self.tab_id = next(_TAB_ID_COUNTER)
+
+
+class _TabPill(QFrame):
+    def __init__(self, tab_id: int, bar: DocumentTabBar) -> None:
+        super().__init__(bar)
+        self.tab_id = tab_id
+        self._bar = bar
+        self.setObjectName("docTabPill")
+        self.setFixedHeight(24)
+        self.setMinimumWidth(96)
+        self.setMaximumWidth(220)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAcceptDrops(True)
+        self.setProperty("active", False)
+        self.setProperty("dropTarget", False)
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.setInterval(400)
+        self._hover_timer.timeout.connect(self._on_drag_hover_timeout)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 0, 4, 0)
+        row.setSpacing(4)
+        self.title_label = QLabel(self)
+        self.title_label.setObjectName("docTabTitle")
+        self.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.title_label.setProperty("active", False)
+        row.addWidget(self.title_label, 1)
+
+        self.close_button = QToolButton(self)
+        self.close_button.setObjectName("docTabClose")
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.setFixedSize(18, 18)
+        self.close_button.setIconSize(QSize(11, 11))
+        self.close_button.setIcon(toolbar_icon("win-close", "#5E7B73", 11))
+        self.close_button.setToolTip("关闭此标签页")
+        self.close_button.setAccessibleName("关闭此标签页")
+        self.close_button.clicked.connect(lambda: self._bar._host.close_tab(self.tab_id))
+        row.addWidget(self.close_button)
+
+    def _set_drop_target(self, on: bool) -> None:
+        if bool(self.property("dropTarget")) == on:
+            return
+        self.setProperty("dropTarget", on)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _restore_title(self) -> None:
+        tab = self._bar._host._get_tab(self.tab_id)
+        if tab is not None:
+            self.update_content(tab.ws, tab.tab_id == self._bar._host._active_tab_id)
+
+    def update_content(self, ws: Workspace, active: bool) -> None:
+        raw_name = os.path.basename(ws.path) if ws.path else ("未命名文档" if ws.pages or ws.dirty else "新标签页")
+        text = f"● {raw_name}" if ws.dirty else raw_name
+        elided = self.title_label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideMiddle, 152)
+        if not self.property("dropTarget"):
+            self.title_label.setText(elided)
+        tip = ws.path or raw_name
+        if ws.dirty:
+            tip = f"{tip}（有未保存修改）"
+        self.setToolTip(tip)
+        self.setAccessibleName(raw_name)
+        if bool(self.property("active")) != active:
+            self.setProperty("active", active)
+            self.title_label.setProperty("active", active)
+            for widget in (self, self.title_label):
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._bar._host.activate_tab(self.tab_id)
+            event.accept()
+            return
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._bar._host.close_tab(self.tab_id)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _on_drag_hover_timeout(self) -> None:
+        if self._bar._host._active_tab_id != self.tab_id:
+            self._bar._host.activate_tab(self.tab_id)
+
+    def dragEnterEvent(self, event) -> None:
+        mime = event.mimeData()
+        if mime.hasFormat(MIME):
+            self._set_drop_target(True)
+            try:
+                count = len([row for row in bytes(mime.data(MIME)).decode("utf-8").split(",") if row])
+            except (ValueError, UnicodeDecodeError):
+                count = 1
+            self.title_label.setText(f"+{max(1, count)}页到此文件")
+            if self._bar._host._active_tab_id != self.tab_id:
+                self._hover_timer.start()
+            event.acceptProposedAction()
+            return
+        if _pdf_paths_from_mime(mime):
+            self._set_drop_target(True)
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        mime = event.mimeData()
+        if mime.hasFormat(MIME) or _pdf_paths_from_mime(mime):
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:
+        self._hover_timer.stop()
+        self._set_drop_target(False)
+        self._restore_title()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        self._hover_timer.stop()
+        self._set_drop_target(False)
+        self._restore_title()
+        mime = event.mimeData()
+        if mime.hasFormat(MIME):
+            try:
+                sources = [int(row) for row in bytes(mime.data(MIME)).decode("utf-8").split(",") if row]
+            except (ValueError, UnicodeDecodeError):
+                event.ignore()
+                return
+            host = self._bar._host
+            source_ws = getattr(host.model, "drag_source_ws", None) or host.ws
+            host.model.drag_source_ws = None
+            if host.drop_pages_onto_tab(self.tab_id, source_ws, sources):
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+            return
+        pdf_paths = _pdf_paths_from_mime(mime)
+        if pdf_paths:
+            self._bar._host.open_files_in_tabs(pdf_paths)
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+
+class DocumentTabBar(QFrame):
+    def __init__(self, host: MainWindow) -> None:
+        super().__init__(host)
+        self._host = host
+        self._pills: dict[int, _TabPill] = {}
+        self.setObjectName("documentTabBar")
+        self.setFixedHeight(32)
+        self.setAcceptDrops(True)
+        self.setVisible(False)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 3, 12, 3)
+        row.setSpacing(6)
+        self._pills_layout = QHBoxLayout()
+        self._pills_layout.setContentsMargins(0, 0, 0, 0)
+        self._pills_layout.setSpacing(6)
+        row.addLayout(self._pills_layout)
+
+        self.new_tab_button = QToolButton(self)
+        self.new_tab_button.setObjectName("docTabNew")
+        self.new_tab_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_tab_button.setFixedSize(24, 24)
+        self.new_tab_button.setIconSize(QSize(14, 14))
+        self.new_tab_button.setIcon(toolbar_icon("plus", "#0F766E", 14))
+        self.new_tab_button.setToolTip("打开新 PDF 标签页 (Ctrl+O)")
+        self.new_tab_button.setAccessibleName("打开新 PDF 标签页")
+        self.new_tab_button.clicked.connect(self._host.open_files)
+        row.addWidget(self.new_tab_button)
+        row.addStretch(1)
+
+    @property
+    def pills(self) -> list[_TabPill]:
+        return [self._pills[tab.tab_id] for tab in self._host._tabs if tab.tab_id in self._pills]
+
+    def pill_for(self, tab_id: int) -> _TabPill | None:
+        return self._pills.get(tab_id)
+
+    def sync_tabs(self, tabs: list[_DocumentTab], active_tab_id: int) -> None:
+        live_ids = {tab.tab_id for tab in tabs}
+        for tid in list(self._pills):
+            if tid not in live_ids:
+                pill = self._pills.pop(tid)
+                self._pills_layout.removeWidget(pill)
+                pill.hide()
+                pill.deleteLater()
+        for idx, tab in enumerate(tabs):
+            pill = self._pills.get(tab.tab_id)
+            if pill is None:
+                pill = _TabPill(tab.tab_id, self)
+                self._pills[tab.tab_id] = pill
+                self._pills_layout.insertWidget(idx, pill)
+            pill.update_content(tab.ws, tab.tab_id == active_tab_id)
+        self.setVisible(len(tabs) > 1)
+
+    def dragEnterEvent(self, event) -> None:
+        if _pdf_paths_from_mime(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if _pdf_paths_from_mime(event.mimeData()):
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dropEvent(self, event) -> None:
+        pdf_paths = _pdf_paths_from_mime(event.mimeData())
+        if pdf_paths:
+            self._host.open_files_in_tabs(pdf_paths)
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+
 class MainWindow(QMainWindow):
     first_painted = pyqtSignal()
 
@@ -1842,6 +2192,15 @@ class MainWindow(QMainWindow):
         self._opening_paths = tuple(opening_paths)
         self.ws = Workspace()
         self.store = PdfStore()
+        self._undo_refresh_timer = QTimer(self)
+        self._undo_refresh_timer.setSingleShot(True)
+        self._undo_refresh_timer.setInterval(0)
+        self._undo_refresh_timer.timeout.connect(self.refresh)
+        self.undo_group = QUndoGroup(self)
+        self._register_workspace(self.ws)
+        self.undo_group.setActiveStack(self.ws.undo_stack)
+        self._tabs: list[_DocumentTab] = [_DocumentTab(ws=self.ws)]
+        self._active_tab_id: int = self._tabs[0].tab_id
         self._selection_buttons = []
         self._syncing = False
         self._max_hover = False
@@ -1858,8 +2217,8 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(STYLESHEET)
         self.rendering = RenderScheduler(self.store, self)
         self.model = PageListModel(self.ws, self.store, rendering=self.rendering)
+        self.model.live_keys = self._live_render_keys
         self.model.reordered.connect(self.refresh)
-        self.ws.undo_stack.indexChanged.connect(lambda *_: QTimer.singleShot(0, self.refresh))
         self.preview_signals = RenderSignals()
         self.preview_signals.done.connect(self._on_preview)
         self.detail_signals = RenderSignals()
@@ -2087,9 +2446,9 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self._act("退出", self.close))
         edit = self._menubar.addMenu("编辑")
-        self.undo_action = self.ws.undo_stack.createUndoAction(self, "撤销")
+        self.undo_action = self.undo_group.createUndoAction(self, "撤销")
         self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
-        self.redo_action = self.ws.undo_stack.createRedoAction(self, "重做")
+        self.redo_action = self.undo_group.createRedoAction(self, "重做")
         self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
@@ -2158,6 +2517,8 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._workbench_bar())
+        self.tab_bar = DocumentTabBar(self)
+        layout.addWidget(self.tab_bar)
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(root)
         self.stack.currentChanged.connect(self._sync_mode)
@@ -2947,6 +3308,7 @@ class MainWindow(QMainWindow):
 
     def _list_view(self, arrange: bool) -> QListView:
         view = PageListView(arrange)
+        view._host = self
         view.setModel(self.model)
         view.clicked.connect(self._on_click)
         view.selectionModel().currentChanged.connect(self._on_current_changed)
@@ -3044,6 +3406,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+="), self, self.zoom_in)
         QShortcut(QKeySequence("F3"), self, lambda: self.search_bar.step(1))
         QShortcut(QKeySequence("Shift+F3"), self, lambda: self.search_bar.step(-1))
+        QShortcut(QKeySequence("Ctrl+Tab"), self, lambda: self.step_tab(1))
+        QShortcut(QKeySequence("Ctrl+Shift+Tab"), self, lambda: self.step_tab(-1))
 
     def focus_page_number(self) -> None:
         if self.ws.pages:
@@ -3059,6 +3423,7 @@ class MainWindow(QMainWindow):
         self._syncing = True
         try:
             self._sync_controls()
+            self._sync_tab_bar()
             self.model.reload()
             self._fit_thumbs()
             self._sync_selection()
@@ -3560,7 +3925,7 @@ class MainWindow(QMainWindow):
                     tools.hover_bar.hide()
                 if hasattr(self, 'image_tools') and self.image_tools.engaged:
                     self.image_tools.update_overlay()
-            live = {page.render_key for page in self.ws.pages}
+            live = self._live_render_keys()
             for index in list(self.preview_view.neighbors):
                 if index >= len(self.ws.pages) or self._neighbor_keys.get(index) != self.ws.pages[index].render_key:
                     self.preview_view._scene.removeItem(self.preview_view.neighbors.pop(index))
@@ -3694,7 +4059,7 @@ class MainWindow(QMainWindow):
         hit = view.page_at_point(QPointF(visible.center().x(), y))
         if hit >= 0 and not view.page_rects[index].intersects(visible):
             index = hit
-        if index != self.ws.preview_index():
+        if index != self.ws.preview_index() and (self._scrolling or index != view.active_page):
             self._scroll_navigation = True
             try:
                 self.ws.select_index(index)
@@ -4124,14 +4489,61 @@ class MainWindow(QMainWindow):
             return False
         return True
 
-    def close_current_file(self) -> None:
-        if getattr(self, "_task_dialog", None) is not None:
+    def _register_workspace(self, ws: Workspace) -> None:
+        self.undo_group.addStack(ws.undo_stack)
+        ws.undo_stack.indexChanged.connect(lambda *_: self._undo_refresh_timer.start())
+
+    def _live_render_keys(self) -> set[tuple]:
+        keys: set[tuple] = set()
+        for tab in getattr(self, "_tabs", ()):
+            for page in tab.ws.pages:
+                keys.add(page.render_key)
+        for page in self.ws.pages:
+            keys.add(page.render_key)
+        return keys
+
+    def _get_tab(self, tab_id: int) -> _DocumentTab | None:
+        for tab in self._tabs:
+            if tab.tab_id == tab_id:
+                return tab
+        return None
+
+    def _active_tab(self) -> _DocumentTab | None:
+        tab = self._get_tab(self._active_tab_id)
+        if tab is not None and tab.ws is not self.ws:
+            # 某些单测直接替换 window.ws 时同步回当前标签页引用
+            tab.ws = self.ws
+            self.model.ws = self.ws
+        return tab
+
+    def _sync_tab_bar(self) -> None:
+        tab = self._active_tab()
+        if tab is not None and hasattr(self, "tab_bar"):
+            self.tab_bar.sync_tabs(self._tabs, self._active_tab_id)
+
+    def _save_current_tab_state(self) -> None:
+        cur = self._active_tab()
+        if cur is None:
             return
-        if getattr(self, "_conv_thread", None) is not None:
-            self.statusBar().showMessage("请结束或取消转换后再关闭当前文件", 5000)
-            return
-        if not self.confirm_leave():
-            return
+        cur.zoom = self._zoom
+        cur.zoom_mode = self._zoom_mode
+        cur.reading_layout = self._reading_layout
+        cur.arrange_zoom = self._arrange_zoom
+        cur.mode_index = self.stack.currentIndex()
+        if hasattr(self, "preview_view"):
+            cur.scroll_y = self.preview_view.verticalScrollBar().value()
+
+    def activate_tab(self, tab_id: int) -> bool:
+        target = self._get_tab(tab_id)
+        if target is None:
+            return False
+        if tab_id == self._active_tab_id and self.ws is target.ws:
+            self._sync_tab_bar()
+            return True
+        tools = getattr(self, "annotation_tools", None)
+        if tools is not None and not tools.finish_text_box():
+            return False
+        self._save_current_tab_state()
         self.search_bar.cancel()
         self._reading_timer.stop()
         self._reading_settle_timer.stop()
@@ -4139,19 +4551,234 @@ class MainWindow(QMainWindow):
         self._detail_timer.stop()
         self.arrange_view._drop_motion.stop()
         self.arrange_view._drop_fade.stop()
-        if hasattr(self, "annotation_tools"):
-            self.annotation_tools.deactivate()
-        self.ws.reset()
+        self._neighbor_pending.clear()
+        self._invalidate_detail_requests()
+        self._preview_key = None
+        self._preview_image = None
+        self._shown_page = None
+        self._active_tab_id = target.tab_id
+        self.ws = target.ws
+        self.model.ws = target.ws
+        self.undo_group.setActiveStack(target.ws.undo_stack)
+        self._zoom = target.zoom
+        self._zoom_mode = target.zoom_mode
+        if target.zoom_mode in self.reading_zoom_actions:
+            self.reading_zoom_actions[target.zoom_mode].setChecked(True)
+        self._reading_layout = target.reading_layout
+        if target.reading_layout in self.reading_layout_actions:
+            self.reading_layout_actions[target.reading_layout].setChecked(True)
+        self._arrange_zoom = target.arrange_zoom
+        self.arrange_zoom_label.setText(f"{int(round(self._arrange_zoom * 100))}%")
+        target_mode = target.mode_index if target.ws.pages else 0
+        if self.stack.currentIndex() != target_mode:
+            self.stack.setCurrentIndex(target_mode)
         self.refresh()
-        self.stack.setCurrentIndex(0)
-        run_operation(self, "关闭文档", lambda progress: self.store.close_all())
-        self.welcome_open.setFocus()
-        self.statusBar().showMessage("已关闭当前文件，返回首页", 5000)
+        if target.scroll_y is not None and target.ws.pages:
+            self.preview_view.verticalScrollBar().setValue(target.scroll_y)
+        elif target.ws.preview_index() is not None:
+            self.preview_view.jump_to_page(target.ws.preview_index())
+        return True
+
+    def step_tab(self, delta: int) -> None:
+        if len(self._tabs) <= 1:
+            return
+        ids = [tab.tab_id for tab in self._tabs]
+        try:
+            cur_idx = ids.index(self._active_tab_id)
+        except ValueError:
+            cur_idx = 0
+        next_idx = (cur_idx + delta) % len(ids)
+        self.activate_tab(ids[next_idx])
+
+    def _confirm_leave_all_tabs(self) -> bool:
+        if not self.confirm_leave():
+            return False
+        for tab in list(self._tabs):
+            if tab.tab_id != self._active_tab_id and tab.ws.dirty:
+                if not self.activate_tab(tab.tab_id):
+                    return False
+                if not self.confirm_leave():
+                    return False
+        return True
+
+    def close_tab(self, tab_id: int) -> bool:
+        if getattr(self, "_task_dialog", None) is not None:
+            return False
+        if getattr(self, "_conv_thread", None) is not None:
+            self.statusBar().showMessage("请结束或取消转换后再关闭当前文件", 5000)
+            return False
+        tab = self._get_tab(tab_id)
+        if tab is None:
+            return False
+        if tab.ws.dirty:
+            if self._active_tab_id != tab_id and not self.activate_tab(tab_id):
+                return False
+            if not self.confirm_leave():
+                return False
+        if len(self._tabs) <= 1:
+            self.search_bar.cancel()
+            self._reading_timer.stop()
+            self._reading_settle_timer.stop()
+            self._preview_timer.stop()
+            self._detail_timer.stop()
+            self.arrange_view._drop_motion.stop()
+            self.arrange_view._drop_fade.stop()
+            if hasattr(self, "annotation_tools"):
+                self.annotation_tools.deactivate()
+            self.ws.reset()
+            tab.zoom = 1.0
+            tab.zoom_mode = "page"
+            tab.reading_layout = "single"
+            tab.arrange_zoom = 1.0
+            tab.mode_index = 0
+            tab.scroll_y = None
+            self.refresh()
+            self.stack.setCurrentIndex(0)
+            run_operation(self, "关闭文档", lambda progress: self.store.close_all())
+            self.welcome_open.setFocus()
+            self.statusBar().showMessage("已关闭当前文件，返回首页", 5000)
+            return True
+
+        idx = self._tabs.index(tab)
+        neighbor = self._tabs[idx - 1] if idx > 0 else self._tabs[1]
+        self.undo_group.removeStack(tab.ws.undo_stack)
+        self._tabs.remove(tab)
+        if tab_id == self._active_tab_id:
+            self.activate_tab(neighbor.tab_id)
+        else:
+            self._sync_tab_bar()
+        self._release_unused_docs()
+        self.statusBar().showMessage("已关闭标签页", 4000)
+        return True
+
+    def close_current_file(self) -> None:
+        self.close_tab(self._active_tab_id)
 
     def open_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF", "", "PDF (*.pdf)")
         if paths:
-            self._ingest(paths, replace=True)
+            self.open_files_in_tabs(paths)
+
+    def open_files_in_tabs(self, paths: list[str]) -> bool:
+        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith(".pdf")]
+        if not valid_paths:
+            return False
+        opened_any = False
+        for index, path in enumerate(valid_paths, start=1):
+            norm = os.path.normcase(path)
+            existing = next(
+                (
+                    t
+                    for t in self._tabs
+                    if t.ws.path and os.path.normcase(os.path.abspath(t.ws.path)) == norm and not t.ws.dirty
+                ),
+                None,
+            )
+            if existing is not None:
+                self.activate_tab(existing.tab_id)
+                opened_any = True
+                continue
+            pages = self._try_load(path, index, len(valid_paths))
+            if pages is None:
+                self._release_unused_docs()
+                break
+            cur_tab = self._active_tab()
+            if cur_tab is not None and not self.ws.pages and not self.ws.dirty and not self.ws.path:
+                self.ws.reset()
+                self._zoom_mode = "page"
+                self.ws.open_replace(pages, path)
+                self.refresh()
+                opened_any = True
+            else:
+                ws = Workspace()
+                self._register_workspace(ws)
+                ws.open_replace(pages, path)
+                new_tab = _DocumentTab(ws=ws)
+                self._tabs.append(new_tab)
+                self.activate_tab(new_tab.tab_id)
+                opened_any = True
+        self._release_unused_docs()
+        self._sync_tab_bar()
+        return opened_any
+
+    def insert_dropped_files(
+        self,
+        paths: list[str],
+        *,
+        at_index: int | None = None,
+        target_view: PageListView | None = None,
+    ) -> bool:
+        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith(".pdf")]
+        if not valid_paths:
+            return False
+        if not self.ws.pages:
+            return self.open_files_in_tabs(valid_paths)
+        if not self._allow_operation("modify"):
+            return False
+        base_pos = len(self.ws.pages) if at_index is None else max(0, min(at_index, len(self.ws.pages)))
+        inserted_count = 0
+        cur_pos = base_pos
+        for index, path in enumerate(valid_paths, start=1):
+            pages = self._load_one(path, index, len(valid_paths), insert_at=cur_pos)
+            if not pages:
+                break
+            cur_pos += len(pages)
+            inserted_count += len(pages)
+        if inserted_count > 0:
+            inserted_range = list(range(base_pos, base_pos + inserted_count))
+            self.ws.set_selection(inserted_range, current=base_pos)
+            self.refresh()
+            self._sync_selection()
+            view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
+            view.scrollTo(self.model.index(base_pos, 0))
+            view._show_landing(base_pos)
+            self.statusBar().showMessage(f"已插入 {inserted_count} 页 · 可拖动调整顺序或 Ctrl+Z 撤销", 4000)
+            return True
+        return False
+
+    def insert_pages_from_workspace(
+        self,
+        source_ws: Workspace,
+        sources: list[int],
+        *,
+        at_index: int | None = None,
+        target_view: PageListView | None = None,
+    ) -> bool:
+        if source_ws is self.ws:
+            return False
+        if self.ws.pages and not self._allow_operation("modify"):
+            return False
+        rows = sorted({row for row in sources if 0 <= row < len(source_ws.pages)})
+        if not rows:
+            return False
+        source_pages = [source_ws.pages[row] for row in rows]
+        reason = self.store.operation_reason(source_pages, "modify")
+        if reason:
+            self._warn_merge_readonly(source_ws.path or "来源文档", source_pages, reason)
+            return False
+        incoming = Workspace._unique_pages(source_pages, source_pages)
+        incoming_outline = (
+            self.store.outline_entries(incoming, group_sources=True) if self.ws.outline is not None else None
+        )
+        base_pos = len(self.ws.pages) if at_index is None else max(0, min(at_index, len(self.ws.pages)))
+        self.ws.insert_pages(incoming, at_index=base_pos, outline=incoming_outline)
+        inserted_range = list(range(base_pos, base_pos + len(incoming)))
+        self.ws.set_selection(inserted_range, current=base_pos)
+        self.refresh()
+        self._sync_selection()
+        view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
+        view.scrollTo(self.model.index(base_pos, 0))
+        view._show_landing(base_pos)
+        self.statusBar().showMessage(f"已跨文档并入 {len(incoming)} 页 · 原文档保留不变", 4000)
+        return True
+
+    def drop_pages_onto_tab(self, target_tab_id: int, source_ws: Workspace, sources: list[int]) -> bool:
+        target_tab = self._get_tab(target_tab_id)
+        if target_tab is None or target_tab.ws is source_ws:
+            return False
+        if not self.activate_tab(target_tab_id):
+            return False
+        return self.insert_pages_from_workspace(source_ws, sources, at_index=len(self.ws.pages))
 
     def append_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(self, "追加 PDF", "", "PDF (*.pdf)")
@@ -4316,7 +4943,9 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "不能合并只读文档", message)
 
     def _release_unused_docs(self) -> None:
-        keep = self.ws.live_sources()
+        keep = set(self.ws.live_sources())
+        for tab in getattr(self, "_tabs", ()):
+            keep |= tab.ws.live_sources()
         run_operation(self, "整理工作区", lambda progress: self.store.close_except(keep))
 
     def _allow_operation(self, operation: str) -> bool:
@@ -4973,17 +5602,17 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
+        if _pdf_paths_from_mime(event.mimeData()):
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
-        paths = [
-            u.toLocalFile()
-            for u in event.mimeData().urls()
-            if u.toLocalFile().lower().endswith(".pdf")
-        ]
+        paths = _pdf_paths_from_mime(event.mimeData())
         if paths:
-            self._ingest(paths, replace=not self.ws.pages)
+            pos = event.position().toPoint()
+            if self._in_arrange() and self.ws.pages and self.stack.geometry().contains(pos):
+                self.insert_dropped_files(paths, at_index=len(self.ws.pages), target_view=self.arrange_view)
+            else:
+                self.open_files_in_tabs(paths)
         event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:
@@ -4995,11 +5624,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("正在取消转换，结束后可关闭窗口")
             event.ignore()
             return
-        if self.confirm_leave():
+        if self._confirm_leave_all_tabs():
             self.updates.stop()
             self.reading_orb.shutdown()
             self._save_ui_preferences()
             self.search_bar.cancel()
+            self._undo_refresh_timer.stop()
             self._reading_timer.stop()
             self._reading_settle_timer.stop()
             self._preview_timer.stop()
