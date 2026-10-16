@@ -41,6 +41,7 @@ _PATHS: dict[str, str] = {
         '<rect width="7" height="7" x="13" y="13" rx="1.5"/>'
     ),
     "page-single": '<rect x="6" y="3" width="12" height="18" rx="1.5"/>',
+    "book-open": '<path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1zM12 5v15M6 8h3M6 11h3M15 8h3M15 11h3"/>',
     "page-spread": (
         '<rect x="3" y="4" width="8" height="16" rx="1.5"/>'
         '<rect x="13" y="4" width="8" height="16" rx="1.5"/>'

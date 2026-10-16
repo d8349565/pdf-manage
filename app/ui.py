@@ -59,7 +59,6 @@ from PyQt6.QtWidgets import (
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
-    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -236,9 +235,6 @@ QLabel, QRadioButton { background: transparent; }
 QLabel#documentName { font-size: 16px; font-weight: 600; }
 QLabel#saveState { color: #4D6B67; padding: 4px 8px; }
 QLabel#welcomeTitle { font-size: 26px; font-weight: 600; }
-QPushButton[mode="true"]:checked {
-    background: #CCFBF1; color: #134E4A; border-color: #0F766E;
-}
 QSpinBox {
     background: #FFFFFF; border: 1px solid #D7E8E4;
     border-radius: 6px; padding: 6px; min-height: 24px;
@@ -279,6 +275,17 @@ QFrame#workbench {
     background: #FFFFFF; border: 1px solid #E2EEEC; border-radius: 12px;
 }
 QFrame#workbench QPushButton { min-height: 26px; padding: 4px 12px; border-radius: 7px; }
+QFrame#modeSwitch {
+    background: #EEF3F0; border: 1px solid #CBDCD4; border-radius: 9px;
+}
+QFrame#modeSwitch QToolButton {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+}
+QFrame#modeSwitch QToolButton:hover { background: #DDE9E2; }
+QFrame#modeSwitch QToolButton:checked { background: #0F766E; border-color: #0F766E; }
+QFrame#modeSwitch QToolButton:checked:hover { background: #115E59; }
+QFrame#modeSwitch QToolButton:focus { border: 2px solid #134E4A; }
+QFrame#modeSwitch QToolButton:checked:focus { border: 2px dotted #FFFFFF; }
 QPushButton:hover { background: #F0FDFA; }
 QPushButton:pressed { background: #CCFBF1; }
 QPushButton:focus { border: 2px solid #0D9488; }
@@ -473,9 +480,9 @@ QFrame#annotationBar {
     border-radius: 0;
 }
 QFrame#annotationBar QToolButton {
-    min-width: 28px;
+    min-width: 26px;
     min-height: 30px;
-    padding: 0 6px;
+    padding: 0 3px;
     color: #344D42;
     background: transparent;
     border: 1px solid transparent;
@@ -1111,28 +1118,31 @@ class PreviewView(QGraphicsView):
             self._scene.setSceneRect(QRectF(0, 0, width, max(0, y - 16)))
             self.resetCachedContent()
             return True
-        left = max((w for w, h in sizes[1::2]), default=0)
-        right = max((w for w, h in sizes[2::2]), default=left)
+        # 两页文档直接成对，不能拆成独立的封面与末页。
+        pair_start = 0 if len(sizes) == 2 else 1
+        left = max((w for w, h in sizes[pair_start::2]), default=0)
+        right = max((w for w, h in sizes[pair_start + 1::2]), default=left)
         if spread and len(sizes) > 1:
-            if len(sizes) % 2 == 0:
+            if (len(sizes) - pair_start) % 2:
                 right = max(right, sizes[-1][0])
             width = max(width, left + 12 + right)
         spine = (width + left - right - 12) / 2
         y = 0
         index = 0
         while index < len(sizes):
-            row = range(index, min(index + (2 if spread and index else 1), len(sizes)))
+            paired = spread and index >= pair_start
+            row = range(index, min(index + (2 if paired else 1), len(sizes)))
             height = max(sizes[i][1] for i in row)
             for i in row:
                 w, h = sizes[i]
                 x = (width - w) / 2
-                if spread and index:
+                if paired:
                     x = spine - w if i == index else spine + 12
                 self.page_rects.append(QRectF(x, y, w, h))
                 self._page_rows.append(len(self._rows))
             self._rows.append(row)
             bounds = self.page_rects[index].united(self.page_rects[row.stop - 1])
-            if spread and index and len(row) == 1:
+            if paired and len(row) == 1:
                 # 末尾偶数页保留右侧空位，维持书籍左右页的方向。
                 w, h = sizes[index]
                 bounds = bounds.united(QRectF(spine + 12, y, w, h))
@@ -1987,6 +1997,7 @@ class MainWindow(QMainWindow):
         self.sidebar_mode.setCurrentIndex(0)
         self.export_tools.setCurrentIndex(0)
         self._set_reading_layout('single')
+        self.reading_orb.restore()
         self._save_ui_preferences()
         self.statusBar().showMessage('界面已恢复默认，文档与存储设置保留。', 5000)
 
@@ -2129,6 +2140,9 @@ class MainWindow(QMainWindow):
         view.addAction(self._act("整理页面", lambda: self.stack.setCurrentIndex(1)))
         view.addAction(self._act("大纲书签", self.open_outline))
         view.addSeparator()
+        view.addMenu(self.reading_settings_menu)
+        view.addAction(self.reading_orb.restore_action)
+        view.addSeparator()
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
         view.addAction(self._act('恢复界面', self.reset_ui_preferences))
@@ -2178,9 +2192,9 @@ class MainWindow(QMainWindow):
         bar.setObjectName("workbench")
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(6, 2, 6, 2)
-        layout.setSpacing(4)
+        layout.setSpacing(2)
         bar.setFixedHeight(40)
-        bar.setStyleSheet("QFrame#workbench QPushButton { padding: 2px 8px; min-height: 24px; } QToolButton { padding: 0; min-width: 28px; min-height: 28px; } QSpinBox { padding: 2px; min-height: 24px; }")
+        bar.setStyleSheet("QFrame#workbench QToolButton { padding: 0; min-width: 26px; min-height: 26px; } QSpinBox { padding: 2px; min-height: 24px; }")
         actions = QHBoxLayout()
         actions.setSpacing(2)
         for action, icon in (
@@ -2190,7 +2204,7 @@ class MainWindow(QMainWindow):
             (self.undo_action, "undo"), (self.redo_action, "redo"),
         ):
             button = self._icon_btn(icon, action.text(), action.trigger)
-            button.setFixedSize(30, 30)
+            button.setFixedSize(28, 28)
             actions.addWidget(button)
             def sync(a=action, b=button):
                 b.setEnabled(a.isEnabled())
@@ -2199,23 +2213,38 @@ class MainWindow(QMainWindow):
             action.changed.connect(sync)
             sync()
         layout.addLayout(actions)
+        layout.addSpacing(6)
+        self.mode_switch = QFrame(bar)
+        self.mode_switch.setObjectName('modeSwitch')
+        self.mode_switch.setAccessibleName('工作模式')
+        self.mode_switch.setFixedHeight(32)
+        modes = QHBoxLayout(self.mode_switch)
+        modes.setContentsMargins(2, 1, 2, 1)
+        modes.setSpacing(2)
         document = QHBoxLayout()
+        document.setSpacing(2)
         self.mode_group = QButtonGroup(self)
         self.mode_buttons = []
-        for index, label in enumerate(("阅读", "整理页面")):
-            button = self._btn(label, lambda checked=False, i=index: self.stack.setCurrentIndex(i))
-            button.setProperty("mode", True)
+        for index, (label, icon) in enumerate((("阅读", "book-open"), ("整理页面", "layout-grid"))):
+            button = self._icon_btn(icon, label, lambda checked=False, i=index: self.stack.setCurrentIndex(i))
+            button.setFixedSize(28, 28)
             button.setCheckable(True)
+            button.setIcon(toolbar_icon(icon, '#4D6B67'))
+            button.setToolTip(f'{label}模式')
+            button.toggled.connect(lambda checked, b=button, name=icon:
+                                   b.setIcon(toolbar_icon(name, '#FFFFFF' if checked else '#4D6B67')))
             self.mode_group.addButton(button, index)
             self.mode_buttons.append(button)
-            document.addWidget(button)
+            modes.addWidget(button)
         self.mode_buttons[0].setChecked(True)
+        layout.addWidget(self.mode_switch)
+        layout.addSpacing(6)
         self.review_button = self._icon_btn("pen", "审阅与文字修正", self.toggle_annotation_tools)
-        self.review_button.setFixedSize(30, 30)
+        self.review_button.setFixedSize(28, 28)
         self.review_button.setCheckable(True)
         document.addWidget(self.review_button)
         self.search_button = self._action_btn(self.find_action)
-        self.search_button.setFixedSize(30, 30)
+        self.search_button.setFixedSize(28, 28)
         document.addWidget(self.search_button)
         self.document_name = QLabel(bar)
         self.document_name.setObjectName("documentName")
@@ -2234,18 +2263,19 @@ class MainWindow(QMainWindow):
             ("scissors", "提取所选页", self.extract_selected),
         ):
             button = self._icon_btn(icon, label, slot, danger=icon == "trash")
-            button.setFixedSize(30, 30)
+            button.setFixedSize(28, 28)
             self._selection_buttons.append(button)
             layout.addWidget(button)
         self.split_tool_button = self._icon_btn("split", "拆分文件", lambda: self.open_export_tool(1))
         self.convert_tool_button = self._icon_btn("table", "PDF 转 Excel", lambda: self.open_export_tool(2))
         for button in (self.split_tool_button, self.convert_tool_button):
-            button.setFixedSize(30, 30)
+            button.setFixedSize(28, 28)
             layout.addWidget(button)
         layout.addStretch()
+        layout.addWidget(self.navigation_bar)
         for action in (self.act_pages, self.act_tools):
             button = self._action_btn(action)
-            button.setFixedSize(30, 30)
+            button.setFixedSize(28, 28)
             layout.addWidget(button)
         return bar
 
@@ -2256,6 +2286,7 @@ class MainWindow(QMainWindow):
 
     def _sync_mode(self, index: int) -> None:
         self.mode_buttons[index].setChecked(True)
+        self.navigation_bar.setVisible(bool(self.ws.pages) and index == 0)
         if index == 1 and hasattr(self, "annotation_tools"):
             if self.annotation_tools.deactivate() is False:
                 self.stack.setCurrentIndex(0)
@@ -2346,7 +2377,8 @@ class MainWindow(QMainWindow):
         self.convert_tool_button.setEnabled(bool(count) and not copy_reason)
         self._set_pages_visible(self.act_pages.isChecked())
         self._set_tools_visible(self.act_tools.isChecked())
-        self.navigation_bar.setVisible(bool(count))
+        self.navigation_bar.setVisible(bool(count) and not self._in_arrange())
+        self.reading_orb.sync()
         self.mode_buttons[1].setEnabled(bool(count) or self._in_arrange())
         self.review_button.setEnabled(bool(count))
         self._update_export_controls()
@@ -2385,7 +2417,6 @@ class MainWindow(QMainWindow):
             button.setToolTip(name + (" (Alt+Left)" if button is self.previous_page else " (Alt+Right)"))
         self.page_number.setToolTip("输入任意页码，按 Enter 跳转到所在页面组" if self.preview_view.spread
                                     else "输入页码，按 Enter 跳转")
-        self._layout_reader_toolbar()
 
     def go_to_page(self, number: int, *, reveal=True) -> None:
         if not 1 <= number <= len(self.ws.pages):
@@ -2419,28 +2450,10 @@ class MainWindow(QMainWindow):
         self._reading_layout = mode
         action = self.reading_layout_actions[mode]
         action.setChecked(True)
-        self.reading_layout_button.setIcon(action.icon())
-        self.reading_layout_button.setAccessibleName('页面布局：' + action.text())
-        self.reading_layout_button.setToolTip('页面布局：' + action.text() + '\n单页 Ctrl+1 · 双页 Ctrl+2 · 四页 Ctrl+4')
         if self.ws.pages:
             self.stack.setCurrentIndex(0)
         self._update_preview(lightweight=True)
-
-    def _layout_reader_toolbar(self) -> None:
-        if not hasattr(self, '_reader_toolbar_grid'):
-            return
-        needed = (self._reader_page_controls.minimumSizeHint().width()
-                  + self._reader_zoom_controls.minimumSizeHint().width() + 36)
-        compact = self.navigation_bar.width() < needed
-        if compact == getattr(self, '_toolbar_compact', None):
-            return
-        self._toolbar_compact = compact
-        grid = self._reader_toolbar_grid
-        grid.removeWidget(self._reader_zoom_controls)
-        grid.addWidget(self._reader_zoom_controls, 1 if compact else 0, 0 if compact else 1,
-                       1, 2 if compact else 1)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 0 if compact else 1)
+        self.reading_orb.sync()
 
     def open_search(self) -> None:
         self.search_bar.open_search()
@@ -2521,7 +2534,6 @@ class MainWindow(QMainWindow):
         self.banner.setObjectName("hint")
         self.banner.setWordWrap(True)
         page_controls = QWidget()
-        self._reader_page_controls = page_controls
         page_bar = QHBoxLayout(page_controls)
         page_bar.setContentsMargins(0, 0, 0, 0)
         page_bar.setSpacing(4)
@@ -2558,23 +2570,6 @@ class MainWindow(QMainWindow):
         zoom_bar.addWidget(self.zoom_label)
         zoom_in_button = self._icon_btn("zoom-in", "放大", self.zoom_in, shortcut="Ctrl+=")
         zoom_bar.addWidget(zoom_in_button)
-        self.zoom_mode = QComboBox()
-        self.zoom_mode.setObjectName('readingZoomMode')
-        self.zoom_mode.setAccessibleName("阅读缩放模式")
-        self.zoom_mode.setFixedHeight(30)
-        self.zoom_mode.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self.zoom_mode.setStyleSheet('''
-            QComboBox#readingZoomMode {
-                min-height: 28px; max-height: 28px; padding: 0 26px 0 8px; border-radius: 6px;
-                border: 1px solid #D7E8E4;
-            }
-            QComboBox#readingZoomMode:focus { border: 1px solid #0D9488; }
-            QComboBox#readingZoomMode::drop-down { width: 22px; }
-        ''')
-        for label, mode in (("适合页面", "page"), ("适合宽度", "width"), ("自定义缩放", "custom")):
-            self.zoom_mode.addItem(label, mode)
-        self.zoom_mode.currentIndexChanged.connect(lambda: self._set_zoom_mode(self.zoom_mode.currentData()))
-        zoom_bar.addWidget(self.zoom_mode, 0, Qt.AlignmentFlag.AlignVCenter)
         zoom_fit_button = self._icon_btn("fit-width", "适合宽度", self.zoom_fit, shortcut="Ctrl+0")
         zoom_bar.addWidget(zoom_fit_button)
         self.preview_empty = QWidget()
@@ -2617,30 +2612,36 @@ class MainWindow(QMainWindow):
         self.navigation_bar = QFrame()
         self.navigation_bar.setObjectName("readerToolbar")
         self.navigation_bar.setStyleSheet('''
-            QFrame#readerToolbar { background: #FFFFFF; border: none; border-bottom: 1px solid #E2EEEC; }
+            QFrame#readerToolbar { background: transparent; border: none; }
             QFrame#readerToolbar QWidget { background: transparent; }
-            QFrame#readerToolbar QToolButton { min-width: 28px; min-height: 28px; padding: 0; border-radius: 6px; }
-            QFrame#readerToolbar QMenu { background: #FFFFFF; }
-            QFrame#readerToolbar QMenu::item:checked { color: #0F6557; background: #E4F2ED; font-weight: 600; }
-            QToolButton#readerLayoutButton::menu-indicator {
-                width: 5px; height: 3px; right: 2px; bottom: 3px; subcontrol-position: bottom right;
-            }
+            QFrame#readerToolbar QToolButton { min-width: 26px; min-height: 26px; padding: 0; border-radius: 6px; }
+            QFrame#readerToolbar QLabel { font-size: 13px; }
         ''')
-        self._reader_toolbar_grid = QGridLayout(self.navigation_bar)
-        self._reader_toolbar_grid.setContentsMargins(12, 6, 12, 6)
-        self._reader_toolbar_grid.setHorizontalSpacing(12)
-        self._reader_toolbar_grid.setVerticalSpacing(6)
-        self._reader_toolbar_grid.addWidget(page_controls, 0, 0)
-        self.reading_layout_button = QToolButton()
-        self.reading_layout_button.setObjectName('readerLayoutButton')
-        self.reading_layout_button.setIcon(toolbar_icon('page-single', '#526B63', 18))
-        self.reading_layout_button.setIconSize(QSize(18, 18))
-        self.reading_layout_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.reading_layout_button.setAccessibleName('页面布局：单页连续')
-        self.reading_layout_button.setToolTip('页面布局：单页连续\n单页 Ctrl+1 · 双页 Ctrl+2 · 四页 Ctrl+4')
-        self.reading_layout_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        layout_menu = QMenu(self.reading_layout_button)
-        layout_menu.setAccessibleName('页面布局选项')
+        navigation = QHBoxLayout(self.navigation_bar)
+        navigation.setContentsMargins(0, 0, 0, 0)
+        navigation.setSpacing(8)
+        navigation.addWidget(page_controls)
+        navigation.addWidget(self._reader_zoom_controls)
+        self.navigation_bar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.reading_settings_menu = layout_menu = QMenu('阅读设置', self)
+        layout_menu.setObjectName('readingSettingsMenu')
+        layout_menu.setAccessibleName('阅读设置')
+        layout_menu.setToolTipsVisible(True)
+        layout_menu.setStyleSheet('''
+            QMenu#readingSettingsMenu {
+                background: #FFFFFF; color: #29483B; border: 1px solid #D5E5DD;
+                border-radius: 9px; padding: 6px; font-size: 13px;
+            }
+            QMenu#readingSettingsMenu::item { padding: 7px 18px 7px 10px; margin: 1px 3px; border-radius: 5px; }
+            QMenu#readingSettingsMenu::item:selected { background: #EDF6F1; }
+            QMenu#readingSettingsMenu::item:checked { background: #E3F1E9; color: #0F6557; font-weight: 600; }
+            QMenu#readingSettingsMenu::separator { background: #E0EAE5; height: 1px; margin: 5px 7px; }
+        ''')
+        self.reading_fallback_notice = QAction('阅读区较窄，当前暂用单页', layout_menu)
+        self.reading_fallback_notice.setEnabled(False)
+        self.reading_fallback_notice.setVisible(False)
+        layout_menu.addAction(self.reading_fallback_notice)
+        layout_menu.addSection('页面布局')
         self.reading_layout_group = QActionGroup(self)
         self.reading_layout_actions = {}
         for mode, label, icon, key in (('single', '单页连续', 'page-single', 'Ctrl+1'),
@@ -2654,18 +2655,27 @@ class MainWindow(QMainWindow):
             self.reading_layout_actions[mode] = action
             self.addAction(action)
             layout_menu.addAction(action)
-        self.reading_layout_button.setMenu(layout_menu)
-        zoom_bar.addWidget(self.reading_layout_button)
-        self.page_number.setFixedHeight(30)
-        self.layout_hint = QLabel("窗口较窄，暂用单页；展开阅读区后自动恢复双页。")
-        self.layout_hint.setWordWrap(True)
-        self.layout_hint.setStyleSheet("color: #4D6B67; background: #F0F5F3; font-size: 12px; padding: 4px 12px;")
-        self.layout_hint.hide()
-        self._layout_reader_toolbar()
+        layout_menu.addSection('页面适配')
+        self.reading_zoom_group = QActionGroup(self)
+        self.reading_zoom_actions = {}
+        for mode, label, icon in (('page', '适合页面', 'page-single'),
+                                   ('width', '适合宽度', 'fit-width'),
+                                   ('custom', '手动缩放', 'zoom-in')):
+            action = self._act(label, lambda checked=False, m=mode: self._set_zoom_mode(m))
+            action.setIcon(toolbar_icon(icon, '#526B63', 18))
+            action.setCheckable(True)
+            action.setChecked(mode == self._zoom_mode)
+            action.setToolTip('使用顶部加减或 Ctrl+滚轮调整' if mode == 'custom' else label)
+            self.reading_zoom_group.addAction(action)
+            self.reading_zoom_actions[mode] = action
+            layout_menu.addAction(action)
+        from app.readingsettings import ReadingSettingsOrb
+        self.reading_orb = ReadingSettingsOrb(self, layout_menu)
+        self.page_number.setFixedHeight(28)
         for button in self.navigation_bar.findChildren(QToolButton):
-            button.setFixedSize(30, 30)
+            button.setFixedSize(28, 28)
         focus_order = (self.previous_page, self.page_number, self.next_page, zoom_out_button,
-                       zoom_in_button, self.zoom_mode, zoom_fit_button, self.reading_layout_button)
+                       zoom_in_button, zoom_fit_button)
         for before, after in zip(focus_order, focus_order[1:]):
             QWidget.setTabOrder(before, after)
         from app.searchui import SearchBar
@@ -2674,8 +2684,6 @@ class MainWindow(QMainWindow):
         self.text_selection = TextSelection(self)
         from app.readerinteraction import ReaderInteraction
         self.reader_interaction = ReaderInteraction(self)
-        c_l.addWidget(self.navigation_bar)
-        c_l.addWidget(self.layout_hint)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -3187,7 +3195,6 @@ class MainWindow(QMainWindow):
             and obj is preview.viewport()
             and event.type() == QEvent.Type.Resize
         ):
-            self._layout_reader_toolbar()
             self._apply_view_zoom()
             width = preview.viewport().width()
             if abs(width - self._last_vp_w) >= 40 or self._reading_layout != 'single':
@@ -3429,9 +3436,8 @@ class MainWindow(QMainWindow):
 
     def _set_zoom_mode(self, mode) -> None:
         self._zoom_mode = mode
-        self.zoom_mode.blockSignals(True)
-        self.zoom_mode.setCurrentIndex(self.zoom_mode.findData(mode))
-        self.zoom_mode.blockSignals(False)
+        self.reading_zoom_actions[mode].setChecked(True)
+        self.reading_orb.sync()
         self._apply_view_zoom()
         self._preview_timer.start()
         index = self.ws.preview_index()
@@ -3534,9 +3540,8 @@ class MainWindow(QMainWindow):
             point = view.mapToScene(view.viewport().rect().center()) - old_rect.topLeft()
             anchor = QPointF(max(0, min(old_rect.width(), point.x())),
                              max(0, min(old_rect.height(), point.y())))
-        layout_name = '四页' if self._reading_layout == 'four' else '双页'
-        self.layout_hint.setText(f'窗口较窄，暂用单页；展开阅读区后自动恢复{layout_name}。')
-        self.layout_hint.setVisible(bool(self.ws.pages) and requested_columns > 1 and not spread)
+        self.reading_fallback_notice.setVisible(bool(self.ws.pages) and requested_columns > 1 and not spread)
+        self.reading_orb.sync()
         geometry_changed = False
         if layout_changed:
             self.arrange_preview.hide()
@@ -4049,9 +4054,8 @@ class MainWindow(QMainWindow):
             view.fit_page = mode == 'page'
             view.update_page_visibility()
             self.zoom_label.setText(f"{self._zoom * 100:.0f}%")
-            self.zoom_mode.blockSignals(True)
-            self.zoom_mode.setCurrentIndex(self.zoom_mode.findData(mode))
-            self.zoom_mode.blockSignals(False)
+            self.reading_zoom_actions[mode].setChecked(True)
+            self.reading_orb.sync()
             center = view.mapToScene(view.viewport().rect().center())
             bounds = view._scene.sceneRect()
             if view.spread and mode in ('page', 'width'):
@@ -4993,6 +4997,7 @@ class MainWindow(QMainWindow):
             return
         if self.confirm_leave():
             self.updates.stop()
+            self.reading_orb.shutdown()
             self._save_ui_preferences()
             self.search_bar.cancel()
             self._reading_timer.stop()

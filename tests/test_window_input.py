@@ -142,7 +142,9 @@ def test_page_navigation_and_modes_keep_document_state(loaded_window):
     window._sync_selection()
     QTest.mouseClick(window.mode_buttons[1], Qt.MouseButton.LeftButton)
     assert window.stack.currentIndex() == 1
+    assert [button.isChecked() for button in window.mode_buttons] == [False, True]
     QTest.mouseClick(window.mode_buttons[0], Qt.MouseButton.LeftButton)
+    assert [button.isChecked() for button in window.mode_buttons] == [True, False]
     assert window.ws.selected == {1, 3}
     assert window.ws.preview_index() == 3
     assert window._zoom == 1.25
@@ -243,11 +245,21 @@ def test_reading_toolbar_fits_the_reader_and_top_actions_stay_compact(loaded_win
     assert window.banner.isHidden() and window.details.isHidden()
     toolbar = window.findChild(QFrame, 'workbench')
     assert toolbar.height() == 40
-    assert all(toolbar.rect().contains(button.geometry()) for button in window.mode_buttons)
+    assert window.mode_switch.parentWidget() is toolbar
+    assert window.mode_switch.height() == 32
+    assert all(button.parentWidget() is window.mode_switch for button in window.mode_buttons)
+    assert all(window.mode_switch.rect().contains(button.geometry()) for button in window.mode_buttons)
+    assert all(toolbar.rect().contains(QRect(button.mapTo(toolbar, QPoint()), button.size()))
+               for button in window.mode_buttons)
     reader_toolbar = window.navigation_bar
-    assert reader_toolbar.height() <= 54
-    for widget in (window.page_number, window.zoom_mode, window.reading_layout_button):
-        assert reader_toolbar.rect().contains(QRect(widget.mapTo(reader_toolbar, QPoint()), widget.size()))
+    assert reader_toolbar.parentWidget() is toolbar
+    assert window.width() == 980
+    for widget in (window.page_number, window.zoom_label, window.previous_page, window.next_page):
+        assert toolbar.rect().contains(QRect(widget.mapTo(toolbar, QPoint()), widget.size()))
+    assert all(not button.text() and button.toolTip() for button in window.mode_buttons)
+    canvas_top = window.preview_view.mapTo(window, QPoint()).y()
+    toolbar_bottom = toolbar.mapTo(window, QPoint(0, toolbar.height())).y()
+    assert 0 <= canvas_top - toolbar_bottom <= 3
 
 
 def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, tmp_path, monkeypatch):
@@ -380,21 +392,16 @@ def test_double_click_arranged_page_opens_it_for_reading(loaded_window):
     assert not window.ws.dirty
 
 
-def test_reading_zoom_selector_stays_inside_toolbar(loaded_window):
-    from PyQt6.QtCore import QRect
+def test_reading_settings_stay_available_from_the_view_menu(loaded_window):
     window = loaded_window
-    selector = window.zoom_mode
-    toolbar = window.navigation_bar
-    for target in (selector, window.preview_view):
-        target.setFocus()
-        QApplication.processEvents()
-        geometry = QRect(selector.mapTo(toolbar, QPoint()), selector.size())
-        assert toolbar.rect().contains(geometry), '缩放下拉框不得超出工具栏或被裁切'
-        assert selector.height() == window.previous_page.height() == 30
-        mode_center = selector.mapTo(window.navigation_bar, selector.rect().center())
-        button_center = window.previous_page.mapTo(window.navigation_bar, window.previous_page.rect().center())
-        assert abs(mode_center.y() - button_center.y()) <= 1
-        assert selector.fontMetrics().height() + 2 <= selector.height()
+    view_menu = next(action.menu() for action in window._menubar.actions() if action.text() == '视图')
+    assert window.reading_settings_menu.menuAction() in view_menu.actions()
+    assert window.reading_orb.restore_action in view_menu.actions()
+    window.reading_zoom_actions['width'].trigger()
+    assert window._zoom_mode == 'width'
+    assert window.reading_zoom_actions['width'].isChecked()
+    window._set_zoom(1.25)
+    assert window.reading_zoom_actions['custom'].isChecked()
 
 
 def test_zoom_below_ten_percent_stays_in_reading_at_minimum(loaded_window):

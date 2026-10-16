@@ -96,6 +96,50 @@ def test_long_book_lookup_does_not_scan_all_pages(qapp):
     assert list(view.visible_pages(left.united(right))) == [5001, 5002]
 
 
+@pytest.mark.parametrize('sizes', (
+    [(360, 520), (360, 520)],
+    [(520, 360), (300, 700)],
+))
+def test_two_page_document_forms_one_left_to_right_spread(qapp, sizes):
+    view = PreviewView()
+    view.set_pages((0, 1), sizes, spread=True)
+    first, second = view.page_rects
+    assert first.top() == second.top()
+    assert first.right() + 12 == pytest.approx(second.left())
+    assert list(view.pages_in_spread(0)) == list(view.pages_in_spread(1)) == [0, 1]
+    assert view.spread_rect(0) == first.united(second)
+    for index, rect in enumerate(view.page_rects):
+        assert view.page_at_point(rect.center()) == index
+
+
+def test_two_page_reader_fits_both_pages_and_keeps_them_paired(reader, qapp, tmp_path):
+    source = tmp_path / 'generated-two-pages.pdf'
+    with pymupdf.open() as doc:
+        for index in range(2):
+            page = doc.new_page(width=360, height=520)
+            page.insert_text((40, 70), f'Two-page target {index + 1}')
+        doc.save(source)
+    reader.ws.reset()
+    reader.ws.load_first_or_merge(reader.store.load(str(source)), str(source))
+    reader.refresh()
+    settle(qapp, reader)
+    view = reader.preview_view
+    for mode in ('page', 'width', 'custom'):
+        reader._set_zoom_mode(mode)
+        reader.go_to_page(2)
+        settle(qapp, reader)
+        first, second = view.page_rects
+        assert first.top() == second.top() and first.right() < second.left()
+        assert reader.page_number.value() == 1 and reader.page_total.text() == '–2 / 2 页'
+        assert not reader.previous_page.isEnabled() and not reader.next_page.isEnabled()
+        assert view.page_at_point(second.center()) == 1
+        if mode == 'page':
+            viewport = view.viewport().rect().adjusted(8, 8, -8, -8)
+            assert viewport.contains(view.mapFromScene(first.united(second)).boundingRect())
+            assert list(view.visible_pages(view.mapToScene(view.viewport().rect()).boundingRect())) == [0, 1]
+    assert not reader.ws.dirty
+
+
 def test_navigation_and_layout_switch_keep_the_reading_position(reader, qapp):
     reader.go_to_page(3)
     settle(qapp, reader)
@@ -143,8 +187,8 @@ def test_narrow_reader_falls_back_then_restores_without_toolbar_overflow(reader,
     settle(qapp, reader)
     assert not reader.preview_view.spread
     assert reader.reading_layout_actions['spread'].isChecked()
-    assert reader.layout_hint.isVisible()
-    for widget in (reader.page_number, reader.zoom_mode, reader.reading_layout_button):
+    assert reader.reading_fallback_notice.isVisible()
+    for widget in (reader.page_number, reader.zoom_label, reader.previous_page, reader.next_page):
         bounds = QRect(widget.mapTo(reader.navigation_bar, QPoint()), widget.size())
         assert reader.navigation_bar.rect().contains(bounds)
     reader.act_tools.setChecked(False)
@@ -153,7 +197,7 @@ def test_narrow_reader_falls_back_then_restores_without_toolbar_overflow(reader,
     settle(qapp, reader)
     assert reader.preview_view.spread
     assert reader.ws.preview_index() == 2
-    assert reader.layout_hint.isHidden()
+    assert not reader.reading_fallback_notice.isVisible()
 
 
 def test_right_page_search_and_annotation_hover_use_the_correct_page(reader, qapp):
@@ -273,10 +317,10 @@ def test_four_page_grid_preserves_order_hit_testing_and_empty_slots(qapp):
 
 
 def test_layout_icon_and_shortcuts_switch_single_spread_and_four_pages(reader, qapp):
-    button = reader.reading_layout_button
-    assert not button.text() and button.width() == 30
-    assert button.mapTo(reader.navigation_bar, QPoint()).x() > reader.navigation_bar.width() / 2
-    assert [action.shortcut().toString() for action in button.menu().actions()] == ['Ctrl+1', 'Ctrl+2', 'Ctrl+4']
+    button = reader.reading_orb
+    assert not button.text() and button.width() == 42
+    assert button.parentWidget() is reader.preview_view
+    assert [action.shortcut().toString() for action in reader.reading_layout_actions.values()] == ['Ctrl+1', 'Ctrl+2', 'Ctrl+4']
     reader.preview_view.setFocus()
     QTest.keyClick(reader.preview_view, Qt.Key.Key_4, Qt.KeyboardModifier.ControlModifier)
     settle(qapp, reader)
@@ -297,10 +341,118 @@ def test_layout_icon_and_shortcuts_switch_single_spread_and_four_pages(reader, q
     reader.act_tools.setChecked(True)
     settle(qapp, reader)
     assert view.page_columns == 1 and reader.reading_layout_actions['four'].isChecked()
-    assert '四页' in reader.layout_hint.text()
+    assert reader.reading_fallback_notice.isVisible()
     reader.act_pages.setChecked(False)
     reader.act_tools.setChecked(False)
     reader.resize(1400, 900)
     settle(qapp, reader)
     assert view.page_columns == 4 and reader.ws.preview_index() == 4
     assert not reader.ws.dirty
+
+
+def test_reading_orb_peeks_reveals_and_opens_the_shared_menu(reader, qapp):
+    orb, view = reader.reading_orb, reader.preview_view
+    QTest.mouseMove(view.viewport(), QPoint(30, 30))
+    QTest.mouseMove(view.viewport(), QPoint(20, 20))
+    QTest.qWait(800)
+    assert not orb.expanded and orb.icon().isNull()
+    assert orb.x() == view.viewport().geometry().right() + 1 - orb.PEEK
+    assert orb.mask().contains(QPoint(8, 21))
+    assert not orb.mask().contains(QPoint(orb.PEEK + 1, 21))
+    QTest.mouseMove(view.viewport(), QPoint(view.viewport().width() - 40, view.viewport().height() - 50))
+    QTest.qWait(220)
+    assert orb.expanded and not orb.icon().isNull()
+    assert view.viewport().geometry().contains(orb.geometry())
+    QTest.mouseClick(orb, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    menu = reader.reading_settings_menu
+    assert menu.isVisible()
+    assert all(action in menu.actions() for action in reader.reading_layout_actions.values())
+    assert all(action in menu.actions() for action in reader.reading_zoom_actions.values())
+    reader.reading_layout_actions['four'].trigger()
+    menu.hide()
+    settle(qapp, reader)
+    assert view.page_columns == 4
+    assert not reader.ws.dirty
+
+
+def test_temporarily_hidden_orb_keeps_menu_and_shortcuts_usable(reader, qapp):
+    orb = reader.reading_orb
+    orb.hide_action.trigger()
+    assert orb.temporarily_hidden and orb.isHidden()
+    QTest.mouseMove(reader.preview_view.viewport(), QPoint(reader.preview_view.viewport().width() - 30,
+                                                         reader.preview_view.viewport().height() - 50))
+    QTest.qWait(200)
+    reader.reading_layout_actions['four'].trigger()
+    reader.reading_zoom_actions['width'].trigger()
+    settle(qapp, reader)
+    assert orb.isHidden() and reader.preview_view.page_columns == 4
+    assert reader._zoom_mode == 'width'
+    orb.restore_action.trigger()
+    qapp.processEvents()
+    assert not orb.temporarily_hidden and orb.isVisible()
+
+
+def test_new_window_restores_the_orb_default_without_persisting_the_hide_choice(reader, qapp):
+    reader.reading_orb.hide_action.trigger()
+    other = MainWindow()
+    try:
+        assert not other.reading_orb.temporarily_hidden
+    finally:
+        other.close()
+        qapp.processEvents()
+
+
+def test_orb_tracks_the_reader_corner_and_hides_with_the_document(reader, qapp):
+    orb = reader.reading_orb
+    orb.reveal()
+    QTest.qWait(220)
+    reader.resize(980, 720)
+    settle(qapp, reader)
+    QTest.qWait(200)
+    assert orb.pos() == orb._target()
+    reader.stack.setCurrentIndex(1)
+    qapp.processEvents()
+    assert not orb.isVisible()
+    orb.restore_action.trigger()
+    settle(qapp, reader)
+    assert reader.stack.currentIndex() == 0 and orb.isVisible()
+    reader.ws.reset()
+    reader.refresh()
+    qapp.processEvents()
+    assert orb.isHidden() and not orb.restore_action.isEnabled()
+
+
+def test_orb_position_does_not_follow_vertical_or_horizontal_document_scrolling(reader, qapp):
+    reader._set_reading_layout('single')
+    reader._set_zoom(4)
+    settle(qapp, reader)
+    orb, view = reader.reading_orb, reader.preview_view
+    orb.reveal()
+    QTest.qWait(220)
+    orb.hide_timer.stop()
+    fixed = orb.mapTo(view, QPoint())
+    for bar in (view.verticalScrollBar(), view.horizontalScrollBar()):
+        assert bar.maximum() > bar.minimum()
+        bar.setValue(bar.minimum())
+        qapp.processEvents()
+        assert orb.mapTo(view, QPoint()) == fixed
+        bar.setValue(min(bar.minimum() + 140, bar.maximum()))
+        qapp.processEvents()
+        assert orb.mapTo(view, QPoint()) == fixed
+
+
+def test_repeated_proximity_does_not_restart_the_reveal_animation(reader, qapp):
+    orb = reader.reading_orb
+    QTest.mouseMove(reader.preview_view.viewport(), QPoint(20, 20))
+    orb.hide_timer.stop()
+    orb.animation.setDuration(160)
+    orb.expanded = False
+    orb._move(False)
+    orb.reveal()
+    QTest.qWait(60)
+    progress = orb.animation.currentTime()
+    orb.reveal()
+    assert orb.animation.currentTime() >= progress > 0
+    QTest.qWait(120)
+    assert orb.pos() == orb._target()

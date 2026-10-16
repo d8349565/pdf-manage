@@ -283,7 +283,7 @@ def test_review_button_and_toolbar_alignment_at_minimum_window(reader, qapp):
     button = reader.review_button
     assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
     assert not button.text() and button.toolTip()
-    assert button.x() >= reader.mode_buttons[1].geometry().right()
+    assert button.x() > reader.mode_switch.geometry().right()
     assert button.x() < reader.split_tool_button.x()
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     assert button.isChecked() and reader.annotation_tools.isVisible()
