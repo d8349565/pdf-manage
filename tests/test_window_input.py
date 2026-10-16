@@ -232,24 +232,28 @@ def test_arrange_extract_uses_selection_and_restores_range(loaded_window, tmp_pa
         assert doc.page_count == 2
 
 
-def test_reading_toolbar_is_one_compact_row(loaded_window):
+def test_reading_toolbar_fits_the_reader_and_top_actions_stay_compact(loaded_window):
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtWidgets import QFrame
     window = loaded_window
     window.resize(980, 680)
     QApplication.processEvents()
     assert window.left_panel.isHidden()
     assert window.tools_panel.isHidden()
     assert window.banner.isHidden() and window.details.isHidden()
-    toolbar = window.navigation_bar.parentWidget()
-    assert toolbar.height() <= 40
-    for widget in [*window.mode_buttons, window.navigation_bar]:
-        assert widget.geometry().top() >= 0
-        assert widget.geometry().bottom() < toolbar.height()
-        assert widget.geometry().right() < toolbar.width()
+    toolbar = window.findChild(QFrame, 'workbench')
+    assert toolbar.height() == 40
+    assert all(toolbar.rect().contains(button.geometry()) for button in window.mode_buttons)
+    reader_toolbar = window.navigation_bar
+    assert reader_toolbar.height() <= 54
+    for widget in (window.page_number, window.zoom_mode, window.reading_layout_button):
+        assert reader_toolbar.rect().contains(QRect(widget.mapTo(reader_toolbar, QPoint()), widget.size()))
 
 
 def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QFrame
     window = loaded_window
-    toolbar = window.navigation_bar.parentWidget()
+    toolbar = window.findChild(QFrame, 'workbench')
     buttons = {b.accessibleName(): b for b in toolbar.findChildren(QToolButton)}
     for name in ('左转所选页', '右转所选页', '删除所选页', '提取所选页', '拆分文件', 'PDF 转 Excel'):
         assert name in buttons
@@ -378,10 +382,9 @@ def test_double_click_arranged_page_opens_it_for_reading(loaded_window):
 
 def test_reading_zoom_selector_stays_inside_toolbar(loaded_window):
     from PyQt6.QtCore import QRect
-    from PyQt6.QtWidgets import QFrame
     window = loaded_window
     selector = window.zoom_mode
-    toolbar = window.findChild(QFrame, 'workbench')
+    toolbar = window.navigation_bar
     for target in (selector, window.preview_view):
         target.setFocus()
         QApplication.processEvents()

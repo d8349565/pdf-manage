@@ -40,6 +40,11 @@ _PATHS: dict[str, str] = {
         '<rect width="7" height="7" x="4" y="13" rx="1.5"/>'
         '<rect width="7" height="7" x="13" y="13" rx="1.5"/>'
     ),
+    "page-single": '<rect x="6" y="3" width="12" height="18" rx="1.5"/>',
+    "page-spread": (
+        '<rect x="3" y="4" width="8" height="16" rx="1.5"/>'
+        '<rect x="13" y="4" width="8" height="16" rx="1.5"/>'
+    ),
     "table": (
         '<path d="M12 3v18"/>'
         '<rect width="18" height="18" x="3" y="3" rx="2"/>'
@@ -99,6 +104,7 @@ _PATHS: dict[str, str] = {
     "redo": '<path d="m15 4 5 5-5 5"/><path d="M20 9h-9a7 7 0 0 0 0 14"/>',
     "chevron-left": '<path d="m15 18-6-6 6-6"/>',
     "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+    "more-horizontal": '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     "panel-left": (
         '<rect width="18" height="18" x="3" y="3" rx="2"/>'
         '<path d="M9 3v18"/>'

@@ -6,11 +6,11 @@ import math
 import uuid
 
 from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QButtonGroup, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QGridLayout, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QApplication, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
+    QLineEdit, QMenu, QMessageBox, QProxyStyle, QPushButton, QSizePolicy, QStyle, QTextEdit, QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.icons import toolbar_icon
@@ -529,6 +529,13 @@ class AnnotationHoverBar(QFrame):
         self.tools.delete_annot(self.annot_id)
 
 
+class _ReviewToolbarStyle(QProxyStyle):
+    def pixelMetric(self, metric, option=None, widget=None):
+        if metric == QStyle.PixelMetric.PM_ToolBarExtensionExtent:
+            return 32
+        return super().pixelMetric(metric, option, widget)
+
+
 class AnnotationTools(QWidget):
     TOOL_DEFS = (
         ("browse", "mouse-pointer", "浏览／移动"),
@@ -565,8 +572,8 @@ class AnnotationTools(QWidget):
         self.bar = QFrame(self)
         self.bar.setObjectName("annotationBar")
         bar_layout = QHBoxLayout(self.bar)
-        bar_layout.setContentsMargins(8, 6, 8, 6)
-        bar_layout.setSpacing(2)
+        bar_layout.setContentsMargins(10, 4, 10, 4)
+        bar_layout.setSpacing(6)
 
         # Underlying QComboBox kept for full API & test compatibility
         self.tool = QComboBox(self)
@@ -576,58 +583,66 @@ class AnnotationTools(QWidget):
         self.tool.setAccessibleName("审阅工具")
         self.tool.currentIndexChanged.connect(self._on_tool_combo_changed)
 
-        # Visual tool button group with crisp SVG icons
-        self.tool_group = QButtonGroup(self)
-        self.tool_buttons = []
-        tool_layout = QGridLayout()
-        tool_layout.setContentsMargins(0, 0, 0, 0)
-        tool_layout.setHorizontalSpacing(4)
-        tool_layout.setVerticalSpacing(4)
+        # Native toolbar keeps one row and provides its own overflow menu.
+        self.tool_bar = QToolBar(self.bar)
+        self.tool_bar.setObjectName('reviewTools')
+        self._toolbar_style = _ReviewToolbarStyle(QApplication.style().objectName())
+        self._toolbar_style.setParent(self.tool_bar)
+        self.tool_bar.setStyle(self._toolbar_style)
+        self.tool_bar.setAccessibleName('审阅工具')
+        self.tool_bar.setMovable(False)
+        self.tool_bar.setFloatable(False)
+        self.tool_bar.setIconSize(QSize(16, 16))
+        self.tool_bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.tool_bar.setMinimumWidth(0)
+        self.tool_bar.setFixedHeight(36)
+        self.tool_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.tool_group = QActionGroup(self)
+        self.tool_actions = []
         short_names = {"browse": "浏览", "select": "选批注", "highlight": "高亮", "underline": "下划线",
                        "ink": "画笔", "note": "便签", "freetext": "文本框", "rect": "矩形",
                        "ellipse": "椭圆", "arrow": "箭头", "replace": "改原文"}
         for idx, (kind, icon_name, name) in enumerate(self.TOOL_DEFS):
-            btn = QToolButton(self.bar)
-            btn.setFixedHeight(28)
-            btn.setMinimumWidth(66)
-            btn.setText(short_names[kind])
-            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            btn.setIconSize(QSize(18, 18))
-            btn.setIcon(toolbar_icon(icon_name, "#0F766E", 18))
-            btn.setToolTip(name)
-            btn.setAccessibleName(name)
-            btn.setCheckable(True)
-            btn.setAutoRaise(False)
-            btn.clicked.connect(lambda checked=False, i=idx: self.tool.setCurrentIndex(i))
-            self.tool_group.addButton(btn, idx)
-            self.tool_buttons.append(btn)
-            tool_layout.addWidget(btn, idx // 6, idx % 6)
-        bar_layout.addLayout(tool_layout)
-        self.insert_image_button = QToolButton(self.bar)
-        self.insert_image_button.setFixedHeight(28)
-        self.insert_image_button.setMinimumWidth(66)
-        self.insert_image_button.setText("图片")
-        self.insert_image_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.insert_image_button.setIconSize(QSize(18, 18))
-        self.insert_image_button.setIcon(toolbar_icon("image", "#0F766E", 18))
-        self.insert_image_button.setToolTip("插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）")
+            action = QAction(toolbar_icon(icon_name, '#526B63', 16), short_names[kind], self)
+            action.setToolTip(name)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, i=idx: self.tool.setCurrentIndex(i))
+            self.tool_group.addAction(action)
+            self.tool_actions.append(action)
+        self.insert_image_action = QAction(toolbar_icon('image', '#526B63', 16), '图片', self)
+        self.insert_image_action.setToolTip('插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）')
+        self.insert_image_action.triggered.connect(lambda: self.host.image_tools.choose_image())
+        actions = {kind: action for (kind, _, _), action in zip(self.TOOL_DEFS, self.tool_actions)}
+        actions['image'] = self.insert_image_action
+        groups = (('browse', 'select'), ('highlight', 'underline', 'arrow', 'note'),
+                  ('replace', 'image', 'freetext'), ('ink', 'rect', 'ellipse'))
+        for group_index, group in enumerate(groups):
+            if group_index:
+                self.tool_bar.addSeparator()
+            for kind in group:
+                self.tool_bar.addAction(actions[kind])
+        self.tool_buttons = [self.tool_bar.widgetForAction(action) for action in self.tool_actions]
+        for button, (_, _, name) in zip(self.tool_buttons, self.TOOL_DEFS):
+            button.setAccessibleName(name)
+        self.insert_image_button = self.tool_bar.widgetForAction(self.insert_image_action)
         self.insert_image_button.setAccessibleName("插入图片")
-        self.insert_image_button.setAutoRaise(False)
-        self.insert_image_button.clicked.connect(lambda: self.host.image_tools.choose_image())
-        tool_layout.addWidget(self.insert_image_button, 1, 5)
-        self.tool_buttons[0].setChecked(True)
+        self.tool_actions[0].setChecked(True)
+        bar_layout.addWidget(self.tool_bar, 1)
 
         sep1 = self.options_separator = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
-        sep1.setStyleSheet("color: #E2EEEC; margin: 4px 2px;")
+        sep1.setFixedSize(1, 20)
+        sep1.setStyleSheet('background: #DCE5DF; border: none;')
         bar_layout.addWidget(sep1)
 
         # Color picker swatch button
         self.color_button = QToolButton(self.bar)
         self.color_button.setToolTip("选择批注颜色")
         self.color_button.setAccessibleName("选择批注颜色")
-        self.color_button.setFixedSize(28, 28)
-        self.color_button.setIconSize(QSize(18, 18))
+        self.color_button.setFixedSize(68, 32)
+        self.color_button.setText('颜色')
+        self.color_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.color_button.setIconSize(QSize(16, 16))
         self.color_button.clicked.connect(self.choose_color)
         bar_layout.addWidget(self.color_button)
 
@@ -635,11 +650,12 @@ class AnnotationTools(QWidget):
         self.width.setRange(0.1, 30.0)
         self.width.setValue(2.0)
         self.width.setDecimals(1)
+        self.width.setPrefix('线宽 ')
         self.width.setSuffix(" pt")
+        self.width.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self.width.setAccessibleName("批注线宽")
         self.width.setToolTip("批注线宽（pt）")
-        self.width.setFixedWidth(72)
-        self.width.setFixedHeight(28)
+        self.width.setFixedSize(102, 32)
         bar_layout.addWidget(self.width)
 
         sep2 = QFrame()
@@ -669,14 +685,12 @@ class AnnotationTools(QWidget):
             self.annotation_actions.append(button)
             bar_layout.addWidget(button)
 
-        bar_layout.addStretch()
-
         self.feedback = QLabel("拖选或点击操作；Ctrl+Z 撤销", self.bar)
         self.feedback.setObjectName("hint")
         self.feedback.hide()
 
         close = QToolButton(self.bar)
-        close.setFixedSize(28, 28)
+        close.setFixedSize(32, 32)
         close.setIconSize(QSize(16, 16))
         close.setIcon(toolbar_icon("x", "#4D6B67", 16))
         close.setToolTip("收起审阅工具")
@@ -699,6 +713,19 @@ class AnnotationTools(QWidget):
             self.view.view_changed.connect(self._position_inline_replace)
             self.view.view_changed.connect(self._move_view_changed)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        for button in (*self.tool_buttons, self.insert_image_button):
+            button.ensurePolished()
+            # 先完整显示标签，再由原生工具栏把放不下的操作收进菜单。
+            button.setMinimumWidth(button.sizeHint().width() + 2)
+        more = self.tool_bar.findChild(QToolButton, 'qt_toolbar_ext_button')
+        if more is not None:
+            more.setIcon(toolbar_icon('more-horizontal', '#526B63', 16))
+            more.setIconSize(QSize(16, 16))
+            more.setToolTip('更多审阅工具')
+            more.setAccessibleName('更多审阅工具')
+
     def _set_feedback(self, text):
         self.feedback.setText(text)
         if hasattr(self.host, "statusBar"):
@@ -713,7 +740,7 @@ class AnnotationTools(QWidget):
 
     def _on_tool_combo_changed(self, index):
         if 0 <= index < len(self.tool_buttons):
-            self.tool_buttons[index].setChecked(True)
+            self.tool_actions[index].setChecked(True)
         self.choose_tool()
 
     def _update_color_button_style(self):
@@ -961,7 +988,7 @@ class AnnotationTools(QWidget):
             self.tool.blockSignals(True)
             self.tool.setCurrentIndex(0)
             self.tool.blockSignals(False)
-            self.tool_buttons[0].setChecked(True)
+            self.tool_actions[0].setChecked(True)
             self._update_options()
         self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.view.setFocus()
@@ -1071,7 +1098,7 @@ class AnnotationTools(QWidget):
                     hover_bar._hide_timer.stop()
                 else:
                     point = self.view.mapToScene(pos)
-                    index = self.view.page_at_y(point.y())
+                    index = self.view.page_at_point(point)
                     if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
                         if self.ensure_annotation_summary(index):
                             hit_annot = self.find_annotation_at(point)
@@ -1091,7 +1118,7 @@ class AnnotationTools(QWidget):
         if kind in ("browse", "select") and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
             if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages and not self._move_state:
                 point = self.view.mapToScene(event.position().toPoint())
-                index = self.view.page_at_y(point.y())
+                index = self.view.page_at_point(point)
                 if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
                     if self.ensure_annotation_summary(index):
                         hit_annot = self.find_annotation_at(point)
@@ -1114,11 +1141,11 @@ class AnnotationTools(QWidget):
                 if event.button() != Qt.MouseButton.LeftButton or not self.host.ws.pages:
                     return False
                 point = self.view.mapToScene(event.position().toPoint())
-                index = self.view.page_at_y(point.y())
+                index = self.view.page_at_point(point)
                 if not 0 <= index < len(self.view.page_rects) or not self.view.page_rects[index].contains(point):
                     return True
                 if index != self.host.ws.preview_index():
-                    self.host.go_to_page(index + 1)
+                    self.host.go_to_page(index + 1, reveal=False)
                     self.snapshot_key = None
                 if not self.ensure_snapshot():
                     return True

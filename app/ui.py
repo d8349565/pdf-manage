@@ -34,6 +34,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QAction,
+    QActionGroup,
     QColor,
     QFont,
     QGuiApplication,
@@ -58,12 +59,14 @@ from PyQt6.QtWidgets import (
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QListView,
     QMainWindow,
+    QMenu,
     QMenuBar,
     QMessageBox,
     QProgressBar,
@@ -118,6 +121,8 @@ ZOOM_MIN = 0.1
 ZOOM_MAX = 64.0
 ZOOM_STEP = 1.25
 PDF_LOGICAL_SCALE = 96 / 72
+SPREAD_MIN_WIDTH = 720
+SPREAD_WIDTH_HYSTERESIS = 32
 ARRANGE_ZOOM_MIN = 0.5
 ARRANGE_ZOOM_MAX = 10.0
 ARRANGE_ZOOM_STEP = 1.25
@@ -462,21 +467,37 @@ QDialog {
     background: #F3F6F5;
 }
 QFrame#annotationBar {
-    background: #FFFFFF;
+    background: #F7FAF9;
     border: none;
     border-bottom: 1px solid #E2EEEC;
     border-radius: 0;
 }
 QFrame#annotationBar QToolButton {
     min-width: 28px;
-    min-height: 28px;
-    padding: 0;
+    min-height: 30px;
+    padding: 0 6px;
+    color: #344D42;
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 6px;
+    font-size: 13px;
 }
+QFrame#annotationBar QToolButton:hover { background: #EAF1EE; }
+QFrame#annotationBar QToolButton:pressed { background: #DCECE4; }
+QFrame#annotationBar QToolButton:checked {
+    color: #0F6557; background: #E4F2ED; border-color: #BDD8CA; font-weight: 600;
+}
+QFrame#annotationBar QToolButton:focus { border-color: #0D9488; }
+QFrame#annotationBar QToolButton#qt_toolbar_ext_button { min-width: 24px; padding: 0; }
+QToolBar#reviewTools { background: transparent; border: 1px solid transparent; padding: 0; spacing: 2px; }
+QToolBar#reviewTools::separator { background: #DCE5DF; width: 1px; margin: 8px 6px; }
+QToolBar#reviewTools QMenu::item:checked { color: #0F6557; background: #E4F2ED; font-weight: 600; }
 QFrame#annotationBar QDoubleSpinBox {
-    min-height: 24px;
-    padding: 0 16px 0 4px;
+    min-height: 28px;
+    padding: 0 7px;
     font-size: 12px;
+    background: #FFFFFF;
+    border: 1px solid #D7E3DF;
     border-radius: 6px;
 }
 QFrame#annotationBar QComboBox {
@@ -1003,6 +1024,7 @@ class PageListView(QListView):
 
 class PreviewView(QGraphicsView):
     zoom_steps = pyqtSignal(int)
+    page_step = pyqtSignal(int)
     view_changed = pyqtSignal()
 
     def __init__(self, parent=None) -> None:
@@ -1012,6 +1034,13 @@ class PreviewView(QGraphicsView):
         self.page_rects = []
         self._page_tops = []
         self._page_bottoms = []
+        self._rows = []
+        self._row_rects = []
+        self._page_rows = []
+        self.spread = False
+        self.page_columns = 1
+        self._visibility_signature = None
+        self._page_scroll_acc = 0
         self.layout_generation = 0
         self.page_signature = None
         self.active_page = 0
@@ -1023,6 +1052,7 @@ class PreviewView(QGraphicsView):
         self._detail = QGraphicsPixmapItem()
         self._detail.setZValue(1)
         self._scene.addItem(self._detail)
+        self._other_details = {}
         self.setScene(self._scene)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1042,48 +1072,151 @@ class PreviewView(QGraphicsView):
     def photo(self) -> QPixmap:
         return self._item.pixmap()
 
-    def set_pages(self, signature, sizes) -> bool:
-        if signature == self.page_signature:
+    def set_pages(self, signature, sizes, *, spread=False, columns=None) -> bool:
+        columns = columns if columns is not None else (2 if spread else 1)
+        if signature == self.page_signature and columns == self.page_columns:
             return False
         self.page_signature = signature
+        self.page_columns = columns
+        self.spread = spread = columns > 1
         self.layout_generation += 1
         self.clear_photo()
         for item in self.neighbors.values():
             self._scene.removeItem(item)
         self.neighbors.clear()
         self.page_rects = []
+        self._rows = []
+        self._row_rects = []
+        self._page_rows = []
         width = max((w for w, h in sizes), default=0)
+        if columns == 4:
+            cell_width = width
+            cell_height = max((h for w, h in sizes), default=0)
+            width = cell_width * 2 + 12 if sizes else 0
+            height = cell_height * 2 + 16
+            y = 0
+            for start in range(0, len(sizes), 4):
+                pages = range(start, min(start + 4, len(sizes)))
+                for offset, index in enumerate(pages):
+                    w, h = sizes[index]
+                    x = (offset % 2) * (cell_width + 12) + (cell_width - w) / 2
+                    top = y + (offset // 2) * (cell_height + 16) + (cell_height - h) / 2
+                    self.page_rects.append(QRectF(x, top, w, h))
+                    self._page_rows.append(len(self._rows))
+                self._rows.append(pages)
+                self._row_rects.append(QRectF(0, y, width, height))
+                y += height + 16
+            self._page_tops = [r.top() for r in self._row_rects]
+            self._page_bottoms = [r.bottom() for r in self._row_rects]
+            self._scene.setSceneRect(QRectF(0, 0, width, max(0, y - 16)))
+            self.resetCachedContent()
+            return True
+        left = max((w for w, h in sizes[1::2]), default=0)
+        right = max((w for w, h in sizes[2::2]), default=left)
+        if spread and len(sizes) > 1:
+            if len(sizes) % 2 == 0:
+                right = max(right, sizes[-1][0])
+            width = max(width, left + 12 + right)
+        spine = (width + left - right - 12) / 2
         y = 0
-        for w, h in sizes:
-            self.page_rects.append(QRectF((width - w) / 2, y, w, h))
-            y += h + 16
-        self._page_tops = [r.top() for r in self.page_rects]
-        self._page_bottoms = [r.bottom() for r in self.page_rects]
+        index = 0
+        while index < len(sizes):
+            row = range(index, min(index + (2 if spread and index else 1), len(sizes)))
+            height = max(sizes[i][1] for i in row)
+            for i in row:
+                w, h = sizes[i]
+                x = (width - w) / 2
+                if spread and index:
+                    x = spine - w if i == index else spine + 12
+                self.page_rects.append(QRectF(x, y, w, h))
+                self._page_rows.append(len(self._rows))
+            self._rows.append(row)
+            bounds = self.page_rects[index].united(self.page_rects[row.stop - 1])
+            if spread and index and len(row) == 1:
+                # 末尾偶数页保留右侧空位，维持书籍左右页的方向。
+                w, h = sizes[index]
+                bounds = bounds.united(QRectF(spine + 12, y, w, h))
+            self._row_rects.append(bounds)
+            y += height + 16
+            index = row.stop
+        # 按整行索引，混合横竖页的左右页底边不一定有序。
+        self._page_tops = [r.top() for r in self._row_rects]
+        self._page_bottoms = [r.bottom() for r in self._row_rects]
         self._scene.setSceneRect(QRectF(0, 0, width, max(0, y - 16)))
+        self.resetCachedContent()
         return True
 
     def visible_pages(self, rect):
         start = bisect_left(self._page_bottoms, rect.top())
         end = bisect_right(self._page_tops, rect.bottom())
-        return range(start, end)
+        return (i for row in self._rows[start:end] for i in row
+                if self.is_page_shown(i) and self.page_rects[i].intersects(rect))
 
-    def page_at_y(self, y):
-        index = min(bisect_left(self._page_bottoms, y), len(self.page_rects) - 1)
+    def _row_at_y(self, y):
+        index = min(bisect_left(self._page_bottoms, y), len(self._rows) - 1)
         if index > 0 and y < self._page_tops[index]:
             if y - self._page_bottoms[index - 1] <= self._page_tops[index] - y:
                 index -= 1
         return index
 
+    def page_at_y(self, y):
+        row = self._row_at_y(y)
+        if row < 0:
+            return -1
+        pages = self._rows[row]
+        return self.active_page if self.active_page in pages else pages.start
+
+    def page_at_point(self, point):
+        row = self._row_at_y(point.y())
+        if row >= 0:
+            for index in self._rows[row]:
+                if self.is_page_shown(index) and self.page_rects[index].contains(point):
+                    return index
+        return -1
+
+    def pages_in_spread(self, index):
+        return self._rows[self._page_rows[index]] if 0 <= index < len(self.page_rects) else range(0)
+
+    def spread_rect(self, index):
+        return self._row_rects[self._page_rows[index]]
+
+    def is_page_shown(self, index):
+        return (not (self.spread and getattr(self, 'fit_page', False))
+                or index in self.pages_in_spread(self.active_page))
+
+    def update_page_visibility(self):
+        isolated = self.spread and getattr(self, 'fit_page', False)
+        pages = self.pages_in_spread(self.active_page)
+        signature = (self.layout_generation, isolated, pages.start if isolated else None)
+        if signature == self._visibility_signature:
+            return
+        if self._visibility_signature is None or self._visibility_signature[:2] != signature[:2]:
+            self._page_scroll_acc = 0
+        self._visibility_signature = signature
+        for index, item in self.neighbors.items():
+            item.setVisible(self.is_page_shown(index))
+        self.resetCachedContent()
+        self.viewport().update()
+
     def drawBackground(self, painter, rect) -> None:
         super().drawBackground(painter, rect)
+        painter.save()
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        scale = max(self.transform().m11(), .001)
         for index in self.visible_pages(rect):
             page = self.page_rects[index]
             if page.intersects(rect):
+                painter.fillRect(page.translated(2 / scale, 3 / scale), QColor("#E4EAE7"))
                 painter.fillRect(page, Qt.GlobalColor.white)
+                pen = QPen(QColor("#D7E3DF"))
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.drawRect(page)
+        painter.restore()
 
     def jump_to_page(self, index) -> None:
         if 0 <= index < len(self.page_rects):
-            rect = self.page_rects[index]
+            rect = self.spread_rect(index)
             if getattr(self, 'fit_page', False):
                 self.centerOn(rect.center())
                 return
@@ -1100,6 +1233,7 @@ class PreviewView(QGraphicsView):
         item.setPixmap(QPixmap.fromImage(image))
         item.setTransform(QTransform.fromScale(rect.width() / image.width(), rect.height() / image.height()))
         item.setPos(rect.topLeft())
+        item.setVisible(self.is_page_shown(index))
 
     def set_search_results(self, results, current):
         self.search_areas = {}
@@ -1140,15 +1274,30 @@ class PreviewView(QGraphicsView):
             self._scene.setSceneRect(QRectF(0, 0, width, height))
         self._item.setZValue(0.5)
 
-    def set_detail(self, image: QImage, position: tuple[float, float], scale: float) -> None:
-        self._detail.setPixmap(QPixmap.fromImage(image))
-        self._detail.setScale(1 / scale)
-        self._detail.setPos(*position)
-        if self.page_rects:
-            self._detail.setPos(self._detail.pos() + self.page_rects[self.active_page].topLeft())
+    def detail_item(self, index):
+        return self._detail if index == self.active_page else self._other_details.get(index)
 
-    def clear_detail(self) -> None:
-        self._detail.setPixmap(QPixmap())
+    def set_detail(self, image: QImage, position: tuple[float, float], scale: float, index=None) -> None:
+        if index is None:
+            index = self.active_page
+        item = self.detail_item(index)
+        if item is None:
+            item = QGraphicsPixmapItem()
+            item.setZValue(1)
+            self._scene.addItem(item)
+            self._other_details[index] = item
+        item.setPixmap(QPixmap.fromImage(image))
+        item.setScale(1 / scale)
+        item.setPos(*position)
+        if self.page_rects:
+            item.setPos(item.pos() + self.page_rects[index].topLeft())
+
+    def clear_detail(self, index=None) -> None:
+        if index is None or index == self.active_page:
+            self._detail.setPixmap(QPixmap())
+        for page in list(self._other_details):
+            if index is None or index == page:
+                self._scene.removeItem(self._other_details.pop(page))
 
     def content_width(self) -> float:
         return self._scene.sceneRect().width()
@@ -1167,7 +1316,23 @@ class PreviewView(QGraphicsView):
                 self.zoom_steps.emit(steps)
             event.accept()
             return
+        delta = event.angleDelta().y() or event.pixelDelta().y()
+        if (self.spread and getattr(self, 'fit_page', False) and delta
+                and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            if not event.buttons():
+                self._page_scroll_acc, steps = wheel_zoom_steps(self._page_scroll_acc, delta)
+                for _ in range(abs(steps)):
+                    self.page_step.emit(-1 if steps > 0 else 1)
+            event.accept()
+            return
         super().wheelEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        if self.spread and not event.modifiers() and event.key() in (Qt.Key.Key_PageUp, Qt.Key.Key_PageDown):
+            self.page_step.emit(-1 if event.key() == Qt.Key.Key_PageUp else 1)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class ConversionThread(QThread):
@@ -1695,6 +1860,8 @@ class MainWindow(QMainWindow):
         self._preview_busy = False
         self._detail_key = None
         self._detail_busy = False
+        self._other_detail_keys = {}
+        self._other_detail_pending = set()
         self._detail_timer = QTimer(self)
         self._detail_timer.setSingleShot(True)
         self._detail_timer.setInterval(90)
@@ -1722,6 +1889,7 @@ class MainWindow(QMainWindow):
         self._neighbor_signals.done.connect(self._on_neighbor)
         self._zoom = 1.0
         self._zoom_mode = 'page'
+        self._reading_layout = 'single'
         self._arrange_zoom = 1.0
         self._sidebar_w = THUMB_W
         self._last_vp_w = 0
@@ -1818,6 +1986,7 @@ class MainWindow(QMainWindow):
         self.act_tools.setChecked(False)
         self.sidebar_mode.setCurrentIndex(0)
         self.export_tools.setCurrentIndex(0)
+        self._set_reading_layout('single')
         self._save_ui_preferences()
         self.statusBar().showMessage('界面已恢复默认，文档与存储设置保留。', 5000)
 
@@ -2074,9 +2243,10 @@ class MainWindow(QMainWindow):
             button.setFixedSize(30, 30)
             layout.addWidget(button)
         layout.addStretch()
-        layout.addWidget(self.navigation_bar)
-        for button in self.navigation_bar.findChildren(QToolButton):
+        for action in (self.act_pages, self.act_tools):
+            button = self._action_btn(action)
             button.setFixedSize(30, 30)
+            layout.addWidget(button)
         return bar
 
     def open_export_tool(self, index: int) -> None:
@@ -2196,28 +2366,81 @@ class MainWindow(QMainWindow):
     def _sync_page_navigation(self):
         count = len(self.ws.pages)
         current = self.ws.preview_index()
+        first = last = current
+        if current is not None and self.preview_view.spread and current < len(self.preview_view.page_rects):
+            pages = self.preview_view.pages_in_spread(current)
+            first, last = pages.start, pages.stop - 1
         self.page_number.blockSignals(True)
         self.page_number.setRange(1 if count else 0, count)
-        self.page_number.setValue(current + 1 if current is not None else 0)
+        self.page_number.setValue(first + 1 if first is not None else 0)
         self.page_number.blockSignals(False)
         self.page_number.setEnabled(bool(count))
-        self.page_total.setText(f"/ {count} 页")
-        self.previous_page.setEnabled(current is not None and current > 0)
-        self.next_page.setEnabled(current is not None and current < count - 1)
+        paired = first is not None and last != first
+        self.page_total.setText(f"–{last + 1} / {count} 页" if paired else f"/ {count} 页")
+        self.previous_page.setEnabled(first is not None and first > 0)
+        self.next_page.setEnabled(last is not None and last < count - 1)
+        for button, label in ((self.previous_page, "上一"), (self.next_page, "下一")):
+            name = label + ("组页面" if self.preview_view.spread else "页")
+            button.setAccessibleName(name)
+            button.setToolTip(name + (" (Alt+Left)" if button is self.previous_page else " (Alt+Right)"))
+        self.page_number.setToolTip("输入任意页码，按 Enter 跳转到所在页面组" if self.preview_view.spread
+                                    else "输入页码，按 Enter 跳转")
+        self._layout_reader_toolbar()
 
-    def go_to_page(self, number: int) -> None:
+    def go_to_page(self, number: int, *, reveal=True) -> None:
         if not 1 <= number <= len(self.ws.pages):
             return
         self.ws.select_index(number - 1)
         self._sync_selection()
         self.left_view.scrollTo(self.model.index(number - 1))
-        self._update_preview()
-        self.preview_view.jump_to_page(number - 1)
+        navigating = self._scroll_navigation
+        self._scroll_navigation = navigating or not reveal
+        try:
+            self._update_preview()
+        finally:
+            self._scroll_navigation = navigating
+        if reveal:
+            self.preview_view.jump_to_page(number - 1)
 
     def step_page(self, delta: int) -> None:
         current = self.ws.preview_index()
         if current is not None:
-            self.go_to_page(current + 1 + delta)
+            target = current + delta
+            if self.preview_view.spread and not self._in_arrange():
+                pages = self.preview_view.pages_in_spread(current)
+                target = pages.stop if delta > 0 else pages.start - 1
+                if 0 <= target < len(self.ws.pages):
+                    target = self.preview_view.pages_in_spread(target).start
+            self.go_to_page(target + 1)
+
+    def _set_reading_layout(self, mode: str) -> None:
+        if mode not in self.reading_layout_actions:
+            return
+        self._reading_layout = mode
+        action = self.reading_layout_actions[mode]
+        action.setChecked(True)
+        self.reading_layout_button.setIcon(action.icon())
+        self.reading_layout_button.setAccessibleName('页面布局：' + action.text())
+        self.reading_layout_button.setToolTip('页面布局：' + action.text() + '\n单页 Ctrl+1 · 双页 Ctrl+2 · 四页 Ctrl+4')
+        if self.ws.pages:
+            self.stack.setCurrentIndex(0)
+        self._update_preview(lightweight=True)
+
+    def _layout_reader_toolbar(self) -> None:
+        if not hasattr(self, '_reader_toolbar_grid'):
+            return
+        needed = (self._reader_page_controls.minimumSizeHint().width()
+                  + self._reader_zoom_controls.minimumSizeHint().width() + 36)
+        compact = self.navigation_bar.width() < needed
+        if compact == getattr(self, '_toolbar_compact', None):
+            return
+        self._toolbar_compact = compact
+        grid = self._reader_toolbar_grid
+        grid.removeWidget(self._reader_zoom_controls)
+        grid.addWidget(self._reader_zoom_controls, 1 if compact else 0, 0 if compact else 1,
+                       1, 2 if compact else 1)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 0 if compact else 1)
 
     def open_search(self) -> None:
         self.search_bar.open_search()
@@ -2297,10 +2520,13 @@ class MainWindow(QMainWindow):
         self.banner = QLabel("", center)
         self.banner.setObjectName("hint")
         self.banner.setWordWrap(True)
-        zoom_bar = QHBoxLayout()
-        zoom_bar.setSpacing(4)
+        page_controls = QWidget()
+        self._reader_page_controls = page_controls
+        page_bar = QHBoxLayout(page_controls)
+        page_bar.setContentsMargins(0, 0, 0, 0)
+        page_bar.setSpacing(4)
         self.previous_page = self._icon_btn("chevron-left", "上一页", lambda: self.step_page(-1))
-        zoom_bar.addWidget(self.previous_page)
+        page_bar.addWidget(self.previous_page)
         self.page_number = QSpinBox()
         self.page_number.setAccessibleName("跳转到页码")
         self.page_number.setToolTip("输入页码，按 Enter 跳转")
@@ -2308,23 +2534,30 @@ class MainWindow(QMainWindow):
         self.page_number.setKeyboardTracking(False)
         self.page_number.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.page_number.setMinimumWidth(32)
-        self.page_number.setMaximumWidth(46)
+        self.page_number.setMaximumWidth(64)
         self.page_number.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.page_number.setStyleSheet("padding: 1px 2px; min-height: 22px;")
         self.page_number.valueChanged.connect(self.go_to_page)
-        zoom_bar.addWidget(self.page_number)
+        page_bar.addWidget(self.page_number)
         self.page_total = QLabel("/ 0 页")
-        zoom_bar.addWidget(self.page_total)
+        page_bar.addWidget(self.page_total)
         self.next_page = self._icon_btn("chevron-right", "下一页", lambda: self.step_page(1))
-        zoom_bar.addWidget(self.next_page)
+        page_bar.addWidget(self.next_page)
+        page_bar.addStretch()
+        self._reader_zoom_controls = QWidget()
+        zoom_bar = QHBoxLayout(self._reader_zoom_controls)
+        zoom_bar.setContentsMargins(0, 0, 0, 0)
+        zoom_bar.setSpacing(4)
         zoom_bar.addStretch()
-        zoom_bar.addWidget(self._icon_btn("zoom-out", "缩小", self.zoom_out, shortcut="Ctrl+-"))
+        zoom_out_button = self._icon_btn("zoom-out", "缩小", self.zoom_out, shortcut="Ctrl+-")
+        zoom_bar.addWidget(zoom_out_button)
         self.zoom_label = QLabel("100%")
         self.zoom_label.setObjectName("hint")
         self.zoom_label.setMinimumWidth(48)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_bar.addWidget(self.zoom_label)
-        zoom_bar.addWidget(self._icon_btn("zoom-in", "放大", self.zoom_in, shortcut="Ctrl+="))
+        zoom_in_button = self._icon_btn("zoom-in", "放大", self.zoom_in, shortcut="Ctrl+=")
+        zoom_bar.addWidget(zoom_in_button)
         self.zoom_mode = QComboBox()
         self.zoom_mode.setObjectName('readingZoomMode')
         self.zoom_mode.setAccessibleName("阅读缩放模式")
@@ -2342,9 +2575,8 @@ class MainWindow(QMainWindow):
             self.zoom_mode.addItem(label, mode)
         self.zoom_mode.currentIndexChanged.connect(lambda: self._set_zoom_mode(self.zoom_mode.currentData()))
         zoom_bar.addWidget(self.zoom_mode, 0, Qt.AlignmentFlag.AlignVCenter)
-        zoom_bar.addWidget(self._icon_btn("fit-width", "适合宽度", self.zoom_fit, shortcut="Ctrl+0"))
-        zoom_bar.addWidget(self._action_btn(self.act_pages))
-        zoom_bar.addWidget(self._action_btn(self.act_tools))
+        zoom_fit_button = self._icon_btn("fit-width", "适合宽度", self.zoom_fit, shortcut="Ctrl+0")
+        zoom_bar.addWidget(zoom_fit_button)
         self.preview_empty = QWidget()
         welcome = QVBoxLayout(self.preview_empty)
         welcome.addStretch()
@@ -2365,6 +2597,7 @@ class MainWindow(QMainWindow):
         welcome.addStretch()
         self.preview_view = PreviewView()
         self.preview_view.zoom_steps.connect(self._on_zoom_steps)
+        self.preview_view.page_step.connect(self.step_page)
         self.preview_view.view_changed.connect(self._detail_timer.start)
         self.preview_view.view_changed.connect(self._reading_view_changed)
         self.preview_view.viewport().installEventFilter(self)
@@ -2381,15 +2614,68 @@ class MainWindow(QMainWindow):
         self.details.setObjectName("hint")
         self.details.setWordWrap(True)
         self.banner.hide()
-        self.navigation_bar = QWidget()
-        self.navigation_bar.setLayout(zoom_bar)
-        zoom_bar.setContentsMargins(0, 0, 0, 0)
+        self.navigation_bar = QFrame()
+        self.navigation_bar.setObjectName("readerToolbar")
+        self.navigation_bar.setStyleSheet('''
+            QFrame#readerToolbar { background: #FFFFFF; border: none; border-bottom: 1px solid #E2EEEC; }
+            QFrame#readerToolbar QWidget { background: transparent; }
+            QFrame#readerToolbar QToolButton { min-width: 28px; min-height: 28px; padding: 0; border-radius: 6px; }
+            QFrame#readerToolbar QMenu { background: #FFFFFF; }
+            QFrame#readerToolbar QMenu::item:checked { color: #0F6557; background: #E4F2ED; font-weight: 600; }
+            QToolButton#readerLayoutButton::menu-indicator {
+                width: 5px; height: 3px; right: 2px; bottom: 3px; subcontrol-position: bottom right;
+            }
+        ''')
+        self._reader_toolbar_grid = QGridLayout(self.navigation_bar)
+        self._reader_toolbar_grid.setContentsMargins(12, 6, 12, 6)
+        self._reader_toolbar_grid.setHorizontalSpacing(12)
+        self._reader_toolbar_grid.setVerticalSpacing(6)
+        self._reader_toolbar_grid.addWidget(page_controls, 0, 0)
+        self.reading_layout_button = QToolButton()
+        self.reading_layout_button.setObjectName('readerLayoutButton')
+        self.reading_layout_button.setIcon(toolbar_icon('page-single', '#526B63', 18))
+        self.reading_layout_button.setIconSize(QSize(18, 18))
+        self.reading_layout_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.reading_layout_button.setAccessibleName('页面布局：单页连续')
+        self.reading_layout_button.setToolTip('页面布局：单页连续\n单页 Ctrl+1 · 双页 Ctrl+2 · 四页 Ctrl+4')
+        self.reading_layout_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        layout_menu = QMenu(self.reading_layout_button)
+        layout_menu.setAccessibleName('页面布局选项')
+        self.reading_layout_group = QActionGroup(self)
+        self.reading_layout_actions = {}
+        for mode, label, icon, key in (('single', '单页连续', 'page-single', 'Ctrl+1'),
+                                       ('spread', '双页对开', 'page-spread', 'Ctrl+2'),
+                                       ('four', '四页预览（2×2）', 'layout-grid', 'Ctrl+4')):
+            action = self._act(label, lambda checked=False, m=mode: self._set_reading_layout(m), QKeySequence(key))
+            action.setIcon(toolbar_icon(icon, '#526B63', 18))
+            action.setCheckable(True)
+            action.setChecked(mode == self._reading_layout)
+            self.reading_layout_group.addAction(action)
+            self.reading_layout_actions[mode] = action
+            self.addAction(action)
+            layout_menu.addAction(action)
+        self.reading_layout_button.setMenu(layout_menu)
+        zoom_bar.addWidget(self.reading_layout_button)
+        self.page_number.setFixedHeight(30)
+        self.layout_hint = QLabel("窗口较窄，暂用单页；展开阅读区后自动恢复双页。")
+        self.layout_hint.setWordWrap(True)
+        self.layout_hint.setStyleSheet("color: #4D6B67; background: #F0F5F3; font-size: 12px; padding: 4px 12px;")
+        self.layout_hint.hide()
+        self._layout_reader_toolbar()
+        for button in self.navigation_bar.findChildren(QToolButton):
+            button.setFixedSize(30, 30)
+        focus_order = (self.previous_page, self.page_number, self.next_page, zoom_out_button,
+                       zoom_in_button, self.zoom_mode, zoom_fit_button, self.reading_layout_button)
+        for before, after in zip(focus_order, focus_order[1:]):
+            QWidget.setTabOrder(before, after)
         from app.searchui import SearchBar
         self.search_bar = SearchBar(self)
         from app.textselection import TextSelection
         self.text_selection = TextSelection(self)
         from app.readerinteraction import ReaderInteraction
         self.reader_interaction = ReaderInteraction(self)
+        c_l.addWidget(self.navigation_bar)
+        c_l.addWidget(self.layout_hint)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -2901,9 +3187,10 @@ class MainWindow(QMainWindow):
             and obj is preview.viewport()
             and event.type() == QEvent.Type.Resize
         ):
+            self._layout_reader_toolbar()
             self._apply_view_zoom()
             width = preview.viewport().width()
-            if abs(width - self._last_vp_w) >= 40:
+            if abs(width - self._last_vp_w) >= 40 or self._reading_layout != 'single':
                 self._last_vp_w = width
                 self._preview_timer.start()
         return super().eventFilter(obj, event)
@@ -3185,14 +3472,14 @@ class MainWindow(QMainWindow):
             return 640
         return max(view.viewport().width() - 24, 200)
 
-    def _preview_render_width(self) -> int:
+    def _preview_render_width(self, index=None) -> int:
         dpr = max(self.devicePixelRatioF(), 1.0)
-        index = self.ws.preview_index()
+        if index is None:
+            index = self.ws.preview_index()
         page_width = self.store.page_size(self.ws.pages[index])[0] if index is not None else 480
         raw = math.ceil(page_width * self._zoom * PDF_LOGICAL_SCALE * dpr)
         snapped = max(64, ((raw + 63) // 64) * 64)
         limit = PREVIEW_MAX_W
-        index = self.ws.preview_index()
         if index is not None:
             width, height = self.store.page_size(self.ws.pages[index])
             limit = min(limit, int(math.sqrt(8_000_000 * width / max(height, 1))))
@@ -3226,14 +3513,48 @@ class MainWindow(QMainWindow):
             self.annotation_tools.sync_page()
         # Workspace 的编辑、撤销、打开和保存均替换页面列表；滚动/缩放不重建布局。
         layout_changed = self._layout_pages is not self.ws.pages
+        view = self.preview_view
+        threshold = SPREAD_MIN_WIDTH + (0 if view.spread else SPREAD_WIDTH_HYSTERESIS)
+        requested_columns = {'single': 1, 'spread': 2, 'four': 4}[self._reading_layout]
+        columns = requested_columns if view.viewport().width() >= threshold else 1
+        spread = columns > 1
+        mode_changed = columns != view.page_columns
+        tools = getattr(self, 'annotation_tools', None)
+        if mode_changed and (self.reader_interaction.busy_gesture()
+                             or (tools and getattr(tools, '_inline_text_box', None))):
+            # 拖动、绘制和输入结束后再适配，不能在手势中途移动纸张。
+            spread = view.spread
+            columns = view.page_columns
+            mode_changed = False
+            self._preview_timer.start()
+        anchor = None
+        idx = self.ws.preview_index()
+        if mode_changed and idx is not None and idx < len(view.page_rects):
+            old_rect = view.page_rects[idx]
+            point = view.mapToScene(view.viewport().rect().center()) - old_rect.topLeft()
+            anchor = QPointF(max(0, min(old_rect.width(), point.x())),
+                             max(0, min(old_rect.height(), point.y())))
+        layout_name = '四页' if self._reading_layout == 'four' else '双页'
+        self.layout_hint.setText(f'窗口较窄，暂用单页；展开阅读区后自动恢复{layout_name}。')
+        self.layout_hint.setVisible(bool(self.ws.pages) and requested_columns > 1 and not spread)
         geometry_changed = False
         if layout_changed:
             self.arrange_preview.hide()
             self._layout_pages = self.ws.pages
             self.rendering.set_pages(self.ws.pages)
+        if layout_changed or mode_changed:
             signature = tuple((p.source_id, p.source_page, p.rotation) for p in self.ws.pages)
-            geometry_changed = self.preview_view.set_pages(signature, [self.store.page_size(p) for p in self.ws.pages])
+            geometry_changed = view.set_pages(signature, [self.store.page_size(p) for p in self.ws.pages], columns=columns)
             self._neighbor_pending.clear()
+            if geometry_changed:
+                self._neighbor_keys.clear()
+                self._invalidate_detail_requests()
+                self._scroll_y = None
+                self.text_selection.sync()
+                if tools:
+                    tools.hover_bar.hide()
+                if hasattr(self, 'image_tools') and self.image_tools.engaged:
+                    self.image_tools.update_overlay()
             live = {page.render_key for page in self.ws.pages}
             for index in list(self.preview_view.neighbors):
                 if index >= len(self.ws.pages) or self._neighbor_keys.get(index) != self.ws.pages[index].render_key:
@@ -3242,6 +3563,7 @@ class MainWindow(QMainWindow):
             for key in list(self._page_images):
                 if key not in live:
                     self._page_image_bytes -= self._page_images.pop(key).sizeInBytes()
+            self._sync_page_navigation()
         caption = self._selection_caption()
         arrange_sel = getattr(self, "arrange_sel", None)
         if arrange_sel is not None:
@@ -3249,11 +3571,10 @@ class MainWindow(QMainWindow):
         if not self.ws.pages:
             self._zoom_mode = 'page'
             self._preview_busy = False
-            self._detail_busy = False
+            self._invalidate_detail_requests()
             self._preview_image = None
             self._shown_page = None
             self._preview_key = None
-            self._detail_key = None
             self._detail_timer.stop()
             self._reading_settle_timer.stop()
             self._scrolling = self.rendering.scrolling = False
@@ -3283,6 +3604,12 @@ class MainWindow(QMainWindow):
         page = self.ws.pages[idx]
         changed = geometry_changed or self.preview_view.active_page != idx
         self.preview_view.active_page = idx
+        if changed:
+            self._invalidate_detail_requests()
+            view.clear_detail()
+            if view.spread and getattr(view, 'fit_page', False):
+                self.text_selection.clear()
+        view.update_page_visibility()
         try:
             wpt, hpt = self.store.page_size(page)
             source_rotation = self.store.source_rotation(page)
@@ -3298,11 +3625,18 @@ class MainWindow(QMainWindow):
         except Exception:
             self.details.setText(f"工作区第 {idx + 1} 页")
         self._request_preview(page)
-        if layout_changed and self._preview_image is not None:
+        if (layout_changed or changed) and self._preview_image is not None:
             self._show_preview_image()
         if changed and not self._scroll_navigation:
             self._apply_view_zoom()
-            self.preview_view.jump_to_page(idx)
+            if anchor is not None and self._zoom_mode != 'page':
+                rect = view.page_rects[idx]
+                x = rect.left() + anchor.x() if self._zoom_mode == 'custom' else view.spread_rect(idx).center().x()
+                view.centerOn(x, rect.top() + anchor.y())
+            else:
+                view.jump_to_page(idx)
+        if geometry_changed:
+            view.view_changed.emit()
         self._schedule_reading_update()
 
     def _schedule_reading_update(self) -> None:
@@ -3316,8 +3650,7 @@ class MainWindow(QMainWindow):
                 self._neighbor_pending.clear()
             self._scrolling = self.rendering.scrolling = True
             self._detail_timer.stop()
-            self._detail_key = None
-            self._detail_busy = False
+            self._invalidate_detail_requests()
             self._reading_settle_timer.start()
         self._schedule_reading_update()
 
@@ -3353,6 +3686,9 @@ class MainWindow(QMainWindow):
         y = (visible.center().y() if self._zoom_mode == 'page'
              else visible.top() + min(visible.height() / 4, 100))
         index = view.page_at_y(y)
+        hit = view.page_at_point(QPointF(visible.center().x(), y))
+        if hit >= 0 and not view.page_rects[index].intersects(visible):
+            index = hit
         if index != self.ws.preview_index():
             self._scroll_navigation = True
             try:
@@ -3365,7 +3701,8 @@ class MainWindow(QMainWindow):
         # 只保留可见页和相邻页，避免长文档的位图占满内存。
         wanted = set(candidates)
         if not self._scrolling:
-            wanted.update(index + step * self._scroll_direction for step in (-1, 1, 2))
+            for step in (-1, 1, 2):
+                wanted.update(view.pages_in_spread(index + step * self._scroll_direction))
         wanted = {i for i in wanted if 0 <= i < len(self.ws.pages)}
         wanted.discard(index)
         for i in list(view.neighbors):
@@ -3379,6 +3716,8 @@ class MainWindow(QMainWindow):
             w, h = self.store.page_size(page)
             width = max(1, min(1200, max(64, int(w * view.transform().m11() * view.devicePixelRatioF())),
                                int(math.sqrt(1_500_000 * w / max(h, 1)))))
+            if view.spread and i in candidates:
+                width = self._preview_render_width(i)
             if self._scrolling:
                 width = min(width, READING_DRAFT_W)
             key = (view.layout_generation, i, width)
@@ -3407,6 +3746,7 @@ class MainWindow(QMainWindow):
                 lambda k=key: k not in self._neighbor_pending,
                 20 if i in candidates else (-1 if i == index + self._scroll_direction else -2))
         self._prune_visible_thumbs()
+        self._update_render_progress()
 
     def _on_neighbor(self, key, image) -> None:
         if isinstance(image, RenderResult):
@@ -3426,6 +3766,9 @@ class MainWindow(QMainWindow):
             self._neighbor_keys[key[1]] = page.render_key
             best = self._page_images.get(page.render_key, image)
             self.preview_view.set_neighbor(key[1], best)
+            if not self._scrolling and key[1] in self.preview_view.pages_in_spread(self.ws.preview_index() or 0):
+                self._detail_timer.start()
+        self._update_render_progress()
 
     def _cache_page_image(self, key, image) -> None:
         old = self._page_images.get(key)
@@ -3456,8 +3799,7 @@ class MainWindow(QMainWindow):
             if thumb is not None:
                 cached = thumb[0].toImage()
         if self._preview_key is None or key[:3] != self._preview_key[:3]:
-            self._detail_key = None
-            self._detail_busy = False
+            self._invalidate_detail_requests()
             self._preview_image = None
             self.preview_view.clear_detail()
             neighbor = self.preview_view.neighbors.get(self.preview_view.active_page)
@@ -3521,43 +3863,69 @@ class MainWindow(QMainWindow):
         self._cache_page_image(key[:3], image)
         self._show_preview_image()
 
+    def _invalidate_detail_requests(self) -> None:
+        self._detail_key = None
+        self._detail_busy = False
+        self._other_detail_keys.clear()
+        self._other_detail_pending.clear()
+
+    def _page_detail_key(self, index):
+        return self._detail_key if index == self.preview_view.active_page else self._other_detail_keys.get(index)
+
     def _request_detail(self) -> None:
         index = self.ws.preview_index()
         if index is None or self._preview_image is None or self._preview_busy or self._in_arrange() or self._scrolling:
             return
-        page = self.ws.pages[index]
-        page_key = page.render_key
-        if self._preview_key is None or self._preview_key[:3] != page_key:
+        if self._preview_key is None or self._preview_key[:3] != self.ws.pages[index].render_key:
             return
         view = self.preview_view
         scale = view.transform().m11() * max(view.devicePixelRatioF(), 1.0)
-        if view.content_width() * scale <= self._preview_image.width() * 1.01:
-            self._detail_key = None
-            self._detail_busy = False
-            view.clear_detail()
-            self._update_render_progress()
-            return
         visible = view.mapToScene(view.viewport().rect()).boundingRect()
         margin = 24 / max(scale, 0.001)
-        page_rect = view.page_rects[index]
-        if (self._detail_key and not self._detail_busy and self._detail_key[:3] == page_key
-                and math.isclose(self._detail_key[-1], scale, rel_tol=.001)
-                and not view._detail.pixmap().isNull()
-                and view._detail.sceneBoundingRect().contains(visible.intersected(page_rect))):
-            return
-        region = visible.adjusted(-margin, -margin, margin, margin).intersected(page_rect)
-        region.translate(-page_rect.topLeft())
-        if region.isEmpty():
-            return
-        key = (*page_key, (region.left(), region.top(), region.right(), region.bottom()), scale)
-        if key == self._detail_key:
-            return
-        self._detail_key = key
-        self._detail_busy = True
+        for page_index in view.pages_in_spread(index):
+            page_rect = view.page_rects[page_index]
+            if not page_rect.intersects(visible):
+                continue
+            page_key = self.ws.pages[page_index].render_key
+            primary = page_index == index
+            neighbor = view.neighbors.get(page_index)
+            width = self._preview_image.width() if primary else (neighbor.pixmap().width() if neighbor else 0)
+            if not width:
+                continue
+            if page_rect.width() * scale <= width * 1.01:
+                view.clear_detail(page_index)
+                if primary:
+                    self._detail_key, self._detail_busy = None, False
+                else:
+                    self._other_detail_keys.pop(page_index, None)
+                    self._other_detail_pending.discard(page_index)
+                continue
+            previous = self._page_detail_key(page_index)
+            item = view.detail_item(page_index)
+            busy = self._detail_busy if primary else page_index in self._other_detail_pending
+            if (previous and not busy and previous[:3] == page_key
+                    and math.isclose(previous[-1], scale, rel_tol=.001)
+                    and item is not None and not item.pixmap().isNull()
+                    and item.sceneBoundingRect().contains(visible.intersected(page_rect))):
+                continue
+            region = visible.adjusted(-margin, -margin, margin, margin).intersected(page_rect)
+            region.translate(-page_rect.topLeft())
+            if region.isEmpty():
+                continue
+            key = (*page_key, (region.left(), region.top(), region.right(), region.bottom()), scale)
+            if key == previous:
+                continue
+            if primary:
+                self._detail_key, self._detail_busy = key, True
+            else:
+                self._other_detail_keys[page_index] = key
+                self._other_detail_pending.add(page_index)
+            generation = view.layout_generation
+            self.rendering.request(self.ws.pages[page_index], None, (generation, page_index, key), self.detail_signals,
+                lambda i=page_index, k=key, g=generation: (self._page_detail_key(i) != k
+                    or view.layout_generation != g or self._scrolling or self._in_arrange()),
+                10, region=(key[3], key[4]))
         self._update_render_progress()
-        self.rendering.request(page, None, key, self.detail_signals,
-            lambda k=key: self._detail_key != k or self._scrolling or self._in_arrange(),
-            10, region=(key[3], key[4]))
 
     def _on_detail_preview(self, key: tuple, result) -> None:
         if isinstance(result, RenderResult):
@@ -3566,14 +3934,23 @@ class MainWindow(QMainWindow):
             if result.cancelled and self.rendering.has_request(self.detail_signals, key):
                 return
             result = result.value
-        if key != self._detail_key or self._layout_pages is not self.ws.pages:
+        generation, index, page_key = key
+        if (self.preview_view.layout_generation != generation or self._page_detail_key(index) != page_key
+                or self._layout_pages is not self.ws.pages):
             return
-        self._detail_busy = False
+        primary = index == self.preview_view.active_page
+        if primary:
+            self._detail_busy = False
+        else:
+            self._other_detail_pending.discard(index)
         if result is not None:
             image, position, scale = result
-            self.preview_view.set_detail(image, position, scale)
+            self.preview_view.set_detail(image, position, scale, index)
         else:
-            self._detail_key = None
+            if primary:
+                self._detail_key = None
+            else:
+                self._other_detail_keys.pop(index, None)
         self._update_render_progress()
 
     def _note_render_busy(self) -> None:
@@ -3597,6 +3974,12 @@ class MainWindow(QMainWindow):
         if ((self._preview_busy and self._preview_key is not None and self._preview_key[:3] == key)
                 or (self._detail_busy and self._detail_key is not None and self._detail_key[:3] == key)):
             return "正在渲染页面"
+        if self.preview_view.spread:
+            visible = set(self.preview_view.visible_pages(
+                self.preview_view.mapToScene(self.preview_view.viewport().rect()).boundingRect()))
+            if (self._other_detail_pending & visible or any(k[0] == self.preview_view.layout_generation
+                    and k[1] in visible for k in self._neighbor_pending)):
+                return "正在渲染页面"
         return ""
 
     def _update_render_progress(self) -> None:
@@ -3640,6 +4023,8 @@ class MainWindow(QMainWindow):
         self._shown_page = (page.page_id, page.rotation)
         mark("first_page_ready")
         self._apply_view_zoom()
+        if not self._scrolling:
+            self._detail_timer.start()
 
     def _apply_view_zoom(self) -> None:
         view = self.preview_view
@@ -3648,9 +4033,13 @@ class MainWindow(QMainWindow):
                 or not 0 <= index < len(view.page_rects)):
             return
         self._applying_zoom = True
+        updating = self._reader_updating
+        self._reader_updating = True
         try:
-            rect = view.page_rects[index]
+            rect = view.spread_rect(index)
             mode = self._zoom_mode
+            view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                if view.spread and mode in ('page', 'width') else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             factor = self._zoom * PDF_LOGICAL_SCALE
             if mode in ('width', 'page'):
                 factor = max(1, view.viewport().width() - 24) / max(1, rect.width())
@@ -3658,24 +4047,37 @@ class MainWindow(QMainWindow):
                     factor = min(factor, max(1, view.viewport().height() - 24) / max(1, rect.height()))
                 self._zoom = factor / PDF_LOGICAL_SCALE
             view.fit_page = mode == 'page'
+            view.update_page_visibility()
             self.zoom_label.setText(f"{self._zoom * 100:.0f}%")
             self.zoom_mode.blockSignals(True)
             self.zoom_mode.setCurrentIndex(self.zoom_mode.findData(mode))
             self.zoom_mode.blockSignals(False)
-            if abs(view.transform().m11() - factor) <= 0.00001:
-                return
             center = view.mapToScene(view.viewport().rect().center())
+            bounds = view._scene.sceneRect()
+            if view.spread and mode in ('page', 'width'):
+                bounds = QRectF(rect.left(), bounds.top(), rect.width(), bounds.height())
+            # 留出取整余量，避免“刚好适宽”也出现横向滚动条。
+            horizontal_padding = 10 / max(factor, .001)
+            vertical_padding = 12
+            if mode == 'page':
+                vertical_padding = max(vertical_padding, (view.viewport().height() - rect.height() * factor) / 2 + 2)
+            vertical_padding /= max(factor, .001)
+            bounds = bounds.adjusted(-horizontal_padding, -vertical_padding,
+                                     horizontal_padding, vertical_padding)
+            bounds_changed = view.sceneRect() != bounds
+            if bounds_changed:
+                view.setSceneRect(bounds)
+            if abs(view.transform().m11() - factor) <= 0.00001:
+                if bounds_changed:
+                    view.centerOn(rect.center() if mode == 'page' else center)
+                return
             view.clear_detail()
-            self._detail_key = None
-            updating = self._reader_updating
-            self._reader_updating = True
-            try:
-                view.setTransform(QTransform.fromScale(factor, factor))
-                view.centerOn(rect.center() if mode == 'page' else center)
-                view.view_changed.emit()
-            finally:
-                self._reader_updating = updating
+            self._invalidate_detail_requests()
+            view.setTransform(QTransform.fromScale(factor, factor))
+            view.centerOn(rect.center() if mode == 'page' else center)
+            view.view_changed.emit()
         finally:
+            self._reader_updating = updating
             self._applying_zoom = False
         if not self._scrolling:
             self._detail_timer.start()
@@ -4605,8 +5007,11 @@ class MainWindow(QMainWindow):
                 self.arrange_view._drop_fade.stop()
             self._neighbor_pending.clear()
             self._preview_key = None
-            self._detail_key = None
+            self._invalidate_detail_requests()
             self.rendering.close()
+            for handler in (self.reader_interaction, getattr(self, 'image_tools', None)):
+                if handler is not None:
+                    QGuiApplication.instance().removeEventFilter(handler)
             if hasattr(self, "annotation_tools"):
                 self.annotation_tools.deactivate()
                 self.annotation_tools.remove_view_filters()

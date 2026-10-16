@@ -38,7 +38,7 @@ class ReaderInteraction(QObject):
                 or (images and images.engaged)):
             return
         point = self.view.mapToScene(position)
-        index = self.view.page_at_y(point.y())
+        index = self.view.page_at_point(point)
         cursor = Qt.CursorShape.ArrowCursor
         if 0 <= index < len(self.host.ws.pages) and index < len(self.view.page_rects):
             bounds = self.view.page_rects[index]

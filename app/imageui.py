@@ -291,7 +291,7 @@ class ImageTools(QObject):
             return False
         self.clear()
         if self.host.ws.preview_index() != index:
-            self.host.go_to_page(index + 1)
+            self.host.go_to_page(index + 1, reveal=False)
         ref = self.host.ws.pages[index]
         try:
             image, background = run_operation(self.host, '准备图片编辑', lambda progress:
@@ -503,7 +503,7 @@ class ImageTools(QObject):
             return True
         if self.engaged:
             self.clear()
-        index = self.view.page_at_y(point.y())
+        index = self.view.page_at_point(point)
         if not 0 <= index < len(self.host.ws.pages) or not self.view.page_rects[index].contains(point):
             return False
         ref = self.host.ws.pages[index]

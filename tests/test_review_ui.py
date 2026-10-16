@@ -165,7 +165,7 @@ def test_inline_font_and_anchor_follow_zoom_scroll_resize(reader, qapp, y):
     expected = round(state["span"]["size"] * reader.preview_view.transform().m11())
     assert state["input"].font().pixelSize() == max(8, expected)
     assert state["widget"].height() >= state["input"].fontMetrics().height() + 2
-    assert state["widget"].height() < state["input"].font().pixelSize() * 2 + 12
+    assert state["widget"].height() <= state["input"].font().pixelSize() * 2 + 12
     assert state["actions"].parentWidget() is reader.preview_view.viewport()
     assert state["actions"].geometry().top() > state["widget"].geometry().bottom()
 
@@ -293,10 +293,15 @@ def test_review_button_and_toolbar_alignment_at_minimum_window(reader, qapp):
         tools.tool.setCurrentIndex(tools.tool.findData("rect"))
         settle(qapp)
         assert tools.bar.x() == 0 and tools.bar.width() == tools.rect().width()
-        controls = [*tools.tool_buttons, tools.color_button, tools.width]
-        centers = [control.geometry().center().y() for control in controls]
+        assert tools.bar.height() <= 48
+        controls = [control for control in (*tools.tool_buttons, tools.insert_image_button,
+                                           tools.color_button, tools.width) if control.isVisible()]
+        centers = [control.mapTo(tools.bar, control.rect().center()).y() for control in controls]
         assert max(centers) - min(centers) <= 1
-        assert all(control.geometry().right() < tools.bar.width() for control in controls)
+        assert all(tools.bar.rect().contains(control.mapTo(tools.bar, control.rect().bottomRight()))
+                   for control in controls)
+        assert all(control.width() >= control.sizeHint().width() for control in tools.tool_buttons
+                   if control.isVisible())
     tools.tool.setCurrentIndex(tools.tool.findData("replace"))
     assert tools.color_button.isHidden() and tools.width.isHidden()
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
@@ -304,6 +309,37 @@ def test_review_button_and_toolbar_alignment_at_minimum_window(reader, qapp):
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     reader.stack.setCurrentIndex(1)
     assert not button.isChecked() and tools.isHidden()
+
+
+def test_review_overflow_keeps_hidden_tools_available_and_checked(reader, qapp):
+    reader.open_annotation_tools()
+    reader.resize(980, 720)
+    reader.act_pages.setChecked(True)
+    reader.act_tools.setChecked(True)
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    settle(qapp)
+    more = tools.tool_bar.findChild(QToolButton, 'qt_toolbar_ext_button')
+    assert more is not None and more.isVisible()
+    assert more.accessibleName() == '更多审阅工具' and not more.icon().isNull()
+    assert more.width() >= 24
+    assert tools.tool_bar.rect().contains(more.geometry())
+    menu = more.menu()
+    assert menu is not None
+    hidden = [action for action, button in zip(tools.tool_actions, tools.tool_buttons) if not button.isVisible()]
+    assert hidden and all(action in menu.actions() for action in hidden)
+    index = tools.tool.findData('ellipse')
+    action = tools.tool_actions[index]
+    assert action in hidden
+    action.trigger()
+    assert tools.tool.currentData() == 'ellipse'
+    assert action.isChecked() and tools.tool_buttons[index].isChecked()
+    assert not tools.tool_actions[tools.tool.findData('arrow')].isChecked()
+    reader.act_pages.setChecked(False)
+    reader.act_tools.setChecked(False)
+    reader.resize(1700, 900)
+    settle(qapp)
+    assert tools.tool_buttons[index].isVisible() and tools.tool_buttons[index].isChecked()
 
 
 def test_note_drag_preserves_pointer_offset(reader, qapp):

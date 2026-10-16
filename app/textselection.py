@@ -59,7 +59,7 @@ class TextSelection(QObject):
             if event.modifiers() & Qt.KeyboardModifier.AltModifier:
                 return False
             point = self.view.mapToScene(event.position().toPoint())
-            index = self.view.page_at_y(point.y())
+            index = self.view.page_at_point(point)
             if not 0 <= index < len(self.view.page_rects) or not self.view.page_rects[index].contains(point):
                 return False
             ref = self.host.ws.pages[index]
@@ -67,6 +67,8 @@ class TextSelection(QObject):
             if reason:
                 self.host.statusBar().showMessage(reason, 5000)
                 return False
+            if index != self.host.ws.preview_index():
+                self.host.go_to_page(index + 1, reveal=False)
             try:
                 snapshot = self.host.store.text_snapshot(ref)
             except Exception:
