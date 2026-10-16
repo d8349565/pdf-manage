@@ -4670,7 +4670,7 @@ class MainWindow(QMainWindow):
                 (
                     t
                     for t in self._tabs
-                    if t.ws.path and os.path.normcase(os.path.abspath(t.ws.path)) == norm and not t.ws.dirty
+                    if t.ws.path and os.path.normcase(os.path.abspath(t.ws.path)) == norm
                 ),
                 None,
             )

@@ -73,6 +73,41 @@ def test_tab_bar_hidden_for_single_file_and_shown_for_multiple_files(window, tmp
     assert os.path.basename(window.ws.path) == "A.pdf"
 
 
+@pytest.mark.parametrize("modified", [False, True])
+def test_reopening_file_reuses_tab_and_preserves_edits(window, tmp_path, monkeypatch, qapp, modified):
+    doc_a = tmp_path / "A.pdf"
+    doc_b = tmp_path / "B.pdf"
+    _make_pdf(doc_a, 2, "A")
+    _make_pdf(doc_b, 1, "B")
+    window.open_files_in_tabs([str(doc_a), str(doc_b)])
+    tab_a, tab_b = window._tabs
+    window.activate_tab(tab_a.tab_id)
+    if modified:
+        window.ws.select_index(0)
+        window.rotate(90)
+    pages = list(tab_a.ws.pages)
+    undo_count = tab_a.ws.undo_stack.count()
+    window.activate_tab(tab_b.tab_id)
+
+    monkeypatch.setattr(window, "_try_load", lambda *args, **kwargs: pytest.fail(
+        "Reopening an existing tab must not reload its PDF"))
+    # Reopen both an inactive tab and the already active tab in the same batch.
+    assert window.open_files_in_tabs([str(doc_a), str(doc_a)])
+    qapp.processEvents()
+
+    assert len(window._tabs) == 2
+    assert window._active_tab_id == tab_a.tab_id
+    assert window.ws is tab_a.ws
+    assert window.ws.pages == pages
+    assert window.ws.dirty is modified
+    assert window.ws.undo_stack.count() == undo_count
+    if modified:
+        assert window.undo_action.isEnabled()
+        window.undo_action.trigger()
+        assert not window.ws.dirty
+        assert window.ws.pages[0].rotation == 0
+
+
 def test_per_tab_independent_state_and_undo_group(window, tmp_path, qapp):
     doc_a = tmp_path / "A.pdf"
     doc_b = tmp_path / "B.pdf"
