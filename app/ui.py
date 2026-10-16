@@ -1231,19 +1231,18 @@ class PreviewView(QGraphicsView):
             self._scene.setSceneRect(QRectF(0, 0, width, max(0, y - 16)))
             self.resetCachedContent()
             return True
-        # 两页文档直接成对，不能拆成独立的封面与末页。
-        pair_start = 0 if len(sizes) == 2 else 1
-        left = max((w for w, h in sizes[pair_start::2]), default=0)
-        right = max((w for w, h in sizes[pair_start + 1::2]), default=left)
-        if spread and len(sizes) > 1:
-            if (len(sizes) - pair_start) % 2:
+        # 双页从第 1、2 页开始配对；只有一页时仍居中显示。
+        paired = spread and len(sizes) > 1
+        left = max((w for w, h in sizes[::2]), default=0)
+        right = max((w for w, h in sizes[1::2]), default=left)
+        if paired:
+            if len(sizes) % 2:
                 right = max(right, sizes[-1][0])
             width = max(width, left + 12 + right)
         spine = (width + left - right - 12) / 2
         y = 0
         index = 0
         while index < len(sizes):
-            paired = spread and index >= pair_start
             row = range(index, min(index + (2 if paired else 1), len(sizes)))
             height = max(sizes[i][1] for i in row)
             for i in row:
@@ -1256,7 +1255,7 @@ class PreviewView(QGraphicsView):
             self._rows.append(row)
             bounds = self.page_rects[index].united(self.page_rects[row.stop - 1])
             if paired and len(row) == 1:
-                # 末尾偶数页保留右侧空位，维持书籍左右页的方向。
+                # 末尾未配对页保留右侧空位，维持左右页的位置。
                 w, h = sizes[index]
                 bounds = bounds.united(QRectF(spine + 12, y, w, h))
             self._row_rects.append(bounds)
@@ -4406,8 +4405,9 @@ class MainWindow(QMainWindow):
         updating = self._reader_updating
         self._reader_updating = True
         try:
-            rect = view.spread_rect(index)
             mode = self._zoom_mode
+            # 连续双页按整份布局适宽，跨组刷新预览时不改变缩放与横向范围。
+            rect = view._scene.sceneRect() if view.spread and mode == 'width' else view.spread_rect(index)
             view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
                 if view.spread and mode in ('page', 'width') else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             factor = self._zoom * PDF_LOGICAL_SCALE
