@@ -84,7 +84,7 @@ OCR 的 PRD 评估、独立 CPU 增强包构建、合成 PoC、性能记录和�
 
 “关于”支持手动检查最新正式版和打开对应 Release 页面。自动检查默认关闭，未开启时启动不安排后台检查，也不因检查更新而联网。用户在关于窗口主动开启后，15 秒后判断是否需要检查，之后每小时判断一次是否到期；已开启的后续启动沿用此安排。自动请求间隔至少 24 小时，失败也计入间隔，手动检查不受此间隔限制。关闭选项立即停止后续定时检查；已经发出的请求仍会正常结束。偏好与最近一次版本结果保存在现有应用设置的 `updates/` 下。资源管理器 PDF 合并窗口使用相同入口，纯转换窗口不主动检查。
 
-检查只使用 GitHub 公开接口 `GET /repos/d8349565/pdf-manage/releases/latest`，不需要令牌，不读取或上传文档、文件路径及账号信息。按数字比较 `X.Y.Z` / `vX.Y.Z`，忽略预发布和草稿，并要求 Release 已完成上传非空的 `ZhiXuPDF-Setup.exe`（兼容历史上的 `ZhiXuPDF-Setup vX.Y.Z.exe`，版本须与标签一致）。发布时应先上传安装包，再将 Release 设为正式最新版本；只推送标签或生成 Actions artifact 不会提供应用更新。
+检查优先使用 GitHub 公开接口 `GET /repos/d8349565/pdf-manage/releases/latest`（若遇 `403` / `429` 限流则自动回退至 `HEAD /d8349565/pdf-manage/releases/latest` 读取 `302 Location` 标签），不需要令牌，不读取或上传文档、文件路径及账号信息。按数字比较 `X.Y.Z` / `vX.Y.Z`，忽略预发布和草稿，接口模式下要求 Release 已完成上传非空的 `ZhiXuPDF-Setup.exe`（兼容历史上的 `ZhiXuPDF-Setup vX.Y.Z.exe` 以及 GitHub 上传自动替换空格生成的 `ZhiXuPDF-Setup.vX.Y.Z.exe`，版本须与标签一致）。发布时应先上传安装包，再将 Release 设为正式最新版本；只推送标签或生成 Actions artifact 不会提供应用更新。
 
 网络使用异步 Qt Network，保留证书验证、拒绝重定向、限制响应为 1 MiB，并设 10 秒无数据超时与 15 秒总超时。安装包不在程序内下载或执行；用户点击后，由系统浏览器打开固定仓库的 Release 页面，下载后先关闭纸序 PDF，再运行原有按用户安装器。关闭主窗口取消在途请求。
 

@@ -11,6 +11,7 @@ from PyQt6.QtGui import QDesktopServices
 from app import APP_PROJECT_URL, APP_SLUG, __version__
 
 RELEASES_URL = f"{APP_PROJECT_URL}/releases"
+LATEST_RELEASE_URL = f"{RELEASES_URL}/latest"
 LATEST_RELEASE_API = "https://api.github.com/repos/" + APP_PROJECT_URL.split("github.com/", 1)[1] + "/releases/latest"
 CHECK_INTERVAL = 24 * 60 * 60
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -34,8 +35,14 @@ def release_tag(payload: bytes) -> str:
         raise ValueError("暂未获取到正式版本，请打开发布页查看。")
     tag = release.get("tag_name")
     version_parts(tag)
-    # Older Releases used a version suffix; current builds use the fixed name.
-    installer_names = (f"{APP_SLUG}-Setup.exe", f"{APP_SLUG}-Setup v{tag.removeprefix('v')}.exe")
+    # Older Releases used a version suffix; GitHub replaces spaces with dots on upload.
+    raw_ver = tag.removeprefix("v")
+    installer_names = (
+        f"{APP_SLUG}-Setup.exe",
+        f"{APP_SLUG}-Setup v{raw_ver}.exe",
+        f"{APP_SLUG}-Setup.v{raw_ver}.exe",
+        f"{APP_SLUG}-Setup.{raw_ver}.exe",
+    )
     assets = release.get("assets")
     if not isinstance(assets, list) or not any(
         isinstance(asset, dict) and asset.get("name") in installer_names
@@ -43,6 +50,21 @@ def release_tag(payload: bytes) -> str:
         for asset in assets
     ):
         raise ValueError("正式版安装包尚未就绪，请稍后重试或打开发布页。")
+    return tag
+
+
+def release_tag_from_redirect(location: str | QUrl | None) -> str:
+    """Extract and validate a stable release tag from GitHub's /releases/latest redirect."""
+    target = location.toString() if isinstance(location, QUrl) else (location if isinstance(location, str) else "")
+    if target.startswith("/"):
+        target = "https://github.com" + target
+    if target.rstrip("/") == RELEASES_URL:
+        raise ValueError("暂未找到正式发布版本，请打开发布页查看。")
+    prefix = f"{RELEASES_URL}/tag/"
+    if not target.startswith(prefix):
+        raise ValueError("GitHub 暂时限制了请求，请稍后重试或打开发布页。")
+    tag = target[len(prefix):]
+    version_parts(tag)
     return tag
 
 
@@ -63,6 +85,7 @@ class UpdateChecker(QObject):
         self._reply = None
         self._buffer = bytearray()
         self._failure = ""
+        self._fallback = False
         self._automatic_timer = QTimer(self)
         self._automatic_timer.setInterval(60 * 60 * 1000)
         self._automatic_timer.timeout.connect(self.check_if_due)
@@ -121,31 +144,36 @@ class UpdateChecker(QObject):
     def check(self) -> None:
         if self.busy:
             return
+        self.settings.setValue("updates/lastAttempt", time.time())
+        self.settings.sync()
+        self.busy = True
+        self.message = "正在检查更新…"
+        self._fallback = False
+        self._start_request(LATEST_RELEASE_API, head=False)
+        self.changed.emit()
+
+    def _start_request(self, url: str, *, head: bool) -> None:
         # Lazy import keeps the first window light; Qt uses Windows Schannel TLS.
         from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
         if self._manager is None:
             self._manager = QNetworkAccessManager(self)
-        request = QNetworkRequest(QUrl(LATEST_RELEASE_API))
-        request.setRawHeader(b"Accept", b"application/vnd.github+json")
+        request = QNetworkRequest(QUrl(url))
+        if not head:
+            request.setRawHeader(b"Accept", b"application/vnd.github+json")
+            request.setRawHeader(b"X-GitHub-Api-Version", b"2026-03-10")
         request.setRawHeader(b"User-Agent", f"{APP_SLUG}/{__version__}".encode("ascii"))
-        request.setRawHeader(b"X-GitHub-Api-Version", b"2026-03-10")
         # Fail closed on redirects; never follow a server-provided download URL.
         request.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
                              QNetworkRequest.RedirectPolicy.ManualRedirectPolicy)
         request.setTransferTimeout(10000)
-        self.settings.setValue("updates/lastAttempt", time.time())
-        self.settings.sync()
-        self.busy = True
-        self.message = "正在检查更新…"
         self._buffer.clear()
         self._failure = ""
-        self._reply = self._manager.get(request)
+        self._reply = self._manager.head(request) if head else self._manager.get(request)
         self._reply.setReadBufferSize(64 * 1024)
         self._reply.readyRead.connect(self._read_response)
         self._reply.finished.connect(self._finished)
         self._deadline.start()
-        self.changed.emit()
 
     def _read_response(self) -> None:
         if self._reply.bytesAvailable():
@@ -167,18 +195,37 @@ class UpdateChecker(QObject):
         self._read_response()
         reply = self._reply
         status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+        if not self._failure and not self._fallback and status in (403, 429) and self._manager is not None:
+            self._reply = None
+            self._buffer.clear()
+            reply.deleteLater()
+            self._fallback = True
+            self._start_request(LATEST_RELEASE_URL, head=True)
+            return
         try:
             if self._failure:
                 raise ValueError(self._failure)
-            if status in (403, 429):
-                raise ValueError("GitHub 暂时限制了请求，请稍后重试或打开发布页。")
-            if status == 404:
-                raise ValueError("暂未找到正式发布版本，请打开发布页查看。")
-            if reply.error() == QNetworkReply.NetworkError.SslHandshakeFailedError:
-                raise ValueError("安全连接验证失败，请检查系统时间或网络，或打开发布页。")
-            if reply.error() != QNetworkReply.NetworkError.NoError or status != 200:
-                raise ValueError("无法连接 GitHub，请检查网络后重试，或打开发布页。")
-            self.latest_tag = release_tag(bytes(self._buffer))
+            if self._fallback:
+                if reply.error() == QNetworkReply.NetworkError.SslHandshakeFailedError:
+                    raise ValueError("安全连接验证失败，请检查系统时间或网络，或打开发布页。")
+                if status == 404:
+                    raise ValueError("暂未找到正式发布版本，请打开发布页查看。")
+                if reply.error() != QNetworkReply.NetworkError.NoError or status not in (301, 302, 303, 307, 308):
+                    raise ValueError("GitHub 暂时限制了请求，请稍后重试或打开发布页。")
+                location = reply.attribute(QNetworkRequest.Attribute.RedirectionTargetAttribute)
+                if not location and hasattr(reply, "rawHeader"):
+                    location = bytes(reply.rawHeader(b"Location")).decode("ascii", "replace")
+                self.latest_tag = release_tag_from_redirect(location)
+            else:
+                if status in (403, 429):
+                    raise ValueError("GitHub 暂时限制了请求，请稍后重试或打开发布页。")
+                if status == 404:
+                    raise ValueError("暂未找到正式发布版本，请打开发布页查看。")
+                if reply.error() == QNetworkReply.NetworkError.SslHandshakeFailedError:
+                    raise ValueError("安全连接验证失败，请检查系统时间或网络，或打开发布页。")
+                if reply.error() != QNetworkReply.NetworkError.NoError or status != 200:
+                    raise ValueError("无法连接 GitHub，请检查网络后重试，或打开发布页。")
+                self.latest_tag = release_tag(bytes(self._buffer))
             self.settings.setValue("updates/latestTag", self.latest_tag)
             self.settings.sync()
             self.message = (f"发现新版本 {self.latest_tag}。" if self.update_available
@@ -188,6 +235,7 @@ class UpdateChecker(QObject):
         finally:
             self._reply = None
             self._buffer.clear()
+            self._fallback = False
             reply.deleteLater()
             self.busy = False
             self.changed.emit()

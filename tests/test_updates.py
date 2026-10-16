@@ -37,10 +37,15 @@ def test_version_comparison_uses_numbers():
 
 
 def test_legacy_installer_name_matches_the_release_version():
-    legacy = dict(name=f"{APP_SLUG}-Setup v99999.0.0.exe", state="uploaded", size=100)
-    assert updates.release_tag(release_payload(assets=[legacy])) == "v99999.0.0"
-    with pytest.raises(ValueError):
-        updates.release_tag(release_payload(tag_name="v1.0.0", assets=[legacy]))
+    for name in (
+        f"{APP_SLUG}-Setup v99999.0.0.exe",
+        f"{APP_SLUG}-Setup.v99999.0.0.exe",
+        f"{APP_SLUG}-Setup.99999.0.0.exe",
+    ):
+        legacy = dict(name=name, state="uploaded", size=100)
+        assert updates.release_tag(release_payload(assets=[legacy])) == "v99999.0.0"
+        with pytest.raises(ValueError):
+            updates.release_tag(release_payload(tag_name="v1.0.0", assets=[legacy]))
 
 
 @pytest.mark.parametrize("tag", [None, 100, "v1.0", "v1.0.0-rc1", "v1.0.0/../../x", "v1.0.0?x=1",
@@ -60,7 +65,8 @@ def test_only_ready_stable_installers_are_offered(changes):
 
 @pytest.mark.parametrize("payload", [b"null", b"[]", b"<html>error</html>", b"\xff",
                                         b"[" * 2000 + b"]" * 2000,
-                                        b" " * (updates.MAX_RESPONSE_BYTES + 1)])
+                                        b" " * (updates.MAX_RESPONSE_BYTES + 1)],
+                         ids=["null", "empty_list", "html", "invalid_utf8", "nested", "oversized"])
 def test_invalid_or_excessive_metadata_is_recoverable(payload):
     with pytest.raises(ValueError):
         updates.release_tag(payload)
@@ -137,3 +143,61 @@ def test_download_opens_only_fixed_repository_and_restores_notice(checker, monke
     monkeypatch.setattr(updates.QDesktopServices, "openUrl", lambda url: False)
     assert not checker.open_release_page()
     assert "无法打开浏览器" in checker.message
+
+
+def test_redirect_fallback_extracts_valid_tag_and_rejects_untrusted_locations():
+    from PyQt6.QtCore import QUrl
+
+    assert updates.release_tag_from_redirect(f"{APP_PROJECT_URL}/releases/tag/v1.2.3") == "v1.2.3"
+    assert updates.release_tag_from_redirect(QUrl("/d8349565/pdf-manage/releases/tag/v0.6.0")) == "v0.6.0"
+    with pytest.raises(ValueError, match="暂未找到"):
+        updates.release_tag_from_redirect(f"{APP_PROJECT_URL}/releases")
+    for bad in (None, "", "https://evil.example/releases/tag/v1.0.0",
+                f"{APP_PROJECT_URL}/releases/tag/v1.0.0?x=1",
+                f"{APP_PROJECT_URL}/releases/tag/v1.0.0/../v2.0.0"):
+        with pytest.raises(ValueError):
+            updates.release_tag_from_redirect(bad)
+
+
+def test_rate_limit_falls_back_to_release_redirect(checker):
+    from PyQt6.QtCore import QUrl
+    from PyQt6.QtNetwork import QNetworkRequest
+
+    disposed = []
+    head_urls = []
+
+    def fake_head(request):
+        head_urls.append(request.url().toString())
+        attrs = {
+            QNetworkRequest.Attribute.HttpStatusCodeAttribute: 302,
+            QNetworkRequest.Attribute.RedirectionTargetAttribute: QUrl(f"{APP_PROJECT_URL}/releases/tag/v99999.0.0"),
+        }
+        return SimpleNamespace(
+            bytesAvailable=lambda: 0,
+            attribute=lambda key: attrs.get(key),
+            error=lambda: QNetworkReply.NetworkError.NoError,
+            deleteLater=lambda: disposed.append("head"),
+            setReadBufferSize=lambda size: None,
+            readyRead=SimpleNamespace(connect=lambda fn: None),
+            finished=SimpleNamespace(connect=lambda fn: None),
+        )
+
+    checker._manager = SimpleNamespace(head=fake_head)
+    checker._reply = SimpleNamespace(
+        bytesAvailable=lambda: 0,
+        attribute=lambda key: 403,
+        error=lambda: QNetworkReply.NetworkError.ContentAccessDenied,
+        deleteLater=lambda: disposed.append("api"),
+    )
+    checker.busy = True
+    checker._finished()
+    assert checker._fallback is True and checker.busy is True
+    assert head_urls == [f"{APP_PROJECT_URL}/releases/latest"]
+    assert disposed == ["api"]
+
+    checker._finished()
+    assert checker._fallback is False and checker.busy is False
+    assert checker.latest_tag == "v99999.0.0"
+    assert "发现新版本 v99999.0.0" in checker.message
+    assert disposed == ["api", "head"]
+
