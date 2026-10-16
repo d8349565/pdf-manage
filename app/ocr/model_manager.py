@@ -8,7 +8,6 @@ import time
 import uuid
 import zipfile
 
-from app import __version__
 from app.ocr.contracts import OCRError
 from app.output import check_cancel
 
@@ -43,7 +42,6 @@ def validate_runtime(directory=None, *, cancel=None):
             raise OCRError('OCR 增强包清单异常，请重新安装。')
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
         if (manifest['protocol'] != PROTOCOL or manifest['platform'] != 'win_amd64'
-                or manifest['app_series'] != '.'.join(__version__.split('.')[:2])
                 or manifest['rapidocr'] != '3.9.2' or manifest['onnxruntime'] != '1.23.2'):
             raise OCRError('OCR 增强包与当前程序不兼容，请安装对应版本。')
         files = manifest['files']

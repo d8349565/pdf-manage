@@ -24,7 +24,7 @@ def make_runtime(root):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'test-only-not-executable')
         files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    manifest = dict(protocol=1, platform='win_amd64', app_series='.'.join(__version__.split('.')[:2]),
+    manifest = dict(protocol=1, platform='win_amd64', app_series='0.5',
                     rapidocr='3.9.2', onnxruntime='1.23.2', files=files)
     (root / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
     return root
