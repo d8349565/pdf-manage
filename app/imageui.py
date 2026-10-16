@@ -1,14 +1,14 @@
 """Lightweight, reversible placement and transforms for paper images."""
 import base64
 import math
-from pathlib import Path
 import uuid
 
+import pymupdf as p
 from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFileDialog, QFrame,
-                            QGraphicsObject, QGraphicsPixmapItem, QGridLayout, QLabel,
-                            QMessageBox, QPushButton)
+                            QGraphicsDropShadowEffect, QGraphicsObject, QGraphicsPixmapItem,
+                            QGridLayout, QLabel, QMessageBox, QPushButton)
 
 from app.output import OperationCancelled
 from app.pdfimages import fit_image, validate_image, MAX_IMAGE_BYTES
@@ -18,7 +18,7 @@ from app.workspace import PageEdit
 
 
 def load_image_asset(path):
-    with Path(path).open('rb') as stream:
+    with open(path, 'rb') as stream:
         data = stream.read(MAX_IMAGE_BYTES + 1)
     width, height = validate_image(data)
     image = QImage.fromData(data)
@@ -94,25 +94,74 @@ class ImageTools(QObject):
         self.committing = False
         self.shown_values = {}
         self.bar = QFrame(self.view.viewport())
-        self.bar.setObjectName('annotationBar')
+        self.bar.setObjectName('imageBar')
+        self.bar.setStyleSheet("""
+            QFrame#imageBar {
+                background: #FFFFFF;
+                border: 1px solid #D7E8E4;
+                border-radius: 8px;
+            }
+            QLabel {
+                font-size: 12px;
+                color: #0F766E;
+                font-weight: 500;
+            }
+            QDoubleSpinBox {
+                min-height: 24px;
+                padding: 0 16px 0 4px;
+                font-size: 12px;
+                border-radius: 6px;
+                border: 1px solid #D7E8E4;
+                background: #F8FAFA;
+            }
+            QDoubleSpinBox:focus {
+                border: 1px solid #0F766E;
+                background: #FFFFFF;
+            }
+            QCheckBox {
+                font-size: 12px;
+                color: #0F766E;
+            }
+            QPushButton#deleteBtn {
+                min-height: 24px;
+                padding: 2px 10px;
+                font-size: 12px;
+                border-radius: 6px;
+                border: 1px solid #FECACA;
+                color: #DC2626;
+                background: #FEF2F2;
+            }
+            QPushButton#deleteBtn:hover {
+                background: #FEE2E2;
+                border-color: #FCA5A5;
+            }
+        """)
+        shadow = QGraphicsDropShadowEffect(self.bar)
+        shadow.setBlurRadius(12)
+        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setOffset(0, 2)
+        self.bar.setGraphicsEffect(shadow)
         layout = QGridLayout(self.bar)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setHorizontalSpacing(6)
+        layout.setVerticalSpacing(4)
         self.width, self.height, self.angle = QDoubleSpinBox(), QDoubleSpinBox(), QDoubleSpinBox()
-        for column, (label, spin) in enumerate((('宽', self.width), ('高', self.height), ('角度', self.angle))):
+        for column, (label, spin, (lo, hi), sfx) in enumerate((('宽', self.width, (.1, 40000), ' mm'),
+                                                               ('高', self.height, (.1, 40000), ' mm'),
+                                                               ('角度', self.angle, (-180, 180), '°'))):
             layout.addWidget(QLabel(label), 0, column * 2)
             spin.setAccessibleName('图片' + label)
             spin.setKeyboardTracking(False)
             spin.setDecimals(1)
-            spin.setRange(.1, 40000)
-            spin.setSuffix(' mm')
+            spin.setRange(lo, hi)
+            spin.setSuffix(sfx)
             spin.setMaximumWidth(86)
             layout.addWidget(spin, 0, column * 2 + 1)
-        self.angle.setRange(-180, 180)
-        self.angle.setSuffix('°')
         self.lock = QCheckBox('锁定比例')
         self.lock.setChecked(True)
         layout.addWidget(self.lock, 1, 0, 1, 4)
         remove = QPushButton('删除')
+        remove.setObjectName('deleteBtn')
         remove.setToolTip('删除图片（Delete）')
         remove.clicked.connect(self.delete)
         layout.addWidget(remove, 1, 4, 1, 2)
@@ -147,20 +196,17 @@ class ImageTools(QObject):
             self.clear()
 
     def matrix(self):
-        import pymupdf as p
         summary = self.host.store.cached_annotations(self.ref)
         if summary is None:
             raise ValueError('页面尚未准备好，请稍候重试。')
         return p.Matrix(summary['matrix'])
 
     def canonical(self, point):
-        import pymupdf as p
         local = point - self.view.page_rects[self.index].topLeft()
         result = p.Point(local.x(), local.y()) * ~self.matrix()
         return QPointF(result.x, result.y)
 
     def bounds(self):
-        import pymupdf as p
         rect = self.view.page_rects[self.index]
         return tuple(p.Rect(0, 0, rect.width(), rect.height()) * ~self.matrix())
 
@@ -169,7 +215,6 @@ class ImageTools(QObject):
         return math.degrees(math.atan2(matrix.b, matrix.a))
 
     def update_overlay(self):
-        import pymupdf as p
         if self.overlay is None:
             self.overlay = ImageOverlay(self)
             self.view.scene().addItem(self.overlay)
@@ -465,7 +510,6 @@ class ImageTools(QObject):
         summary = self.host.store.cached_annotations(ref)
         if summary is None:
             return False
-        import pymupdf as p
         local = point - self.view.page_rects[index].topLeft()
         canonical = p.Point(local.x(), local.y()) * ~p.Matrix(summary['matrix'])
         for item in reversed(summary['annotations']):
