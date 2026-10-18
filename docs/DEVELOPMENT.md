@@ -41,6 +41,7 @@ python -m venv .venv
 | `app/storage.py`、`app/storageui.py` | 存储偏好、组件迁移、任务临时目录与受限清理 |
 | `app/rasterpdf.py`、`app/rasterui.py` | 图片版 PDF 输出与未知签名的安全影像副本 |
 | `app/textselection.py`、`app/ocr/word_export.py` | 阅读区框选复制与 OCR 文字层导出可编辑 DOCX |
+| `app/regioncapture.py` | 单页区域图片、批注备注编号与展开、剪贴板和 PNG 输出 |
 | `app/wordconvert.py`、`app/wordui.py` | Word 批量转换 |
 | `app/assets/` | 应用资源 |
 | `packaging/`、`pdf-manage.spec` | 打包、安装器和第三方许可文件 |

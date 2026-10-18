@@ -505,13 +505,13 @@ def build_manuscript_document(out_path: Path):
     p_sub = doc.add_paragraph()
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_sub.paragraph_format.space_after = Pt(16)
-    add_run(p_sub, "ZhiXu PDF Architecture Guidelines & Interaction Specification (v0.8.0)", font_name="Microsoft YaHei", size_pt=11, color_hex="64748B")
+    add_run(p_sub, "ZhiXu PDF Architecture Guidelines & Interaction Specification (v0.7.3)", font_name="Microsoft YaHei", size_pt=11, color_hex="64748B")
 
     # 元数据信息条
     p_meta = doc.add_paragraph()
     p_meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_meta.paragraph_format.space_after = Pt(18)
-    add_run(p_meta, "编制部门：核心平台研发中心  |  密级：内部公开  |  生效日期：2026年10月  |  修订版本：v0.8.0", font_name="Microsoft YaHei", size_pt=9, color_hex="64748B")
+    add_run(p_meta, "编制部门：核心平台研发中心  |  密级：内部公开  |  生效日期：2026年10月  |  修订版本：v0.7.3", font_name="Microsoft YaHei", size_pt=9, color_hex="64748B")
 
     # 核心原则 Callout 框
     add_callout_box(
@@ -544,7 +544,7 @@ def build_manuscript_document(out_path: Path):
     rows_data = [
         ("v0.1.0", "2026-09-15", "项目脚手架初始化，完成多页阅读与基础渲染管线", "李工"),
         ("v0.5.0", "2026-09-30", "增加整理视图网格拖拽排序、批量旋转与导出拆分", "王工"),
-        ("v0.8.0", "2026-10-12", "重构 OCR 识别流与 Word-XML 排版引擎，支持无损表格与文字还原", "陈架构师"),
+        ("v0.7.3", "2026-10-12", "重构 OCR 识别流与 Word-XML 排版引擎，支持无损表格与文字还原", "陈架构师"),
     ]
     for r_idx, r_data in enumerate(rows_data, start=1):
         for c_idx, val in enumerate(r_data):

@@ -614,7 +614,8 @@ class AnnotationTools(QWidget):
         self.insert_image_action.triggered.connect(lambda: self.host.image_tools.choose_image())
         actions = {kind: action for (kind, _, _), action in zip(self.TOOL_DEFS, self.tool_actions)}
         actions['image'] = self.insert_image_action
-        groups = (('browse', 'select'), ('highlight', 'underline', 'arrow', 'note'),
+        actions['capture'] = self.host.capture_action
+        groups = (('browse', 'select', 'capture'), ('highlight', 'underline', 'arrow', 'note'),
                   ('replace', 'image', 'freetext'), ('ink', 'rect', 'ellipse'))
         for group_index, group in enumerate(groups):
             if group_index:

@@ -2456,6 +2456,11 @@ class MainWindow(QMainWindow):
         edit.addAction(self.find_action)
         edit.addSeparator()
         edit.addAction(self._act("审阅与文字修正…", self.open_annotation_tools))
+        self.capture_action = self._act("框选导出图片…", lambda: self.region_capture.begin(),
+                                        QKeySequence("Ctrl+Shift+C"))
+        self.capture_action.setIcon(toolbar_icon('annotation-select'))
+        self.capture_action.setToolTip('框选原文，连同批注说明复制或保存为图片（Ctrl+Shift+C）')
+        edit.addAction(self.capture_action)
         edit.addSeparator()
         self.insert_action = self._act("插入页面…", self.insert_files)
         edit.addAction(self.insert_action)
@@ -2693,6 +2698,7 @@ class MainWindow(QMainWindow):
         self.ocr_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.watermark_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "annotate"))
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
+        self.capture_action.setEnabled(bool(count) and not copy_reason)
         self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
         sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
@@ -3044,6 +3050,8 @@ class MainWindow(QMainWindow):
         self.text_selection = TextSelection(self)
         from app.readerinteraction import ReaderInteraction
         self.reader_interaction = ReaderInteraction(self)
+        from app.regioncapture import RegionCapture
+        self.region_capture = RegionCapture(self)
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
@@ -3875,6 +3883,7 @@ class MainWindow(QMainWindow):
         self.find_action.setEnabled(bool(self.ws.pages))
         self.search_bar.sync_document()
         self.text_selection.sync()
+        self.region_capture.sync()
         if hasattr(self, 'image_tools'):
             self.image_tools.sync()
         if self.ws.pages:
@@ -3920,6 +3929,7 @@ class MainWindow(QMainWindow):
                 self._invalidate_detail_requests()
                 self._scroll_y = None
                 self.text_selection.sync()
+                self.region_capture.sync()
                 if tools:
                     tools.hover_bar.hide()
                 if hasattr(self, 'image_tools') and self.image_tools.engaged:
@@ -5644,6 +5654,7 @@ class MainWindow(QMainWindow):
             self._preview_key = None
             self._invalidate_detail_requests()
             self.rendering.close()
+            self.region_capture.cancel()
             for handler in (self.reader_interaction, getattr(self, 'image_tools', None)):
                 if handler is not None:
                     QGuiApplication.instance().removeEventFilter(handler)
