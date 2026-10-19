@@ -442,6 +442,9 @@ def test_reading_orb_peeks_reveals_and_opens_the_shared_menu(reader, qapp):
     qapp.processEvents()
     menu = reader.reading_settings_menu
     assert menu.isVisible()
+    viewport_bounds = QRect(view.viewport().mapToGlobal(QPoint()), view.viewport().size())
+    assert viewport_bounds.contains(menu.frameGeometry())
+    assert menu.frameGeometry().bottom() < orb.mapToGlobal(QPoint()).y()
     assert all(action in menu.actions() for action in reader.reading_layout_actions.values())
     assert all(action in menu.actions() for action in reader.reading_zoom_actions.values())
     reader.reading_layout_actions['four'].trigger()
@@ -521,7 +524,7 @@ def test_repeated_proximity_does_not_restart_the_reveal_animation(reader, qapp):
     orb = reader.reading_orb
     QTest.mouseMove(reader.preview_view.viewport(), QPoint(20, 20))
     orb.hide_timer.stop()
-    orb.animation.setDuration(160)
+    orb._motion_duration = 160
     orb.expanded = False
     orb._move(False)
     orb.reveal()

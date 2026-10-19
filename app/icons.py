@@ -42,6 +42,12 @@ _PATHS: dict[str, str] = {
     ),
     "page-single": '<rect x="6" y="3" width="12" height="18" rx="1.5"/>',
     "book-open": '<path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1zM12 5v15M6 8h3M6 11h3M15 8h3M15 11h3"/>',
+    "reading-settings": (
+        '<path d="M4 7v12a2 2 0 0 0 2 2h10" opacity=".45"/>'
+        '<rect x="7" y="3" width="13" height="15" rx="2" fill="#F6FCF9"/>'
+        '<path d="M13 3v6l2-1.5L17 9V3" fill="#DBF0E5"/>'
+        '<path d="M10 12h5M10 15h3"/>'
+    ),
     "page-spread": (
         '<rect x="3" y="4" width="8" height="16" rx="1.5"/>'
         '<rect x="13" y="4" width="8" height="16" rx="1.5"/>'

@@ -1,7 +1,9 @@
 """An edge-docked, session-only shortcut to the reader's shared settings menu."""
-from PyQt6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, QSize, QTimer, Qt
+from PyQt6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QColor, QCursor, QIcon, QPainter, QPen, QRegion
-from PyQt6.QtWidgets import QApplication, QGraphicsDropShadowEffect, QStyle, QToolButton
+from PyQt6.QtWidgets import (
+    QApplication, QGraphicsDropShadowEffect, QStyle, QStyleOptionToolButton, QStylePainter, QToolButton,
+)
 
 from app.icons import toolbar_icon
 
@@ -20,27 +22,28 @@ class ReadingSettingsOrb(QToolButton):
         self.expanded = False
         self.setObjectName('readingSettingsOrb')
         self.setFixedSize(self.SIZE, self.SIZE)
-        self.setIconSize(QSize(22, 22))
+        self._reading_icon = toolbar_icon('reading-settings', '#0F766E', 24)
+        self.setIconSize(QSize(24, 24))
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAccessibleName('阅读设置')
         self.setStyleSheet('''
             QToolButton#readingSettingsOrb {
-                min-width: 40px; min-height: 40px; padding: 0; border-radius: 21px;
-                background: #F8FFFC; border: 1px solid #A8C9BB;
+                min-width: 40px; min-height: 40px; padding: 0; border-radius: 14px;
+                background: #FCFFFD; border: 1px solid #D5E5DD;
             }
-            QToolButton#readingSettingsOrb:hover { background: #E6F5EE; border-color: #4B9B80; }
-            QToolButton#readingSettingsOrb:pressed { background: #D3EBDF; }
+            QToolButton#readingSettingsOrb:hover { background: #F0FAF5; border-color: #99C7B2; }
+            QToolButton#readingSettingsOrb:pressed { background: #E2F2E9; border-color: #80B69E; }
         ''')
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(12)
-        shadow.setOffset(0, 2)
-        shadow.setColor(QColor(19, 78, 74, 30))
+        shadow.setBlurRadius(14)
+        shadow.setOffset(0, 3)
+        shadow.setColor(QColor(19, 78, 74, 22))
         self.setGraphicsEffect(shadow)
         self.animation = QPropertyAnimation(self, b'pos', self)
         duration = QApplication.style().styleHint(QStyle.StyleHint.SH_Widget_Animation_Duration)
-        self.animation.setDuration(min(120, duration) if duration > 0 else 0)
-        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._motion_duration = min(200, duration) if duration > 0 else 0
+        self.animation.valueChanged.connect(lambda _: self.update())
         self.animation.finished.connect(self._finish_animation)
         self.hide_timer = QTimer(self)
         self.hide_timer.setSingleShot(True)
@@ -51,7 +54,7 @@ class ReadingSettingsOrb(QToolButton):
         menu.aboutToHide.connect(self._menu_closed)
         self.hide_action = QAction('本次运行隐藏悬浮球', host)
         self.hide_action.triggered.connect(self.hide_temporarily)
-        self.restore_action = QAction(toolbar_icon('book-open'), '显示阅读悬浮球', host)
+        self.restore_action = QAction(self._reading_icon, '显示阅读悬浮球', host)
         self.restore_action.triggered.connect(self.restore)
         menu.addSeparator()
         menu.addAction(self.hide_action)
@@ -61,15 +64,21 @@ class ReadingSettingsOrb(QToolButton):
         self.view.viewport().installEventFilter(self)
         self.hide()
 
-    def _target(self):
+    def _target(self, expanded=None):
         viewport = self.view.viewport()
-        x = viewport.width() - (self.SIZE + 12 if self.expanded else self.PEEK)
+        expanded = self.expanded if expanded is None else expanded
+        x = viewport.width() - (self.SIZE + 12 if expanded else self.PEEK)
         return viewport.pos() + QPoint(max(4, x), max(8, viewport.height() - self.SIZE - 20))
 
     def _move(self, animate):
         self.animation.stop()
         target = self._target()
         if animate and self.isVisible() and target != self.pos():
+            curve = QEasingCurve(QEasingCurve.Type.OutBack if self.expanded else QEasingCurve.Type.InCubic)
+            if self.expanded:
+                curve.setOvershoot(0.8)
+            self.animation.setEasingCurve(curve)
+            self.animation.setDuration(self._motion_duration if self.expanded else self._motion_duration * 2 // 3)
             self.animation.setStartValue(self.pos())
             self.animation.setEndValue(target)
             self.animation.start()
@@ -78,7 +87,8 @@ class ReadingSettingsOrb(QToolButton):
             self._finish_animation()
 
     def _finish_animation(self):
-        self.setIcon(toolbar_icon('book-open', '#0F766E', 22) if self.expanded else QIcon())
+        self.setIcon(self._reading_icon if self.expanded else QIcon())
+        self.update()
 
     def reveal(self):
         if self.temporarily_hidden or not self.isVisible():
@@ -87,7 +97,7 @@ class ReadingSettingsOrb(QToolButton):
         if self.expanded:
             return
         self.expanded = True
-        self.setIcon(toolbar_icon('book-open', '#0F766E', 22))
+        self.setIcon(self._reading_icon)
         self.raise_()
         self._move(True)
 
@@ -108,7 +118,7 @@ class ReadingSettingsOrb(QToolButton):
     def _menu_opened(self):
         self.hide_timer.stop()
         self.expanded = True
-        self.setIcon(toolbar_icon('book-open', '#0F766E', 22))
+        self.setIcon(self._reading_icon)
         self.setDown(True)
         self._move(False)
 
@@ -121,11 +131,16 @@ class ReadingSettingsOrb(QToolButton):
         self.reveal()
         menu = self.settings_menu
         menu.ensurePolished()
-        size = menu.sizeHint()
         viewport = self.view.viewport()
-        x = max(8, viewport.width() - size.width() - 12)
-        y = max(8, self.mapTo(viewport, QPoint()).y() - size.height() - 8)
-        menu.popup(viewport.mapToGlobal(QPoint(x, y)))
+        bounds = QRect(viewport.mapToGlobal(QPoint()), viewport.size()).adjusted(8, 8, -12, -12)
+        bottom = min(self.view.mapToGlobal(self._target(True)).y() - 12, bounds.bottom() + 1)
+        size = menu.sizeHint()
+        menu.popup(QPoint(max(bounds.left(), bounds.right() + 1 - size.width()),
+                          max(bounds.top(), bottom - size.height())))
+        # 原生菜单显示后的尺寸可能与预估不同，按实际外框再次贴齐按钮上方。
+        size = menu.frameGeometry().size()
+        menu.move(max(bounds.left(), bounds.right() + 1 - size.width()),
+                  max(bounds.top(), bottom - size.height()))
 
     def hide_temporarily(self):
         self.temporarily_hidden = True
@@ -186,15 +201,30 @@ class ReadingSettingsOrb(QToolButton):
         super().moveEvent(event)
 
     def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self.expanded:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        option = QStyleOptionToolButton()
+        self.initStyleOption(option)
+        option.icon = QIcon()
+        painter = QStylePainter(self)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ToolButton, option)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # 图标跟随实际位置变化，收起途中再次靠近也能连续衔接。
+        closed, opened = self._target(False), self._target(True)
+        progress = (closed.x() - self.x()) / max(1, closed.x() - opened.x())
+        opacity = max(0.0, min(1.0, progress))
+        if opacity < 1:
+            painter.setOpacity(1 - opacity)
             painter.setPen(QPen(QColor('#0F766E'), 1.6, Qt.PenStyle.SolidLine,
                                 Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             painter.drawLine(8, 17, 5, 21)
             painter.drawLine(5, 21, 8, 25)
-            painter.end()
+        if opacity > 0:
+            painter.setOpacity(opacity)
+            painter.translate(self.SIZE / 2, self.SIZE / 2)
+            painter.rotate(-12 * (1 - progress))
+            scale = (0.88 + 0.12 * progress) * (0.94 if self.isDown() else 1)
+            painter.scale(scale, scale)
+            self._reading_icon.paint(painter, QRect(-12, -12, 24, 24))
+        painter.end()
 
     def eventFilter(self, watched, event):
         kind = event.type()
