@@ -26,11 +26,19 @@ jobs:
       - name: Install base build dependencies
         run: python -m pip install -r packaging/requirements-build.txt
       - name: Compile and run generated-document regressions
-        id: regressions
-        continue-on-error: true
+        shell: pwsh
         run: |
+          New-Item -ItemType Directory -Path build/ci-tests -Force -ErrorAction Stop | Out-Null
           python -m compileall -q app packaging
-          python -m pytest -q --basetemp build/ci-tests --junitxml=build/regressions.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $regressionsFailed = $false
+          $testModules = Get-ChildItem -Path tests -Filter 'test_*.py' -File -Recurse | Sort-Object FullName
+          if (-not $testModules) { throw 'No regression test modules found.' }
+          foreach ($testModule in $testModules) {
+            python -m pytest -q $testModule.FullName --basetemp "build/ci-tests/$($testModule.BaseName)" --junitxml="build/regressions/$($testModule.BaseName).xml"
+            if ($LASTEXITCODE -ne 0) { $regressionsFailed = $true }
+          }
+          if ($regressionsFailed) { exit 1 }
       - name: Build and inspect the base application
         run: |
           python packaging/make_icon.py
@@ -67,10 +75,7 @@ jobs:
             build/ocr-size-report.json
             build/ci-poc/report.json
             build/build-report.json
-            build/regressions.xml
-      - name: Require regression acceptance
-        if: steps.regressions.outcome == 'failure'
-        run: throw 'Regression checks failed; inspect regressions.xml and the documented baseline before release.'
+            build/regressions/*.xml
       - uses: actions/upload-artifact@v4
         if: success()
         with:
