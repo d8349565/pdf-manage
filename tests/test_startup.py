@@ -28,7 +28,10 @@ def test_cold_window_defers_pdf_engine_and_opens_during_warmup(tmp_path):
     result = subprocess.run([sys.executable, "-c", """
 import sys
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QSettings, QThreadPool
+from pathlib import Path
+QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(Path(sys.argv[1]).parent))
 from app.__main__ import _start_pdf_warmup
 from app.ui import MainWindow
 app = QApplication([])

@@ -6,7 +6,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pymupdf as p
 from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (QColor, QFont, QFontMetricsF, QImage, QKeySequence, QPainter,
                         QPen, QPixmap, QShortcut, QTextDocument, QTextOption)
@@ -22,6 +21,7 @@ from app.storage import export_path
 
 def selected_comments(annotations, matrix, area):
     """Use displayed geometry so numbering follows reading order after rotation."""
+    import pymupdf as p
     result = []
     for annot in annotations:
         content = (annot.get('content') or '').strip()
@@ -87,6 +87,7 @@ def comment_markers(notes, origin, scale, crop_x, crop_y, width, height, radius,
 
 def render_capture(store, ref, region, progress, cancel):
     """Render the current edit draft, never the reader's overlays or popup widgets."""
+    import pymupdf as p
     from app.pdfedits import annotation_summary
 
     store.require_operation([ref], 'copy')

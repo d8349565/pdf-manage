@@ -12,6 +12,7 @@ from app.pdf2excel.page_merger import merge_cross_page_tables
 from app.pdf2excel.quality import assess_table
 from app.pdf2excel.style_parser import build_cell_style
 from app.pdf2excel.type_parser import parse_value
+from app.output import OperationCancelled
 
 
 def make_table(page, rows):
@@ -147,15 +148,16 @@ def test_save_failure_or_cancellation_preserves_output(tmp_path, monkeypatch, ac
     make_pdf(source)
     output.write_bytes(b'original')
     cancelled = False
-    original_save = openpyxl.Workbook.save
-    def save(wb, path):
+    from app.pdf2excel.converter import ExcelWriter
+    original_save = ExcelWriter.write_data
+    def save(writer):
         nonlocal cancelled
-        original_save(wb, path)
+        original_save(writer)
         if action == 'fail':
             raise OSError('simulated disk failure')
         cancelled = True
-    monkeypatch.setattr(openpyxl.Workbook, 'save', save)
-    with pytest.raises(OSError if action == 'fail' else InterruptedError):
+    monkeypatch.setattr(ExcelWriter, 'write_data', save)
+    with pytest.raises(OSError if action == 'fail' else OperationCancelled):
         convert_pdf_to_excel(str(source), str(output), cancel_check=lambda: cancelled)
     assert output.read_bytes() == b'original'
     assert not list(tmp_path.glob('.pdf2excel-*'))

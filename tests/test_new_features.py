@@ -291,7 +291,7 @@ def test_permissions_distinguish_annotations_from_content(qapp, tmp_path):
     assert not store.operation_reason([ref], "annotate")
     annotated = ref.edited(PageEdit("note", ((200, 80),), text="Allowed", annotation_id="note"))
     store.write([annotated], str(tmp_path / "notes.pdf"))
-    with pytest.raises(PdfError, match="原文"):
+    with pytest.raises(PdfError, match="不允许修改页面内容"):
         store.prepare_replacement(ref, (40, 60, 110, 100), "new")
     store.close_all()
 
@@ -1017,6 +1017,8 @@ def test_annotation_tools_replace_robustness(qapp, tmp_path):
 
     class DummyHost:
         def __init__(self):
+            from PyQt6.QtGui import QAction
+            self.capture_action = QAction("框选导出图片")
             self.store = PdfStore()
             self.ws = Workspace()
             self.ws.load_first_or_merge(self.store.load(str(source)), str(source))
@@ -1037,7 +1039,7 @@ def test_annotation_tools_replace_robustness(qapp, tmp_path):
 
     host = DummyHost()
     tools = AnnotationTools(host)
-    tools.tool.setCurrentIndex(9)
+    tools.tool.setCurrentIndex(tools.tool.findData("replace"))
     assert tools.tool.currentData() == "replace"
     assert tools.ensure_snapshot() is True
     tools.deactivate()
@@ -1268,7 +1270,7 @@ def test_page_number_spinbox_compact_sizing(qapp, tmp_path):
     win = MainWindow()
     try:
         assert win.page_number.minimumWidth() == 32
-        assert win.page_number.maximumWidth() == 46
+        assert win.page_number.maximumWidth() == 64
         assert win.page_number.alignment() == Qt.AlignmentFlag.AlignCenter
     finally:
         win.close()

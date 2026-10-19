@@ -183,7 +183,7 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
                 line_box |= p.Rect(char['bbox'])
             parts=_positioned_line_parts(chars,sizes,direction) if any(area.intersects(line_box) for area in positions) else [(chars,sizes)]
             for part,part_sizes in parts:
-                text=''.join(char['c'] for char in part)
+                text=''.join(char['c'] for char in part).replace('\xa0', ' ')
                 if not text.strip():
                     continue
                 bounds = p.Rect(part[0]['bbox'])

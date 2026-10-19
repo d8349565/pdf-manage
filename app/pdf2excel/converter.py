@@ -81,6 +81,7 @@ def convert_pdf_to_excel(
                         annotated_scans.add(page_idx)
             # This document is private to the conversion. Make visible text-box
             # appearances extractable, while keeping the source PDF untouched.
+            page = None  # Release the cached annotation page before baking it.
             doc.bake(annots=True, widgets=False)
             check_cancelled()
         for idx, page_idx in enumerate(page_indices):

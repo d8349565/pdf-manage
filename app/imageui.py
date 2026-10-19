@@ -3,7 +3,6 @@ import base64
 import math
 import uuid
 
-import pymupdf as p
 from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFileDialog, QFrame,
@@ -196,17 +195,20 @@ class ImageTools(QObject):
             self.clear()
 
     def matrix(self):
+        import pymupdf as p
         summary = self.host.store.cached_annotations(self.ref)
         if summary is None:
             raise ValueError('页面尚未准备好，请稍候重试。')
         return p.Matrix(summary['matrix'])
 
     def canonical(self, point):
+        import pymupdf as p
         local = point - self.view.page_rects[self.index].topLeft()
         result = p.Point(local.x(), local.y()) * ~self.matrix()
         return QPointF(result.x, result.y)
 
     def bounds(self):
+        import pymupdf as p
         rect = self.view.page_rects[self.index]
         return tuple(p.Rect(0, 0, rect.width(), rect.height()) * ~self.matrix())
 
@@ -215,6 +217,7 @@ class ImageTools(QObject):
         return math.degrees(math.atan2(matrix.b, matrix.a))
 
     def update_overlay(self):
+        import pymupdf as p
         if self.overlay is None:
             self.overlay = ImageOverlay(self)
             self.view.scene().addItem(self.overlay)
@@ -511,6 +514,7 @@ class ImageTools(QObject):
         if summary is None:
             return False
         local = point - self.view.page_rects[index].topLeft()
+        import pymupdf as p
         canonical = p.Point(local.x(), local.y()) * ~p.Matrix(summary['matrix'])
         for item in reversed(summary['annotations']):
             s = item.get('image_settings')

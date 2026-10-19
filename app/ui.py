@@ -2205,6 +2205,7 @@ class MainWindow(QMainWindow):
         self._max_hover = False
         self.setAcceptDrops(True)
         self.setMinimumSize(980, 680)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowFlags(
             Qt.WindowType.Window
             | Qt.WindowType.FramelessWindowHint
@@ -5679,6 +5680,10 @@ class MainWindow(QMainWindow):
             self._invalidate_detail_requests()
             self.rendering.close()
             self.region_capture.cancel()
+            self.text_selection.clear()
+            for handler in (self.text_selection, self.search_bar):
+                self.preview_view.removeEventFilter(handler)
+                self.preview_view.viewport().removeEventFilter(handler)
             for handler in (self.reader_interaction, getattr(self, 'image_tools', None)):
                 if handler is not None:
                     QGuiApplication.instance().removeEventFilter(handler)

@@ -46,6 +46,7 @@ def _worker(folder, request, progress, cancel, *, on_prepared=None):
                 prepared = _read_json(root / "prepared.json")
                 if prepared and prepared["index"] > acknowledged:
                     on_prepared(prepared["index"], prepared["result"])
+                    check_cancel(cancel)
                     acknowledged = prepared["index"]
                     _write_json(root / "ack.json", dict(index=acknowledged))
             time.sleep(.01 if on_prepared is not None else .05)

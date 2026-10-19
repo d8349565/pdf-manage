@@ -71,6 +71,7 @@ def test_all_content_keeps_visible_text_boxes_and_original_annotations(tmp_path,
     try:
         text = " ".join(str(cell.value) for row in workbook.active for cell in row if cell.value is not None)
         assert all(value in text for value in ("Original body", "Inserted note", "Value 123.45"))
+        assert text.count("Inserted note") == text.count("Value 123.45") == 1
     finally:
         workbook.close()
     assert source.read_bytes() == original

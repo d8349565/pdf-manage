@@ -145,6 +145,7 @@ def test_multiline_text_box_appearance_survives_reopen_edit_and_move(rotation):
     with p.open() as doc:
         page = doc.new_page(width=400, height=600)
         page.insert_text((30, 30), "Original body")
+        original_contents = [doc.xref_stream(xref) for xref in page.get_contents()]
         page.set_rotation(rotation)
         area = tuple(p.Rect(40, 80, 280, 100) * page.derotation_matrix)
         edit = PageEdit("freetext", area, text="First line\nSecond line\nThird line",
@@ -156,7 +157,7 @@ def test_multiline_text_box_appearance_survives_reopen_edit_and_move(rotation):
         assert annot.type[0] == p.PDF_ANNOT_FREE_TEXT
         assert (annot.rect * page.rotation_matrix).height > 20
         assert annot.flags & p.PDF_ANNOT_IS_PRINT
-        assert page.get_text().strip() == "Original body"
+        assert [doc.xref_stream(xref) for xref in page.get_contents()] == original_contents
         data = doc.tobytes()
     with p.open(stream=data, filetype="pdf") as doc:
         page = doc[0]
@@ -183,6 +184,7 @@ def test_watermark_is_removable_after_reopen_and_preserves_other_content(rotatio
         page = doc.new_page(width=400, height=600)
         page.set_rotation(rotation)
         page.insert_text((30, 40), "Original body")
+        original_contents = [doc.xref_stream(xref) for xref in page.get_contents()]
         note = page.add_text_annot((50, 100), "Keep this note")
         doc.xref_set_key(note.xref, "NM", p.get_pdf_str("zhixu-watermark-unrelated"))
         edit = PageEdit("watermark", text="Sample", color=(.3, .4, .5),
@@ -195,7 +197,7 @@ def test_watermark_is_removable_after_reopen_and_preserves_other_content(rotatio
         assert owned
         assert "Sample" in owned[0].get_text()
         assert all(a.flags & p.PDF_ANNOT_IS_PRINT for a in owned)
-        assert page.get_text().strip() == "Original body"
+        assert [doc.xref_stream(xref) for xref in page.get_contents()] == original_contents
         data = doc.tobytes()
     with p.open(stream=data, filetype="pdf") as doc:
         page = doc[0]

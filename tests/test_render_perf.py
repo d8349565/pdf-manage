@@ -303,9 +303,10 @@ def test_thumbnail_cache_drops_pages_that_left_the_workspace(window, tmp_path, q
     src = tmp_path / "cache.pdf"
     _make_pdf(src, 6)
     assert window._load_one(str(src))
-    for i in range(window.model.rowCount()):
-        window.model.data(window.model.index(i), Qt.ItemDataRole.DecorationRole)
-    _settle(qapp)
+    for page in window.ws.pages:
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.white)
+        window.model._cache_put(page.render_key, (pixmap, 16))
     assert len(window.model.thumbs) == 6
 
     window.ws.select_every_page()

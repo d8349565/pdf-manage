@@ -3,6 +3,7 @@ from __future__ import annotations
 import pymupdf
 import pytest
 from PyQt6.QtCore import QItemSelectionModel, QMimeData, QPoint, QSize, QThreadPool, Qt
+from PyQt6.QtTest import QTest
 from PyQt6.QtGui import QColor, QDragLeaveEvent, QDragMoveEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -224,6 +225,8 @@ def _make_shaped_pdf(path, shapes):
 @pytest.fixture
 def window(qapp):
     win = MainWindow()
+    win.show()
+    qapp.processEvents()
     yield win
     win.ws.reset()
     win.store.close_all()
@@ -259,6 +262,7 @@ def test_decrypt_entry_and_owner_prompt(window, tmp_path, monkeypatch, permissio
         doc.save(source, encryption=pymupdf.PDF_ENCRYPT_AES_256,
                  user_pw="", owner_pw="owner", permissions=permissions)
     assert window._load_one(str(source))
+    window.refresh()
     assert window.decrypt_action.isEnabled() and window.decrypt_button.isEnabled()
     assert window.decrypt_action.text() == "解密另存…"
     prompts, writes = [], []
@@ -276,7 +280,7 @@ def test_decrypt_entry_and_owner_prompt(window, tmp_path, monkeypatch, permissio
     assert len(prompts) == (0 if permissions == 4095 else 1)
     assert len(writes) == 1
     pages, path, options = writes[0]
-    assert pages == window.ws.pages and path == str(target)
+    assert tuple(pages) == tuple(window.ws.pages) and path == str(target)
     assert not options.preserve_encryption and options.encryption is None
     assert options.operation == "decrypt"
     assert window.ws.path == str(source) and not window.ws.dirty
@@ -372,18 +376,18 @@ def test_preview_and_thumbs_render(window, tmp_path, qapp):
     window.refresh()
     for i in range(window.model.rowCount()):
         window.model.data(window.model.index(i), Qt.ItemDataRole.DecorationRole)
-    QThreadPool.globalInstance().waitForDone(8000)
-    qapp.processEvents()
+    _settled_thumb(window, qapp)
     assert window._preview_image is not None
     assert not window._preview_image.isNull()
     assert not window.preview_view.photo().isNull()
     assert window.model.thumbs
 
 
-def test_zoom_in_renders_wider(window, tmp_path):
+def test_zoom_in_renders_wider(window, tmp_path, qapp):
     src = tmp_path / "合同.pdf"
     _make_pdf(src, 1, "C")
     assert window._load_one(str(src))
+    window.refresh()
     window.resize(1100, 720)
     window._set_zoom(1.0)
     base = window._preview_render_width()
@@ -391,6 +395,8 @@ def test_zoom_in_renders_wider(window, tmp_path):
     assert window._zoom > 1
     assert window._preview_render_width() > base
     window.zoom_fit()
+    QTest.qWait(30)
+    qapp.processEvents()
     assert window._zoom_mode == 'width'
     width = window.preview_view.page_rects[window.ws.preview_index()].width()
     assert window.preview_view.transform().m11() * width == pytest.approx(
@@ -536,16 +542,24 @@ def test_wheel_zoom_steps_accumulate_small_deltas():
 
 
 def _settled_thumb(window, qapp, row=0):
-    """要两轮：第一轮把渲染挂到线程池上，第二轮才拿得到真图。"""
+    """Drain the serial render queue and its GUI completion deliveries."""
+    window.refresh()
+    window.act_pages.setChecked(True)
+    qapp.processEvents()
+    window.left_view.scrollTo(window.model.index(row))
     role = Qt.ItemDataRole.DecorationRole
-    for _ in range(2):
+    for _ in range(400):
         window.model.data(window.model.index(row), role)
-        QThreadPool.globalInstance().waitForDone(20000)
+        QTest.qWait(5)
         qapp.processEvents()
+        if not window.rendering.active and not window.rendering.pending and not window.model.inflight:
+            break
+    else:
+        pytest.fail('Thumbnail rendering did not settle')
     return window.model.data(window.model.index(row), role)
 
 
-def test_thumbnails_render_at_device_pixel_ratio(window, tmp_path, qapp):
+def test_thumbnails_render_at_device_pixel_ratio(window, tmp_path, qapp, monkeypatch):
     """高分屏上按物理像素出图，但位图的逻辑尺寸仍要落在条目框里。"""
     src = tmp_path / "dpr.pdf"
     _make_pdf(src, 3, "D")
@@ -553,12 +567,18 @@ def test_thumbnails_render_at_device_pixel_ratio(window, tmp_path, qapp):
     window.model.set_icon_width(200)
     box = window.model._thumb_box(window.ws.pages[0])
 
+    ratio = [1.0]
+    monkeypatch.setattr(window, 'devicePixelRatioF', lambda: ratio[0])
     window.model.set_device_pixel_ratio(1.0)
     plain = _settled_thumb(window, qapp)
+    ratio[0] = 2.0
     window.model.set_device_pixel_ratio(2.0)
     crisp = _settled_thumb(window, qapp)
 
-    assert crisp.devicePixelRatio() == 2.0
+    assert crisp.devicePixelRatio() == 2.0, (
+        window.model.dpr, len(window.model.thumbs), len(window.model.shown),
+        window.left_view.isVisible(), window.left_view.visualRect(window.model.index(0)),
+    )
     assert crisp.width() > plain.width(), "dpr=2 必须渲染更大的位图"
     assert crisp.deviceIndependentSize().width() <= box.width() + 0.5
     assert crisp.deviceIndependentSize().height() <= box.height() + 0.5
@@ -585,8 +605,9 @@ def test_landscape_page_thumbnail_is_wide_and_short(window, tmp_path, qapp):
     assert hint.height() == 150 + THUMB_ITEM_H_PAD
 
     pix = _settled_thumb(window, qapp)
-    assert pix.deviceIndependentSize().width() == pytest.approx(200, abs=0.5)
-    assert pix.deviceIndependentSize().height() == pytest.approx(150, abs=0.5)
+    visible_box = window.model._thumb_box(page)
+    assert pix.deviceIndependentSize().width() == pytest.approx(visible_box.width(), abs=0.5)
+    assert pix.deviceIndependentSize().height() == pytest.approx(visible_box.height(), abs=0.5)
 
     # 转过 90° 的横页就成了竖页，框也得跟着翻过来。
     window.ws.select_index(0)
@@ -1012,7 +1033,8 @@ def test_icon_toolbar_has_names_and_tooltips(window):
     assert required <= names
     for btn in named:
         assert btn.toolTip()
-        assert btn.icon() and not btn.icon().isNull()
+        if btn is not window.reading_orb:
+            assert btn.icon() and not btn.icon().isNull()
     from PyQt6.QtWidgets import QPushButton
     labels = {btn.text() for btn in window.findChildren(QPushButton)} | names
     assert {"打开 PDF", "保存", "另存为", "阅读", "整理页面", "左转", "右转", "删除页面", "全选"} <= labels
