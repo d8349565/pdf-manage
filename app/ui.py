@@ -2265,6 +2265,10 @@ class MainWindow(QMainWindow):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(180)
         self._preview_timer.timeout.connect(self._update_preview)
+        self._view_zoom_timer = QTimer(self)
+        self._view_zoom_timer.setSingleShot(True)
+        self._view_zoom_timer.setInterval(16)
+        self._view_zoom_timer.timeout.connect(self._apply_view_zoom)
         self._thumb_timer = QTimer(self)
         self._thumb_timer.setSingleShot(True)
         self._thumb_timer.setInterval(120)
@@ -2814,11 +2818,16 @@ class MainWindow(QMainWindow):
         if mode not in self.reading_layout_actions:
             return
         self._reading_layout = mode
+        if mode in ('spread', 'four'):
+            self._zoom_mode = 'page'
+            self.reading_zoom_actions['page'].setChecked(True)
         action = self.reading_layout_actions[mode]
         action.setChecked(True)
         if self.ws.pages:
             self.stack.setCurrentIndex(0)
         self._update_preview(lightweight=True)
+        if mode in ('spread', 'four'):
+            self._apply_view_zoom()
         self.reading_orb.sync()
 
     def open_search(self) -> None:
@@ -3566,8 +3575,12 @@ class MainWindow(QMainWindow):
             preview is not None
             and obj is preview.viewport()
             and event.type() == QEvent.Type.Resize
+            and not getattr(self, '_applying_zoom', False)
         ):
-            self._apply_view_zoom()
+            # 等 Qt 完成本轮滚动条布局再缩放，避免在 Resize 内改变场景后反复触发 Resize。
+            # 连续拖动时每帧合并一次，不反复推迟到拖动结束。
+            if not self._view_zoom_timer.isActive():
+                self._view_zoom_timer.start()
             width = preview.viewport().width()
             if abs(width - self._last_vp_w) >= 40 or self._reading_layout != 'single':
                 self._last_vp_w = width
@@ -4261,7 +4274,13 @@ class MainWindow(QMainWindow):
         scale = view.transform().m11() * max(view.devicePixelRatioF(), 1.0)
         visible = view.mapToScene(view.viewport().rect()).boundingRect()
         margin = 24 / max(scale, 0.001)
-        for page_index in view.pages_in_spread(index):
+        visible_pages = set(view.visible_pages(visible))
+        for page_index in list(view._other_details):
+            if page_index not in visible_pages:
+                view.clear_detail(page_index)
+                self._other_detail_keys.pop(page_index, None)
+                self._other_detail_pending.discard(page_index)
+        for page_index in sorted(visible_pages):
             page_rect = view.page_rects[page_index]
             if not page_rect.intersects(visible):
                 continue
@@ -4271,7 +4290,9 @@ class MainWindow(QMainWindow):
             width = self._preview_image.width() if primary else (neighbor.pixmap().width() if neighbor else 0)
             if not width:
                 continue
-            if page_rect.width() * scale <= width * 1.01:
+            # A larger cached image also needs resampling. Only native-density
+            # images can skip the final sharp region after scrolling settles.
+            if math.isclose(page_rect.width() * scale, width, rel_tol=.01, abs_tol=1):
                 view.clear_detail(page_index)
                 if primary:
                     self._detail_key, self._detail_busy = None, False
@@ -4558,6 +4579,7 @@ class MainWindow(QMainWindow):
         self._reading_timer.stop()
         self._reading_settle_timer.stop()
         self._preview_timer.stop()
+        self._view_zoom_timer.stop()
         self._detail_timer.stop()
         self.arrange_view._drop_motion.stop()
         self.arrange_view._drop_fade.stop()
@@ -4630,6 +4652,7 @@ class MainWindow(QMainWindow):
             self._reading_timer.stop()
             self._reading_settle_timer.stop()
             self._preview_timer.stop()
+            self._view_zoom_timer.stop()
             self._detail_timer.stop()
             self.arrange_view._drop_motion.stop()
             self.arrange_view._drop_fade.stop()
@@ -5643,6 +5666,7 @@ class MainWindow(QMainWindow):
             self._reading_timer.stop()
             self._reading_settle_timer.stop()
             self._preview_timer.stop()
+            self._view_zoom_timer.stop()
             self._detail_timer.stop()
             self._render_status_timer.stop()
             self._render_show_timer.stop()

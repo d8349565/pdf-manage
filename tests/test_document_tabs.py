@@ -150,6 +150,25 @@ def test_per_tab_independent_state_and_undo_group(window, tmp_path, qapp):
     assert tab_a.ws.pages[0].rotation == 0
 
 
+def test_new_pdf_fits_page_while_existing_tabs_keep_their_zoom(window, tmp_path, qapp):
+    first = tmp_path / "first.pdf"
+    second = tmp_path / "second.pdf"
+    _make_pdf(first, 2, "First")
+    _make_pdf(second, 2, "Second")
+    assert window.open_files_in_tabs([str(first)])
+    qapp.processEvents()
+    assert window._zoom_mode == "page"
+    first_tab = window._active_tab_id
+    window._set_zoom_mode("width")
+    assert window.open_files_in_tabs([str(second)])
+    qapp.processEvents()
+    assert window._zoom_mode == "page"
+    assert window.activate_tab(first_tab)
+    assert window._zoom_mode == "width"
+    assert window.open_files_in_tabs([str(first)])
+    assert window._zoom_mode == "width" and len(window._tabs) == 2
+
+
 def test_zone_aware_external_pdf_drop(window, tmp_path, qapp):
     doc_a = tmp_path / "A.pdf"
     doc_b = tmp_path / "B.pdf"

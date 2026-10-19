@@ -158,6 +158,7 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
                 data = Path(result["temp"]).read_bytes()
                 candidate = _Source.__new__(_Source)
                 candidate.path, candidate.doc, candidate.data = dest, None, data
+                candidate.preview_doc, candidate.preview_fonts = None, set()
                 candidate.password, candidate.lock = result["password"], threading.Lock()
                 candidate.closed = False
                 safety = result["safety"]

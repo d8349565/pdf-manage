@@ -143,6 +143,10 @@ a = Analysis(
         "PyQt6.QtPrintSupport",
         "PyQt6.QtNetwork",
         "PyQt6.sip",
+        # fontTools loads OpenType table readers by name.
+        "fontTools.ttLib.tables.C_F_F_",
+        "fontTools.ttLib.tables._c_m_a_p",
+        "fontTools.ttLib.tables._m_a_x_p",
         "ctypes.wintypes",
         "win32com.client",
         "win32com.server.factory",

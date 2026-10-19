@@ -128,13 +128,16 @@ class _Source:
     """一个已打开的源文档。MuPDF 非线程安全，故每个文档单独加锁。"""
 
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
-                 "password", "safety", "disk_stamp", "label_rules", "label_starts")
+                 "password", "safety", "disk_stamp", "label_rules", "label_starts",
+                 "preview_doc", "preview_fonts")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
                  authentication: int, disk_stamp, progress_callback=None) -> None:
         from app.pdfstructure import inspect_safety
         self.path = path
         self.doc = doc
+        self.preview_doc = None
+        self.preview_fonts = set()
         self.lock = threading.Lock()
         self.data = data
         self.password = password
@@ -157,6 +160,10 @@ class _Source:
     def close(self) -> None:
         with self.lock:
             self.closed = True
+            if self.preview_doc is not None:
+                self.preview_doc.close()
+                self.preview_doc = None
+            self.preview_fonts.clear()
             if self.doc is not None:
                 self.doc.close()
                 self.doc = None
@@ -177,6 +184,25 @@ class _Source:
                 raise PdfError("处理结果密码验证失败。")
             self.doc = doc
         return self.doc
+
+    def preview_page_locked(self, index):
+        from app.fontpreview import page_font_maps
+        original = self.doc_locked()
+        mappings = page_font_maps(original.load_page(index), self.preview_fonts)
+        if mappings:
+            if self.preview_doc is None:
+                import pymupdf
+                preview = pymupdf.open(stream=self.data, filetype="pdf")
+                if preview.is_encrypted and preview.authenticate(self.password or "") <= 0:
+                    preview.close()
+                    raise PdfError("预览密码验证失败。")
+                self.preview_doc = preview
+            for descendant, mapping in mappings:
+                xref = self.preview_doc.get_new_xref()
+                self.preview_doc.update_object(xref, "<<>>")
+                self.preview_doc.update_stream(xref, mapping)
+                self.preview_doc.xref_set_key(descendant, "CIDToGIDMap", f"{xref} 0 R")
+        return (self.preview_doc if self.preview_doc is not None else original).load_page(index)
 
     def page_rotation(self, index: int) -> int:
         """源页面自带的 /Rotate。与尺寸一样在打开时算好，不需要加锁。"""
@@ -618,7 +644,7 @@ class PdfStore:
         src = self._source(ref.source_id)
         if not ref.edits:
             with cancellable_lock(src.lock, cancel):
-                yield src.doc_locked().load_page(ref.source_page)
+                yield src.preview_page_locked(ref.source_page)
             return
         import pymupdf
         from app.pdfedits import apply_edits
@@ -631,8 +657,8 @@ class PdfStore:
                 draft = pymupdf.open()
                 try:
                     with cancellable_lock(src.lock, cancel):
-                        original = src.doc_locked()
-                        original_page = original[ref.source_page]
+                        original_page = src.preview_page_locked(ref.source_page)
+                        original = original_page.parent
                         draft.insert_pdf(original, from_page=ref.source_page, to_page=ref.source_page)
                         # A one-page preview omits links to other pages. Keep their
                         # rectangles as inert links so text correction still rejects them.

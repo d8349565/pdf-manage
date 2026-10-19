@@ -190,6 +190,41 @@ def test_navigation_and_layout_switch_keep_the_reading_position(reader, qapp):
     assert not reader.ws.dirty
 
 
+@pytest.mark.parametrize("layout", ["spread", "four"])
+@pytest.mark.parametrize("previous_zoom", ["width", "custom"])
+def test_choosing_multi_page_reading_fits_the_current_group(reader, qapp, layout, previous_zoom):
+    reader.go_to_page(4)
+    reader._set_zoom(2)
+    if previous_zoom == "width":
+        reader._set_zoom_mode("width")
+    pages = reader.ws.pages
+    reader.reading_layout_actions[layout].trigger()
+    settle(qapp, reader)
+    assert reader._zoom_mode == "page"
+    assert reader.reading_zoom_actions["page"].isChecked()
+    assert reader.ws.preview_index() == 3
+    assert reader.ws.pages is pages and not reader.ws.dirty
+    view = reader.preview_view
+    visible = view.mapToScene(view.viewport().rect()).boundingRect()
+    assert visible.contains(view.spread_rect(3))
+
+
+def test_multi_page_fit_is_applied_while_a_narrow_reader_falls_back(reader, qapp):
+    reader.resize(980, 720)
+    reader.act_pages.setChecked(True)
+    reader.act_tools.setChecked(True)
+    settle(qapp, reader)
+    reader._set_zoom(2)
+    reader.reading_layout_actions["four"].trigger()
+    settle(qapp, reader)
+    assert reader._zoom_mode == "page" and reader.preview_view.page_columns == 1
+    reader.act_pages.setChecked(False)
+    reader.act_tools.setChecked(False)
+    reader.resize(1400, 900)
+    settle(qapp, reader)
+    assert reader._zoom_mode == "page" and reader.preview_view.page_columns == 4
+
+
 def test_narrow_reader_falls_back_then_restores_without_toolbar_overflow(reader, qapp):
     reader.go_to_page(3)
     reader.resize(980, 720)

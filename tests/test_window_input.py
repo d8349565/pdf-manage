@@ -359,6 +359,47 @@ def test_open_pdf_preserves_normal_window_size(loaded_window):
     assert not window.isMaximized() and window.size() == before
 
 
+@pytest.mark.parametrize('mode', ('page', 'width', 'custom'))
+def test_sidebar_resize_defers_zoom_until_qt_finishes_layout(loaded_window, monkeypatch, mode):
+    from app.ui import PDF_LOGICAL_SCALE
+
+    window = loaded_window
+    window.act_pages.setChecked(True)
+    window._set_zoom(1)
+    window._set_zoom_mode(mode)
+    QTest.qWait(220)
+    view = window.preview_view
+    current = window.ws.preview_index()
+    calls = []
+    resizing = False
+    original = window.zoom_label.setText
+
+    def record_zoom(text):
+        calls.append(resizing)
+        original(text)
+
+    monkeypatch.setattr(window.zoom_label, 'setText', record_zoom)
+    splitter = window.left_panel.parentWidget()
+    resizing = True
+    for width in (170, 240, 185, 250):
+        splitter.setSizes([width, 820, 0])
+    resizing = False
+    assert not calls, '调整侧栏时不能在 Qt 的 Resize 调用栈中修改缩放和滚动范围'
+
+    QTest.qWait(220)
+    assert calls and not any(calls)
+    rect = view.spread_rect(current)
+    factor = PDF_LOGICAL_SCALE
+    if mode in ('page', 'width'):
+        factor = (view.viewport().width() - 24) / rect.width()
+        if mode == 'page':
+            factor = min(factor, (view.viewport().height() - 24) / rect.height())
+    assert view.transform().m11() == pytest.approx(factor)
+    assert window.ws.preview_index() == current
+    assert window._zoom_mode == mode
+    assert not window.ws.dirty
+
+
 def test_arrange_can_zoom_past_three_hundred_percent(loaded_window):
     window = loaded_window
     window.stack.setCurrentIndex(1)

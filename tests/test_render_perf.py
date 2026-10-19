@@ -168,6 +168,45 @@ def test_zoom_out_reuses_the_rendered_image(window, tmp_path, qapp):
     assert window._preview_image.width() > base
 
 
+@pytest.mark.parametrize("dpr", [1.0, 1.5, 2.0])
+@pytest.mark.parametrize("cached_ratio", [.6, 1.0, 1.8])
+def test_settled_reading_uses_native_pixels_after_cached_image_scaling(window, tmp_path, qapp, monkeypatch, dpr, cached_ratio):
+    source = tmp_path / "native-pixels.pdf"
+    _make_pdf(source, n=1)
+    assert window._load_one(str(source))
+    window.show()
+    window.refresh()
+    window._set_zoom(.5)
+    _settle(qapp)
+    view = window.preview_view
+    monkeypatch.setattr(view, "devicePixelRatioF", lambda: dpr)
+    scale = view.transform().m11() * dpr
+    width = round(300 * scale * cached_ratio)
+    window._preview_image = QImage(width, round(width * 4 / 3), QImage.Format.Format_RGB32)
+    window._preview_image.fill(Qt.GlobalColor.white)
+    ref = window.ws.pages[0]
+    window._preview_key = (*ref.render_key, width)
+    window._preview_busy = window._scrolling = False
+    window._invalidate_detail_requests()
+    view.clear_detail()
+    requests = []
+    monkeypatch.setattr(window.rendering, "request", lambda *args, **kwargs: requests.append((args, kwargs)))
+    window._request_detail()
+    if cached_ratio == 1:
+        assert not requests and view._detail.pixmap().isNull()
+        return
+    assert len(requests) == 1
+    args, kwargs = requests[0]
+    region, requested_scale = kwargs["region"]
+    assert requested_scale == pytest.approx(scale)
+    result = window.store.render_region(ref, region, requested_scale)
+    window._on_detail_preview(args[2], result)
+    assert not view._detail.pixmap().isNull()
+    assert view._detail.scale() * view.transform().m11() * dpr == pytest.approx(1)
+    window._request_detail()
+    assert len(requests) == 1
+
+
 def test_extreme_zoom_out_rerenders_a_small_image(window, tmp_path, qapp):
     """复用要有上界，否则一张超大图会被一直重采样。"""
     src = tmp_path / "zoomout.pdf"
