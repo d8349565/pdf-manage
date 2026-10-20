@@ -10,15 +10,13 @@
 
 [更新记录](CHANGELOG.md)
 
-![阅读与页面整理](docs/images/reading.png)
+## 视频演示
 
-![拖动排序整理页面](docs/images/arrange.png)
+75 秒了解页面整理、离线文字识别、PDF 表格转 Excel 和批注图片分享。
 
-![OCR导出效果图01](docs/images/OCR导出效果图01.png)
+https://github.com/user-attachments/assets/d4ac3a3d-a558-4e45-b97b-4613ed64aed1
 
-![OCR导出效果图02](docs/images/OCR导出效果图02.png)
-
-![OCR导出效果图03](docs/images/OCR导出效果图03.png)
+[下载 4K 原片（75 秒）](https://github.com/d8349565/pdf-manage/releases/download/v0.7.5/zhixu-pdf-promo-75s-4k.mp4)
 
 ## 快速开始
 
