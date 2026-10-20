@@ -77,7 +77,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 doc.save(source)
             assert startup_pdf_paths([sys.executable, str(source)]) == [str(source)]
             window = MainWindow()
-            assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}（吾爱破解）")
+            assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
             if ocr_runtime is None:
                 from native_window_check import check_native_window
                 report["native_resize"] = check_native_window(window, qapp)

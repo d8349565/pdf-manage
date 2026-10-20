@@ -1230,7 +1230,7 @@ def test_replacement_save_failure_after_rehearsal_preserves_files(tmp_path, monk
 
 def test_elided_title_label_adapts_to_window_shrink(qapp):
     from app.ui import ElidedTitleLabel
-    long_title = "演示材料_非常非常长的一个测试文件名_待合并附件.pdf — 纸序 PDF v0.2.2 (吾爱破解)"
+    long_title = "演示材料_非常非常长的一个测试文件名_待合并附件.pdf — 纸序 PDF v0.2.2"
     lbl = ElidedTitleLabel(long_title)
     lbl.resize(800, 30)
     lbl._update_elided()

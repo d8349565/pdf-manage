@@ -1898,7 +1898,7 @@ class TitleBar(QWidget):
         host._menubar.setNativeMenuBar(False)
         host._menubar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         lay.addWidget(host._menubar)
-        host.title_label = ElidedTitleLabel(f"{APP_NAME} v{__version__}（吾爱破解）", self)
+        host.title_label = ElidedTitleLabel(f"{APP_NAME} v{__version__}", self)
         host.title_label.setObjectName("windowTitle")
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -3450,7 +3450,7 @@ class MainWindow(QMainWindow):
             name = os.path.basename(self.ws.path) if self.ws.path else (
                 os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else "未命名")
             star = " *" if self.ws.dirty else ""
-            self.setWindowTitle(f"{name}{star} — {APP_NAME} v{__version__}（吾爱破解）")
+            self.setWindowTitle(f"{name}{star} — {APP_NAME} v{__version__}")
             self.statusBar().showMessage(self._status_line())
         finally:
             self._syncing = False
