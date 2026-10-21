@@ -50,7 +50,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
         import hashlib
         import openpyxl
         import pymupdf
-        from PyQt6.QtCore import QThreadPool
+        from PyQt6.QtCore import QCoreApplication, QEvent, QThreadPool
         from PyQt6.QtPrintSupport import QPrinter
         from PyQt6.QtWidgets import QApplication
         from app import APP_NAME, __version__
@@ -112,14 +112,14 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 doc.save(source)
             assert startup_pdf_paths([sys.executable, str(source)]) == [str(source)]
             window = MainWindow()
-            assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
-            if ocr_runtime is None:
-                from native_window_check import check_native_window
-                report["native_resize"] = check_native_window(window, qapp)
-                report["checks"].append("real Windows edge hit testing and native drag resize")
-            else:
-                report["native_resize"] = "not_run_in_ocr_pipeline_check"
             try:
+                assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
+                if ocr_runtime is None:
+                    from native_window_check import check_native_window
+                    report["native_resize"] = check_native_window(window, qapp)
+                    report["checks"].append("real Windows edge hit testing and native sizing loop")
+                else:
+                    report["native_resize"] = "not_run_in_ocr_pipeline_check"
                 pages = window.store.load(str(source))
                 window.ws.open_replace(pages, str(source))
                 window.refresh()
@@ -292,6 +292,8 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 window.ws.reset()
                 window.close()
                 window.store.close_all()
+                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+                qapp.processEvents()
             entries = association_entries(sys.executable)
             document = next(v for p, n, v in entries if p.endswith(PROG_ID + "\\DefaultIcon"))
             executable = Path(sys.executable).resolve()

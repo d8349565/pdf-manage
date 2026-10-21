@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/d4ac3a3d-a558-4e45-b97b-4613ed64aed1
 
 ## 快速开始
 
-1. 到 [Releases](https://github.com/d8349565/pdf-manage/releases/latest) 下载并运行 `ZhiXuPDF-Setup.exe`。下载[OCR包](https://github.com/d8349565/pdf-manage/releases/download/v0.8.0/ZhiXuPDF-OCR-win-x64.zip)在软件中导入才能使用OCR功能。
+1. 到 [Releases](https://github.com/d8349565/pdf-manage/releases/latest) 下载并运行 `ZhiXuPDF-Setup.exe`。下载[OCR包](https://github.com/d8349565/pdf-manage/releases/download/v0.8.1/ZhiXuPDF-OCR-win-x64.zip)在软件中导入才能使用OCR功能。
 2. 把 PDF 或 OFD 拖进窗口，也可以点击“打开 PDF / OFD”。
 3. 在“阅读”里看，在“整理”里改，完成后点“保存”；想保留原文件就点“另存为”。
 

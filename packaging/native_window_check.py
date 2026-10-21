@@ -1,4 +1,4 @@
-"""在程序自己的测试窗口上验证 Windows 边缘命中和原生拖拽缩放。"""
+"""在程序自己的测试窗口上验证 Windows 边缘命中和原生缩放循环。"""
 from __future__ import annotations
 
 import ctypes
@@ -49,9 +49,8 @@ def check_native_window(window, qapp) -> dict:
         user32.PostMessageW(hwnd, 0x1F, 0, 0)
     worker = threading.Thread(target=finish_resize, daemon=True)
     worker.start()
-    x, y = rect.right - 2, rect.bottom - 2
-    # 与点击右下角相同的原生非客户区消息，启动 Windows 自己的缩放循环。
-    user32.SendMessageW(hwnd, 0xA1, 17, (x & 0xffff) | ((y & 0xffff) << 16))
+    # 直接启动右下角的原生缩放循环，不依赖实体鼠标左键是否按住。
+    user32.SendMessageW(hwnd, 0x112, 0xF008, 0)
     worker.join(2)
     qapp.processEvents()
     after = window.size()
