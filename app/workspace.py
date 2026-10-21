@@ -351,6 +351,19 @@ class Workspace:
             pages[index] = ref
         self._push(pages, self.path, text)
 
+    def replace_page_with(self, index, incoming, *, outline=None):
+        if not 0 <= index < len(self.pages) or not incoming:
+            raise ValueError("请先选择一页进行分割。")
+        old = self.pages[index]
+        incoming = self._unique_pages(incoming, self.pages)
+        pages = [*self.pages[:index], *incoming, *self.pages[index + 1:]]
+        entries = self.outline if outline is None else outline
+        if entries is not None:
+            entries = tuple(replace(entry, target_id=incoming[0].page_id)
+                            if entry.target_id == old.page_id else entry for entry in entries)
+        self._push(pages, self.path, "分割页面", outline=entries)
+        self.set_selection(set(range(index, index + len(incoming))), index)
+
     def set_outline(self, entries):
         previous = 0
         for entry in entries:

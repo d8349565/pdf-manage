@@ -829,7 +829,7 @@ class AnnotationTools(QWidget):
             if kind == "arrow":
                 self.width.setValue(1.5)
             self._update_color_button_style()
-            if not self.ensure_snapshot(geometry_only=kind == "mosaic"):
+            if not self.ensure_snapshot(geometry_only=kind not in ("highlight", "underline", "replace")):
                 return
             self._set_feedback("点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。" if kind == "replace" else
                                   "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消框选。" if kind == "mosaic" else
@@ -853,7 +853,7 @@ class AnnotationTools(QWidget):
             if summary is not None:
                 return self._use_snapshot(ref, index, summary)
         try:
-            snapshot = self.host.store.text_snapshot(ref)
+            snapshot = self.host.store.text_snapshot(ref, include_tables=False)
         except Exception as exc:
             self._set_feedback(str(exc))
             return False
@@ -913,7 +913,9 @@ class AnnotationTools(QWidget):
             if item.get('image_settings') or item.get("watermark"):
                 continue
             rect = p.Rect(item["rect"])
-            expanded = p.Rect(rect.x0 - 6, rect.y0 - 6, rect.x1 + 6, rect.y1 + 6)
+            padding = max(6, 12 / max(self.view.transform().m11(), .001)) if item['kind'] == 0 else 6
+            expanded = p.Rect(rect.x0 - padding, rect.y0 - padding,
+                              rect.x1 + padding, rect.y1 + padding)
             if expanded.contains(local):
                 return item
         return None
@@ -987,7 +989,7 @@ class AnnotationTools(QWidget):
         self.hover_bar.hide()
         self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self._inline_text_box = InlineTextBox(self, area, index, ref, text, settings, identifier)
-        self._set_feedback("直接输入文字；Enter 换行。右下角设置字体、字号与颜色；点击框外或 Ctrl+Enter 完成，Esc 取消。")
+        self._set_feedback("直接输入文字，拖动边框控制点调整宽高；右下角设置字体、字号与颜色。Ctrl+Enter 完成，Esc 取消。")
 
     def apply_text_box(self, box, text, settings):
         settings = dict(settings)
@@ -1177,7 +1179,7 @@ class AnnotationTools(QWidget):
                 if index != self.host.ws.preview_index():
                     self.host.go_to_page(index + 1, reveal=False)
                     self.snapshot_key = None
-                if not self.ensure_snapshot(geometry_only=kind == "mosaic"):
+                if not self.ensure_snapshot(geometry_only=kind not in ("highlight", "underline", "replace")):
                     return True
                 self.stroke = [point]
                 if kind == "mosaic":
@@ -1567,7 +1569,7 @@ class AnnotationTools(QWidget):
             self.host.ws.edit_page(index, edit, "马赛克" if edit.kind == "mosaic" else "文字修正" if edit.kind == "replace" else "修改批注", prepared=candidate)
             self.snapshot_key = None
             self.host.refresh()
-            self.ensure_snapshot(geometry_only=edit.kind == "mosaic")
+            self.ensure_snapshot(geometry_only=True)
             self._set_feedback("修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             return True
         except (ValueError, PdfError) as exc:
@@ -1607,7 +1609,7 @@ class AnnotationTools(QWidget):
         index = self.snapshot_index if page_index is None else page_index
         if index is None:
             index = self.host.ws.preview_index()
-        if not self.host._allow_operation("annotate") or not self.ensure_snapshot(index):
+        if not self.host._allow_operation("annotate") or not self.ensure_snapshot(index, geometry_only=True):
             return False
         annot = next((a for a in self.snapshot["annotations"] if a["id"] == identifier), None)
         if not annot or annot["kind"] not in (0, 2, 4):

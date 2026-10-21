@@ -129,7 +129,8 @@ class _Source:
 
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
                  "password", "safety", "disk_stamp", "label_rules", "label_starts",
-                 "preview_doc", "preview_fonts", "import_warnings")
+                 "preview_doc", "preview_fonts", "import_warnings", "needs_encryption_choice",
+                 "lost_structures")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
                  authentication: int, disk_stamp, progress_callback=None) -> None:
@@ -143,6 +144,8 @@ class _Source:
         self.data = data
         self.password = password
         self.disk_stamp = disk_stamp
+        self.needs_encryption_choice = False
+        self.lost_structures = ()
         if progress_callback:
             progress_callback(0, 0, "正在检查签名与文档结构")
         self.safety = inspect_safety(doc, authentication)
@@ -338,6 +341,62 @@ class PdfStore:
             return (rect.height, rect.width)
         return (rect.width, rect.height)
 
+    def split_page(self, ref: PageRef, direction: str, cuts: tuple[float, ...], *, fit_a4=False):
+        """Create vector-preserving split pages in memory; the original source stays untouched."""
+        import pymupdf as p
+        from app.pdfstructure import copy_document_properties
+
+        self.require_operation([ref], "modify")
+        self.require_operation([ref], "copy")
+        stops = (0.0, *cuts, 1.0)
+        if (direction not in ("vertical", "horizontal") or len(cuts) not in (1, 2)
+                or any(not math.isfinite(v) for v in cuts)
+                or any(b - a < .05 - 1e-9 for a, b in zip(stops, stops[1:]))):
+            raise ValueError("分割位置无效，每一部分至少保留页面的 5%。")
+        origin = self._source(ref.source_id)
+        with p.open() as source, p.open() as normalized, p.open() as result:
+            with origin.lock:
+                copy_document_properties(result, {ref.source_id: origin.doc_locked()}, [])
+            with self._render_page(ref) as page:
+                source.insert_pdf(page.parent, from_page=page.number, to_page=page.number,
+                                  links=False, annots=True, widgets=True)
+                rotation = (page.rotation + ref.rotation) % 360
+            source[0].set_rotation(rotation)
+            source.bake(annots=True, widgets=True)
+            width, height = source[0].rect.width, source[0].rect.height
+            source[0].set_rotation(0)
+            visible = normalized.new_page(width=width, height=height)
+            # Import the visible CropBox without changing its origin or extent.
+            if source[0].get_contents():
+                visible.show_pdf_page(visible.rect, source, 0, rotate=-rotation)
+            for start, end in zip(stops, stops[1:]):
+                clip = (p.Rect(start * width, 0, end * width, height) if direction == "vertical"
+                        else p.Rect(0, start * height, width, end * height))
+                with p.open() as cropped:
+                    cropped.insert_pdf(normalized, from_page=0, to_page=0, links=False,
+                                       annots=False, widgets=False)
+                    cropped[0].clip_to_rect(clip)
+                    page_width, page_height = clip.width, clip.height
+                    if fit_a4:
+                        short, long = p.paper_size("a4")
+                        page_width, page_height = ((long, short) if clip.width > clip.height
+                                                   else (short, long))
+                    target = result.new_page(width=page_width, height=page_height)
+                    target.show_pdf_page(target.rect, cropped, 0, clip=clip)
+            data = result.tobytes(garbage=4, deflate=True)
+        doc = p.open(stream=data, filetype="pdf")
+        try:
+            # Derived bytes remain in memory; retain the real origin's overwrite guard.
+            sid = self._register(origin.path, doc, data, origin.password, 0, origin.disk_stamp)
+            self._source(sid).needs_encryption_choice = (
+                origin.safety.encrypted or origin.needs_encryption_choice)
+            self._source(sid).lost_structures = tuple(dict.fromkeys(
+                (*origin.lost_structures, *origin.safety.special_structures)))
+        except Exception:
+            doc.close()
+            raise
+        return [PageRef(sid, ref.source_path, i) for i in range(len(stops) - 1)]
+
     def source_rotation(self, ref: PageRef) -> int:
         """页面在源文件里自带的 /Rotate（0/90/180/270）。同样只查表，UI 线程可放心调用。"""
         return self._source(ref.source_id).page_rotation(ref.source_page)
@@ -479,13 +538,16 @@ class PdfStore:
             unchanged = single and numbers[source_id] == list(range(len(source.sizes)))
             risky = special if not preserve_structure else tuple(
                 item for item in special if item not in ("可选内容图层", "无障碍标签结构") and not unchanged)
+            risky = tuple(dict.fromkeys((*source.lost_structures, *risky)))
             if risky:
                 if not options.allow_structure_loss:
                     raise WriteNeedsConfirmation(
                         "当前页面重组无法保证以下信息完整保留：\n" + "、".join(risky) +
                         "\n原文件不会覆盖。可明确确认后另存副本。", "structure")
                 warnings.append(f"来源 {ordinal} 的特殊结构需在副本中核对：{'、'.join(risky)}。")
-        if options.preserve_encryption and not options.encryption and not preserve_structure and any(s.safety.encrypted for s in sources.values()):
+        if (options.preserve_encryption and not options.encryption
+                and (any(s.needs_encryption_choice for s in sources.values())
+                     or not preserve_structure and any(s.safety.encrypted for s in sources.values()))):
             raise WriteNeedsConfirmation("本次页面组合无法沿用各来源的原密码。\n"
                                          "请明确选择新的输出密码，或选择不加密。", "encryption")
         return numbers, preserve_structure, warnings
@@ -540,7 +602,8 @@ class PdfStore:
                                    final=int(remaining[ref.source_id] == 0))
                     if progress_callback:
                         progress_callback(index + 1, len(pages), "正在组装 PDF 并保留页面对象")
-                copy_document_properties(out, documents, warnings)
+                copy_document_properties(out, documents, warnings,
+                    source_paths={sid: _path_key(source.path) for sid, source in sources.items()})
             for index, ref in enumerate(pages):
                 if page_object_signature(out[index]) != snapshots[ref.source_id]["objects"][ref.source_page]:
                     raise PdfError(f"第 {index + 1} 页的批注或表单未完整保留，已停止写入，原文件未改动。")
@@ -590,8 +653,10 @@ class PdfStore:
         boxes = tuple(tuple(pymupdf.Rect(word[:4]) * matrix)
                       for word in page.get_text('words', flags=pymupdf.TEXTFLAGS_WORDS)
                       if str(word[4]).strip())
-        summary = dict(annotations=annotation_summary(page), text_boxes=boxes,
-                       matrix=tuple(matrix))
+        annotations = annotation_summary(page)
+        summary = dict(annotations=annotations, text_boxes=boxes, matrix=tuple(matrix),
+                       note_rects=tuple(tuple(pymupdf.Rect(item['rect']) * matrix)
+                           for item in annotations if item['kind'] == 0 and not item['image_settings']))
         with self._annotation_lock:
             self._annotation_cache[ref.render_key] = summary
             while len(self._annotation_cache) > 128:
@@ -707,7 +772,7 @@ class PdfStore:
                     raise PdfError(f"无法应用页面修改：{exc}") from exc
             yield self._draft[0]
 
-    def text_snapshot(self, ref):
+    def text_snapshot(self, ref, *, include_tables=True):
         from collections import OrderedDict
         from app.pdfedits import snapshot_page
         import pymupdf
@@ -715,16 +780,17 @@ class PdfStore:
         with self._draft_lock:
             if self._text_cache is None:
                 self._text_cache = OrderedDict()
-            key = ref.render_key
+            key = (ref.render_key, include_tables)
             hit = self._text_cache.get(key)
             if hit is not None:
                 self._text_cache.move_to_end(key)
                 return hit[0]
             with self._render_page(ref) as page:
                 snapshot = snapshot_page(page)
-                from app.documentlayout import page_layout
-                layout, _ = page_layout(page)
-                snapshot['tables'] = [item['table'] for item in layout if item['kind'] == 'table']
+                if include_tables:
+                    from app.documentlayout import page_layout
+                    layout, _ = page_layout(page)
+                    snapshot['tables'] = [item['table'] for item in layout if item['kind'] == 'table']
                 extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
                 rotated = page.rect * extra
                 extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
@@ -873,7 +939,9 @@ class PdfStore:
             raise PdfError("此操作只能另存副本，不能覆盖来源文件。")
         if options.allow_structure_loss and self.is_source_destination(dest):
             raise PdfError("特殊结构只能另存副本，不能覆盖已打开的来源文件。")
-        if not options.preserve_encryption and any(s.safety.encrypted for s in sources.values()) and self.is_source_destination(dest):
+        if (not options.preserve_encryption
+                and any(s.safety.encrypted or s.needs_encryption_choice for s in sources.values())
+                and self.is_source_destination(dest)):
             raise PdfError("未加密输出只能另存副本，不能覆盖加密原件。")
         folder = os.path.dirname(dest) or "."
         out = None

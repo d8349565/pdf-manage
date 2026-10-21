@@ -16,8 +16,9 @@ class InlineTextBox(QObject):
         self.tools, self.view = tools, tools.view
         self.index, self.ref, self.identifier = index, ref, identifier
         self.matrix = p.Matrix(tools.snapshot["matrix"])
-        self.base_area = self.area = p.Rect(area)
+        self.base_area = self.area = self.original_area = p.Rect(area)
         self.closed = self.committing = self.positioning = self.preedit = False
+        self._resize_state = None
         self.frame = QFrame(self.view.viewport())
         self.frame.setObjectName("pageTextBox")
         self.frame.setStyleSheet("QFrame#pageTextBox { background: white; border: 1px dashed #0F766E; border-radius: 0; }")
@@ -32,6 +33,20 @@ class InlineTextBox(QObject):
         self.editor.setAccessibleName("页面文本框内容")
         self.editor.document().setDocumentMargin(2)
         layout.addWidget(self.editor)
+        self.handles = {}
+        cursors = dict(nw=Qt.CursorShape.SizeFDiagCursor, n=Qt.CursorShape.SizeVerCursor,
+                       ne=Qt.CursorShape.SizeBDiagCursor, e=Qt.CursorShape.SizeHorCursor,
+                       se=Qt.CursorShape.SizeFDiagCursor, s=Qt.CursorShape.SizeVerCursor,
+                       sw=Qt.CursorShape.SizeBDiagCursor, w=Qt.CursorShape.SizeHorCursor)
+        for edge, cursor in cursors.items():
+            handle = QFrame(self.frame)
+            handle.setObjectName('textBoxResizeHandle')
+            handle.setStyleSheet('QFrame#textBoxResizeHandle { background: #0F766E; border: 1px solid white; border-radius: 2px; }')
+            handle.setFixedSize(10, 10)
+            handle.setCursor(cursor)
+            handle.setToolTip('拖动调整文本框宽高；文字放不下时高度会自动增长')
+            handle.setAccessibleName('调整文本框尺寸')
+            self.handles[edge] = handle
         self.toolbar = QFrame(self.view.viewport())
         self.toolbar.setObjectName("textBoxControls")
         self.toolbar.setStyleSheet("""
@@ -163,6 +178,7 @@ class InlineTextBox(QObject):
             scene.setHeight(visible.height)
             rect = self.view.mapFromScene(scene).boundingRect()
             self.frame.setGeometry(rect)
+            self._place_handles()
             self.frame.show()
             self.frame.raise_()
             self.toolbar.adjustSize()
@@ -176,6 +192,34 @@ class InlineTextBox(QObject):
             self.toolbar.raise_()
         finally:
             self.positioning = False
+
+    def _place_handles(self):
+        width, height = self.frame.width() - 10, self.frame.height() - 10
+        for edge, handle in self.handles.items():
+            x = width / 2 if edge in ('n', 's') else width if 'e' in edge else 0
+            y = height / 2 if edge in ('e', 'w') else height if 's' in edge else 0
+            handle.move(round(x), round(y))
+            handle.raise_()
+
+    def _resize_drag(self, event):
+        edge, start, original, _ = self._resize_state
+        scale = max(.01, self.view.transform().m11())
+        dx = (event.globalPosition().x() - start.x()) / scale
+        dy = (event.globalPosition().y() - start.y()) / scale
+        rect = p.Rect(original)
+        page = self.view.page_rects[self.index]
+        min_width = 16
+        min_height = max(16, (self.editor.document().size().height() + 8) / scale)
+        if 'w' in edge:
+            rect.x0 = max(0, min(rect.x0 + dx, rect.x1 - min_width))
+        if 'e' in edge:
+            rect.x1 = min(page.width(), max(rect.x1 + dx, rect.x0 + min_width))
+        if 'n' in edge:
+            rect.y0 = max(0, min(rect.y0 + dy, rect.y1 - min_height))
+        if 's' in edge:
+            rect.y1 = min(page.height(), max(rect.y1 + dy, rect.y0 + min_height))
+        self.base_area = rect * ~self.matrix
+        self.position()
 
     def show_error(self, text):
         self.error.setText(text)
@@ -200,7 +244,8 @@ class InlineTextBox(QObject):
         if len(text) > 20000:
             self.show_error("文本框最多输入 20000 个字符。")
             return False
-        if self.identifier and text == self.original_text and self.settings() == self.original_settings:
+        if (self.identifier and text == self.original_text and self.settings() == self.original_settings
+                and all(abs(a - b) < .01 for a, b in zip(self.base_area, self.original_area))):
             self.close()
             return True
         self.committing = True
@@ -219,6 +264,10 @@ class InlineTextBox(QObject):
         if self.closed:
             return
         self.closed = True
+        if self._resize_state:
+            for handle in self.handles.values():
+                handle.releaseMouse()
+            self._resize_state = None
         QApplication.instance().removeEventFilter(self)
         self.view.view_changed.disconnect(self.position)
         self.frame.hide()
@@ -239,6 +288,22 @@ class InlineTextBox(QObject):
             return False
         if QApplication.activeModalWidget() is not None or QApplication.activePopupWidget() is not None:
             return False
+        if watched in self.handles.values():
+            if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                edge = next(name for name, handle in self.handles.items() if handle is watched)
+                self._resize_state = (edge, event.globalPosition(),
+                                      self.area * self.matrix, p.Rect(self.base_area))
+                watched.grabMouse()
+                return True
+            if self._resize_state and kind == QEvent.Type.MouseMove:
+                self._resize_drag(event)
+                return True
+            if self._resize_state and kind == QEvent.Type.MouseButtonRelease:
+                self._resize_drag(event)
+                self._resize_state = None
+                watched.releaseMouse()
+                self.editor.setFocus()
+                return True
         if kind == QEvent.Type.ShortcutOverride:
             if ((event.key() == Qt.Key.Key_Escape and not self.preedit)
                     or (event.modifiers() & Qt.KeyboardModifier.ControlModifier
@@ -247,6 +312,13 @@ class InlineTextBox(QObject):
                 return True
         if kind == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape and not self.preedit:
+                if self._resize_state:
+                    self.base_area = self._resize_state[3]
+                    self._resize_state = None
+                    for handle in self.handles.values():
+                        handle.releaseMouse()
+                    self.position()
+                    return True
                 self.close()
                 return True
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:

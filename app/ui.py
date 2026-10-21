@@ -1164,6 +1164,7 @@ class PreviewView(QGraphicsView):
         self.active_page = 0
         self.neighbors = {}
         self.search_areas = {}
+        self.note_markers = {}
         self.current_search = -1
         self._item = QGraphicsPixmapItem()
         self._scene.addItem(self._item)
@@ -1201,6 +1202,7 @@ class PreviewView(QGraphicsView):
         self.spread = spread = columns > 1
         self.layout_generation += 1
         self.clear_photo()
+        self.note_markers.clear()
         for item in self.neighbors.values():
             self._scene.removeItem(item)
         self.neighbors.clear()
@@ -1357,6 +1359,11 @@ class PreviewView(QGraphicsView):
         item.setPos(rect.topLeft())
         item.setVisible(self.is_page_shown(index))
 
+    def set_note_markers(self, index, summary) -> None:
+        self.note_markers[index] = tuple(QRectF(x0, y0, x1 - x0, y1 - y0)
+            for x0, y0, x1, y1 in (summary.get('note_rects', ()) if summary else ()))
+        self.viewport().update()
+
     def set_search_results(self, results, current):
         self.search_areas = {}
         for index, (page, points) in enumerate(results):
@@ -1373,6 +1380,7 @@ class PreviewView(QGraphicsView):
     def drawForeground(self, painter, rect) -> None:
         super().drawForeground(painter, rect)
         painter.save()
+        scale = max(self.transform().m11(), .001)
         for page in self.visible_pages(rect):
             origin = self.page_rects[page].topLeft()
             for index, points in self.search_areas.get(page, ()):
@@ -1383,6 +1391,19 @@ class PreviewView(QGraphicsView):
                 pen.setCosmetic(True)
                 painter.setPen(pen)
                 painter.drawPolygon(polygon)
+            for note in self.note_markers.get(page, ()):
+                if max(note.width(), note.height()) * scale >= 20:
+                    continue
+                center = origin + note.center()
+                size = 20 / scale
+                marker = QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
+                painter.setPen(QPen(QColor('#92400E'), 1 / scale))
+                painter.setBrush(QColor('#FDE68A'))
+                painter.drawRoundedRect(marker, 3 / scale, 3 / scale)
+                for offset in (7, 11, 15):
+                    y = marker.top() + offset / scale
+                    painter.drawLine(QPointF(marker.left() + 4 / scale, y),
+                                     QPointF(marker.right() - 4 / scale, y))
         painter.restore()
 
     def set_photo(self, pix: QPixmap, dpr: float, page_size=None) -> None:
@@ -2476,8 +2497,10 @@ class MainWindow(QMainWindow):
         tools = self._menubar.addMenu("组织")
         self.extract_action = self._act("提取页面…", lambda: self.open_export_tool(0))
         self.split_action = self._act("拆分文件…", lambda: self.open_export_tool(1))
+        self.split_page_action = self._act("分割单页…", self.split_selected_page)
         tools.addAction(self.extract_action)
         tools.addAction(self.split_action)
+        tools.addAction(self.split_page_action)
         tools.addAction(self._act("页码处理…", self.open_page_numbers))
         self.watermark_action = self._act("水印…", self.open_watermarks)
         tools.addAction(self.watermark_action)
@@ -2745,6 +2768,9 @@ class MainWindow(QMainWindow):
         self.export_tools.setEnabled(bool(count))
         self.extract_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.split_action.setEnabled(bool(count) and not read_only and not copy_reason)
+        can_split_page = len(self.ws.target_indices()) == 1 and not read_only and not copy_reason
+        self.split_page_action.setEnabled(can_split_page)
+        self.arrange_split_button.setEnabled(can_split_page)
 
         self.convert_action.setEnabled(bool(count) and not copy_reason)
         self.split_tool_button.setEnabled(bool(count) and not read_only and not copy_reason)
@@ -3102,6 +3128,9 @@ class MainWindow(QMainWindow):
         self.insert_button = self._btn("插入页面…", self.insert_files, icon="folder-plus")
         self.insert_button.setToolTip("插入 PDF 页面（已选页面后或末尾）")
         bar.addWidget(self.insert_button)
+        self.arrange_split_button = self._btn("分割单页…", self.split_selected_page, icon="split")
+        self.arrange_split_button.setToolTip("将选中页沿分割线切成 2 或 3 页，可撤销")
+        bar.addWidget(self.arrange_split_button)
         bar.addWidget(self._btn("全选", self.select_all_pages, icon="select-all"))
         selected_export = self._btn("提取所选页…", self.extract_selected, icon="scissors")
         self._selection_buttons.append(selected_export)
@@ -4109,6 +4138,7 @@ class MainWindow(QMainWindow):
         for i in list(view.neighbors):
             if i not in wanted:
                 view._scene.removeItem(view.neighbors.pop(i))
+                view.note_markers.pop(i, None)
                 self._neighbor_keys.pop(i, None)
         self._neighbor_pending.intersection_update({key for key in self._neighbor_pending
             if key[0] == view.layout_generation and key[1] in wanted})
@@ -4134,11 +4164,13 @@ class MainWindow(QMainWindow):
                     cached = thumb[0].toImage()
             if cached is not None and existing is None:
                 view.set_neighbor(i, cached)
+                view.set_note_markers(i, self.store.cached_annotations(page))
                 self._neighbor_keys[i] = page_key
             if cached is not None and cached.width() >= width:
                 if page_key in self._page_images:
                     self._page_images.move_to_end(page_key)
                 view.set_neighbor(i, cached)
+                view.set_note_markers(i, self.store.cached_annotations(page))
                 self._neighbor_keys[i] = page_key
                 self._neighbor_pending.discard(key)
                 continue
@@ -4167,6 +4199,7 @@ class MainWindow(QMainWindow):
             self._neighbor_keys[key[1]] = page.render_key
             best = self._page_images.get(page.render_key, image)
             self.preview_view.set_neighbor(key[1], best)
+            self.preview_view.set_note_markers(key[1], self.store.cached_annotations(page))
             if not self._scrolling and key[1] in self.preview_view.pages_in_spread(self.ws.preview_index() or 0):
                 self._detail_timer.start()
         self._update_render_progress()
@@ -4429,6 +4462,7 @@ class MainWindow(QMainWindow):
             return
         self.preview_view.set_photo(pix, max(self.devicePixelRatioF(), 1.0), self.store.page_size(self.ws.pages[index]))
         page = self.ws.pages[index]
+        self.preview_view.set_note_markers(index, self.store.cached_annotations(page))
         self._shown_page = (page.page_id, page.rotation)
         mark("first_page_ready")
         self._apply_view_zoom()
@@ -5477,6 +5511,44 @@ class MainWindow(QMainWindow):
             return parse_range_segments(self.split_range.text(), count)
         step = self.split_count.value() if self.split_every.isChecked() else 1
         return [list(range(start, min(start + step, count))) for start in range(0, count, step)]
+
+    def split_selected_page(self) -> None:
+        if not self._allow_operation("modify") or not self._allow_operation("copy"):
+            return
+        targets = self.ws.target_indices()
+        if len(targets) != 1:
+            QMessageBox.information(self, "分割单页", "请先选择一页。")
+            return
+        from app.pagesplitui import PageSplitDialog
+
+        index = targets[0]
+        ref = self.ws.pages[index]
+        try:
+            image = run_operation(self, "准备分割预览",
+                                  lambda progress: self.store.render_qimage(ref, 520))
+        except (PdfError, ValueError) as exc:
+            QMessageBox.warning(self, "无法预览页面", str(exc))
+            return
+        dialog = PageSplitDialog(self, image)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        direction, cuts, fit_a4 = dialog.direction.currentData(), tuple(v / 100 for v in dialog.cuts), dialog.fit_a4.isChecked()
+        dialog.deleteLater()
+        if not accepted or self.ws.pages[index] is not ref:
+            return
+        try:
+            def work(progress):
+                outline = (self.ws.outline if self.ws.outline is not None
+                           else self.store.outline_entries(tuple(self.ws.pages)))
+                return self.store.split_page(ref, direction, cuts, fit_a4=fit_a4), outline
+
+            incoming, outline = run_operation(self, "分割页面", work)
+            if self.ws.pages[index] is not ref:
+                raise ValueError("工作区已改变，请重新选择页面。")
+            self.ws.replace_page_with(index, incoming, outline=outline)
+            self.refresh()
+            self.statusBar().showMessage(f"已分割为 {len(incoming)} 页；Ctrl+Z 可撤销。", 6000)
+        except (PdfError, ValueError) as exc:
+            QMessageBox.warning(self, "分割失败", str(exc))
 
     def split(self) -> None:
         if not self._allow_operation("modify") or not self._allow_operation("copy"):

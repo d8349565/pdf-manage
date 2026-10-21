@@ -169,6 +169,165 @@ def test_text_box_escape_preserves_the_original_page(reader, qapp):
     assert win.ws.pages[0] is before
 
 
+def test_text_box_resize_without_text_change_is_saved_and_undoable(reader, qapp):
+    win = reader
+    win.open_annotation_tools()
+    tools = win.annotation_tools
+    assert tools.ensure_snapshot()
+    before = win.ws.pages[0]
+    tools.start_text_box((60, 220, 240, 270), 0, before)
+    box = tools._inline_text_box
+    box.editor.setPlainText("调整宽度")
+    assert box.apply()
+    current = win.ws.pages[0]
+    annot = next(a for a in win.store.text_snapshot(current)["annotations"] if a["kind"] == 2)
+    old_width = p.Rect(annot["rect"]).width
+    tools.start_text_box(annot["rect"], 0, current, annot["content"],
+                         annot["text_settings"], annot["id"])
+    box = tools._inline_text_box
+    handle = box.handles["e"]
+    start = handle.rect().center()
+    QTest.mousePress(handle, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(handle, start + QPoint(60, 0))
+    QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=start + QPoint(60, 0))
+    assert box.base_area.width > old_width
+    assert box.apply()
+    updated = win.ws.pages[0]
+    assert updated.edits[-1].kind == "freetext_update"
+    new_annot = next(a for a in win.store.text_snapshot(updated)["annotations"] if a["kind"] == 2)
+    assert p.Rect(new_annot["rect"]).width > old_width
+    win.ws.undo_stack.undo()
+    assert win.ws.pages[0] is current
+
+
+def test_text_box_resize_tracks_rotated_page(reader):
+    win = reader
+    win.ws.set_selection({0}, 0)
+    win.ws.rotate(90)
+    win.refresh()
+    win.open_annotation_tools()
+    tools = win.annotation_tools
+    assert tools.ensure_snapshot()
+    ref = win.ws.pages[0]
+    tools.start_text_box((60, 220, 240, 270), 0, ref)
+    box = tools._inline_text_box
+    box.editor.setPlainText("旋转页面")
+    assert box.apply()
+    current = win.ws.pages[0]
+    annot = next(a for a in win.store.text_snapshot(current)["annotations"] if a["kind"] == 2)
+    tools.start_text_box(annot["rect"], 0, current, annot["content"],
+                         annot["text_settings"], annot["id"])
+    box = tools._inline_text_box
+    before = (box.base_area * box.matrix).width
+    handle = box.handles["e"]
+    start = handle.rect().center()
+    QTest.mousePress(handle, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(handle, start + QPoint(40, 0))
+    QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=start + QPoint(40, 0))
+    assert (box.base_area * box.matrix).width > before
+    assert box.apply()
+
+
+@pytest.mark.parametrize("edge,delta", [("n", -15), ("s", 20)])
+def test_resizing_auto_grown_text_box_keeps_the_opposite_edge(reader, qapp, edge, delta):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot()
+    tools.start_text_box((60, 120, 260, 145), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText("\n".join(["Line"] * 8))
+    qapp.processEvents()
+    box.position()
+    before = box.area * box.matrix
+    assert before.height > (box.base_area * box.matrix).height
+    handle = box.handles[edge]
+    start = handle.rect().center()
+    destination = handle.mapToGlobal(start) + QPoint(0, delta)
+    QTest.mousePress(handle, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(handle, handle.mapFromGlobal(destination))
+    QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=handle.mapFromGlobal(destination))
+    after = box.area * box.matrix
+    scale = reader.preview_view.transform().m11()
+    tolerance = 2 / scale
+    if edge == "n":
+        assert after.y0 == pytest.approx(before.y0 + delta / scale, abs=tolerance)
+        assert after.y1 == pytest.approx(before.y1, abs=tolerance)
+    else:
+        assert after.y0 == pytest.approx(before.y0, abs=tolerance)
+        assert after.y1 == pytest.approx(before.y1 + delta / scale, abs=tolerance)
+    box.close()
+
+
+def test_review_snapshot_skips_table_layout_until_needed(reader, monkeypatch):
+    from app import documentlayout
+
+    reader.store._clear_edit_caches()
+    monkeypatch.setattr(documentlayout, "page_layout", lambda page: (_ for _ in ()).throw(AssertionError("table layout")))
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.snapshot_key = None
+    assert tools.ensure_snapshot()
+    assert "tables" not in tools.snapshot
+    with pytest.raises(AssertionError, match="table layout"):
+        reader.store.text_snapshot(reader.ws.pages[0])
+
+
+def test_note_tool_uses_rendered_annotation_metadata(reader, monkeypatch):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.snapshot = None
+    tools.snapshot_key = None
+    monkeypatch.setattr(reader.store, "text_snapshot", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("unexpected text parsing")))
+    tools.tool.setCurrentIndex(tools.tool.findData("note"))
+    assert tools.snapshot is not None and "raw" not in tools.snapshot
+
+
+def test_small_note_has_screen_sized_hit_area(reader):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    view = reader.preview_view
+    assert tools.ensure_annotation_summary(0)
+    assert view.note_markers[0]
+    note = next(a for a in tools.snapshot["annotations"] if a["kind"] == 0)
+    mapped = p.Rect(note["rect"]) * p.Matrix(tools.snapshot["matrix"])
+    from PyQt6.QtGui import QTransform
+    view.setTransform(QTransform.fromScale(.2, .2))
+    center = (mapped.tl + mapped.br) / 2
+    point = view.page_rects[0].topLeft() + QPointF(center.x, center.y) + QPointF(10 / .2, 0)
+    assert tools.find_annotation_at(point)["id"] == note["id"]
+
+
+def test_split_page_action_replaces_one_page_and_undoes(reader, monkeypatch):
+    from app.pagesplitui import PageSplitDialog
+
+    monkeypatch.setattr(PageSplitDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
+    before = tuple(reader.ws.pages)
+    reader.ws.set_selection({0}, 0)
+    reader._sync_controls()
+    assert reader.split_page_action.isEnabled() and reader.arrange_split_button.isEnabled()
+    reader.split_page_action.trigger()
+    assert len(reader.ws.pages) == len(before) + 1
+    reader.ws.undo_stack.undo()
+    assert tuple(reader.ws.pages) == before
+
+
+def test_split_dialog_resets_cut_when_switching_page_count(reader):
+    from PyQt6.QtGui import QImage
+    from app.pagesplitui import PageSplitDialog
+
+    image = QImage(300, 200, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    dialog = PageSplitDialog(reader, image)
+    try:
+        dialog.parts.setCurrentIndex(1)
+        dialog.cut2.setValue(40)
+        dialog.parts.setCurrentIndex(0)
+        assert dialog.cuts == (50,)
+    finally:
+        dialog.reject()
+
+
 def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
     from app.rendering import RenderResult
     from app.watermarkui import WatermarkDialog

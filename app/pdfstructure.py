@@ -5,6 +5,7 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from urllib.parse import quote
 from pathlib import Path
+import hashlib
 
 import pymupdf
 
@@ -202,7 +203,7 @@ def namespace_form_fields(doc, used_names, source_number, page_numbers):
     return renamed
 
 
-def copy_document_properties(out, documents, warnings):
+def copy_document_properties(out, documents, warnings, *, source_paths=None):
     first = next(iter(documents.values()))
     out.set_metadata({key: value for key, value in first.metadata.items()
                       if key not in ("format", "encryption")})
@@ -212,15 +213,23 @@ def copy_document_properties(out, documents, warnings):
     if len(documents) > 1:
         warnings.append("合并文件的文档属性采用第一个来源；各来源的附件分别保留。")
     used_names = set()
-    for ordinal, doc in enumerate(documents.values(), 1):
+    copied_attachments = set()
+    for ordinal, (sid, doc) in enumerate(documents.items(), 1):
         for name in doc.embfile_names():
+            info = doc.embfile_info(name)
+            data = doc.embfile_get(name)
+            if source_paths is not None:
+                key = (source_paths[sid], name, info.get("filename"), info.get("ufilename"),
+                       info.get("description"), hashlib.sha256(data).digest())
+                if key in copied_attachments:
+                    continue
+                copied_attachments.add(key)
             candidate = name
             suffix = 1
             while candidate in used_names:
                 candidate = f"来源{ordinal}_{suffix}_{name}"
                 suffix += 1
-            info = doc.embfile_info(name)
-            out.embfile_add(candidate, doc.embfile_get(name), filename=info.get("filename"),
+            out.embfile_add(candidate, data, filename=info.get("filename"),
                             ufilename=info.get("ufilename"), desc=info.get("description"))
             used_names.add(candidate)
             if candidate != name:

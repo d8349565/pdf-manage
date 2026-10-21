@@ -14,6 +14,7 @@ class TextSelection(QObject):
         self.generation = None
         self.start = None
         self.text = ''
+        self.area = None
         self.overlay = None
         self.shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.view)
         self.shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
@@ -29,7 +30,7 @@ class TextSelection(QObject):
         if self.overlay is not None:
             self.view.scene().removeItem(self.overlay)
         self.overlay = None
-        self.text, self.start = '', None
+        self.text, self.start, self.area = '', None, None
         self.snapshot, self.page_index, self.key = None, None, None
         self.shortcut.setEnabled(False)
 
@@ -70,7 +71,7 @@ class TextSelection(QObject):
             if index != self.host.ws.preview_index():
                 self.host.go_to_page(index + 1, reveal=False)
             try:
-                snapshot = self.host.store.text_snapshot(ref)
+                snapshot = self.host.store.text_snapshot(ref, include_tables=False)
             except Exception:
                 self.host.statusBar().showMessage('当前页文字暂时无法读取，请重试。', 5000)
                 return False
@@ -101,6 +102,7 @@ class TextSelection(QObject):
         rectangle = QRectF(self.start, point).normalized().translated(-bounds.topLeft())
         matrix = p.Matrix(self.snapshot['matrix'])
         canonical = p.Rect(rectangle.left(), rectangle.top(), rectangle.right(), rectangle.bottom()) * ~matrix
+        self.area = canonical
         from app.documentlayout import selection_text
         self.text = selection_text(self.snapshot['raw'], canonical, self.snapshot.get('tables', ()))
         path = QPainterPath()
@@ -125,8 +127,25 @@ class TextSelection(QObject):
             return
         if not self.host._allow_operation('copy'):
             return
+        plain_fallback = False
+        if 'tables' not in self.snapshot:
+            from app.progress import run_operation
+            ref = self.host.ws.pages[self.page_index]
+            try:
+                snapshot = run_operation(self.host, '整理所选文字',
+                    lambda progress: self.host.store.text_snapshot(ref))
+            except Exception:
+                plain_fallback = True
+            else:
+                self.sync()
+                if not self.text or self.page_index is None:
+                    return
+                from app.documentlayout import selection_text
+                self.snapshot = snapshot
+                self.text = selection_text(snapshot['raw'], self.area, snapshot.get('tables', ()))
         QApplication.clipboard().setText(self.text)
-        self.host.statusBar().showMessage(f'已复制 {len(self.text)} 字', 3500)
+        self.host.statusBar().showMessage(
+            '表格排版无法读取，已按普通文字复制。' if plain_fallback else f'已复制 {len(self.text)} 字', 5000 if plain_fallback else 3500)
 
     def menu(self, position):
         self.sync()
