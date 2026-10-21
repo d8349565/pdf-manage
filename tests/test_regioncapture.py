@@ -100,6 +100,30 @@ def test_preview_keeps_source_pixels_and_can_fit_zoom_and_inspect_actual_size(ca
         capture_app.processEvents()
 
 
+def test_width_preview_stays_stable_near_scrollbar_threshold(capture_app):
+    image = QImage(1000, 755, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    view = CapturePreview(image)
+    try:
+        view.resize(800, 600)
+        view.show()
+        view.set_mode('width')
+        QTest.qWait(100)
+        assert not view.horizontalScrollBar().isVisible()
+        stable = (view.viewport().size(), view.transform().m11())
+        for _ in range(5):
+            QTest.qWait(20)
+            assert (view.viewport().size(), view.transform().m11()) == stable
+        assert not view._fit_timer.isActive()
+        view.zoom_by(1.2)
+        assert view.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        assert view.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    finally:
+        view.close()
+        view.deleteLater()
+        capture_app.processEvents()
+
+
 @pytest.mark.parametrize('source_rotation,extra_rotation', [(0, 0), (90, 0), (0, 270), (270, 180)])
 def test_capture_uses_unsaved_notes_and_saves_whole_png_without_changing_source(
         capture_app, tmp_path, source_rotation, extra_rotation):

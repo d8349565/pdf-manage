@@ -801,7 +801,7 @@ def _pdf_paths_from_mime(mime: QMimeData) -> list[str]:
     return [
         u.toLocalFile()
         for u in mime.urls()
-        if u.toLocalFile().lower().endswith(".pdf")
+        if u.toLocalFile().lower().endswith((".pdf", ".ofd"))
     ]
 
 
@@ -2428,7 +2428,7 @@ class MainWindow(QMainWindow):
         self.model.busy.connect(self._note_render_busy)
         self.setMenuWidget(TitleBar(self))
         file_menu = self._menubar.addMenu("文件")
-        self.open_action = self._act("打开 PDF", self.open_files, QKeySequence.StandardKey.Open)
+        self.open_action = self._act("打开 PDF / OFD", self.open_files, QKeySequence.StandardKey.Open)
         file_menu.addAction(self.open_action)
         file_menu.addSeparator()
         self.save_action = self._act("保存", self.save, QKeySequence.StandardKey.Save)
@@ -2684,6 +2684,9 @@ class MainWindow(QMainWindow):
         self._controls_read_only = bool(read_only)
         copy_reason = self.store.operation_reason(self.ws.pages, "copy")
         protection = read_only or copy_reason or self.store.operation_reason(self.ws.pages, "print")
+        ofd_copy = any(ref.source_path.lower().endswith('.ofd') for ref in self.ws.pages)
+        if ofd_copy and not protection:
+            protection = 'OFD 工作副本 · 原文件保留 · 保存时另存为 PDF'
         self.protection_label.setText(protection)
         self.protection_label.setVisible(bool(protection))
         unknown_signature = any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages)
@@ -2764,7 +2767,12 @@ class MainWindow(QMainWindow):
         elif self._opening_paths and not count:
             state = "正在打开…"
         self.save_state.setText(state)
-        self.save_state.setToolTip(read_only or self.ws.path or "文件仅在本机处理")
+        is_ofd = bool(self.ws.path and self.ws.path.lower().endswith('.ofd'))
+        if is_ofd:
+            self.save_state.setText('OFD 工作副本 · 原件保留')
+        self.save_action.setText('另存为 PDF' if is_ofd else '保存')
+        self.save_state.setToolTip('当前显示为转换后的 PDF，不提供 OFD 原件签名验证。' if ofd_copy
+                                  else read_only or self.ws.path or "文件仅在本机处理")
 
     def _sync_page_navigation(self):
         count = len(self.ws.pages)
@@ -2951,7 +2959,7 @@ class MainWindow(QMainWindow):
         self.preview_empty = QWidget()
         welcome = QVBoxLayout(self.preview_empty)
         welcome.addStretch()
-        title = QLabel("从一份 PDF 开始")
+        title = QLabel("从一份 PDF 或 OFD 开始")
         title.setObjectName("welcomeTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         welcome.addWidget(title)
@@ -2959,7 +2967,7 @@ class MainWindow(QMainWindow):
         hint.setObjectName("hint")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         welcome.addWidget(hint)
-        self.welcome_open = self._btn("打开 PDF", self.open_files, primary=True, icon="folder-open")
+        self.welcome_open = self._btn("打开 PDF / OFD", self.open_files, primary=True, icon="folder-open")
         welcome.addWidget(self.welcome_open, 0, Qt.AlignmentFlag.AlignHCenter)
         drop_hint = QLabel("也可以把文件拖到这里 · Ctrl+O")
         drop_hint.setObjectName("hint")
@@ -4438,13 +4446,23 @@ class MainWindow(QMainWindow):
         self._reader_updating = True
         try:
             mode = self._zoom_mode
+            one_page = len(view.page_rects) == 1
+            one_page_fit = mode == 'page' and one_page
+            one_page_width = mode == 'width' and one_page
             # 连续双页按整份布局适宽，跨组刷新预览时不改变缩放与横向范围。
             rect = view._scene.sceneRect() if view.spread and mode == 'width' else view.spread_rect(index)
             view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-                if view.spread and mode in ('page', 'width') else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                if one_page_fit or one_page_width or (view.spread and mode in ('page', 'width'))
+                else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                if one_page_fit else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             factor = self._zoom * PDF_LOGICAL_SCALE
             if mode in ('width', 'page'):
-                factor = max(1, view.viewport().width() - 24) / max(1, rect.width())
+                available_width = view.viewport().width() - 24
+                if one_page_width and not view.verticalScrollBar().isVisible():
+                    # 先预留可能出现的竖条宽度，避免适宽后竖条显隐反过来改变缩放。
+                    available_width -= view.verticalScrollBar().sizeHint().width()
+                factor = max(1, available_width) / max(1, rect.width())
                 if mode == 'page':
                     factor = min(factor, max(1, view.viewport().height() - 24) / max(1, rect.height()))
                 self._zoom = factor / PDF_LOGICAL_SCALE
@@ -4459,8 +4477,9 @@ class MainWindow(QMainWindow):
                 bounds = QRectF(rect.left(), bounds.top(), rect.width(), bounds.height())
             # 留出取整余量，避免“刚好适宽”也出现横向滚动条。
             horizontal_padding = 10 / max(factor, .001)
-            vertical_padding = 12
-            if mode == 'page':
+            # 单页完整显示由视图居中；按视口高度反算留白会让场景始终比视口高 4 像素。
+            vertical_padding = 10 if one_page_fit else 12
+            if mode == 'page' and not one_page_fit:
                 vertical_padding = max(vertical_padding, (view.viewport().height() - rect.height() * factor) / 2 + 2)
             vertical_padding /= max(factor, .001)
             bounds = bounds.adjusted(-horizontal_padding, -vertical_padding,
@@ -4689,12 +4708,12 @@ class MainWindow(QMainWindow):
         self.close_tab(self._active_tab_id)
 
     def open_files(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF", "", "PDF (*.pdf)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF / OFD", "", "PDF / OFD (*.pdf *.ofd)")
         if paths:
             self.open_files_in_tabs(paths)
 
     def open_files_in_tabs(self, paths: list[str]) -> bool:
-        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith(".pdf")]
+        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith((".pdf", ".ofd"))]
         if not valid_paths:
             return False
         opened_any = False
@@ -4742,7 +4761,7 @@ class MainWindow(QMainWindow):
         at_index: int | None = None,
         target_view: PageListView | None = None,
     ) -> bool:
-        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith(".pdf")]
+        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith((".pdf", ".ofd"))]
         if not valid_paths:
             return False
         if not self.ws.pages:
@@ -4925,12 +4944,25 @@ class MainWindow(QMainWindow):
 
     def _try_load(self, path: str, index: int = 1, total: int = 1):
         password = None
+        is_ofd = path.lower().endswith('.ofd')
         # 多选打开时把批次信息放进标题，否则用户不知道进度条管的是第几个文件。
-        title = "打开 PDF" if total < 2 else f"打开 PDF · 文件 {index} / {total}"
+        title = "打开 OFD" if is_ofd else "打开 PDF"
+        if total > 1:
+            title += f" · 文件 {index} / {total}"
         while True:
             try:
+                if is_ofd:
+                    pages = run_operation(self, title, lambda progress, cancel:
+                        self.store.load(path, progress_callback=progress, cancel=cancel), cancellable=True)
+                    warnings = self.store._source(pages[0].source_id).import_warnings
+                    if warnings:
+                        QMessageBox.information(self, 'OFD 转换提示', '\n'.join(warnings))
+                    return pages
                 return run_operation(self, title, lambda progress:
-                                     self.store.load(path, password, progress_callback=progress))
+                    self.store.load(path, password, progress_callback=progress))
+            except OperationCancelled:
+                self.statusBar().showMessage('已取消打开，原文件未修改', 5000)
+                return None
             except NeedPassword:
                 text, ok = QInputDialog.getText(
                     self,
@@ -5059,6 +5091,8 @@ class MainWindow(QMainWindow):
 
     def export_text(self):
         if not self.ws.pages or not self._allow_operation('copy'):
+            return
+        if self.ws.path and self.ws.path.lower().endswith('.ofd') and not self.save(True):
             return
         if self.ws.dirty or not self.ws.path:
             QMessageBox.information(self, '先保存当前文档', '请先保存或另存当前 PDF，再导出文字。')
@@ -5235,6 +5269,9 @@ class MainWindow(QMainWindow):
 
     def open_word_converter(self, *, direction="word_to_pdf"):
         from app.wordui import WordConverterWindow
+        if direction == 'pdf_to_word' and self.ws.path and self.ws.path.lower().endswith('.ofd'):
+            if not self.save(True):
+                return
         # 方向以用户点选的菜单为准，不用当前打开的文件类型改写。
         if direction == "pdf_to_word" and self.ws.path and self.ws.dirty and not self.confirm_leave():
             return
@@ -5332,10 +5369,11 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
             return False
         path = self.ws.path
+        is_ofd = bool(path and path.lower().endswith('.ofd'))
         merged_output = path is None and bool(self.ws.protected_paths)
-        if save_as or not path:
-            suggested = path or "未命名.pdf"
-            path, _ = QFileDialog.getSaveFileName(self, "保存 PDF", export_path(suggested), "PDF (*.pdf)")
+        if save_as or not path or is_ofd:
+            suggested = os.path.splitext(path)[0] + '.pdf' if is_ofd else path or "未命名.pdf"
+            path, _ = QFileDialog.getSaveFileName(self, "另存为 PDF" if is_ofd else "保存 PDF", export_path(suggested), "PDF (*.pdf)")
             if not path:
                 return False
             if not path.lower().endswith(".pdf"):
@@ -5557,6 +5595,7 @@ class MainWindow(QMainWindow):
         can_use_source = (
             not self.ws.dirty
             and self.ws.path
+            and not self.ws.path.lower().endswith('.ofd')
             and len(self.ws.pages) == len(indices)
             and indices == list(range(len(self.ws.pages)))
         )

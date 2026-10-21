@@ -61,6 +61,54 @@ def test_dirty_workspace_requires_save(qapp, tmp_path, monkeypatch):
         qapp.processEvents()
 
 
+@pytest.mark.parametrize('save_succeeds', [True, False])
+def test_ofd_ocr_uses_saved_pdf_or_stops_on_cancel(tmp_path, monkeypatch, save_succeeds):
+    from types import SimpleNamespace
+    import pymupdf
+    from app import ocrui
+    from app.ocr import service
+    from app.output import stamp
+
+    pdf = tmp_path / 'saved.pdf'
+    with pymupdf.open() as doc:
+        doc.new_page()
+        doc.save(pdf)
+    workspace = SimpleNamespace(path=str(tmp_path / 'generated.OFD'), dirty=False,
+                                pages=[SimpleNamespace(source_id='original')], preview_index=lambda: 0)
+    saves, inputs, results = [], [], []
+    source = SimpleNamespace(path=str(pdf), disk_stamp=stamp(pdf), password=None)
+    def save(save_as):
+        saves.append(save_as)
+        if save_succeeds:
+            workspace.path = str(pdf)
+            workspace.pages = [SimpleNamespace(source_id='saved')]
+        return save_succeeds
+    def get_source(identifier):
+        assert identifier == 'saved', 'OCR must use the source registered after saving'
+        return source
+    host = SimpleNamespace(ws=workspace, save=save, _allow_operation=lambda operation: True,
+                           store=SimpleNamespace(_source=get_source))
+    def make_dialog(path, count, current, parent):
+        assert path == str(pdf)
+        return SimpleNamespace(exec=lambda: ocrui.QDialog.DialogCode.Accepted,
+            indices=lambda: [0], output=SimpleNamespace(text=lambda: str(tmp_path / 'ocr.pdf')),
+            skip=SimpleNamespace(isChecked=lambda: True), deleteLater=lambda: None)
+    def recognize(path, output, indices, options, progress, cancel):
+        inputs.append(path)
+        return 'recognized'
+    monkeypatch.setattr(ocrui, 'OCRDialog', make_dialog)
+    monkeypatch.setattr(ocrui, 'run_operation', lambda parent, title, work, **kwargs:
+                        work(lambda *args: None, lambda: False))
+    monkeypatch.setattr(service, 'run_ocr', recognize)
+    monkeypatch.setattr(ocrui, 'show_result', lambda parent, result: results.append(result))
+
+    open_ocr(host)
+
+    assert saves == [True]
+    assert inputs == ([str(pdf)] if save_succeeds else [])
+    assert results == (['recognized'] if save_succeeds else [])
+
+
 def test_word_conversion_exposes_local_component_install(qapp,monkeypatch):
     from app.wordui import WordConverterWindow
     from app import ocrui

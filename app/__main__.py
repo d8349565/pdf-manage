@@ -42,13 +42,13 @@ def _window_icon() -> QIcon:
 
 
 def startup_pdf_paths(argv: list[str]) -> list[str]:
-    """返回由资源管理器、快捷方式或命令行传入的本机 PDF。"""
+    """返回由资源管理器、快捷方式或命令行传入的本机 PDF / OFD。"""
     paths = []
     for value in argv[1:]:
         if not value or value.startswith("-"):
             continue
         path = os.path.abspath(value)
-        if path.lower().endswith(".pdf") and os.path.isfile(path):
+        if path.lower().endswith((".pdf", ".ofd")) and os.path.isfile(path):
             paths.append(path)
     return paths
 

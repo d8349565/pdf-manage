@@ -129,7 +129,7 @@ class _Source:
 
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
                  "password", "safety", "disk_stamp", "label_rules", "label_starts",
-                 "preview_doc", "preview_fonts")
+                 "preview_doc", "preview_fonts", "import_warnings")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
                  authentication: int, disk_stamp, progress_callback=None) -> None:
@@ -138,6 +138,7 @@ class _Source:
         self.doc = doc
         self.preview_doc = None
         self.preview_fonts = set()
+        self.import_warnings = ()
         self.lock = threading.Lock()
         self.data = data
         self.password = password
@@ -261,8 +262,15 @@ class PdfStore:
         self._sources[sid] = source
         return sid
 
-    def load(self, path: str, password: str | None = None, *, progress_callback=None) -> list[PageRef]:
+    def load(self, path: str, password: str | None = None, *, progress_callback=None, cancel=None) -> list[PageRef]:
         path = os.path.abspath(path)
+        check_cancel(cancel)
+        if cancel:
+            original_progress = progress_callback
+            def progress_callback(current, total, message):
+                check_cancel(cancel)
+                if original_progress:
+                    original_progress(current, total, message)
         if progress_callback:
             progress_callback(0, 0, f"正在打开 · {os.path.basename(path)}")
         mark("pdf_open_started")
@@ -273,8 +281,13 @@ class PdfStore:
             raise PdfError(f"无法加载 PDF 引擎：{exc}") from exc
         try:
             stamp = _file_stamp(path)
-            with open(path, "rb") as fh:
-                data = fh.read()
+            warnings = ()
+            if path.lower().endswith('.ofd'):
+                from app.pdfworker import import_ofd
+                data, warnings = import_ofd(path, progress_callback, cancel)
+            else:
+                with open(path, "rb") as fh:
+                    data = fh.read()
             if _file_stamp(path) != stamp:
                 raise PdfError("读取期间文件被其他程序修改，请重新打开。")
         except OSError as exc:
@@ -295,10 +308,18 @@ class PdfStore:
             if doc.page_count < 1:
                 raise PdfError("PDF 没有页面")
             sid = self._register(path, doc, data, password, authentication, stamp, progress_callback)
+            self._source(sid).import_warnings = tuple(warnings)
+            if cancel and cancel():
+                self._sources.pop(sid).close()
+                check_cancel(cancel)
             self._written_stamps.pop(_path_key(path), None)
             pages = [PageRef(sid, path, i, 0) for i in range(doc.page_count)]
             mark("first_pdf_loaded")
             return pages
+        except OperationCancelled:
+            if not doc.is_closed:
+                doc.close()
+            raise
         except (NeedPassword, PdfError):
             doc.close()
             raise
@@ -403,6 +424,17 @@ class PdfStore:
             raise PdfError(f"无法检查目标文件，请另存新文件：{exc}") from exc
 
     def _inspect_destination(self, dest):
+        if os.fspath(dest).lower().endswith('.ofd'):
+            raise PdfError('OFD 原文件受保护，请另存为 PDF。')
+        for source in self._sources.values():
+            if source.path.lower().endswith('.ofd'):
+                same = _path_key(source.path) == _path_key(dest)
+                try:
+                    same = same or os.path.samefile(source.path, dest)
+                except OSError:
+                    pass
+                if same:
+                    raise PdfError('OFD 原文件受保护，请另存为 PDF。')
         if not os.path.exists(dest):
             return
         import pymupdf

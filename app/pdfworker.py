@@ -109,6 +109,16 @@ def _snapshot_sources(store, pages, dests, folder, progress, cancel):
     return sources
 
 
+def import_ofd(path, progress=None, cancel=None):
+    """Only complete PDF bytes leave the cancellable, isolated import process."""
+    with TemporaryWorkspace('ofd') as folder:
+        result = _worker(folder, dict(operation='import_ofd', path=path), progress, cancel)
+        check_cancel(cancel)
+        data = (Path(folder) / 'imported.pdf').read_bytes()
+        check_cancel(cancel)
+        return data, result.get('warnings', [])
+
+
 def _encode_pages(pages, cancel):
     payload, assets, asset_tokens = [], {}, {}
     for page in pages:
@@ -160,6 +170,7 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
                 candidate = _Source.__new__(_Source)
                 candidate.path, candidate.doc, candidate.data = dest, None, data
                 candidate.preview_doc, candidate.preview_fonts = None, set()
+                candidate.import_warnings = ()
                 candidate.password, candidate.lock = result["password"], threading.Lock()
                 candidate.closed = False
                 safety = result["safety"]
@@ -277,7 +288,12 @@ def worker_main(folder):
         last_report = now
         _write_json(root / "event.json", dict(current=current, total=total, message=message))
     try:
-        if request.get("operation") == "watermark_asset":
+        if request.get("operation") == "import_ofd":
+            from app.ofd import convert_ofd
+            data, warnings = convert_ofd(request['path'], report)
+            (root / 'imported.pdf').write_bytes(data)
+            result = dict(success=True, warnings=warnings)
+        elif request.get("operation") == "watermark_asset":
             import pymupdf
             from app.pdfmarks import watermark_base
             data, width, height = watermark_base(request["text"], tuple(request["color"]), request.get("image", ""))

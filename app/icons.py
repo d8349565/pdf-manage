@@ -141,6 +141,11 @@ _PATHS: dict[str, str] = {
         '<rect x="3" y="4" width="18" height="16" rx="1" stroke-dasharray="2 2"/>'
         '<path d="M8 9V8h8v1M12 8v9M10 17h4"/>'
     ),
+    "mosaic": (
+        '<rect x="3" y="3" width="18" height="18" rx="1"/>'
+        '<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>'
+        '<path d="M4.5 6h3M16.5 12h3M10.5 18h3" stroke-width="3"/>'
+    ),
     "text-edit": (
         '<path d="M3 7V5h10v2M8 5v11M5 16h6M3 20h8"/>'
         '<path d="m13 17 6-6 3 3-6 6-4 1zM18 12l3 3"/>'

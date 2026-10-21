@@ -1232,7 +1232,11 @@ class PrintDialog(QDialog):
         self._update_sheet_counter()
 
     def _fit_window(self) -> None:
-        self.canvas.set_scale(self.canvas.fit_scale(self.scroll.viewport().size()))
+        viewport = self.scroll.viewport().size()
+        if len(self.canvas.sheets) > 1 and not self.scroll.verticalScrollBar().isVisible():
+            # 多张纸刚好跨过竖条阈值时，预留其宽度以免适配与滚动条相互追逐。
+            viewport.setWidth(max(1, viewport.width() - self.scroll.verticalScrollBar().sizeHint().width()))
+        self.canvas.set_scale(self.canvas.fit_scale(viewport))
         self.scroll.verticalScrollBar().setValue(self.canvas.sheet_top(self._sheet_index))
         self._update_sheet_counter()
 

@@ -3,11 +3,17 @@ setlocal DisableDelayedExpansion
 
 set "SKIP_SETUP=0"
 set "SETUP_ONLY=0"
+set "LOCAL_PREVIEW=0"
 set "ZHIXUPDF_SETUP_BUILT=0"
 set "EXPLICIT_PYTHON="
 
 :parse_args
 if "%~1"=="" goto args_done
+if /I "%~1"=="--preview" (
+    set "LOCAL_PREVIEW=1"
+    shift
+    goto parse_args
+)
 if /I "%~1"=="--skip-tests" (
     shift
     goto parse_args
@@ -62,7 +68,11 @@ powershell -NoProfile -Command "$exePath = Join-Path (Get-Location) 'dist\ZhiXuP
 if errorlevel 1 goto failed
 "%BUILD_PYTHON%" -c "import sys,struct; sys.exit(0 if sys.version_info >= (3,10) and struct.calcsize('P') == 8 else 1)"
 if errorlevel 1 goto wrong_python
-"%BUILD_PYTHON%" "packaging\check_version.py"
+if "%LOCAL_PREVIEW%"=="1" (
+    "%BUILD_PYTHON%" "packaging\check_version.py" --preview
+) else (
+    "%BUILD_PYTHON%" "packaging\check_version.py"
+)
 if errorlevel 1 goto failed
 echo [1/6] Installing verified build dependencies...
 "%BUILD_PYTHON%" -m pip install --disable-pip-version-check -r "packaging\requirements-build.txt"

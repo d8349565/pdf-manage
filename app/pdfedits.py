@@ -301,6 +301,10 @@ def apply_edits(page, edits):
         identifiers.add(token)
         page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
     for edit in edits:
+        if edit.kind == "mosaic":
+            from app.mosaic import apply_mosaic
+            apply_mosaic(page, edit)
+            continue
         if edit.kind in ('image', 'image_update', 'image_delete'):
             from app.pdfimages import apply_image
             apply_image(page, edit)

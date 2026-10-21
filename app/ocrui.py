@@ -212,6 +212,8 @@ def open_ocr(host):
     if not host.ws.pages:
         QMessageBox.information(host, 'OCR 文字识别', '请先打开要识别的 PDF。')
         return
+    if host.ws.path and host.ws.path.lower().endswith('.ofd') and not host.save(True):
+        return
     if host.ws.dirty or not host.ws.path:
         QMessageBox.information(host, '先保存当前文档', '当前工作区有未保存的修改，请先保存或另存 PDF，再开始 OCR。')
         return

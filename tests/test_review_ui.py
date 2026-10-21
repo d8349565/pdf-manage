@@ -10,6 +10,128 @@ from app.ui import MainWindow
 from app.workspace import PageEdit
 
 
+def wait_for_mosaic(qapp, dialog):
+    from PyQt6.QtCore import QElapsedTimer
+    timer = QElapsedTimer()
+    timer.start()
+    while dialog.ready is None and timer.elapsed() < 10000:
+        QTest.qWait(10)
+    assert dialog.ready is not None, dialog.feedback.text()
+
+
+def test_mosaic_preview_settings_apply_cancel_and_undo(reader, qapp):
+    from app.mosaicui import MosaicDialog
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("mosaic"))
+    assert tools.ensure_snapshot()
+    ref = reader.ws.pages[0]
+    dialog = MosaicDialog(tools, 0, ref, (45, 60, 220, 115), tools.mosaic_settings)
+    try:
+        dialog.show()
+        assert not dialog.apply_button.isEnabled()
+        wait_for_mosaic(qapp, dialog)
+        dialog.style.setCurrentIndex(dialog.style.findData("blur"))
+        dialog.strength.setValue(6)
+        dialog.strength.setValue(22)
+        assert dialog.ready is None and not dialog.apply_button.isEnabled()
+        wait_for_mosaic(qapp, dialog)
+        assert dict(dialog.ready[0].details)["strength"] == 22
+        assert not dialog.previews[0].item.pixmap().isNull()
+        dialog.shape.setCurrentIndex(dialog.shape.findData("ellipse"))
+        dialog.style.setCurrentIndex(dialog.style.findData("solid"))
+        wait_for_mosaic(qapp, dialog)
+        assert dialog.color_button.isVisible() and not dialog.slider.isVisible()
+        dialog.apply()
+        assert reader.ws.pages[0].edits[-1].kind == "mosaic"
+        assert tools.mosaic_settings["shape"] == "ellipse"
+        reader.ws.undo_stack.undo()
+        reader.refresh()
+        assert reader.ws.pages[0] is ref
+        reader.ws.undo_stack.redo()
+        reader.refresh()
+        assert reader.ws.pages[0].edits[-1].kind == "mosaic"
+    finally:
+        dialog.reject()
+        if dialog.worker is not None:
+            dialog.worker.wait(10000)
+        dialog.deleteLater()
+    before = reader.ws.pages[0]
+    assert tools.ensure_snapshot()
+    cancel = MosaicDialog(tools, 0, before, (45, 60, 220, 115), tools.mosaic_settings)
+    cancel.reject()
+    cancel.deleteLater()
+    assert reader.ws.pages[0] is before
+
+
+def test_mosaic_drag_on_neighbor_page_and_escape_cancel(reader, qapp, monkeypatch):
+    from app.mosaicui import MosaicDialog
+    calls = []
+    monkeypatch.setattr(MosaicDialog, "exec", lambda self:
+                        calls.append((self.index, self.ref, self.area)) or QDialog.DialogCode.Rejected)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("mosaic"))
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    view.centerOn(view.page_rects[1].topLeft() + QPointF(160, 160))
+    qapp.processEvents()
+    top = view.page_rects[1].topLeft()
+    start = view.mapFromScene(top + QPointF(50, 60))
+    end = view.mapFromScene(top + QPointF(210, 120))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    assert tools.stroke and tools.overlay is not None
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert not calls and not tools.stroke
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert len(calls) == 1 and calls[0][0] == 1 and calls[0][1] is reader.ws.pages[1]
+    assert not any(page.edits for page in reader.ws.pages)
+
+
+def test_mosaic_failed_preview_and_stale_page_cannot_apply(reader, qapp, monkeypatch):
+    from PyQt6.QtCore import QElapsedTimer
+    from app.mosaicui import MosaicDialog
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("mosaic"))
+    assert tools.ensure_snapshot()
+    ref = reader.ws.pages[0]
+    dialog = MosaicDialog(tools, 0, ref, (45, 60, 220, 115), tools.mosaic_settings)
+    render = reader.store.render_qimage
+    def fail(*args):
+        raise ValueError("preview unavailable")
+    monkeypatch.setattr(reader.store, "render_qimage", fail)
+    try:
+        dialog.show()
+        dialog.timer.stop()
+        dialog.start_preview()
+        timer = QElapsedTimer()
+        timer.start()
+        while dialog.worker is not None and timer.elapsed() < 10000:
+            QTest.qWait(10)
+        assert dialog.worker is None
+        assert "preview unavailable" in dialog.feedback.text()
+        assert not dialog.apply_button.isEnabled() and dialog.ready is None
+        assert reader.ws.pages[0] is ref
+        monkeypatch.setattr(reader.store, "render_qimage", render)
+        dialog.changed()
+        wait_for_mosaic(qapp, dialog)
+        reader.ws.edit_page(0, PageEdit("note", ((300, 300),), text="other edit", annotation_id="other"))
+        before = reader.ws.pages[0]
+        dialog.apply()
+        assert reader.ws.pages[0] is before and "页面已改变" in dialog.feedback.text()
+    finally:
+        dialog.reject()
+        if dialog.worker is not None:
+            dialog.worker.wait(10000)
+        dialog.deleteLater()
+
+
 def test_text_box_edits_in_page_and_commits_from_inline_controls(reader, qapp):
     win = reader
     win.open_annotation_tools()

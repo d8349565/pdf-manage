@@ -106,6 +106,7 @@ credentials*
 
 # 真实业务文档和数据导出不作为源文件。
 *.pdf
+*.ofd
 *.doc
 *.docx
 *.xls

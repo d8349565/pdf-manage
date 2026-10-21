@@ -549,6 +549,7 @@ class AnnotationTools(QWidget):
         ("ellipse", "circle", "椭圆"),
         ("arrow", "arrow-up-right", "箭头"),
         ("replace", "text-edit", "单行文字修正"),
+        ("mosaic", "mosaic", "马赛克（像素块／模糊／纯色遮盖）"),
     )
 
     def __init__(self, host):
@@ -559,11 +560,14 @@ class AnnotationTools(QWidget):
         self.snapshot_key = None
         self.snapshot_index = None
         self.stroke = []
+        self._mosaic_stroke = None
         self.overlay = None
         self._move_state = None
         self._move_preview = None
         self._move_committing = False
         self.color = QColor("#EAB308")
+        from app.mosaic import DEFAULTS
+        self.mosaic_settings = dict(DEFAULTS)
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -601,7 +605,7 @@ class AnnotationTools(QWidget):
         self.tool_actions = []
         short_names = {"browse": "浏览", "select": "选批注", "highlight": "高亮", "underline": "下划线",
                        "ink": "画笔", "note": "便签", "freetext": "文本框", "rect": "矩形",
-                       "ellipse": "椭圆", "arrow": "箭头", "replace": "改原文"}
+                       "ellipse": "椭圆", "arrow": "箭头", "replace": "改原文", "mosaic": "马赛克"}
         for idx, (kind, icon_name, name) in enumerate(self.TOOL_DEFS):
             action = QAction(toolbar_icon(icon_name, '#526B63', 16), short_names[kind], self)
             action.setToolTip(name)
@@ -616,7 +620,7 @@ class AnnotationTools(QWidget):
         actions['image'] = self.insert_image_action
         actions['capture'] = self.host.capture_action
         groups = (('browse', 'select', 'capture'), ('highlight', 'underline', 'arrow', 'note'),
-                  ('replace', 'image', 'freetext'), ('ink', 'rect', 'ellipse'))
+                  ('replace', 'mosaic', 'image', 'freetext'), ('ink', 'rect', 'ellipse'))
         for group_index, group in enumerate(groups):
             if group_index:
                 self.tool_bar.addSeparator()
@@ -814,7 +818,7 @@ class AnnotationTools(QWidget):
             if kind == "browse":
                 self._set_feedback("悬浮查看便签；双击或点击浮层中的编辑按钮修改备注。")
                 return
-            if not self.host._allow_operation("content_edit" if kind == "replace" else "annotate"):
+            if not self.host._allow_operation("content_edit" if kind in ("replace", "mosaic") else "annotate"):
                 self.tool.setCurrentIndex(0)
                 return
             self._ensure_filter()
@@ -822,22 +826,29 @@ class AnnotationTools(QWidget):
             if kind == "arrow":
                 self.width.setValue(1.5)
             self._update_color_button_style()
-            if not self.ensure_snapshot():
+            if not self.ensure_snapshot(geometry_only=kind == "mosaic"):
                 return
             self._set_feedback("点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。" if kind == "replace" else
+                                  "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消框选。" if kind == "mosaic" else
                                   "点一下添加便签。" if kind == "note" else "在当前页拖选或绘制；Esc 取消当前笔画。")
+            if kind == "mosaic":
+                self._set_view_cursor(Qt.CursorShape.CrossCursor)
         except Exception as exc:
             self._set_feedback(f"工具切换失败：{exc}")
 
-    def ensure_snapshot(self, index=None):
+    def ensure_snapshot(self, index=None, *, geometry_only=False):
         if index is None:
             index = self.host.ws.preview_index()
         if index is None or not 0 <= index < len(self.host.ws.pages):
             return False
         ref = self.host.ws.pages[index]
-        if self.snapshot_key == ref.render_key and self.snapshot is not None and "raw" in self.snapshot:
+        if self.snapshot_key == ref.render_key and self.snapshot is not None and (geometry_only or "raw" in self.snapshot):
             self.snapshot_index = index
             return True
+        if geometry_only:
+            summary = self.host.store.cached_annotations(ref)
+            if summary is not None:
+                return self._use_snapshot(ref, index, summary)
         try:
             snapshot = self.host.store.text_snapshot(ref)
         except Exception as exc:
@@ -927,6 +938,13 @@ class AnnotationTools(QWidget):
                 self.commit(PageEdit("delete", annotation_id=identifier), page_index=index, expected_ref=ref)
 
     def sync_page(self):
+        mosaic = self._mosaic_stroke
+        if mosaic and (mosaic[0] != self.host.ws.preview_index()
+                       or mosaic[0] >= len(self.host.ws.pages)
+                       or self.host.ws.pages[mosaic[0]] is not mosaic[1]
+                       or self.view.layout_generation != mosaic[2]):
+            self.clear_overlay()
+            self._set_feedback("页面已改变，请重新框选马赛克区域。")
         box = getattr(self, "_inline_text_box", None)
         if box and not box.committing and (box.index >= len(self.host.ws.pages)
                                           or self.host.ws.pages[box.index] is not box.ref):
@@ -1000,14 +1018,23 @@ class AnnotationTools(QWidget):
             self.view._scene.removeItem(self.overlay)
         self.overlay = None
         self.stroke = []
+        self._mosaic_stroke = None
 
     def eventFilter(self, watched, event):
         if getattr(self, "view", None) is None:
             return False
         if watched in (self.view, self.view.viewport()) and event.type() == QEvent.Type.ShortcutOverride:
-            if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing):
+            if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing or self._mosaic_stroke):
                 event.accept()
                 return True
+        if watched in (self.view, self.view.viewport()) and self._mosaic_stroke:
+            if (event.type() == QEvent.Type.Hide
+                    or event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape
+                    or event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.RightButton):
+                self.clear_overlay()
+                self._set_feedback("已取消马赛克框选。")
+                return event.type() != QEvent.Type.Hide
+            self.sync_page()
         if watched is self.view and event.type() == QEvent.Type.Hide and self._move_state:
             self.cancel_move_annot()
         state = getattr(self, "_inline_replace", None)
@@ -1146,9 +1173,12 @@ class AnnotationTools(QWidget):
                 if index != self.host.ws.preview_index():
                     self.host.go_to_page(index + 1, reveal=False)
                     self.snapshot_key = None
-                if not self.ensure_snapshot():
+                if not self.ensure_snapshot(geometry_only=kind == "mosaic"):
                     return True
                 self.stroke = [point]
+                if kind == "mosaic":
+                    self._mosaic_stroke = (index, self.host.ws.pages[index], self.view.layout_generation)
+                    self.view.setFocus(Qt.FocusReason.MouseFocusReason)
                 if kind == "select":
                     self.select_at(point)
                     self.stroke = []
@@ -1157,6 +1187,11 @@ class AnnotationTools(QWidget):
                 self.overlay.setZValue(4)
                 self.overlay.setPen(QPen(self.color, self.width.value(), Qt.PenStyle.SolidLine,
                                         Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                if kind == "mosaic":
+                    pen = QPen(QColor("#0F766E"), 1.5, Qt.PenStyle.DashLine)
+                    pen.setCosmetic(True)
+                    self.overlay.setPen(pen)
+                    self.overlay.setBrush(QColor(15, 118, 110, 35))
                 if kind == "arrow":
                     self.overlay.setBrush(self.color)
                 self.view._scene.addItem(self.overlay)
@@ -1403,6 +1438,16 @@ class AnnotationTools(QWidget):
         area = p.Rect(canonical[0], canonical[-1]).normalize()
         color = (self.color.redF(), self.color.greenF(), self.color.blueF())
         identifier = "zhixu-" + uuid.uuid4().hex
+        if kind == "mosaic":
+            if area.width < 2 or area.height < 2:
+                raise ValueError("请拖出一个马赛克区域，不能只点击页面。")
+            if not self.host._allow_operation("content_edit"):
+                return
+            from app.mosaicui import MosaicDialog
+            dialog = MosaicDialog(self, index, ref, area, self.mosaic_settings)
+            dialog.exec()
+            dialog.deleteLater()
+            return
         if kind == "freetext":
             visible = self.view.page_rects[index]
             if area.width < 16 or area.height < 8:
@@ -1460,18 +1505,24 @@ class AnnotationTools(QWidget):
             edit = PageEdit(kind, tuple(tuple(pos) for pos in chosen), color=color, width=self.width.value(), annotation_id=identifier)
         self.commit(edit, confirm=kind == "replace")
 
-    def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None):
+    def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None, prepared_preview=None):
         index = self.host.ws.preview_index() if page_index is None else page_index
         if index is None or not 0 <= index < len(self.host.ws.pages) or not self.host._allow_operation(edit.operation):
             return False
         ref = self.host.ws.pages[index]
         if expected_ref is not None and ref is not expected_ref:
-            self._set_feedback("页面已改变，请重新选择文字或批注。")
+            message = "页面已改变，请关闭预览并重新选择操作区域。"
+            self._set_feedback(message)
+            if on_error:
+                on_error(message)
             return False
-        candidate = ref.edited(edit)
+        candidate = ref.edited(edit) if prepared_preview is None else prepared_preview[0]
         try:
-            width = self.host._preview_render_width()
-            image = run_operation(self.host, "预览本次修改", lambda progress: self.host.store.render_qimage(candidate, width))
+            if prepared_preview is None:
+                width = self.host._preview_render_width()
+                image = run_operation(self.host, "预览本次修改", lambda progress: self.host.store.render_qimage(candidate, width))
+            else:
+                image = prepared_preview[1]
             if confirm:
                 dialog = QDialog(self)
                 dialog.setWindowTitle("文字修正预览")
@@ -1507,10 +1558,10 @@ class AnnotationTools(QWidget):
             if index >= len(self.host.ws.pages) or self.host.ws.pages[index] is not ref:
                 raise ValueError("工作区已改变，请重新应用修改。")
             self.host._cache_page_image(candidate.render_key, image)
-            self.host.ws.edit_page(index, edit, "文字修正" if edit.kind == "replace" else "修改批注", prepared=candidate)
+            self.host.ws.edit_page(index, edit, "马赛克" if edit.kind == "mosaic" else "文字修正" if edit.kind == "replace" else "修改批注", prepared=candidate)
             self.snapshot_key = None
             self.host.refresh()
-            self.ensure_snapshot()
+            self.ensure_snapshot(geometry_only=edit.kind == "mosaic")
             self._set_feedback("修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             return True
         except (ValueError, PdfError) as exc:

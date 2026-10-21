@@ -526,6 +526,14 @@ def test_print_dialog_defaults_to_fit_window_state(qapp, tmp_path):
     qapp.processEvents()
     assert dlg._auto_fit is True
     assert dlg.btn_fit.isChecked() is True
+    assert len(dlg.canvas.sheets) > 1
+    dlg.resize(880, 950)
+    qapp.processEvents()
+    stable = (dlg.scroll.viewport().size(), dlg.canvas.scale)
+    for _ in range(4):
+        dlg._fit_window()
+        qapp.processEvents()
+        assert (dlg.scroll.viewport().size(), dlg.canvas.scale) == stable
 
     # 3. 手动放大缩小后退出适应窗口状态
     dlg._zoom_in()

@@ -359,6 +359,41 @@ def test_open_pdf_preserves_normal_window_size(loaded_window):
     assert not window.isMaximized() and window.size() == before
 
 
+@pytest.mark.parametrize('width,height', [(842, 595), (595, 842)])
+def test_single_page_fit_does_not_create_scrollbar_resize_loop(window, input_app, tmp_path, width, height):
+    source = tmp_path / 'single-page.pdf'
+    with pymupdf.open() as doc:
+        doc.new_page(width=width, height=height)
+        doc.save(source)
+    window.resize(980 if width > height else 1400, 1000)
+    assert window.open_files_in_tabs([str(source)])
+    QTest.qWait(250)
+
+    view = window.preview_view
+    assert window._zoom_mode == 'page'
+    assert not view.horizontalScrollBar().isVisible()
+    assert not view.verticalScrollBar().isVisible()
+    assert view.sceneRect().width() * view.transform().m11() <= view.viewport().width() - 2
+    assert view.sceneRect().height() * view.transform().m11() <= view.viewport().height() - 2
+    stable = (view.viewport().size(), view.transform().m11())
+    for _ in range(3):
+        input_app.processEvents()
+        QTest.qWait(20)
+        assert (view.viewport().size(), view.transform().m11()) == stable
+    assert not window._view_zoom_timer.isActive()
+    window._set_zoom(2)
+    assert view.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert view.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    window._set_zoom_mode('width')
+    QTest.qWait(250)
+    assert not view.horizontalScrollBar().isVisible()
+    stable = (view.viewport().size(), view.transform().m11())
+    for _ in range(3):
+        input_app.processEvents()
+        QTest.qWait(20)
+        assert (view.viewport().size(), view.transform().m11()) == stable
+
+
 @pytest.mark.parametrize('mode', ('page', 'width', 'custom'))
 def test_sidebar_resize_defers_zoom_until_qt_finishes_layout(loaded_window, monkeypatch, mode):
     from app.ui import PDF_LOGICAL_SCALE

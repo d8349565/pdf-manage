@@ -8,6 +8,41 @@ import traceback
 from pathlib import Path
 
 
+def check_ofd_mosaic(store, folder):
+    import hashlib
+    import zipfile
+    import pymupdf
+    from app.mosaic import mosaic_edit
+    from app.pdfworker import write_pdf
+
+    source = folder / 'generated.ofd'
+    with zipfile.ZipFile(source, 'w') as archive:
+        archive.writestr('OFD.xml', '<OFD><DocBody><DocRoot>Doc/Document.xml</DocRoot></DocBody></OFD>')
+        archive.writestr('Doc/Document.xml', '<Document><CommonData><MaxUnitID>4</MaxUnitID>'
+            '<PageArea><PhysicalBox>0 0 100 100</PhysicalBox></PageArea><DocumentRes>Res.xml</DocumentRes>'
+            '</CommonData><Pages><Page ID="2" BaseLoc="Page.xml"/></Pages></Document>')
+        archive.writestr('Doc/Res.xml', '<Res BaseLoc="Res"><Fonts><Font ID="1" FontName="Generated">'
+            '<FontFile>font.bin</FontFile></Font></Fonts></Res>')
+        archive.writestr('Doc/Res/font.bin', pymupdf.Font('helv').buffer)
+        archive.writestr('Doc/Page.xml', '<Page><Content><Layer ID="3">'
+            '<TextObject ID="4" Boundary="10 10 80 20" Font="1" Size="4">'
+            '<TextCode X="0" Y="5" DeltaX="3 3 3 3 3">SECRET</TextCode>'
+            '</TextObject></Layer></Content></Page>')
+    digest = hashlib.sha256(source.read_bytes()).digest()
+    pages = store.load(str(source))
+    assert len(pages) == 1 and not store.render_qimage(pages[0], 400).isNull()
+    snapshot = store._source(pages[0].source_id).data
+    with pymupdf.open(stream=snapshot) as doc:
+        assert ''.join(doc[0].get_text().split()) == 'SECRET'
+    target = folder / 'generated-mosaic.pdf'
+    for style in ('pixelate', 'blur', 'solid'):
+        edit = mosaic_edit((25, 25, 180, 70), style=style)
+        write_pdf(store, [pages[0].edited(edit)], str(target))
+        with pymupdf.open(target) as doc:
+            assert not doc[0].get_text().strip() and doc[0].get_images()
+    assert hashlib.sha256(source.read_bytes()).digest() == digest
+
+
 def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
     report = {"ok": False, "frozen": bool(getattr(sys, "frozen", False)), "checks": []}
     restore_storage = restore_ui = None
@@ -89,6 +124,8 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 window.ws.open_replace(pages, str(source))
                 window.refresh()
                 qapp.processEvents()
+                check_ofd_mosaic(window.store, folder)
+                report['checks'].append('offline OFD worker import, three mosaic styles, PDF worker save and original protection')
                 from app.rasterpdf import rasterize_pdf
                 from app.pdfio import PdfStore
                 image_pdf = folder / '影像副本.pdf'

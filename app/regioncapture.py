@@ -235,11 +235,19 @@ class CapturePreview(QGraphicsView):
         if self.mode is None:
             return
         anchor = self.mapToScene(self.viewport().rect().center())
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                                          if self.mode in ('width', 'whole') else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                                        if self.mode == 'whole' else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         if self.mode == 'actual':
             factor = 1 / self.devicePixelRatioF()
         else:
             rect = self.sceneRect()
-            factor = max(1, self.viewport().width() - 8) / rect.width()
+            available_width = self.viewport().width() - 8
+            if self.mode == 'width' and not self.verticalScrollBar().isVisible():
+                # 适宽时预留竖条的位置，避免竖条显隐反复改变视口和缩放。
+                available_width -= self.verticalScrollBar().sizeHint().width()
+            factor = max(1, available_width) / rect.width()
             if self.mode == 'whole':
                 factor = min(factor, max(1, self.viewport().height() - 8) / rect.height())
         self.resetTransform()
@@ -251,6 +259,8 @@ class CapturePreview(QGraphicsView):
 
     def zoom_by(self, factor):
         self.mode = None
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         current = self.transform().m11()
         target = max(.05, min(4, current * self.devicePixelRatioF() * factor)) / self.devicePixelRatioF()
         self.scale(target / current, target / current)
