@@ -209,8 +209,8 @@ def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
         assert dialog.angle.value() == 90
         dialog.kind.setCurrentIndex(dialog.kind.findData("image"))
         assert dialog.angle.value() == -15
-        dialog.kind.setCurrentIndex(dialog.kind.findData("remove"))
-        dialog.preview()
+        dialog.kind.setCurrentIndex(dialog.kind.findData("text"))
+        dialog.force_preview()
         current = requests[-1]
         dialog.preview_ready(old, RenderResult(reader.rendering.generation, error="render_failed"))
         assert not dialog.apply_button.isEnabled()
@@ -218,6 +218,65 @@ def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
         assert dialog.apply_button.isEnabled()
     finally:
         dialog.reject()
+
+
+def test_watermark_selection_edit_delete_and_no_annotation_popup(reader, qapp, monkeypatch):
+    from app.watermarkui import WatermarkDialog
+    from PyQt6.QtGui import QImage
+    first = PageEdit("watermark", text="第一处水印", color=(.4, .4, .4),
+                     annotation_id="zhixu-watermark-first",
+                     details=(("size", 40), ("opacity", .35), ("angle", 20), ("rotation", 0)))
+    second = PageEdit("watermark", text="保留另一处", color=(.2, .3, .4),
+                      annotation_id="zhixu-watermark-second", details=(("angle", -20),))
+    reader.ws.edit_pages({i: ref.edited(first).edited(second) for i, ref in enumerate(reader.ws.pages)}, "添加水印")
+    reader.refresh()
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot(0)
+    mark = next(a for a in tools.snapshot["annotations"] if a.get("watermark"))
+    assert tools.annotations.findData(mark["id"]) == -1
+    tools.hover_bar.show_for_annot(mark, 0)
+    assert not tools.hover_bar.isVisible()
+    point = p.Rect(mark["rect"]) * p.Matrix(tools.snapshot["matrix"])
+    center = (point.tl + point.br) / 2
+    top = tools.view.page_rects[0].topLeft()
+    assert tools.find_annotation_at(QPointF(top.x() + center.x, top.y() + center.y)) is None
+    requests = []
+    monkeypatch.setattr(reader.rendering, "request", lambda ref, width, key, *args, **kwargs: requests.append(ref))
+    dialog = WatermarkDialog(reader)
+    try:
+        dialog.timer.stop()
+        assert dialog.tabs.count() == 2
+        assert dialog.watermark.count() == 3
+        dialog.watermark.setCurrentIndex(dialog.watermark.findData(first.annotation_id))
+        assert dialog.text.text() == first.text
+        assert dialog.size.value() == 40 and dialog.opacity.value() == 35 and dialog.angle.value() == 20
+        assert dialog.indices() == [0, 1]
+        replacement = dialog.edit(reader.ws.pages[0])
+        assert replacement.kind == "watermark_update"
+        assert dict(replacement.details)["target"] == first.annotation_id
+        assert replacement.annotation_id != first.annotation_id
+        sprite = QImage(200, 72, QImage.Format.Format_ARGB32_Premultiplied)
+        sprite.fill(Qt.GlobalColor.transparent)
+        color = (dialog.color.redF(), dialog.color.greenF(), dialog.color.blueF())
+        dialog._asset_cache[(dialog.text.text(), color, "")] = (sprite, 200, 72)
+        dialog.preview()
+        assert requests[-1].edits[-1] == PageEdit("watermark_remove", annotation_id=first.annotation_id)
+        dialog.range_mode.setCurrentIndex(dialog.range_mode.findData("custom"))
+        dialog.range_text.setText("2")
+        assert dialog.indices() == [1]
+        before = reader.ws.pages
+        dialog.apply(remove=True)
+        assert reader.ws.pages[0] is before[0]
+        assert reader.ws.pages[1].edits[-1] == PageEdit("watermark_remove", annotation_id=first.annotation_id)
+        with reader.store._render_page(reader.ws.pages[1]) as page:
+            from app.pdfmarks import list_watermarks
+            assert [entry["id"] for entry in list_watermarks(page)] == [second.annotation_id]
+        reader.ws.undo_stack.undo()
+        assert reader.ws.pages == before
+    finally:
+        if not dialog._closed:
+            dialog.reject()
 
 
 @pytest.fixture(scope="session")

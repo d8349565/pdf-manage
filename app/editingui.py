@@ -452,6 +452,9 @@ class AnnotationHoverBar(QFrame):
 
     def show_for_annot(self, annot, page_index):
         import pymupdf as p
+        if annot.get("watermark"):
+            self.hide()
+            return
         self._hide_timer.stop()
         if self.isVisible() and self.annot_id == annot["id"] and self.page_index == page_index:
             return
@@ -463,8 +466,8 @@ class AnnotationHoverBar(QFrame):
         kind = annot.get("kind", -1)
         names = {0: "便签", 2: "文本", 3: "线条", 4: "矩形", 5: "椭圆", 8: "高亮", 9: "下划线", 15: "画笔"}
         kind_name = names.get(kind, "批注")
-        self.edit_btn.setVisible(not annot.get("watermark"))
-        self.style_btn.setVisible(not annot.get("watermark"))
+        self.edit_btn.show()
+        self.style_btn.show()
 
         if content or kind == 0:
             self.content_box.show()
@@ -875,7 +878,8 @@ class AnnotationTools(QWidget):
         self.snapshot_index = index
         self.annotations.blockSignals(True)
         self.annotations.clear()
-        annots = [item for item in snapshot.get("annotations", ()) if not item.get('image_settings')]
+        annots = [item for item in snapshot.get("annotations", ())
+                  if not item.get('image_settings') and not item.get("watermark")]
         if annots:
             self.annotations.addItem("选择当前页批注…", None)
             self.annotations.setEnabled(True)
@@ -906,7 +910,7 @@ class AnnotationTools(QWidget):
             return None
         local = self.canonical(point)
         for item in reversed(self.snapshot["annotations"]):
-            if item.get('image_settings'):
+            if item.get('image_settings') or item.get("watermark"):
                 continue
             rect = p.Rect(item["rect"])
             expanded = p.Rect(rect.x0 - 6, rect.y0 - 6, rect.x1 + 6, rect.y1 + 6)
@@ -924,7 +928,7 @@ class AnnotationTools(QWidget):
         ref = self.host.ws.pages[index]
         content = annot.get("content", "")
         if annot.get("watermark"):
-            self._set_feedback("水印请在「组织 → 水印」中移除后重新添加。")
+            self._set_feedback("水印请在「组织 → 水印」中选择后调整或删除。")
             return
         if annot.get("kind") == 2:
             self.edit_text_box(annot, index, ref)
@@ -1255,6 +1259,8 @@ class AnnotationTools(QWidget):
         import pymupdf as p
         local = self.canonical(point)
         for item in reversed(self.snapshot["annotations"]):
+            if item.get('image_settings') or item.get("watermark"):
+                continue
             if p.Rect(item["rect"]).contains(local):
                 self.annotations.setCurrentIndex(self.annotations.findData(item["id"]))
                 return

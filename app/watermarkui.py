@@ -49,6 +49,10 @@ class WatermarkDialog(QDialog):
     def __init__(self, host):
         super().__init__(host)
         self.host, self.image = host, ""
+        self._watermarks = {}
+        self._new_identifier = "zhixu-watermark-" + uuid.uuid4().hex
+        self._loading_selection = False
+        self._document_pages = host.ws.pages
         self.color = QColor("#666666")
         self._closed = self._applying = False
         self._version = 0
@@ -60,7 +64,6 @@ class WatermarkDialog(QDialog):
         self._background_key = None
         self._background_token = 0
         self._background_ready = False
-        self._preview_pages = None
         self._asset_key = self._wanted_asset_key = None
         self._asset_job = self._pending_asset = None
         self._asset_cache = OrderedDict()
@@ -83,7 +86,7 @@ class WatermarkDialog(QDialog):
         header.addWidget(title)
         header.addStretch()
         self.tabs = QTabBar()
-        for label in ("文字水印", "图片水印", "移除水印"):
+        for label in ("文字水印", "图片水印"):
             self.tabs.addTab(label)
         self.tabs.setExpanding(False)
         header.addWidget(self.tabs)
@@ -101,9 +104,25 @@ class WatermarkDialog(QDialog):
         left.setContentsMargins(0, 0, 5, 0)
         left.setSpacing(10)
         self.kind = QComboBox()
-        for label, value in (("文字水印", "text"), ("图片水印", "image"), ("移除水印", "remove")):
+        for label, value in (("文字水印", "text"), ("图片水印", "image")):
             self.kind.addItem(label, value)
         self.kind.hide()
+        _, selection = self.group("选择水印", left)
+        self.watermark = QComboBox()
+        self.watermark.addItem("新增水印", None)
+        self.watermark.setAccessibleName("选择已有水印或新增水印")
+        self.watermark.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.watermark.setMinimumContentsLength(16)
+        selection.addRow(self.watermark)
+        self.delete_button = QToolButton()
+        self.delete_button.setText("删除所选水印")
+        self.delete_button.setEnabled(False)
+        self.delete_button.clicked.connect(lambda: self.apply(remove=True))
+        selection.addRow(self.delete_button)
+        self.selection_hint = QLabel("选择已有水印后调整或删除；新增水印直接设置后添加。")
+        self.selection_hint.setObjectName("watermarkHint")
+        self.selection_hint.setWordWrap(True)
+        selection.addRow(self.selection_hint)
         content, form = self.group("水印内容", left)
         self.text = QLineEdit("仅供参考")
         self.text.setMaxLength(1000)
@@ -114,9 +133,6 @@ class WatermarkDialog(QDialog):
         self.image_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.image_button.clicked.connect(self.choose_image)
         form.addRow("图片", self.image_button)
-        self.remove_note = QLabel("移除纸序添加的文字和图片水印。\n保存后重新打开的文件也适用。")
-        self.remove_note.setWordWrap(True)
-        form.addRow(self.remove_note)
         self.content_form = form
         self.appearance_group, appearance = self.group("外观", left)
         self.size = QSpinBox()
@@ -163,6 +179,7 @@ class WatermarkDialog(QDialog):
         placement.addRow(self.tile)
         _, ranges = self.group("应用范围", left)
         self.range_mode = QComboBox()
+        self.range_mode.addItem("所选水印所在页面", "watermark")
         for label, value in (("全部页面", "all"), ("所选页面", "selected"), ("当前页面", "current"), ("指定页码", "custom")):
             self.range_mode.addItem(label, value)
         ranges.addRow("范围", self.range_mode)
@@ -231,6 +248,7 @@ class WatermarkDialog(QDialog):
         self.asset_signals.finished.connect(self.asset_finished, Qt.ConnectionType.QueuedConnection)
         self.tabs.currentChanged.connect(self.kind.setCurrentIndex)
         self.kind.currentIndexChanged.connect(self.sync)
+        self.watermark.currentIndexChanged.connect(self.select_watermark)
         self.range_mode.currentIndexChanged.connect(self.sync)
         self.tile.toggled.connect(self.sync)
         for widget in (self.size, self.opacity, self.angle):
@@ -239,6 +257,85 @@ class WatermarkDialog(QDialog):
         self.position.currentIndexChanged.connect(self.invalidate_preview)
         self.range_text.textChanged.connect(self.invalidate_preview)
         self.update_color()
+        self.load_watermarks()
+        self.sync()
+
+    def load_watermarks(self):
+        pages = self._document_pages
+        def work(progress, cancelled):
+            from app.pdfmarks import list_watermarks
+            groups = {}
+            for index, ref in enumerate(pages):
+                check_cancel(cancelled)
+                with self.host.store._render_page(ref, cancel=cancelled) as page:
+                    entries = list_watermarks(page, (page.rotation + ref.rotation) % 360)
+                for entry in entries:
+                    record = groups.setdefault(entry["id"], dict(entry, indices=[]))
+                    record["indices"].append(index)
+                progress(index + 1, len(pages), "正在读取已有水印")
+            check_cancel(cancelled)
+            return groups
+        try:
+            groups = run_operation(self.host, "读取水印", work, cancellable=True)
+            if self.host.ws.pages is not pages:
+                raise ValueError("文档已改变，请关闭后重新打开水印设置。")
+            self._watermarks = groups
+            for identifier, entry in self._watermarks.items():
+                settings = entry["settings"]
+                kind = "图片水印" if settings and settings["options"].get("image") else "文字水印" if settings else "水印"
+                name = entry["text"].replace("\n", " ")[:16]
+                indices = entry["indices"]
+                location = f"第 {indices[0] + 1} 页" if len(indices) == 1 else f"共 {len(indices)} 页"
+                self.watermark.addItem(f"{kind} · {name} · {location}", identifier)
+        except Exception as exc:
+            self.selection_hint.setText("已有水印未能读取，可关闭后重新打开设置重试。")
+            self.selection_hint.setToolTip(str(exc))
+        self.range_mode.setCurrentIndex(self.range_mode.findData("all"))
+        self.range_mode.model().item(0).setEnabled(False)
+
+    def select_watermark(self, *_):
+        selected = self._watermarks.get(self.watermark.currentData())
+        settings = selected["settings"] if selected else None
+        self._loading_selection = True
+        try:
+            self.range_mode.model().item(0).setEnabled(selected is not None)
+            self.range_mode.setCurrentIndex(self.range_mode.findData("watermark" if selected else "all"))
+            self.delete_button.setEnabled(selected is not None)
+            editable = not selected or settings is not None
+            for group in (self.appearance_group, self.layout_group):
+                group.setEnabled(editable)
+            self.text.setEnabled(editable)
+            self.image_button.setEnabled(editable)
+            if settings:
+                options = settings["options"]
+                self.image = options.get("image", "")
+                mode = "image" if self.image else "text"
+                self.tabs.setCurrentIndex(self.kind.findData(mode))
+                self.text.setText(settings["text"])
+                self.color = QColor.fromRgbF(*settings["color"])
+                self.size.setValue(round(options.get("size", 50)))
+                self.opacity.setValue(round(options.get("opacity", .15) * 100))
+                self.angle.setValue(round(options.get("angle", 30)))
+                self.position.setCurrentIndex(self.position.findData(options.get("position", "center-center")))
+                self.tile.setChecked(bool(options.get("tile")))
+                self.custom_position = tuple(options.get("offset", (.5, .5)))
+                self.tile_offset = tuple(options.get("tile_offset", (.5, .5)))
+                self.image_button.setText("更换水印图片…" if self.image else "选择 PNG / JPG 图片…")
+                self.image_button.setToolTip("")
+                self.update_color()
+        finally:
+            self._loading_selection = False
+        self._content_pending = False
+        self.content_timer.stop()
+        self._background_key = None
+        self._background_token += 1
+        self._background_ready = self._settings_valid = False
+        self._wanted_asset_key = self._pending_asset = None
+        if self._asset_job is not None:
+            self._asset_job.cancel_event.set()
+        self.preview_label.asset = None
+        self._asset_key = None
+        self.preview_label.set_options({})
         self.sync()
 
     def group(self, title, layout):
@@ -280,7 +377,7 @@ class WatermarkDialog(QDialog):
             self.status.style().polish(self.status)
 
     def invalidate_preview(self, *_):
-        if self._closed or self._applying:
+        if self._closed or self._applying or self._loading_selection:
             return
         self._version += 1
         self._ready_version = None
@@ -302,16 +399,15 @@ class WatermarkDialog(QDialog):
             self.preview_label.set_options({})
         self.content_form.setRowVisible(self.text, kind == "text")
         self.content_form.setRowVisible(self.image_button, kind == "image")
-        self.content_form.setRowVisible(self.remove_note, kind == "remove")
-        self.appearance_group.setVisible(kind != "remove")
-        self.layout_group.setVisible(kind != "remove")
         self.appearance_form.setRowVisible(self.color_button, kind == "text")
         self.position.setEnabled(not self.tile.isChecked())
         self.range_form.setRowVisible(self.range_text, self.range_mode.currentData() == "custom")
-        self.apply_button.setText("移除水印" if kind == "remove" else "应用水印")
+        self.apply_button.setText("保存修改" if self.watermark.currentData() else "添加水印")
         self.invalidate_preview()
 
     def content_changed(self, *_):
+        if self._loading_selection:
+            return
         self._content_pending = True
         self._wanted_asset_key = None
         self._pending_asset = None
@@ -384,7 +480,10 @@ class WatermarkDialog(QDialog):
 
     def indices(self):
         mode = self.range_mode.currentData()
-        if mode == "all":
+        selected = self._watermarks.get(self.watermark.currentData())
+        if mode == "watermark":
+            indices = selected["indices"] if selected else []
+        elif mode == "all":
             indices = list(range(len(self.host.ws.pages)))
         elif mode == "selected":
             indices = self.host.ws.target_indices()
@@ -393,13 +492,19 @@ class WatermarkDialog(QDialog):
             indices = [] if index is None else [index]
         else:
             indices = parse_page_range(self.range_text.text(), len(self.host.ws.pages))
+        if selected:
+            available = set(selected["indices"])
+            indices = [i for i in indices if i in available]
         if not indices:
-            raise ValueError("请选择需要处理的页面。")
+            raise ValueError("所选范围没有此水印。" if selected else "请选择需要处理的页面。")
         return list(dict.fromkeys(indices))
 
-    def edit(self, ref):
-        if self.kind.currentData() == "remove":
-            return PageEdit("watermark_remove")
+    def edit(self, ref, *, remove=False):
+        identifier = self.watermark.currentData()
+        if remove:
+            if not identifier:
+                raise ValueError("请先选择要删除的水印。")
+            return PageEdit("watermark_remove", annotation_id=identifier)
         if self.kind.currentData() == "image" and not self.image:
             raise ValueError("请先选择水印图片。")
         if self.kind.currentData() == "text" and not self.text.text().strip():
@@ -407,8 +512,11 @@ class WatermarkDialog(QDialog):
         settings = self.preview_options()
         settings.update(image=self.image if self.kind.currentData() == "image" else "",
                         rotation=(self.host.store._source(ref.source_id).page_rotation(ref.source_page) + ref.rotation) % 360)
-        return PageEdit("watermark", text=self.text.text(), color=(self.color.redF(), self.color.greenF(), self.color.blueF()),
-                        annotation_id="zhixu-watermark-" + uuid.uuid4().hex, details=tuple(settings.items()))
+        if identifier:
+            settings["target"] = identifier
+        return PageEdit("watermark_update" if identifier else "watermark", text=self.text.text(),
+                        color=(self.color.redF(), self.color.greenF(), self.color.blueF()),
+                        annotation_id=self._new_identifier, details=tuple(settings.items()))
 
     def preview(self, *_):
         if self._closed or self._applying:
@@ -420,12 +528,14 @@ class WatermarkDialog(QDialog):
             index = self.indices()[0]
             pages = self.host.ws.pages
             ref = pages[index]
-            edit = self.edit(ref)
+            selected = self._watermarks.get(self.watermark.currentData())
+            editable = not selected or selected["settings"] is not None
+            if editable:
+                self.edit(ref)
             self._settings_valid = True
-            remove = self.kind.currentData() == "remove"
             generation = self.host.rendering.generation
-            background_key = (ref.render_key, remove, generation)
-            self._preview_pages = pages
+            identifier = self.watermark.currentData() if editable else None
+            background_key = (ref.render_key, identifier, generation)
             if background_key != self._background_key:
                 self._background_key = background_key
                 self._background_token += 1
@@ -434,7 +544,7 @@ class WatermarkDialog(QDialog):
                 self.preview_label.image = None
                 self.preview_label.update_geometry()
                 self.preview_caption.setText(f"页面预览 · 第 {index + 1} 页")
-                cached = None if remove else getattr(self.host, "_page_images", {}).get(ref.render_key)
+                cached = None if identifier else getattr(self.host, "_page_images", {}).get(ref.render_key)
                 if cached is not None:
                     self.preview_label.set_image(cached, self.host.store.page_size(ref))
                     self._background_ready = True
@@ -442,21 +552,16 @@ class WatermarkDialog(QDialog):
                     key = ("background", self._background_token)
                     stale = lambda: (self._closed or key != ("background", self._background_token)
                                      or self.host.ws.pages is not pages or self.host.rendering.generation != generation)
-                    candidate = ref.edited(edit) if remove else ref
+                    candidate = ref.edited(PageEdit("watermark_remove", annotation_id=identifier)) if identifier else ref
                     self.host.rendering.request(candidate, 1100, key, self.signals, stale, 60)
-            if remove:
-                self._wanted_asset_key = None
-                self._pending_asset = None
-                if self._asset_job is not None:
-                    self._asset_job.cancel_event.set()
-                self.preview_label.set_options({})
-            elif not self._content_pending:
+            if not self._content_pending and editable:
                 text = self.text.text() if self.kind.currentData() == "text" else ""
                 color = (self.color.redF(), self.color.greenF(), self.color.blueF()) if text else (0, 0, 0)
                 image = self.image if self.kind.currentData() == "image" else ""
                 request = (text, color, image)
                 self._wanted_asset_key = request
                 self.request_asset(request, request)
+            self._settings_valid = editable
             self.refresh_layer()
         except Exception as exc:
             self._settings_valid = False
@@ -542,24 +647,29 @@ class WatermarkDialog(QDialog):
     def refresh_layer(self):
         if self._closed or self._applying:
             return
+        selected = self._watermarks.get(self.watermark.currentData())
+        if selected and selected["settings"] is None:
+            self.preview_label.set_options({})
+            self.apply_button.setEnabled(False)
+            self.set_status("此水印的原始参数无法读取，可删除后重新添加。", error=True)
+            return
         if not self._settings_valid:
             self.preview_label.set_options({})
             self.apply_button.setEnabled(False)
             return
-        remove = self.kind.currentData() == "remove"
         try:
-            self.preview_label.set_options({} if remove else self.preview_options())
+            self.preview_label.set_options(self.preview_options())
         except ValueError as exc:
             self.preview_label.set_options({})
             self.apply_button.setEnabled(False)
             self.set_status(str(exc), error=True)
             return
-        ready = self._background_ready and (remove or (not self._content_pending
-                and self._asset_key == self._wanted_asset_key and self.preview_label.asset is not None))
+        ready = self._background_ready and (not self._content_pending
+                and self._asset_key == self._wanted_asset_key and self.preview_label.asset is not None)
         self._ready_version = self._version if ready else None
         self.apply_button.setEnabled(ready)
         if ready:
-            self.set_status("预览已更新 · 可拖动水印定位，方向键微调" if not remove else "移除效果已更新")
+            self.set_status("预览已更新 · 可拖动水印定位，方向键微调")
         elif not self._background_ready:
             self.set_status("正在准备页面底图…")
         elif self._asset_error:
@@ -567,17 +677,17 @@ class WatermarkDialog(QDialog):
         else:
             self.set_status("正在更新水印内容…")
 
-    def apply(self):
+    def apply(self, *, remove=False):
         if self._applying:
             return
         try:
-            if self.host.ws.pages is not self._preview_pages:
-                self.preview()
-                self.set_status("文档已改变，请先核对新预览后再应用。")
+            if self.host.ws.pages is not self._document_pages:
+                self.set_status("文档已改变，请关闭后重新打开水印设置。", error=True)
                 return
             indices = self.indices()
-            before, mode = self.host.ws.pages, self.kind.currentData()
-            edits = {i: self.edit(before[i]) for i in indices}
+            before = self.host.ws.pages
+            edits = {i: self.edit(before[i], remove=remove) for i in indices}
+            action = "删除水印" if remove else "调整水印" if self.watermark.currentData() else "添加水印"
             self._applying = True
             self.timer.stop()
             self.content_timer.stop()
@@ -585,14 +695,16 @@ class WatermarkDialog(QDialog):
             self.preview_label.setEnabled(False)
             self.tabs.setEnabled(False)
             self.apply_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
             def work(progress, cancelled):
                 changes = {}
                 for current, index in enumerate(indices):
                     check_cancel(cancelled)
-                    if mode == "remove":
-                        from app.pdfmarks import is_watermark
+                    if remove:
+                        from app.pdfmarks import is_watermark, watermark_id
                         with self.host.store._render_page(before[index], cancel=cancelled) as original:
-                            found = any(is_watermark(original, a) for a in (original.annots() or ()))
+                            found = any(is_watermark(original, a) and watermark_id(a) == edits[index].annotation_id
+                                        for a in (original.annots() or ()))
                         if not found:
                             progress(current + 1, len(indices), "正在检查水印")
                             continue
@@ -609,9 +721,9 @@ class WatermarkDialog(QDialog):
             if not changes:
                 self.set_status("所选范围未找到纸序添加的水印。")
                 return
-            self.host.ws.edit_pages(changes, "移除水印" if mode == "remove" else "添加水印")
+            self.host.ws.edit_pages(changes, action)
             self.host.refresh()
-            self.host.statusBar().showMessage("水印已应用；Ctrl+Z 撤销，Ctrl+S 保存。", 8000)
+            self.host.statusBar().showMessage(f"{action}已完成；Ctrl+Z 撤销，Ctrl+S 保存。", 8000)
             self._applying = False
             self.accept()
         except OperationCancelled as exc:
@@ -625,6 +737,7 @@ class WatermarkDialog(QDialog):
                 self.preview_label.setEnabled(True)
                 self.tabs.setEnabled(True)
                 self.apply_button.setEnabled(self._ready_version == self._version)
+                self.delete_button.setEnabled(self.watermark.currentData() is not None)
 
     def reject(self):
         if self._applying:

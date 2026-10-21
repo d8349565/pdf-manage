@@ -315,13 +315,13 @@ def apply_edits(page, edits):
             from app.pdfmarks import add_text_box
             subset |= add_text_box(page, edit)
             continue
-        if edit.kind == "watermark":
+        if edit.kind in ("watermark", "watermark_update"):
             from app.pdfmarks import add_watermark
             add_watermark(page, edit)
             continue
         if edit.kind == "watermark_remove":
             from app.pdfmarks import remove_watermarks
-            remove_watermarks(page)
+            remove_watermarks(page, edit.annotation_id)
             continue
         if edit.kind == "replace":
             details = dict(edit.details)
@@ -348,8 +348,8 @@ def apply_edits(page, edits):
             from app.pdfimages import image_settings
             if image_settings(page, annot) is not None:
                 raise ValueError('插入的图片请使用图片工具调整或删除。')
-            if edit.kind != "delete" and is_watermark(page, annot):
-                raise ValueError("水印请在水印工具中移除后重新添加。")
+            if is_watermark(page, annot):
+                raise ValueError("水印请在「组织 → 水印」中选择后调整或删除。")
             if edit.kind == "delete":
                 page.delete_annot(annot)
                 continue
