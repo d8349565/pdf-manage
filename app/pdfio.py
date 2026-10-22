@@ -130,15 +130,17 @@ class _Source:
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
                  "password", "safety", "disk_stamp", "label_rules", "label_starts",
                  "preview_doc", "preview_fonts", "import_warnings", "needs_encryption_choice",
-                 "lost_structures")
+                 "lost_structures", "safety_scan", "preview_revision")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
-                 authentication: int, disk_stamp, progress_callback=None) -> None:
-        from app.pdfstructure import inspect_safety
+                  authentication: int, disk_stamp, progress_callback=None, *, defer_safety=False) -> None:
+        from app.pdfstructure import inspect_safety, signature_steps
         self.path = path
         self.doc = doc
         self.preview_doc = None
         self.preview_fonts = set()
+        self.preview_revision = 0
+        self.safety_scan = signature_steps(doc) if defer_safety else None
         self.import_warnings = ()
         self.lock = threading.Lock()
         self.data = data
@@ -148,7 +150,7 @@ class _Source:
         self.lost_structures = ()
         if progress_callback:
             progress_callback(0, 0, "正在检查签名与文档结构")
-        self.safety = inspect_safety(doc, authentication)
+        self.safety = inspect_safety(doc, authentication, signature='pending' if defer_safety else None)
         self.label_rules = tuple(doc.get_page_labels())
         self.label_starts = tuple(rule["startpage"] for rule in self.label_rules)
         self.sizes = []
@@ -164,6 +166,7 @@ class _Source:
     def close(self) -> None:
         with self.lock:
             self.closed = True
+            self.safety_scan = None
             if self.preview_doc is not None:
                 self.preview_doc.close()
                 self.preview_doc = None
@@ -194,6 +197,7 @@ class _Source:
         original = self.doc_locked()
         mappings = page_font_maps(original.load_page(index), self.preview_fonts)
         if mappings:
+            self.preview_revision += 1
             if self.preview_doc is None:
                 import pymupdf
                 preview = pymupdf.open(stream=self.data, filetype="pdf")
@@ -218,6 +222,7 @@ class _Source:
 
 class PdfStore:
     def __init__(self) -> None:
+        self._native_lock = threading.RLock()
         self._sources: dict[str, _Source] = {}
         self._n = 0
         self._written_stamps = {}
@@ -228,6 +233,7 @@ class PdfStore:
         self._text_cache_bytes = 0
         self._annotation_cache = OrderedDict()
         self._annotation_lock = threading.Lock()
+        self._active_render_key = None
 
     def _source(self, sid: str) -> _Source:
         src = self._sources.get(sid)
@@ -246,6 +252,9 @@ class PdfStore:
             src.close()
 
     def close_except(self, keep: set[str]) -> None:
+        display = getattr(self, '_display_key', None)
+        if display is not None and display[0][0].split(':edit:', 1)[0] not in keep:
+            self._clear_edit_caches()
         if self._draft_key is not None and self._draft_key[0] not in keep:
             self._clear_edit_caches()
         for sid in [s for s in self._sources if s not in keep]:
@@ -257,15 +266,21 @@ class PdfStore:
                     self._annotation_cache.pop(key)
 
     def _register(self, path: str, doc: pymupdf.Document, data: bytes, password,
-                  authentication, disk_stamp, progress_callback=None) -> str:
+                  authentication, disk_stamp, progress_callback=None, *, defer_safety=False) -> str:
         source = _Source(os.path.abspath(path), doc, data, password, authentication,
-                         disk_stamp, progress_callback)
+                          disk_stamp, progress_callback, defer_safety=defer_safety)
         self._n += 1
         sid = str(self._n)
         self._sources[sid] = source
         return sid
 
-    def load(self, path: str, password: str | None = None, *, progress_callback=None, cancel=None) -> list[PageRef]:
+    def load(self, path: str, password: str | None = None, *, progress_callback=None, cancel=None,
+             defer_safety=False) -> list[PageRef]:
+        with cancellable_lock(self._native_lock, cancel):
+            return self._load(path, password, progress_callback=progress_callback, cancel=cancel,
+                              defer_safety=defer_safety)
+
+    def _load(self, path, password=None, *, progress_callback=None, cancel=None, defer_safety=False):
         path = os.path.abspath(path)
         check_cancel(cancel)
         if cancel:
@@ -310,14 +325,20 @@ class PdfStore:
                     raise PdfError("密码不正确")
             if doc.page_count < 1:
                 raise PdfError("PDF 没有页面")
-            sid = self._register(path, doc, data, password, authentication, stamp, progress_callback)
+            sid = self._register(path, doc, data, password, authentication, stamp, progress_callback,
+                                 defer_safety=defer_safety)
             self._source(sid).import_warnings = tuple(warnings)
             if cancel and cancel():
                 self._sources.pop(sid).close()
                 check_cancel(cancel)
             self._written_stamps.pop(_path_key(path), None)
             pages = [PageRef(sid, path, i, 0) for i in range(doc.page_count)]
+            # One bounded batch avoids a transient read-only/banner/layout change
+            # for small PDFs; complex documents yield the rest to the reader queue.
+            if defer_safety:
+                self.prepare_safety_step(pages[0])
             mark("first_pdf_loaded")
+            mark('document_loaded', request_id=int(sid))
             return pages
         except OperationCancelled:
             if not doc.is_closed:
@@ -420,7 +441,7 @@ class PdfStore:
         """仅在管理密码验证成功后，更新内存中的来源权限和后续写出凭证。"""
         import pymupdf
         source = self._source(sid)
-        with source.lock:
+        with self._native_lock, source.lock:
             if source.closed:
                 raise PdfError("源文档已关闭")
             with pymupdf.open(stream=source.data, filetype="pdf") as doc:
@@ -436,7 +457,10 @@ class PdfStore:
         import pymupdf
         for sid in dict.fromkeys(page.source_id for page in pages):
             safety = self._source(sid).safety
-            if operation not in ("print", "editable_copy", "raster_copy") and safety.signature != "none":
+            if safety.signature == 'pending':
+                if operation not in ('copy', 'print'):
+                    return safety.read_only_reason
+            elif operation not in ("print", "editable_copy", "raster_copy") and safety.signature != "none":
                 return safety.read_only_reason
             if operation == "decrypt" and safety.needs_owner_for_decryption:
                 return "解除打印、复制等权限限制需要管理密码。"
@@ -621,16 +645,41 @@ class PdfStore:
             for doc in documents.values():
                 doc.close()
 
-    def render_qimage(self, ref: PageRef, width: int) -> QImage:
+    def prepare_safety_step(self, ref):
+        source = self._source(ref.source_id)
+        with source.lock:
+            source.doc_locked()
+            scan = getattr(source, 'safety_scan', None)
+            if scan is None:
+                return True
+            try:
+                next(scan)
+            except StopIteration as result:
+                source.safety = replace(source.safety, signature=result.value)
+                source.safety_scan = None
+                mark('document_protection_ready', request_id=int(ref.source_id))
+                return True
+            return False
+
+    def prepare_annotations(self, ref):
+        with self._render_page(ref) as page:
+            self._cache_annotations(ref, page)
+        return self.cached_annotations(ref)
+
+    def render_preview(self, ref, width):
+        return self.render_qimage(ref, width, prepare_annotations=False)
+
+    def render_qimage(self, ref: PageRef, width: int, *, prepare_annotations=True) -> QImage:
         import pymupdf
         with self._render_page(ref) as page:
             rect = page.rect
             base = rect.height if ref.rotation % 180 else rect.width
             zoom = max(int(width), 1) / (base or 1)
             matrix = pymupdf.Matrix(zoom, zoom).prerotate(ref.rotation)
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            pix = self._display_for_page(ref, page).get_pixmap(matrix=matrix, alpha=False)
             try:
-                self._cache_annotations(ref, page)
+                if prepare_annotations:
+                    self._cache_annotations(ref, page)
             except Exception:
                 # A malformed annotation must not prevent the page image loading.
                 pass
@@ -638,6 +687,38 @@ class PdfStore:
         if image.isNull():
             raise PdfError("无法渲染页面")
         return image
+
+    def _display_for_page(self, ref, page):
+        if self._active_render_key is not None and ref.render_key != self._active_render_key:
+            return page.get_displaylist(annots=True)
+        self._select_page_cache(ref)
+        if self._display_list is None:
+            self._display_list = page.get_displaylist(annots=True)
+        return self._display_list
+
+    def _select_page_cache(self, ref):
+        key = (ref.render_key, getattr(self._source(ref.source_id), 'preview_revision', 0))
+        if getattr(self, '_display_key', None) != key:
+            self._display_key = key
+            self._display_list = None
+            self._textpages = OrderedDict()
+
+    def _textpage_for_page(self, ref, page, flags):
+        # TextPage excludes annotation text, matching Page.get_text's semantics.
+        if self._active_render_key is not None and ref.render_key != self._active_render_key:
+            return page.get_textpage(flags=flags)
+        self._select_page_cache(ref)
+        cached = self._textpages.get(flags)
+        if cached is None:
+            text = page.get_textpage(flags=flags)
+            # PyMuPDF's TextPage.parent is weak; keep its Page alive too.
+            self._textpages[flags] = (page, text)
+            while len(self._textpages) > 2:
+                self._textpages.popitem(last=False)
+        else:
+            text = cached[1]
+        self._textpages.move_to_end(flags)
+        return text
 
     def _cache_annotations(self, ref, page):
         from app.pdfedits import annotation_summary
@@ -651,7 +732,7 @@ class PdfStore:
         matrix = page.rotation_matrix * extra
         # Prepared off the GUI thread. Mouse hover never builds text/table snapshots.
         boxes = tuple(tuple(pymupdf.Rect(word[:4]) * matrix)
-                      for word in page.get_text('words', flags=pymupdf.TEXTFLAGS_WORDS)
+                       for word in self._textpage_for_page(ref, page, pymupdf.TEXTFLAGS_WORDS).extractWORDS()
                       if str(word[4]).strip())
         annotations = annotation_summary(page)
         summary = dict(annotations=annotations, text_boxes=boxes, matrix=tuple(matrix),
@@ -725,11 +806,13 @@ class PdfStore:
             scale = min(scale, math.sqrt(16_000_000 / (area.width * area.height)),
                         8190 / max(area.width, area.height))
             matrix = rotation * pymupdf.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=matrix, clip=area * ~rotation, alpha=False)
+            pix = self._display_for_page(ref, page).get_pixmap(matrix=matrix, clip=area * ~rotation, alpha=False)
         return _to_qimage(pix), (pix.x / scale, pix.y / scale), scale
 
     def _clear_edit_caches(self):
-        with self._draft_lock:
+        with self._native_lock, self._draft_lock:
+            self._display_key = self._display_list = None
+            self._textpages = OrderedDict()
             if self._draft is not None:
                 self._draft.close()
             self._draft = self._draft_key = None
@@ -738,6 +821,12 @@ class PdfStore:
 
     @contextmanager
     def _render_page(self, ref, cancel=None):
+        with cancellable_lock(self._native_lock, cancel):
+            with self._render_page_locked(ref, cancel) as page:
+                yield page
+
+    @contextmanager
+    def _render_page_locked(self, ref, cancel=None):
         src = self._source(ref.source_id)
         if not ref.edits:
             with cancellable_lock(src.lock, cancel):
@@ -774,10 +863,9 @@ class PdfStore:
 
     def text_snapshot(self, ref, *, include_tables=True):
         from collections import OrderedDict
-        from app.pdfedits import snapshot_page
         import pymupdf
         import sys
-        with self._draft_lock:
+        with self._native_lock, self._draft_lock:
             if self._text_cache is None:
                 self._text_cache = OrderedDict()
             key = (ref.render_key, include_tables)
@@ -786,7 +874,10 @@ class PdfStore:
                 self._text_cache.move_to_end(key)
                 return hit[0]
             with self._render_page(ref) as page:
-                snapshot = snapshot_page(page)
+                from app.pdfedits import annotation_summary
+                flags = pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
+                snapshot = dict(raw=self._textpage_for_page(ref, page, flags).extractRAWDICT(),
+                                annotations=annotation_summary(page))
                 if include_tables:
                     from app.documentlayout import page_layout
                     layout, _ = page_layout(page)
@@ -822,7 +913,7 @@ class PdfStore:
         if not query.strip():
             return [], False
         with self._render_page(ref) as page:
-            text = page.get_textpage(flags=pymupdf.TEXT_DEHYPHENATE |
+            text = self._textpage_for_page(ref, page, pymupdf.TEXT_DEHYPHENATE |
                 pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_PRESERVE_LIGATURES |
                 pymupdf.TEXT_MEDIABOX_CLIP)
             extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
@@ -830,7 +921,7 @@ class PdfStore:
             extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
             matrix = page.rotation_matrix * extra
             matches = []
-            for quad in page.search_for(query, quads=True, textpage=text):
+            for quad in text.search(query, quads=True):
                 points = [point * matrix for point in (quad.ul, quad.ur, quad.lr, quad.ll)]
                 matches.append(tuple((point.x, point.y) for point in points))
             return matches, bool(text.extractText().strip())

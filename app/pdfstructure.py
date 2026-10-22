@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import quote
 from pathlib import Path
 import hashlib
+from time import perf_counter
 
 import pymupdf
 
@@ -15,7 +16,7 @@ class PdfSafety:
     encrypted: bool
     owner_authenticated: bool
     permissions: int
-    signature: str  # none / present / unknown；不代表证书验签结果
+    signature: str  # pending / none / present / unknown；不代表证书验签结果
     special_structures: tuple[str, ...]
 
     def allows(self, permission: int) -> bool:
@@ -31,6 +32,8 @@ class PdfSafety:
 
     @property
     def read_only_reason(self) -> str:
+        if self.signature == 'pending':
+            return '正在检查原文件保护信息，编辑功能准备中'
         if self.signature == "present":
             return "检测到数字签名，未验证有效性 · 原件只读"
         if self.signature == "unknown":
@@ -47,10 +50,21 @@ def _present(doc, xref, key):
 
 def signature_state(doc) -> str:
     """检查已填写的签名值；空白 /Sig 字段本身不构成已签名。"""
+    steps = signature_steps(doc)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as result:
+            return result.value
+
+
+def signature_steps(doc):
+    """Same complete scan; release the caller's document lock between batches."""
     if doc.is_encrypted:
         return "unknown"
     uncertain = False
     blank_fields = False
+    started = perf_counter()
     try:
         for xref in range(1, doc.xref_length()):
             field_type = doc.xref_get_key(xref, "FT")[1]
@@ -66,6 +80,9 @@ def signature_state(doc) -> str:
                     uncertain = True
                 else:
                     blank_fields = True
+            if xref % 256 == 0 or perf_counter() - started >= .01:
+                yield
+                started = perf_counter()
         # 模板可能预设 SigFlags=3，但只有空白字段时不能据此判定已签名。
         uncertain |= doc.get_sigflags() == 3 and not blank_fields
         uncertain |= _present(doc, doc.pdf_catalog(), "Perms/DocMDP")
@@ -74,7 +91,7 @@ def signature_state(doc) -> str:
     return "unknown" if uncertain else "none"
 
 
-def inspect_safety(doc, authentication: int) -> PdfSafety:
+def inspect_safety(doc, authentication: int, *, signature=None) -> PdfSafety:
     encrypted = _present(doc, -1, "Encrypt")
     special = []
     for key, label in (
@@ -91,7 +108,7 @@ def inspect_safety(doc, authentication: int) -> PdfSafety:
         if _present(doc, doc.pdf_catalog(), key):
             special.append(label)
     return PdfSafety(encrypted, not encrypted or bool(authentication & 4),
-                     doc.permissions, signature_state(doc), tuple(special))
+                     doc.permissions, signature_state(doc) if signature is None else signature, tuple(special))
 
 
 def page_pdf_matrix(page):

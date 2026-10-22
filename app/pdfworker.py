@@ -173,6 +173,8 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
                 candidate.path, candidate.doc, candidate.data = dest, None, data
                 candidate.preview_doc, candidate.preview_fonts = None, set()
                 candidate.import_warnings = ()
+                candidate.safety_scan = None
+                candidate.preview_revision = 0
                 candidate.password, candidate.lock = result["password"], threading.Lock()
                 candidate.closed = False
                 candidate.needs_encryption_choice = False

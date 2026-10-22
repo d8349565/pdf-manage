@@ -43,9 +43,9 @@ def _render_count(win) -> dict:
     counter = {"n": 0}
     original = win.store.render_qimage
 
-    def counted(ref, width):
+    def counted(ref, width, **kwargs):
         counter["n"] += 1
-        return original(ref, width)
+        return original(ref, width, **kwargs)
 
     win.store.render_qimage = counted
     return counter

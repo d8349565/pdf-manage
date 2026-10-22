@@ -157,6 +157,7 @@ def test_page_navigation_and_modes_keep_document_state(loaded_window):
 
 def test_invalid_export_ranges_are_blocked_before_file_dialog(loaded_window):
     window = loaded_window
+    window.open_export_tool(0)
     window.extract_range.setText('99')
     assert not window.extract_button.isEnabled()
     assert window.extract_feedback.text()
@@ -221,6 +222,7 @@ def test_save_state_tracks_edit_undo_merge_and_save(loaded_window, tmp_path, mon
 
 def test_arrange_extract_uses_selection_and_restores_range(loaded_window, tmp_path, monkeypatch):
     window = loaded_window
+    window.open_export_tool(0)
     window.ws.set_selection({1, 3}, 3)
     window.refresh()
     window.extract_range.setText('1-5')

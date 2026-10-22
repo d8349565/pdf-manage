@@ -73,6 +73,7 @@ class _Request:
     region: object
     priority: int
     generation: int
+    kind: str = 'page'
     submitted: float = field(default_factory=perf_counter)
     listeners: list = field(default_factory=list)
     cancelled: Event = field(default_factory=Event)
@@ -90,8 +91,13 @@ class _RenderJob(QRunnable):
         try:
             if request.cancelled.is_set():
                 result.cancelled = True
+            elif request.kind == 'metadata':
+                result.value = self.store.prepare_annotations(request.ref)
+            elif request.kind == 'safety':
+                result.value = self.store.prepare_safety_step(request.ref)
             elif request.region is None:
-                result.value = self.store.render_qimage(request.ref, request.width)
+                render = getattr(self.store, 'render_preview', self.store.render_qimage)
+                result.value = render(request.ref, request.width)
             else:
                 result.value = self.store.render_region(request.ref, *request.region)
             if not result.cancelled:
@@ -128,18 +134,19 @@ class RenderScheduler(QObject):
             if self.active is not None:
                 self.active.cancelled.set()
 
-    def request(self, ref, width, key, signals, is_stale, priority, *, region=None):
+    def request(self, ref, width, key, signals, is_stale, priority, *, region=None, kind='page'):
         if self.closed or is_stale():
             return
         self.prune()
         identity = (self.generation, ref.render_key,
-                    ("page", width) if region is None else ("region", *region))
+                    (kind, width) if region is None else ("region", *region))
         request = self.pending.get(identity)
         if (self.active is not None and self.active.identity == identity
                 and not self.active.cancelled.is_set()):
             request = self.active
         if request is None:
             request = _Request(identity, ref, width, region, priority, self.generation)
+            request.kind = kind
             self.pending[identity] = request
         request.priority = max(request.priority, priority)
         if not any(signal is signals and listener_key == key

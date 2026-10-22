@@ -16,7 +16,6 @@ from PyQt6.QtGui import QGuiApplication, QIcon
 from PyQt6.QtWidgets import QApplication
 
 from app import APP_NAME, APP_ORGANIZATION, __version__
-from app.icons import brand_icon
 
 
 def _qt_messages(mode, context, message: str) -> None:
@@ -38,6 +37,7 @@ def _window_icon() -> QIcon:
             icon = QIcon(str(path))
             if not icon.isNull():
                 return icon
+    from app.icons import brand_icon
     return brand_icon()
 
 
@@ -91,7 +91,6 @@ def main() -> None:
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setOrganizationName(APP_ORGANIZATION)
-    app.setWindowIcon(_window_icon())
     app.setStyle("Fusion")
     if len(sys.argv) > 1 and sys.argv[1] == "--pdf-shell-server":
         from PyQt6.QtWidgets import QMessageBox
@@ -104,6 +103,18 @@ def main() -> None:
         sys.exit(code)
     shell_mode = {"--split-pdf": "split", "--merge-pdf": "merge"}.get(sys.argv[1] if len(sys.argv) > 1 else "")
     paths = sys.argv[2:] if shell_mode else startup_pdf_paths(sys.argv)
+    router = None
+    if not shell_mode and (len(sys.argv) < 2 or sys.argv[1] not in ('--word-to-pdf', '--markdown-to-pdf')):
+        from app.instance import InstanceRouter
+        from PyQt6.QtWidgets import QMessageBox
+        try:
+            router = InstanceRouter(app)
+            if not router.start_or_forward(paths):
+                return
+        except (RuntimeError, OSError) as exc:
+            QMessageBox.warning(None, '无法打开文件', str(exc))
+            sys.exit(1)
+    app.setWindowIcon(_window_icon())
     if paths:
         _start_pdf_warmup()
     from app.ui import MainWindow, STYLESHEET
@@ -121,6 +132,13 @@ def main() -> None:
         win.show()
         sys.exit(app.exec())
     win = MainWindow(opening_paths=paths)
+    if router is not None:
+        try:
+            router.attach(win)
+        except RuntimeError as exc:
+            QMessageBox.warning(win, '无法打开文件', str(exc))
+            win.close()
+            sys.exit(1)
     if not paths:
         win.first_painted.connect(_start_pdf_warmup, Qt.ConnectionType.QueuedConnection)
     win.show()

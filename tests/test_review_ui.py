@@ -303,6 +303,7 @@ def test_split_page_action_replaces_one_page_and_undoes(reader, monkeypatch):
 
     monkeypatch.setattr(PageSplitDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
     before = tuple(reader.ws.pages)
+    reader.stack.setCurrentIndex(1)
     reader.ws.set_selection({0}, 0)
     reader._sync_controls()
     assert reader.split_page_action.isEnabled() and reader.arrange_split_button.isEnabled()

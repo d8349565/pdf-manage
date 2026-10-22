@@ -11,19 +11,22 @@ _seen = set()
 _lock = Lock()
 
 
-def mark(stage: str) -> None:
-    """每个阶段每进程记录一次；日志不可写时不影响应用启动。"""
+def mark(stage: str, *, request_id: int | None = None) -> None:
+    """每个阶段/匿名序号记录一次；日志不可写时不影响应用启动。"""
     global _previous
     if not _path:
         return
     with _lock:
-        if stage in _seen:
+        key = stage if request_id is None else (stage, request_id)
+        if key in _seen:
             return
-        _seen.add(stage)
+        _seen.add(key)
         now = time.perf_counter()
         record = dict(pid=os.getpid(), stage=stage,
                       elapsed_ms=round((now - _started) * 1000, 3),
                       delta_ms=round((now - _previous) * 1000, 3))
+        if request_id is not None:
+            record['request_id'] = request_id
         _previous = now
         try:
             with open(_path, "a", encoding="utf-8") as stream:

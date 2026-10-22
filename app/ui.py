@@ -2209,6 +2209,12 @@ class MainWindow(QMainWindow):
         mark("window_init_started")
         super().__init__()
         self._painted = False
+        self._readable_painted = False
+        self._readable_sources = set()
+        self._readable_paint_pending = False
+        self._tools_ready = False
+        self._arrange_ready = False
+        self._tool_index = 0
         self._opening_paths = tuple(opening_paths)
         self.ws = Workspace()
         self.store = PdfStore()
@@ -2242,6 +2248,12 @@ class MainWindow(QMainWindow):
         self.model.reordered.connect(self.refresh)
         self.preview_signals = RenderSignals()
         self.preview_signals.done.connect(self._on_preview)
+        self._preparation_signals = RenderSignals()
+        self._preparation_signals.done.connect(self._on_prepared)
+        self._preparation_timer = QTimer(self)
+        self._preparation_timer.setSingleShot(True)
+        self._preparation_timer.setInterval(20)
+        self._preparation_timer.timeout.connect(self._prepare_visible_page)
         self.detail_signals = RenderSignals()
         self.detail_signals.done.connect(self._on_detail_preview)
         self._preview_key = None
@@ -2312,8 +2324,7 @@ class MainWindow(QMainWindow):
         self.updates.changed.connect(self._update_release_notice)
         self._notified_update_tag = ""
         self._update_release_notice()
-        for signal in (self.act_pages.toggled, self.act_tools.toggled, self.sidebar_mode.currentIndexChanged,
-                       self.export_tools.currentChanged):
+        for signal in (self.act_pages.toggled, self.act_tools.toggled, self.sidebar_mode.currentIndexChanged):
             signal.connect(self._save_ui_preferences)
         self.refresh()
         mark("window_ready")
@@ -2354,7 +2365,34 @@ class MainWindow(QMainWindow):
     def _set_tools_visible(self, on: bool) -> None:
         panel = getattr(self, "tools_panel", None)
         if panel is not None:
+            if on and self.ws.pages and self._readable_painted:
+                self._ensure_tools()
             panel.setVisible(on and bool(self.ws.pages))
+
+    @property
+    def export_tools(self):
+        self._ensure_tools()
+        return self._export_tools
+
+    def _ensure_tools(self):
+        if self._tools_ready:
+            return
+        self._tools_ready = True
+        self.tools_panel.layout().addWidget(self._tools())
+        self._export_tools.setCurrentIndex(self._tool_index)
+        self._export_tools.currentChanged.connect(self._tool_changed)
+        if hasattr(self, '_window_settings'):
+            self._sync_controls()
+
+    def _tool_changed(self, index):
+        self._tool_index = index
+        self._save_ui_preferences()
+
+    def _ensure_arrange(self):
+        if not self._arrange_ready:
+            self._arrange_ready = True
+            self._arrange_container.layout().addWidget(self._arrange_view())
+            self._sync_controls()
 
     def _save_ui_preferences(self, *_):
         if not hasattr(self, '_window_settings'):
@@ -2362,13 +2400,17 @@ class MainWindow(QMainWindow):
         for key, value in (('pagesVisible', self.act_pages.isChecked()),
                            ('toolsVisible', self.act_tools.isChecked()),
                            ('sidebarMode', self.sidebar_mode.currentIndex()),
-                           ('toolIndex', self.export_tools.currentIndex())):
+                           ('toolIndex', self._tool_index)):
             self._window_settings.setValue('mainWindow/' + key, value)
 
     def _restore_ui_preferences(self):
         self.act_pages.setChecked(self._window_settings.value('mainWindow/pagesVisible', False, type=bool))
         self.act_tools.setChecked(self._window_settings.value('mainWindow/toolsVisible', False, type=bool))
-        for key, widget in (('sidebarMode', self.sidebar_mode), ('toolIndex', self.export_tools)):
+        try:
+            self._tool_index = max(0, min(6, self._window_settings.value('mainWindow/toolIndex', 0, type=int)))
+        except (TypeError, ValueError):
+            self._tool_index = 0
+        for key, widget in (('sidebarMode', self.sidebar_mode),):
             try:
                 index = self._window_settings.value('mainWindow/' + key, 0, type=int)
             except (TypeError, ValueError):
@@ -2379,7 +2421,9 @@ class MainWindow(QMainWindow):
         self.act_pages.setChecked(False)
         self.act_tools.setChecked(False)
         self.sidebar_mode.setCurrentIndex(0)
-        self.export_tools.setCurrentIndex(0)
+        self._tool_index = 0
+        if self._tools_ready:
+            self._export_tools.setCurrentIndex(0)
         self._set_reading_layout('single')
         self.reading_orb.restore()
         self._save_ui_preferences()
@@ -2389,7 +2433,18 @@ class MainWindow(QMainWindow):
         self._chrome_actions()
         self.stack = QStackedWidget()
         self.stack.addWidget(self._main_view())
-        self.stack.addWidget(self._arrange_view())
+        # The model/view are cheap and shared by selection/drag logic. Build the
+        # sorting toolbar and preview popup only when its page is first opened.
+        self.arrange_view = self._list_view(True)
+        self.arrange_zoom_label = QLabel('100%')
+        self.arrange_preview = None
+        self._arrange_container = QWidget()
+        self.arrange_view.setParent(self._arrange_container)
+        self.arrange_view.hide()
+        self.arrange_zoom_label.setParent(self._arrange_container)
+        self.arrange_zoom_label.hide()
+        QVBoxLayout(self._arrange_container).setContentsMargins(0, 0, 0, 0)
+        self.stack.addWidget(self._arrange_container)
         self.stack.currentChanged.connect(lambda *_: self._apply_thumb_size())
         self.setStatusBar(QStatusBar())
         status_widgets = QWidget(self.statusBar())
@@ -2673,11 +2728,14 @@ class MainWindow(QMainWindow):
         return bar
 
     def open_export_tool(self, index: int) -> None:
+        self._ensure_tools()
         self.stack.setCurrentIndex(0)
         self.act_tools.setChecked(True)
         self.export_tools.setCurrentIndex(index)
 
     def _sync_mode(self, index: int) -> None:
+        if index == 1:
+            self._ensure_arrange()
         self.mode_buttons[index].setChecked(True)
         self.navigation_bar.setVisible(bool(self.ws.pages) and index == 0)
         if index == 1 and hasattr(self, "annotation_tools"):
@@ -2742,15 +2800,17 @@ class MainWindow(QMainWindow):
         self.decrypt_action.setEnabled(encrypted and not signature_reason)
         self.decrypt_action.setToolTip(decrypt_hint)
         self.editable_action.setText('影像副本…' if unknown_signature else '编辑副本…')
-        self.editable_button.setText('制作影像副本…' if unknown_signature else '制作可编辑副本…')
         self.editable_action.setEnabled(bool(count) and not (raster_reason if unknown_signature
                                         else self.store.operation_reason(self.ws.pages, 'editable_copy')))
-        self.compress_button.setEnabled(self.compress_action.isEnabled())
-        self.image_export_button.setEnabled(self.image_export_action.isEnabled())
-        self.encrypt_button.setEnabled(self.encrypt_action.isEnabled())
-        self.decrypt_button.setEnabled(self.decrypt_action.isEnabled())
-        self.decrypt_button.setToolTip(decrypt_hint)
-        self.editable_button.setEnabled(self.editable_action.isEnabled())
+        if self._tools_ready:
+            self.editable_button.setText('制作影像副本…' if unknown_signature else '制作可编辑副本…')
+            for button, action in ((self.compress_button, self.compress_action),
+                                   (self.image_export_button, self.image_export_action),
+                                   (self.encrypt_button, self.encrypt_action),
+                                   (self.decrypt_button, self.decrypt_action),
+                                   (self.editable_button, self.editable_action)):
+                button.setEnabled(action.isEnabled())
+            self.decrypt_button.setToolTip(decrypt_hint)
         self.print_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "print"))
         self.append_action.setEnabled(not read_only)
         if hasattr(self, "insert_action"):
@@ -2764,13 +2824,15 @@ class MainWindow(QMainWindow):
         self.delete_action.setEnabled(selected and not read_only)
         for button in self._selection_buttons:
             button.setEnabled(selected and not read_only)
-        self.tool_selection.setText(read_only or self._selection_caption() or "选择页面后可旋转或删除")
-        self.export_tools.setEnabled(bool(count))
+        if self._tools_ready:
+            self.tool_selection.setText(read_only or self._selection_caption() or "选择页面后可旋转或删除")
+            self._export_tools.setEnabled(bool(count))
         self.extract_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.split_action.setEnabled(bool(count) and not read_only and not copy_reason)
         can_split_page = len(self.ws.target_indices()) == 1 and not read_only and not copy_reason
         self.split_page_action.setEnabled(can_split_page)
-        self.arrange_split_button.setEnabled(can_split_page)
+        if self._arrange_ready:
+            self.arrange_split_button.setEnabled(can_split_page)
 
         self.convert_action.setEnabled(bool(count) and not copy_reason)
         self.split_tool_button.setEnabled(bool(count) and not read_only and not copy_reason)
@@ -2869,6 +2931,8 @@ class MainWindow(QMainWindow):
         self.search_bar.open_search()
 
     def _update_export_controls(self) -> None:
+        if not self._tools_ready:
+            return
         count = len(self.ws.pages)
         for kind, button, label in (
             ("extract", self.extract_button, self.extract_feedback),
@@ -3099,7 +3163,10 @@ class MainWindow(QMainWindow):
         c_l.addWidget(self.preview_stack, 1)
         self.details.hide()
         split.addWidget(center)
-        self.tools_panel = self._tools()
+        self.tools_panel = QWidget()
+        self.tools_panel.setMinimumWidth(280)
+        self.tools_panel.setMaximumWidth(320)
+        QVBoxLayout(self.tools_panel).setContentsMargins(0, 0, 0, 0)
         split.addWidget(self.tools_panel)
         split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 4)
@@ -3140,11 +3207,11 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.arrange_sel)
         bar.addStretch()
         bar.addWidget(self._icon_btn("zoom-out", "缩小", self.arrange_zoom_out, shortcut="Ctrl+-"))
-        self.arrange_zoom_label = QLabel("100%")
         self.arrange_zoom_label.setObjectName("hint")
         self.arrange_zoom_label.setMinimumWidth(48)
         self.arrange_zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bar.addWidget(self.arrange_zoom_label)
+        self.arrange_zoom_label.show()
         bar.addWidget(self._icon_btn("zoom-in", "放大", self.arrange_zoom_in, shortcut="Ctrl+="))
         bar.addWidget(self._icon_btn("fit-width", "适合窗口", self.arrange_zoom_fit, shortcut="Ctrl+0"))
         hint = QLabel("拖动排序，双击阅读。按住 Alt 悬停可放大，或右键选择放大预览。Ctrl 加选，Shift 连选；Ctrl + 滚轮缩放。")
@@ -3153,12 +3220,12 @@ class MainWindow(QMainWindow):
         card = QFrame()
         card.setObjectName("card")
         c_l = QVBoxLayout(card)
-        self.arrange_view = self._list_view(True)
         self.arrange_view.zoom_steps.connect(self._on_arrange_zoom_steps)
         self.arrange_view.doubleClicked.connect(self.read_arranged_page)
         from app.arrangepreview import ArrangePreview
         self.arrange_preview = ArrangePreview(self, self.arrange_view)
         c_l.addWidget(self.arrange_view)
+        self.arrange_view.show()
         lay.addLayout(bar)
         lay.addWidget(hint)
         lay.addWidget(card, 1)
@@ -3203,7 +3270,7 @@ class MainWindow(QMainWindow):
         lay.addLayout(page)
         lay.addWidget(self._sep())
         lay.addWidget(self._caption("导出与转换"))
-        self.export_tools = QToolBox()
+        self._export_tools = QToolBox()
         self.export_tools.setAccessibleName("导出与转换工具")
         lay.addWidget(self.export_tools, 1)
 
@@ -3352,6 +3419,7 @@ class MainWindow(QMainWindow):
         return box
 
     def extract_selected(self) -> None:
+        self._ensure_tools()
         # 编排视图的快捷操作始终使用当前选择，不受另一视图输入过的范围影响。
         previous = self.extract_range.text()
         self.extract_range.clear()
@@ -3605,6 +3673,15 @@ class MainWindow(QMainWindow):
         self._update_preview()
 
     def eventFilter(self, obj, event) -> bool:
+        view = getattr(self, 'preview_view', None)
+        if (view is not None and obj is view.viewport()
+                and event.type() == QEvent.Type.Paint and self._preview_image is not None
+                and not self._readable_paint_pending):
+            index = self.ws.preview_index()
+            if index is not None and self.ws.pages[index].source_id not in self._readable_sources:
+                key = self.ws.pages[index].render_key
+                self._readable_paint_pending = True
+                QTimer.singleShot(0, lambda k=key: self._first_readable_painted(k))
         left_vp = getattr(self, "left_view", None)
         if left_vp is not None and obj is left_vp.viewport() and event.type() == QEvent.Type.Resize:
             self._thumb_timer.start()
@@ -3968,7 +4045,8 @@ class MainWindow(QMainWindow):
         self.reading_orb.sync()
         geometry_changed = False
         if layout_changed:
-            self.arrange_preview.hide()
+            if self.arrange_preview is not None:
+                self.arrange_preview.hide()
             self._layout_pages = self.ws.pages
             self.rendering.set_pages(self.ws.pages)
         if layout_changed or mode_changed:
@@ -4109,6 +4187,8 @@ class MainWindow(QMainWindow):
         if not self.ws.pages or not view.isVisible() or self._in_arrange() or not view.page_rects:
             return
         visible = view.mapToScene(view.viewport().rect()).boundingRect()
+        if not self._preparation_timer.isActive():
+            self._preparation_timer.start()
         if self._scroll_y is not None and abs(visible.top() - self._scroll_y) > .1:
             self._scroll_direction = 1 if visible.top() > self._scroll_y else -1
         self._scroll_y = visible.top()
@@ -4200,6 +4280,7 @@ class MainWindow(QMainWindow):
             best = self._page_images.get(page.render_key, image)
             self.preview_view.set_neighbor(key[1], best)
             self.preview_view.set_note_markers(key[1], self.store.cached_annotations(page))
+            self._preparation_timer.start()
             if not self._scrolling and key[1] in self.preview_view.pages_in_spread(self.ws.preview_index() or 0):
                 self._detail_timer.start()
         self._update_render_progress()
@@ -4220,6 +4301,7 @@ class MainWindow(QMainWindow):
             displayed_pages=len(self.preview_view.neighbors) + 1)
 
     def _request_preview(self, page) -> None:
+        self.store._active_render_key = page.render_key
         if self._in_arrange():
             self._preview_busy = False
             return
@@ -4464,10 +4546,66 @@ class MainWindow(QMainWindow):
         page = self.ws.pages[index]
         self.preview_view.set_note_markers(index, self.store.cached_annotations(page))
         self._shown_page = (page.page_id, page.rotation)
+        self._preparation_timer.start()
         mark("first_page_ready")
         self._apply_view_zoom()
         if not self._scrolling:
             self._detail_timer.start()
+
+    def _first_readable_painted(self, key):
+        self._readable_paint_pending = False
+        index = self.ws.preview_index()
+        if (self._preview_image is None or index is None or getattr(self, '_closing', False)
+                or self.ws.pages[index].render_key != key):
+            return
+        source_id = self.ws.pages[index].source_id
+        self._readable_sources.add(source_id)
+        self._readable_painted = True
+        mark('first_readable_painted')
+        mark('document_readable_painted', request_id=int(source_id))
+        self._set_tools_visible(self.act_tools.isChecked())
+
+    def _prepare_visible_page(self):
+        index = self.ws.preview_index()
+        if index is None or getattr(self, '_closing', False):
+            return
+        view = self.preview_view
+        visible = view.mapToScene(view.viewport().rect()).boundingRect()
+        tasks = [('metadata', i, 8) for i in view.visible_pages(visible)]
+        tasks.append(('safety', index, 4))
+        for kind, page_index, priority in tasks:
+            if not 0 <= page_index < len(self.ws.pages):
+                continue
+            ref = self.ws.pages[page_index]
+            if kind == 'metadata' and self.store.cached_annotations(ref) is not None:
+                continue
+            if kind == 'safety' and self.store._source(ref.source_id).safety.signature != 'pending':
+                continue
+            key = (kind, *ref.render_key)
+            self.rendering.request(ref, None, key, self._preparation_signals,
+                lambda r=ref, i=page_index: (i >= len(self.ws.pages)
+                    or self.ws.pages[i].render_key != r.render_key),
+                priority, kind=kind)
+
+    def _on_prepared(self, key, result):
+        if (result.generation != self.rendering.generation or result.cancelled
+                or result.error or getattr(self, '_closing', False)):
+            return
+        if key[0] == 'metadata':
+            for index in self.model._rows_by_key.get(key[1:], ()):
+                self.preview_view.set_note_markers(index, result.value)
+            self.preview_view.viewport().update()
+            mark('document_metadata_ready', request_id=int(key[1].split(':', 1)[0]))
+            return
+        index = self.ws.preview_index()
+        if index is None or self.ws.pages[index].render_key != key[1:]:
+            return
+        if result.value:
+            self._sync_controls()
+            self.statusBar().showMessage(self._status_line())
+            mark('document_protection_ready')
+        else:
+            self._preparation_timer.start()
 
     def _apply_view_zoom(self) -> None:
         view = self.preview_view
@@ -4765,7 +4903,7 @@ class MainWindow(QMainWindow):
                 self.activate_tab(existing.tab_id)
                 opened_any = True
                 continue
-            pages = self._try_load(path, index, len(valid_paths))
+            pages = self._try_load(path, index, len(valid_paths), defer_safety=True)
             if pages is None:
                 self._release_unused_docs()
                 break
@@ -4839,6 +4977,7 @@ class MainWindow(QMainWindow):
         if not rows:
             return False
         source_pages = [source_ws.pages[row] for row in rows]
+        self._finish_document_checks(source_pages)
         reason = self.store.operation_reason(source_pages, "modify")
         if reason:
             self._warn_merge_readonly(source_ws.path or "来源文档", source_pages, reason)
@@ -4877,7 +5016,7 @@ class MainWindow(QMainWindow):
             if mode:
                 self.open_shell_files(paths, mode)
             else:
-                self._ingest(paths, replace=True)
+                self.open_files_in_tabs(paths)
         finally:
             self._opening_paths = ()
             if not self.ws.pages:
@@ -4900,6 +5039,7 @@ class MainWindow(QMainWindow):
         if not self._ingest(paths, replace=True):
             return False
         if mode == "split":
+            self._ensure_tools()
             self.split_each.setChecked(True)
             self.open_export_tool(1)
         else:
@@ -4976,7 +5116,7 @@ class MainWindow(QMainWindow):
         self.refresh()
         return loaded
 
-    def _try_load(self, path: str, index: int = 1, total: int = 1):
+    def _try_load(self, path: str, index: int = 1, total: int = 1, *, defer_safety=False):
         password = None
         is_ofd = path.lower().endswith('.ofd')
         # 多选打开时把批次信息放进标题，否则用户不知道进度条管的是第几个文件。
@@ -4993,7 +5133,7 @@ class MainWindow(QMainWindow):
                         QMessageBox.information(self, 'OFD 转换提示', '\n'.join(warnings))
                     return pages
                 return run_operation(self, title, lambda progress:
-                    self.store.load(path, password, progress_callback=progress))
+                    self.store.load(path, password, progress_callback=progress, defer_safety=defer_safety))
             except OperationCancelled:
                 self.statusBar().showMessage('已取消打开，原文件未修改', 5000)
                 return None
@@ -5046,9 +5186,23 @@ class MainWindow(QMainWindow):
         keep = set(self.ws.live_sources())
         for tab in getattr(self, "_tabs", ()):
             keep |= tab.ws.live_sources()
+        if set(self.store._sources) <= keep:
+            return
         run_operation(self, "整理工作区", lambda progress: self.store.close_except(keep))
 
+    def _finish_document_checks(self, pages):
+        if any(self.store._source(ref.source_id).safety.signature == 'pending' for ref in pages):
+            refs = list({ref.source_id: ref for ref in pages}.values())
+            def finish_checks(progress):
+                for ref in refs:
+                    while not self.store.prepare_safety_step(ref):
+                        progress(0, 0, '正在检查原文件保护信息')
+            run_operation(self, '准备编辑功能', finish_checks)
+            self._sync_controls()
+
     def _allow_operation(self, operation: str) -> bool:
+        if operation != 'print':
+            self._finish_document_checks(self.ws.pages)
         reason = self.store.operation_reason(self.ws.pages, operation)
         if reason:
             QMessageBox.information(self, "文件保护", reason)
@@ -5477,6 +5631,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "默认应用设置", str(exc))
 
     def extract(self) -> None:
+        self._ensure_tools()
         if not self._allow_operation("modify") or not self._allow_operation("copy"):
             return
         try:
@@ -5506,6 +5661,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "抽取失败", str(exc))
 
     def _split_groups(self) -> list[list[int]]:
+        self._ensure_tools()
         count = len(self.ws.pages)
         if self.split_range_mode.isChecked():
             return parse_range_segments(self.split_range.text(), count)
@@ -5613,6 +5769,7 @@ class MainWindow(QMainWindow):
         return "cancel"
 
     def convert_to_excel(self) -> None:
+        self._ensure_tools()
         if not self._allow_operation("copy"):
             return
         if getattr(self, "_conv_thread", None) is not None:
@@ -5770,6 +5927,11 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self._confirm_leave_all_tabs():
+            self._closing = True
+            self._preparation_timer.stop()
+            if self.arrange_preview is not None:
+                self.arrange_preview.hide()
+                QGuiApplication.instance().removeEventFilter(self.arrange_preview)
             self.updates.stop()
             self.reading_orb.shutdown()
             self._save_ui_preferences()

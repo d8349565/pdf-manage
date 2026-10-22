@@ -114,6 +114,7 @@ def test_split_every_writes_correct_groups_without_changing_source(window, tmp_p
     source = make_pdf(tmp_path / "source.pdf", count=6)
     original = Path(source).read_bytes()
     assert window._load_one(source)
+    window.open_export_tool(1)
     before = list(window.ws.pages)
     window.split_every.setChecked(True)
     window.split_count.setValue(size)
