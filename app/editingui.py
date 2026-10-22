@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 import math
 import uuid
+from time import perf_counter
 
 from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
@@ -467,7 +468,7 @@ class AnnotationHoverBar(QFrame):
         names = {0: "便签", 2: "文本", 3: "线条", 4: "矩形", 5: "椭圆", 8: "高亮", 9: "下划线", 15: "画笔"}
         kind_name = names.get(kind, "批注")
         self.edit_btn.show()
-        self.style_btn.show()
+        self.style_btn.setVisible(kind != 0)
 
         if content or kind == 0:
             self.content_box.show()
@@ -840,6 +841,7 @@ class AnnotationTools(QWidget):
             self._set_feedback(f"工具切换失败：{exc}")
 
     def ensure_snapshot(self, index=None, *, geometry_only=False):
+        started = perf_counter()
         if index is None:
             index = self.host.ws.preview_index()
         if index is None or not 0 <= index < len(self.host.ws.pages):
@@ -847,15 +849,38 @@ class AnnotationTools(QWidget):
         ref = self.host.ws.pages[index]
         if self.snapshot_key == ref.render_key and self.snapshot is not None and (geometry_only or "raw" in self.snapshot):
             self.snapshot_index = index
+            self.host.rendering.diagnostics.record("annotation_snapshot", duration_ms=round((perf_counter() - started) * 1000, 2),
+                                                  geometry_only=geometry_only, cache_hit=True)
             return True
         if geometry_only:
             summary = self.host.store.cached_annotations(ref)
             if summary is not None:
+                self.host.rendering.diagnostics.record("annotation_snapshot", duration_ms=round((perf_counter() - started) * 1000, 2),
+                                                      geometry_only=True, cache_hit=True)
                 return self._use_snapshot(ref, index, summary)
+        snapshot = None if geometry_only else self.host.store.cached_text_snapshot(ref, include_tables=False)
+        if snapshot is not None:
+            self.host.rendering.diagnostics.record("annotation_snapshot", duration_ms=round((perf_counter() - started) * 1000, 2),
+                                                  geometry_only=False, cache_hit=True)
+            return self._use_snapshot(ref, index, snapshot)
+        pages, kind = self.host.ws.pages, self.tool.currentData()
+        active_index = self.host.ws.preview_index()
+        generation = self.view.layout_generation
         try:
-            snapshot = self.host.store.text_snapshot(ref, include_tables=False)
+            snapshot = run_operation(self.host, "准备当前页批注",
+                lambda progress: self.host.store.prepare_annotations(ref) if geometry_only
+                    else self.host.store.text_snapshot(ref, include_tables=False))
         except Exception as exc:
             self._set_feedback(str(exc))
+            return False
+        finally:
+            self.host.rendering.diagnostics.record("annotation_snapshot",
+                duration_ms=round((perf_counter() - started) * 1000, 2),
+                geometry_only=geometry_only, cache_hit=False)
+        if (self.host.ws.pages is not pages or self.host.ws.preview_index() != active_index
+                or self.tool.currentData() != kind or self.view.layout_generation != generation
+                or index >= len(pages) or pages[index] is not ref):
+            self._set_feedback("页面或工具已改变，请重新选择。")
             return False
         return self._use_snapshot(ref, index, snapshot)
 
@@ -1029,6 +1054,11 @@ class AnnotationTools(QWidget):
     def eventFilter(self, watched, event):
         if getattr(self, "view", None) is None:
             return False
+        if (getattr(self.host, "_task_dialog", None) is not None
+                and watched in (self.view, self.view.viewport())
+                and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+                                     QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseMove)):
+            return True
         if watched in (self.view, self.view.viewport()) and event.type() == QEvent.Type.ShortcutOverride:
             if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing or self._mosaic_stroke):
                 event.accept()
@@ -1179,7 +1209,11 @@ class AnnotationTools(QWidget):
                 if index != self.host.ws.preview_index():
                     self.host.go_to_page(index + 1, reveal=False)
                     self.snapshot_key = None
+                pressed = bool(QApplication.mouseButtons() & Qt.MouseButton.LeftButton)
                 if not self.ensure_snapshot(geometry_only=kind not in ("highlight", "underline", "replace")):
+                    return True
+                if pressed and not QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+                    self._set_feedback("当前页已准备好，请重新点击或拖动以添加批注。")
                     return True
                 self.stroke = [point]
                 if kind == "mosaic":
@@ -1514,6 +1548,9 @@ class AnnotationTools(QWidget):
         self.commit(edit, confirm=kind == "replace")
 
     def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None, prepared_preview=None):
+        if getattr(self.host, "_task_dialog", None) is not None:
+            self._set_feedback("正在处理本次操作，请稍候。")
+            return False
         index = self.host.ws.preview_index() if page_index is None else page_index
         if index is None or not 0 <= index < len(self.host.ws.pages) or not self.host._allow_operation(edit.operation):
             return False
@@ -1525,12 +1562,15 @@ class AnnotationTools(QWidget):
                 on_error(message)
             return False
         candidate = ref.edited(edit) if prepared_preview is None else prepared_preview[0]
+        started = perf_counter()
         try:
             if prepared_preview is None:
                 width = self.host._preview_render_width()
                 image = run_operation(self.host, "预览本次修改", lambda progress: self.host.store.render_qimage(candidate, width))
             else:
                 image = prepared_preview[1]
+            self.host.rendering.diagnostics.record("annotation_preview",
+                duration_ms=round((perf_counter() - started) * 1000, 2), prepared=prepared_preview is not None)
             if confirm:
                 dialog = QDialog(self)
                 dialog.setWindowTitle("文字修正预览")
@@ -1565,10 +1605,19 @@ class AnnotationTools(QWidget):
                     return False
             if index >= len(self.host.ws.pages) or self.host.ws.pages[index] is not ref:
                 raise ValueError("工作区已改变，请重新应用修改。")
+            cached = perf_counter()
             self.host._cache_page_image(candidate.render_key, image)
+            self.host.rendering.diagnostics.record("annotation_cache",
+                duration_ms=round((perf_counter() - cached) * 1000, 2))
+            applied = perf_counter()
             self.host.ws.edit_page(index, edit, "马赛克" if edit.kind == "mosaic" else "文字修正" if edit.kind == "replace" else "修改批注", prepared=candidate)
+            self.host.rendering.diagnostics.record("annotation_apply",
+                duration_ms=round((perf_counter() - applied) * 1000, 2))
             self.snapshot_key = None
+            refreshed = perf_counter()
             self.host.refresh()
+            self.host.rendering.diagnostics.record("annotation_refresh",
+                duration_ms=round((perf_counter() - refreshed) * 1000, 2))
             self.ensure_snapshot(geometry_only=True)
             self._set_feedback("修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             return True

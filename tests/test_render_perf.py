@@ -30,6 +30,26 @@ def _make_pdf(path, n=3, w=300, h=400):
     doc.close()
 
 
+def test_cached_text_lookup_never_waits_for_native_render_lock():
+    store = PdfStore()
+    acquired, release, exited = threading.Event(), threading.Event(), threading.Event()
+    def hold_render_lock():
+        with store._native_lock:
+            acquired.set()
+            release.wait(5)
+        exited.set()
+    worker = threading.Thread(target=hold_render_lock)
+    worker.start()
+    try:
+        assert acquired.wait(5)
+        # No ref is needed: a busy lock must return before reading page state.
+        assert store.cached_text_snapshot(None, include_tables=False) is None
+        assert not exited.is_set()
+    finally:
+        release.set()
+        worker.join(5)
+
+
 @pytest.fixture
 def window(qapp):
     win = MainWindow()

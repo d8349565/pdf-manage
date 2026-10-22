@@ -283,6 +283,101 @@ def test_note_tool_uses_rendered_annotation_metadata(reader, monkeypatch):
     assert tools.snapshot is not None and "raw" not in tools.snapshot
 
 
+def test_cold_review_snapshot_runs_off_gui_thread_without_tables(reader, monkeypatch):
+    from threading import get_ident
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    reader.store._clear_edit_caches()
+    tools.snapshot = tools.snapshot_key = None
+    original = reader.store.text_snapshot
+    calls = []
+    def tracked(ref, *, include_tables=True):
+        calls.append((get_ident(), include_tables))
+        return original(ref, include_tables=include_tables)
+    monkeypatch.setattr(reader.store, "text_snapshot", tracked)
+    assert tools.ensure_snapshot()
+    assert calls and all(thread != get_ident() and not tables for thread, tables in calls)
+    assert "raw" in tools.snapshot and "tables" not in tools.snapshot
+
+
+def test_cold_geometry_snapshot_never_extracts_raw_text(reader, monkeypatch):
+    from threading import get_ident
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.snapshot = tools.snapshot_key = None
+    with reader.store._annotation_lock:
+        reader.store._annotation_cache.clear()
+    original = reader.store.prepare_annotations
+    threads = []
+    def tracked(ref):
+        threads.append(get_ident())
+        return original(ref)
+    monkeypatch.setattr(reader.store, "prepare_annotations", tracked)
+    monkeypatch.setattr(reader.store, "text_snapshot", lambda *args, **kwargs: pytest.fail("Unexpected raw text parsing"))
+    assert tools.ensure_snapshot(geometry_only=True)
+    assert threads and all(thread != get_ident() for thread in threads)
+    assert "annotations" in tools.snapshot and "raw" not in tools.snapshot
+
+
+@pytest.mark.parametrize("cancel", [None, "escape", "page"])
+def test_cold_text_selection_preserves_released_gesture_and_discards_stale_results(reader, monkeypatch, cancel):
+    from app.rendering import RenderResult
+    selection, view = reader.text_selection, reader.preview_view
+    ref = reader.ws.pages[0]
+    snapshot = reader.store.text_snapshot(ref, include_tables=False)
+    box = p.Rect(45, 60, 330, 105) * p.Matrix(snapshot["matrix"])
+    origin = view.page_rects[0].topLeft()
+    start = view.mapFromScene(origin + QPointF(box.x0, box.y0))
+    end = view.mapFromScene(origin + QPointF(box.x1, box.y1))
+    requests = []
+    original = reader.rendering.request
+    def capture(ref, width, key, signals, stale, priority, **kwargs):
+        if kwargs.get("kind") == "text":
+            requests.append((key, stale))
+        else:
+            original(ref, width, key, signals, stale, priority, **kwargs)
+    monkeypatch.setattr(reader.rendering, "request", capture)
+    monkeypatch.setattr(reader.store, "cached_text_snapshot", lambda *args, **kwargs: None)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    # Moving after release must not change the pending selection's end point.
+    QTest.mouseMove(view.viewport(), start)
+    assert len(requests) == 1 and not selection.text
+    key, stale = requests[0]
+    if cancel == "escape":
+        QTest.keyClick(view, Qt.Key.Key_Escape)
+    elif cancel == "page":
+        reader.ws.rotate(90)
+        reader.refresh()
+    selection._snapshot_ready(key, RenderResult(reader.rendering.generation, snapshot))
+    if cancel:
+        assert stale() and not selection.text and selection.overlay is None
+    else:
+        assert "系统技术规格" in selection.text
+        assert selection.start is None and selection.overlay is not None
+
+
+def test_manual_watermark_drag_uses_selected_grid(qapp):
+    from app.watermarkpreview import PagePreview
+    from PyQt6.QtGui import QImage
+    preview = PagePreview()
+    try:
+        preview.resize(500, 650)
+        image = QImage(420, 600, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.white)
+        preview.set_image(image, (420, 600))
+        preview.set_asset((image, 200, 72))
+        preview.set_options(dict(tile=True, size=20, angle=30, tile_rows=3, tile_columns=4))
+        assert len(preview.marks) == 12
+        moved = []
+        preview.moved.connect(lambda x, y: moved.append((x, y)))
+        preview.translate(preview.paper.width() / 4 * .25, preview.paper.height() / 3 * .1)
+        assert moved == [pytest.approx((.75, .6))]
+    finally:
+        preview.close()
+
+
 def test_small_note_has_screen_sized_hit_area(reader):
     reader.open_annotation_tools()
     tools = reader.annotation_tools
@@ -385,7 +480,8 @@ def test_watermark_selection_edit_delete_and_no_annotation_popup(reader, qapp, m
     from PyQt6.QtGui import QImage
     first = PageEdit("watermark", text="第一处水印", color=(.4, .4, .4),
                      annotation_id="zhixu-watermark-first",
-                     details=(("size", 40), ("opacity", .35), ("angle", 20), ("rotation", 0)))
+                     details=(("size", 40), ("opacity", .35), ("angle", 20), ("rotation", 0),
+                              ("tile", True), ("tile_rows", 3), ("tile_columns", 4)))
     second = PageEdit("watermark", text="保留另一处", color=(.2, .3, .4),
                       annotation_id="zhixu-watermark-second", details=(("angle", -20),))
     reader.ws.edit_pages({i: ref.edited(first).edited(second) for i, ref in enumerate(reader.ws.pages)}, "添加水印")
@@ -408,13 +504,17 @@ def test_watermark_selection_edit_delete_and_no_annotation_popup(reader, qapp, m
         dialog.timer.stop()
         assert dialog.tabs.count() == 2
         assert dialog.watermark.count() == 3
-        dialog.watermark.setCurrentIndex(dialog.watermark.findData(first.annotation_id))
+        assert dialog.selected_watermark_id() == first.annotation_id
+        assert dialog.delete_button.isEnabled()
+        dialog.watermark.setCurrentRow(1)
         assert dialog.text.text() == first.text
         assert dialog.size.value() == 40 and dialog.opacity.value() == 35 and dialog.angle.value() == 20
+        assert dialog.tile.isChecked() and dialog.tile_rows.value() == 3 and dialog.tile_columns.value() == 4
         assert dialog.indices() == [0, 1]
         replacement = dialog.edit(reader.ws.pages[0])
         assert replacement.kind == "watermark_update"
         assert dict(replacement.details)["target"] == first.annotation_id
+        assert dict(replacement.details)["tile_rows"] == 3 and dict(replacement.details)["tile_columns"] == 4
         assert replacement.annotation_id != first.annotation_id
         sprite = QImage(200, 72, QImage.Format.Format_ARGB32_Premultiplied)
         sprite.fill(Qt.GlobalColor.transparent)
@@ -437,6 +537,86 @@ def test_watermark_selection_edit_delete_and_no_annotation_popup(reader, qapp, m
     finally:
         if not dialog._closed:
             dialog.reject()
+
+
+@pytest.mark.parametrize("image", [False, True])
+def test_watermark_saved_reopened_selected_and_deleted_through_ui(reader, qapp, tmp_path, monkeypatch, image):
+    from pathlib import Path
+    from PyQt6.QtWidgets import QFileDialog
+    from app.pdfmarks import is_watermark, list_watermarks
+    from app.watermarkui import WatermarkDialog
+    original_path = Path(reader.ws.path)
+    original_bytes = original_path.read_bytes()
+    output = tmp_path / "watermark-roundtrip.pdf"
+    picture = ""
+    if image:
+        import base64
+        from io import BytesIO
+        from PIL import Image
+        stream = BytesIO()
+        Image.new("RGBA", (120, 60), (40, 120, 90, 180)).save(stream, format="PNG")
+        picture = base64.b64encode(stream.getvalue()).decode("ascii")
+    operation = PageEdit("watermark", text="Roundtrip", annotation_id="zhixu-watermark-roundtrip",
+        details=(("image", picture), ("size", 20), ("opacity", .15), ("angle", 30),
+                 ("tile", True), ("tile_rows", 3), ("tile_columns", 4)))
+    reader.ws.edit_pages({i: ref.edited(operation) for i, ref in enumerate(reader.ws.pages)}, "添加水印")
+    reader.refresh()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(output), "PDF"))
+    assert reader.save(True)
+    reopened = MainWindow()
+    try:
+        assert reopened._load_one(str(output))
+        reopened.resize(1100, 760)
+        reopened.show()
+        reopened.refresh()
+        settle(qapp)
+        dialog = WatermarkDialog(reopened)
+        try:
+            dialog.show()
+            assert dialog.watermark.count() == 2
+            assert dialog.selected_watermark_id() == operation.annotation_id
+            assert dialog.delete_button.isEnabled()
+            assert dialog.watermark.currentRow() == 1
+            QTest.mouseClick(dialog.delete_button, Qt.MouseButton.LeftButton)
+            assert dialog._closed and reopened.ws.dirty
+        finally:
+            if not dialog._closed:
+                dialog.reject()
+        for ref in reopened.ws.pages:
+            with reopened.store._render_page(ref) as page:
+                assert not list_watermarks(page)
+        reopened.ws.undo_stack.undo()
+        with reopened.store._render_page(reopened.ws.pages[0]) as page:
+            assert list_watermarks(page)[0]["id"] == operation.annotation_id
+        reopened.ws.undo_stack.redo()
+        reopened.refresh()
+        assert reopened.save()
+        with p.open(output) as doc:
+            for page in doc:
+                assert not any(is_watermark(page, annot) for annot in page.annots() or ())
+                assert "系统技术规格" in page.get_text()
+                assert any(annot.type[0] == p.PDF_ANNOT_TEXT for annot in page.annots() or ())
+        assert original_path.read_bytes() == original_bytes
+    finally:
+        settle(qapp)
+        reopened.ws.reset()
+        reopened.store.close_all()
+        reopened.close()
+
+
+def test_note_hover_has_only_edit_move_delete_and_shape_keeps_style(reader):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot(geometry_only=True)
+    note = next(item for item in tools.snapshot["annotations"] if item["kind"] == 0)
+    bar = tools.hover_bar
+    bar.show_for_annot(note, 0)
+    assert bar.style_btn.isHidden()
+    assert all(not button.isHidden() for button in (bar.edit_btn, bar.move_btn, bar.delete_btn))
+    assert tools.commit(PageEdit("rect", (50, 210, 180, 250), annotation_id="shape-style"))
+    shape = next(item for item in tools.snapshot["annotations"] if item["id"] == "shape-style")
+    bar.show_for_annot(shape, 0)
+    assert not bar.style_btn.isHidden()
 
 
 @pytest.fixture(scope="session")

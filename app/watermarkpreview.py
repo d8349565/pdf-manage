@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap, QTransform
 from PyQt6.QtWidgets import QWidget
 
 from app.output import OperationCancelled
-from app.pdfmarks import watermark_layout
+from app.pdfmarks import watermark_grid, watermark_layout
 
 
 class AssetSignals(QObject):
@@ -167,7 +167,7 @@ class PagePreview(QWidget):
             width, height = self.page_size
             mw = mark.width() * width / self.paper.width()
             mh = mark.height() * height / self.paper.height()
-            columns, rows = max(1, int(width / (mw * 1.3))), max(1, int(height / (mh * 1.8)))
+            rows, columns = watermark_grid(width, height, mw, mh, self.options)
             x, y = (x + dx / (self.paper.width() / columns)) % 1, (y + dy / (self.paper.height() / rows)) % 1
         else:
             x = max(0, min(1, x + dx / max(1, self.paper.width() - mark.width())))

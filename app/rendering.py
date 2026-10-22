@@ -95,6 +95,8 @@ class _RenderJob(QRunnable):
                 result.value = self.store.prepare_annotations(request.ref)
             elif request.kind == 'safety':
                 result.value = self.store.prepare_safety_step(request.ref)
+            elif request.kind == 'text':
+                result.value = self.store.text_snapshot(request.ref, include_tables=False)
             elif request.region is None:
                 render = getattr(self.store, 'render_preview', self.store.render_qimage)
                 result.value = render(request.ref, request.width)

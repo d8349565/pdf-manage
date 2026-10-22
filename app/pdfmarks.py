@@ -167,6 +167,9 @@ def watermark_settings(page, annot):
             offset = options.get(key, (.5, .5))
             if len(offset) != 2 or not all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in offset):
                 return None
+        if any(type(options.get(key, 0)) is not int or not 0 <= options.get(key, 0) <= 200
+               for key in ("tile_rows", "tile_columns")):
+            return None
         if options.get("rotation", 0) not in (0, 90, 180, 270):
             return None
         watermark_layout(600, 800, 200, 72, options)
@@ -319,6 +322,18 @@ def watermark_base(text, color, image=""):
         return base.tobytes(), float(width), float(height)
 
 
+def watermark_grid(width, height, mark_width, mark_height, options):
+    """Resolve automatic or explicit tile counts for both layout and dragging."""
+    rows, columns = options.get("tile_rows", 0), options.get("tile_columns", 0)
+    if any(type(value) is not int or not 0 <= value <= 200 for value in (rows, columns)):
+        raise ValueError("平铺行数和每行个数须为 1～200，或选择自动。")
+    columns = columns or max(1, int(width / (mark_width * 1.3)))
+    rows = rows or max(1, int(height / (mark_height * 1.8)))
+    if rows * columns > 200:
+        raise ValueError("平铺水印过多，请减少行数、每行个数，或增加水印大小。")
+    return rows, columns
+
+
 def watermark_layout(width, height, base_width, base_height, options):
     """PDF-point geometry shared by the live canvas and final PDF."""
     size = float(options.get("size", 35))
@@ -332,20 +347,21 @@ def watermark_layout(width, height, base_width, base_height, options):
     factor = min(width * size / 100 / rotated_width, height * .8 / rotated_height)
     mark_width, mark_height = rotated_width * factor, rotated_height * factor
     if options.get("tile", False):
-        columns = max(1, int(width / (mark_width * 1.3)))
-        rows = max(1, int(height / (mark_height * 1.8)))
-        if rows * columns > 200:
-            raise ValueError("平铺水印过多，请增加水印大小。")
+        rows, columns = watermark_grid(width, height, mark_width, mark_height, options)
         offset = options.get("tile_offset", (.5, .5))
         if len(offset) != 2 or not all(math.isfinite(v) and 0 <= v <= 1 for v in offset):
             raise ValueError("平铺位置无效。")
         pitch_x, pitch_y = width / columns, height / rows
         dx, dy = (offset[0] - .5) * pitch_x, (offset[1] - .5) * pitch_y
+        manual = options.get("tile_rows", 0) or options.get("tile_columns", 0)
         locations = [(pitch_x * (column + .5) - mark_width / 2 + dx,
                       pitch_y * (row + .5) - mark_height / 2 + dy)
-                     for row in range(-1, rows + 1) for column in range(-1, columns + 1)]
+                     for row in (range(rows) if manual else range(-1, rows + 1))
+                     for column in (range(columns) if manual else range(-1, columns + 1))]
         locations = [(x, y) for x, y in locations if x < width and x + mark_width > 0
                      and y < height and y + mark_height > 0]
+        if len(locations) > 200:
+            raise ValueError("平铺水印过多，请减少行数、每行个数，或增加水印大小。")
     else:
         position = options.get("position", "center-center")
         if position == "custom":

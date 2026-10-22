@@ -861,6 +861,23 @@ class PdfStore:
                     raise PdfError(f"无法应用页面修改：{exc}") from exc
             yield self._draft[0]
 
+    def cached_text_snapshot(self, ref, *, include_tables=True):
+        """GUI-safe lookup: never wait for native rendering or parse a page."""
+        if not self._native_lock.acquire(blocking=False):
+            return None
+        try:
+            key = (ref.render_key, include_tables)
+            hit = self._text_cache.get(key) if self._text_cache is not None else None
+            if hit is None and not include_tables and self._text_cache is not None:
+                key = (ref.render_key, True)
+                hit = self._text_cache.get(key)
+            if hit is not None:
+                self._text_cache.move_to_end(key)
+                return hit[0]
+            return None
+        finally:
+            self._native_lock.release()
+
     def text_snapshot(self, ref, *, include_tables=True):
         from collections import OrderedDict
         import pymupdf

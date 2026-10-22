@@ -47,8 +47,10 @@ def test_saved_bounds_match_preview_after_stamp_update(rotation, angle, image):
 
 
 @pytest.mark.parametrize("image", [False, True])
-def test_reopened_tiled_watermark_keeps_settings_and_selective_update(image):
-    first = edit(image=image_data() if image else "", tile=True, size=25, offset=(.2, .8))
+@pytest.mark.parametrize("counts", [(0, 0), (3, 4)])
+def test_reopened_tiled_watermark_keeps_settings_and_selective_update(image, counts):
+    first = edit(image=image_data() if image else "", tile=True, size=25, offset=(.2, .8),
+                 tile_rows=counts[0], tile_columns=counts[1])
     second = edit("zhixu-watermark-second", angle=-20)
     with p.open() as doc:
         page = doc.new_page(width=420, height=600)
@@ -56,6 +58,8 @@ def test_reopened_tiled_watermark_keeps_settings_and_selective_update(image):
         apply_edits(page, (first, second))
         marks = [a for a in page.annots() if watermark_id(a) == first.annotation_id]
         assert len(marks) > 1
+        if counts != (0, 0):
+            assert len(marks) == 12
         assert len({doc.xref_get_key(a.xref, WATERMARK_DATA) for a in marks}) == 1
         data = doc.tobytes(garbage=4, deflate=True)
     with p.open(stream=data, filetype="pdf") as doc:
@@ -63,6 +67,8 @@ def test_reopened_tiled_watermark_keeps_settings_and_selective_update(image):
         records = {entry["id"]: entry for entry in list_watermarks(page)}
         assert records[first.annotation_id]["settings"]["options"]["image"] == dict(first.details)["image"]
         assert records[first.annotation_id]["settings"]["options"]["offset"] == [.2, .8]
+        assert records[first.annotation_id]["settings"]["options"]["tile_rows"] == counts[0]
+        assert records[first.annotation_id]["settings"]["options"]["tile_columns"] == counts[1]
         replacement = edit("zhixu-watermark-replacement", kind="watermark_update", target=first.annotation_id,
                            size=40, angle=60)
         apply_edits(page, (replacement,))
@@ -88,3 +94,34 @@ def test_legacy_watermark_settings_can_be_recovered():
         assert settings["text"] == operation.text
         assert settings["options"]["angle"] == 30
         assert settings["options"]["offset"] == pytest.approx((.25, .7), abs=.01)
+
+
+@pytest.mark.parametrize("image", [False, True])
+def test_manual_tile_bounds_match_saved_rotated_page(image):
+    operation = edit(image=image_data() if image else "", tile=True, tile_rows=3, tile_columns=4,
+                     size=20, rotation=90, tile_offset=(.1, .9))
+    options = dict(operation.details)
+    _, bw, bh = watermark_base(operation.text, operation.color, options["image"])
+    with p.open() as doc:
+        page = doc.new_page(width=420, height=600)
+        page.set_rotation(90)
+        width, height, locations = watermark_layout(page.rect.width, page.rect.height, bw, bh, options)
+        assert len(locations) == 12
+        apply_edits(page, (operation,))
+        page = doc.reload_page(page)
+        marks = list(page.annots())
+        assert len(marks) == 12
+        for annot, (x, y) in zip(marks, locations):
+            assert tuple(annot.rect * page.rotation_matrix) == pytest.approx((x, y, x + width, y + height), abs=.01)
+
+
+@pytest.mark.parametrize("rows,columns", [(201, 1), (1, 201), (15, 15), (-1, 2), (1.5, 2), (True, 1)])
+def test_invalid_or_excessive_tile_counts_are_rejected(rows, columns):
+    with pytest.raises(ValueError):
+        watermark_layout(600, 800, 200, 72, dict(tile=True, tile_rows=rows, tile_columns=columns))
+
+
+def test_automatic_tiles_keep_existing_layout():
+    options = dict(tile=True, size=25, angle=30)
+    assert watermark_layout(600, 800, 200, 72, options) == watermark_layout(
+        600, 800, 200, 72, dict(options, tile_rows=0, tile_columns=0))
