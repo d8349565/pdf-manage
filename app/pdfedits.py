@@ -18,11 +18,22 @@ def annotation_token(annot, ordinal):
     return annot.info.get("id") or f"zhixu-original-{ordinal}"
 
 
+def iter_annotations(page):
+    """Walk once; Page.annots() reloads each xref by searching from the start."""
+    import pymupdf as p
+    annot = page.first_annot
+    while annot is not None:
+        following = annot.next
+        if annot.type[0] not in (p.PDF_ANNOT_LINK, p.PDF_ANNOT_POPUP, p.PDF_ANNOT_WIDGET):
+            yield annot
+        annot = following
+
+
 def annotation_summary(page):
     from app.pdfmarks import text_settings, is_watermark
     from app.pdfimages import image_settings
     annotations = []
-    for ordinal, annot in enumerate(page.annots() or ()):
+    for ordinal, annot in enumerate(iter_annotations(page)):
         annotations.append(dict(id=annotation_token(annot, ordinal), kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
@@ -42,7 +53,11 @@ def selected_lines(raw, rectangle):
     area = p.Rect(rectangle)
     result = []
     for block in raw.get("blocks", ()):
+        if block.get("bbox") is not None and not area.intersects(p.Rect(block["bbox"])):
+            continue
         for line in block.get("lines", ()):
+            if line.get("bbox") is not None and not area.intersects(p.Rect(line["bbox"])):
+                continue
             chars = []
             for span in line.get("spans", ()):
                 for char in span.get("chars", ()):
@@ -224,7 +239,7 @@ def prepare_replacement(page, rectangle, text, raw=None):
                     overlap = p.Rect(char["bbox"]) & area
                     if overlap.get_area() > .01 and (tuple(char["origin"]), char["c"]) not in selected:
                         raise ValueError("选区与其他文字重叠，不能安全修改。")
-    if any(a.type[0] == p.PDF_ANNOT_REDACT for a in (page.annots() or ())):
+    if any(a.type[0] == p.PDF_ANNOT_REDACT for a in iter_annotations(page)):
         raise ValueError("该页存在待应用的涂黑批注，不能自动执行文字修正。")
     if any(area.intersects(p.Rect(info["bbox"])) for info in page.get_image_info()):
         raise ValueError("选区与图片重叠，扫描图片或复杂图文区域请转 Word 编辑。")
@@ -294,12 +309,14 @@ def apply_edits(page, edits):
     import pymupdf as p
     subset = False
     identifiers = set()
-    for ordinal, annot in enumerate(page.annots() or ()):
-        token = annotation_token(annot, ordinal)
+    for ordinal, annot in enumerate(iter_annotations(page)):
+        identifier = annot.info.get("id", "")
+        token = identifier or f"zhixu-original-{ordinal}"
         if token in identifiers:
             token = f"zhixu-original-{ordinal}"
         identifiers.add(token)
-        page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
+        if token != identifier:
+            page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
     for edit in edits:
         if edit.kind == "mosaic":
             from app.mosaic import apply_mosaic
@@ -341,7 +358,7 @@ def apply_edits(page, edits):
             _write_replacement(page, edit, details, name, buffer)
             continue
         if edit.kind in ("delete", "style", "note_text", "move"):
-            annot = next((a for a in (page.annots() or ()) if a.info.get("id") == edit.annotation_id), None)
+            annot = next((a for a in iter_annotations(page) if a.info.get("id") == edit.annotation_id), None)
             if annot is None:
                 raise ValueError("要修改的批注已不存在。")
             from app.pdfmarks import is_watermark

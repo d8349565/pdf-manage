@@ -97,6 +97,22 @@ Remove-Item Env:PAGEARK_READING_LOG
 
 几何批注冷缓存只在后台准备摘要；文字类工具冷缓存通过既有后台任务准备轻量快照，快照返回后核对页面和工具是否仍相同。文字框选使用阅读串行队列，准备期间记住拖动终点和松开状态，取消、切页或文档变化后丢弃结果；表格排版仍在复制时按需准备。缓存查询不会等待原生渲染锁。
 
+批注摘要和编辑准备使用 `iter_annotations()` 沿原生批注链顺序读取，避开固定版本引擎逐条按 xref 从头查找的重复工作；保留标识去重以及链接、弹出框和表单的原有边界。框选文字先筛选相交的块与行，再执行原来的逐字命中，不据页面是否有图片或线条跳过表格分析。
+
+#### 仅生成样本的批注性能对照
+
+`packaging/benchmark_annotations.py` 只接受自身生成且 SHA-256 与清单一致的样本；生成输入不会覆盖已有文件。测量隔离配置、临时文件与诊断，记录应用源码摘要、输入摘要、依赖、原始文字／表格／渲染调用及 20ms Qt 心跳。创建独立目录后先生成一次，基线与候选共用该文件：
+
+```powershell
+.venv\Scripts\python.exe packaging/benchmark_annotations.py --generate --sample build/annotation-check/generated.pdf
+.venv\Scripts\python.exe packaging/benchmark_annotations.py --root <基线源码目录> --sample build/annotation-check/generated.pdf --output build/annotation-check/baseline-1.json --label baseline-1
+.venv\Scripts\python.exe packaging/benchmark_annotations.py --root . --sample build/annotation-check/generated.pdf --output build/annotation-check/candidate-1.json --label candidate-1
+```
+
+基线目录可由 `git archive` 导出对应提交的 `app/`，无需切换当前分支。每轮使用新的输出文件，顺序运行两版并交替先后，至少三轮后比较相同阶段的中位数与最大心跳间隔；不要同时运行其他回归来干扰测量。冷／热指应用缓存状态，报告明确记录重复选取前是否有可复用快照；不将进程重启当作清空系统缓存。重新生成的 PDF 元信息可能改变，以本轮输入清单和实际 SHA-256 为准。
+
+经明确授权可运行 `tests/test_annotation_large_pdf.py`；默认在测试临时目录生成大文件，也可将 `ZHIXU_ISSUE33_GENERATED_SAMPLE` 指向上述已验证生成样本以复用输入。其余必要回归见最新验收记录，未获授权时不自动运行模拟检查。性能检查不读取或替换用户业务文件，也不代替安装版与真实屏幕验收。
+
 实际验收应保持电脑、文档、窗口尺寸、系统显示缩放及阅读缩放一致，比较快速上下滚动、立即反向滚动、返回刚读过的页、停稳后的清晰等待，并检查搜索、复制、批注、撤销和关闭文档。源码静态检查通过不代表已获得真实文档的提速结果。
 
 OCR 的 PRD 评估、独立 CPU 增强包构建、合成 PoC、性能记录和未完成的发布验收见 [OCR.md](OCR.md)。OCR 推理依赖只安装到单独构建目录，不添加到基础版依赖清单。

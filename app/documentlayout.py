@@ -438,8 +438,12 @@ def selection_text(raw, rectangle, tables):
     area = p.Rect(rectangle)
     blocks = []
     for block in raw.get('blocks', ()):
+        if block.get('bbox') is not None and not area.intersects(p.Rect(block['bbox'])):
+            continue
         lines = []
         for line in block.get('lines', ()):
+            if line.get('bbox') is not None and not area.intersects(p.Rect(line['bbox'])):
+                continue
             spans = []
             for span in line.get('spans', ()):
                 chars = [char for char in span.get('chars', ())

@@ -1060,7 +1060,7 @@ class AnnotationTools(QWidget):
                                      QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseMove)):
             return True
         if watched in (self.view, self.view.viewport()) and event.type() == QEvent.Type.ShortcutOverride:
-            if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing or self._mosaic_stroke):
+            if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing or self._mosaic_stroke or self.stroke):
                 event.accept()
                 return True
         if watched in (self.view, self.view.viewport()) and self._mosaic_stroke:
@@ -1086,6 +1086,10 @@ class AnnotationTools(QWidget):
             if event.key() == Qt.Key.Key_Escape and self._move_state:
                 self.cancel_move_annot()
                 self._set_feedback("已取消移动。")
+                return True
+            if event.key() == Qt.Key.Key_Escape and self.stroke:
+                self.clear_overlay()
+                self._set_feedback("已取消本次绘制。")
                 return True
             return False
         if watched is not self.view.viewport():

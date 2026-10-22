@@ -319,6 +319,49 @@ def test_cold_geometry_snapshot_never_extracts_raw_text(reader, monkeypatch):
     assert "annotations" in tools.snapshot and "raw" not in tools.snapshot
 
 
+def test_annotation_summary_and_edits_walk_without_reloading_xrefs(monkeypatch):
+    from app.pdfedits import annotation_summary, apply_edits
+    with p.open() as doc:
+        page = doc.new_page()
+        page.add_text_annot((40, 70), "Keep first")
+        page.add_text_annot((80, 110), "Keep second")
+        page.add_rect_annot((120, 140, 160, 180))
+        page.insert_link({"kind": p.LINK_URI, "uri": "https://example.invalid/", "from": p.Rect(10, 10, 30, 30)})
+        widget = p.Widget()
+        widget.field_name, widget.field_type = "KeepField", p.PDF_WIDGET_TYPE_TEXT
+        widget.rect = p.Rect(30, 200, 150, 230)
+        page.add_widget(widget)
+        page = doc.reload_page(page)
+        monkeypatch.setattr(p.Page, "load_annot", lambda *args, **kwargs: pytest.fail("Repeated xref lookup"))
+        summary = annotation_summary(page)
+        assert len(summary) == 3
+        assert [item["content"] for item in summary[:2]] == ["Keep first", "Keep second"]
+        apply_edits(page, (PageEdit("note", ((180, 220),), text="New note", annotation_id="new-note"),))
+        assert len(annotation_summary(page)) == 4
+        assert page.first_widget.field_name == "KeepField"
+
+
+@pytest.mark.parametrize("kind", ["rect", "ellipse", "ink", "arrow"])
+def test_escape_cancels_drawing_before_release(reader, kind):
+    reader.open_annotation_tools()
+    tools, view = reader.annotation_tools, reader.preview_view
+    tools.tool.setCurrentIndex(tools.tool.findData(kind))
+    before = reader.ws.pages
+    origin = view.page_rects[0].topLeft()
+    first = view.mapFromScene(origin + QPointF(50, 210))
+    last = view.mapFromScene(origin + QPointF(150, 260))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+    QTest.mouseMove(view.viewport(), last)
+    try:
+        assert tools.stroke
+        QTest.keyClick(view, Qt.Key.Key_Escape)
+        assert not tools.stroke and tools.overlay is None
+    finally:
+        tools.clear_overlay()
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=last)
+    assert reader.ws.pages is before and not reader.ws.dirty
+
+
 @pytest.mark.parametrize("cancel", [None, "escape", "page"])
 def test_cold_text_selection_preserves_released_gesture_and_discards_stale_results(reader, monkeypatch, cancel):
     from app.rendering import RenderResult
