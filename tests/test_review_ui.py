@@ -542,25 +542,43 @@ def test_watermark_selection_edit_delete_and_no_annotation_popup(reader, qapp, m
 @pytest.mark.parametrize("image", [False, True])
 def test_watermark_saved_reopened_selected_and_deleted_through_ui(reader, qapp, tmp_path, monkeypatch, image):
     from pathlib import Path
+    from PyQt6.QtCore import QElapsedTimer
     from PyQt6.QtWidgets import QFileDialog
     from app.pdfmarks import is_watermark, list_watermarks
     from app.watermarkui import WatermarkDialog
     original_path = Path(reader.ws.path)
     original_bytes = original_path.read_bytes()
     output = tmp_path / "watermark-roundtrip.pdf"
-    picture = ""
-    if image:
-        import base64
-        from io import BytesIO
-        from PIL import Image
-        stream = BytesIO()
-        Image.new("RGBA", (120, 60), (40, 120, 90, 180)).save(stream, format="PNG")
-        picture = base64.b64encode(stream.getvalue()).decode("ascii")
-    operation = PageEdit("watermark", text="Roundtrip", annotation_id="zhixu-watermark-roundtrip",
-        details=(("image", picture), ("size", 20), ("opacity", .15), ("angle", 30),
-                 ("tile", True), ("tile_rows", 3), ("tile_columns", 4)))
-    reader.ws.edit_pages({i: ref.edited(operation) for i, ref in enumerate(reader.ws.pages)}, "添加水印")
-    reader.refresh()
+    addition = WatermarkDialog(reader)
+    try:
+        addition.show()
+        assert addition.selected_watermark_id() is None
+        assert addition.delete_button.isHidden()
+        identifier = addition._new_identifier
+        addition.text.setText("Roundtrip")
+        if image:
+            from PIL import Image
+            picture = tmp_path / "generated-watermark.png"
+            Image.new("RGBA", (120, 60), (40, 120, 90, 180)).save(picture)
+            monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(picture), "PNG"))
+            addition.tabs.setCurrentIndex(1)
+            addition.choose_image()
+        addition.size.setValue(20)
+        addition.angle.setValue(30)
+        addition.tile.setChecked(True)
+        addition.tile_rows.setValue(3)
+        addition.tile_columns.setValue(4)
+        timer = QElapsedTimer()
+        timer.start()
+        while not addition.apply_button.isEnabled() and timer.elapsed() < 15000:
+            QTest.qWait(10)
+        assert addition.apply_button.isEnabled(), addition.status.text()
+        assert len(addition.preview_label.marks) == 12
+        QTest.mouseClick(addition.apply_button, Qt.MouseButton.LeftButton)
+        assert addition._closed and reader.ws.dirty
+    finally:
+        if not addition._closed:
+            addition.reject()
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(output), "PDF"))
     assert reader.save(True)
     reopened = MainWindow()
@@ -574,7 +592,7 @@ def test_watermark_saved_reopened_selected_and_deleted_through_ui(reader, qapp, 
         try:
             dialog.show()
             assert dialog.watermark.count() == 2
-            assert dialog.selected_watermark_id() == operation.annotation_id
+            assert dialog.selected_watermark_id() == identifier
             assert dialog.delete_button.isEnabled()
             assert dialog.watermark.currentRow() == 1
             QTest.mouseClick(dialog.delete_button, Qt.MouseButton.LeftButton)
@@ -587,7 +605,7 @@ def test_watermark_saved_reopened_selected_and_deleted_through_ui(reader, qapp, 
                 assert not list_watermarks(page)
         reopened.ws.undo_stack.undo()
         with reopened.store._render_page(reopened.ws.pages[0]) as page:
-            assert list_watermarks(page)[0]["id"] == operation.annotation_id
+            assert list_watermarks(page)[0]["id"] == identifier
         reopened.ws.undo_stack.redo()
         reopened.refresh()
         assert reopened.save()
