@@ -477,16 +477,52 @@ def test_print_dialog_blocks_print_without_pages(qapp, tmp_path):
     ws.open_replace(store.load(str(src)), str(src))
 
     dlg = PrintDialog(None, ws, store)
-    assert dlg.btn_print.isEnabled()
+    has_printer = bool(dlg._collect_options().printer_name)
+    assert dlg.btn_print.isEnabled() == has_printer
     # 页码范围写错时直接禁用打印，而不是等点了再报错
     dlg.radio_custom.setChecked(True)
     dlg.edit_range.setText("99")
     assert not dlg.btn_print.isEnabled()
     dlg.edit_range.setText("1")
-    assert dlg.btn_print.isEnabled()
+    assert dlg.btn_print.isEnabled() == has_printer
 
     dlg.close()
     store.close_all()
+
+
+@pytest.mark.parametrize("names, default, expected", [
+    (["Microsoft Print to PDF", "Office Printer"], "Microsoft Print to PDF", "Office Printer"),
+    (["Office Printer", "Backup Printer"], "Backup Printer", "Backup Printer"),
+    (["microsoft print to pdf"], "microsoft print to pdf", ""),
+    ([], "", ""),
+])
+def test_print_dialog_excludes_microsoft_pdf_printer(qapp, tmp_path, monkeypatch, names, default, expected):
+    monkeypatch.setattr("app.printing.QPrinterInfo.availablePrinterNames", lambda: names)
+    monkeypatch.setattr("app.printing.QPrinterInfo.defaultPrinterName", lambda: default)
+    src = tmp_path / "doc.pdf"
+    _make_pdf(src, [(300, 400)])
+    store = PdfStore()
+    ws = Workspace()
+    ws.open_replace(store.load(str(src)), str(src))
+    dlg = PrintDialog(None, ws, store)
+    try:
+        assert all(dlg.combo_printer.itemText(i).casefold() != "microsoft print to pdf"
+                   for i in range(dlg.combo_printer.count()))
+        assert dlg._collect_options().printer_name == expected
+        assert dlg.btn_print.isEnabled() == bool(expected)
+        if not expected:
+            assert dlg.combo_printer.placeholderText() == "未找到可用打印机"
+            assert not dlg.combo_printer.isEnabled()
+            warnings = []
+            monkeypatch.setattr("app.printing.QMessageBox.warning", lambda *args: warnings.append(args))
+            monkeypatch.setattr("app.printing.run_operation", lambda *args, **kwargs: pytest.fail("不应提交打印任务"))
+            dlg.do_print()
+            assert len(warnings) == 1
+            assert "另存为" in warnings[0][-1]
+            assert not dlg._printing
+    finally:
+        dlg.close()
+        store.close_all()
 
 
 def test_main_window_print_document_empty_workspace(qapp):

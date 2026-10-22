@@ -931,8 +931,7 @@ class PrintDialog(QDialog):
         root.addWidget(self._build_preview_pane(), 1)
         root.addWidget(self._build_sidebar())
 
-        self._reload_papers()
-        self._refresh()
+        self._on_printer_changed()
 
     # ---- 左侧预览 ----
 
@@ -1030,14 +1029,16 @@ class PrintDialog(QDialog):
         # 1. 打印机
         lay.addWidget(self._caption("打印机"))
         self.combo_printer = QComboBox()
-        printers = QPrinterInfo.availablePrinterNames()
+        printers = [name for name in QPrinterInfo.availablePrinterNames()
+                    if name.casefold() != "microsoft print to pdf"]
         default_name = QPrinterInfo.defaultPrinterName()
         if printers:
             self.combo_printer.addItems(printers)
             if default_name in printers:
                 self.combo_printer.setCurrentText(default_name)
         else:
-            self.combo_printer.addItem("系统默认打印机")
+            self.combo_printer.setPlaceholderText("未找到可用打印机")
+            self.combo_printer.setEnabled(False)
         self.combo_printer.currentIndexChanged.connect(self._on_printer_changed)
         lay.addWidget(self.combo_printer)
 
@@ -1271,7 +1272,7 @@ class PrintDialog(QDialog):
 
     def _on_printer_changed(self) -> None:
         name = self.combo_printer.currentText()
-        if name and name != "系统默认打印机":
+        if name:
             self.printer.setPrinterName(name)
         self._reload_papers()
         self._refresh()
@@ -1346,8 +1347,6 @@ class PrintDialog(QDialog):
 
     def _collect_options(self) -> PrintOptions:
         printer_name = self.combo_printer.currentText()
-        if printer_name == "系统默认打印机":
-            printer_name = ""
         if self.radio_single.isChecked():
             duplex = "none"
         else:
@@ -1407,7 +1406,7 @@ class PrintDialog(QDialog):
             text = "还没有选定要打印的页面"
         self.label_summary.setText(text)
 
-        self.btn_print.setEnabled(sheets_n > 0 and not self._printing)
+        self.btn_print.setEnabled(bool(options.printer_name) and sheets_n > 0 and not self._printing)
         self._update_hint()
         self._update_duplex_warning(options)
         self._update_sheet_counter()
@@ -1459,6 +1458,9 @@ class PrintDialog(QDialog):
         if not options.page_indices:
             QMessageBox.warning(self, "没有可打印的页面", "请指定有效的打印页码范围。")
             return
+        if not options.printer_name:
+            QMessageBox.warning(self, "没有可用的打印机", "请先连接或安装打印机。保存 PDF 请使用“文件 → 另存为”。")
+            return
         self._printing = True
         self.btn_print.setEnabled(False)
         self.canvas.pause_rendering()
@@ -1466,9 +1468,8 @@ class PrintDialog(QDialog):
 
         def work(progress, cancelled):
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-            if options.printer_name:
-                printer.setPrinterName(options.printer_name)
-            if not printer.isValid():
+            printer.setPrinterName(options.printer_name)
+            if not printer.isValid() or printer.printerName() != options.printer_name:
                 raise PdfError("没有可用的打印机，请先连接或安装打印机。")
             render_pages_to_printer(printer, self.store, pages, options,
                                     progress_callback=progress, cancel_check=cancelled)
