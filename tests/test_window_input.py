@@ -102,7 +102,7 @@ def loaded_window(window, tmp_path):
 
 def test_split_and_conversion_choices_are_independent(loaded_window):
     window = loaded_window
-    window.act_tools.setChecked(True)
+    window.open_export_tool(1)
     assert window.split_each.isChecked()
     assert window.convert_all.isChecked()
     window.export_tools.setCurrentIndex(1)
@@ -182,8 +182,9 @@ def test_invalid_export_ranges_are_blocked_before_file_dialog(loaded_window):
 
 def test_delete_in_range_field_does_not_delete_pages(loaded_window):
     window = loaded_window
-    window.act_tools.setChecked(True)
+    window.open_export_tool(0)
     window.act_pages.setChecked(True)
+    QApplication.processEvents()
     window.extract_range.setText('123')
     window.extract_range.setFocus()
     window.extract_range.selectAll()

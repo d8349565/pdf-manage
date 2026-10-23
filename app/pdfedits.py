@@ -38,7 +38,8 @@ def annotation_summary(page):
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
             text_settings=text_settings(page, annot) if annot.type[0] == 2 else None,
-            watermark=is_watermark(page, annot), image_settings=image_settings(page, annot)))
+            watermark=is_watermark(page, annot) or page.parent.xref_get_key(annot.xref, 'ZhiXuSeam')[0] != 'null',
+            image_settings=image_settings(page, annot)))
     return annotations
 
 
@@ -305,7 +306,7 @@ def _write_replacement(page, edit, details, name, buffer):
         raise ValueError("新文字未完整写入，本次修改未应用，原文已保留。请重新输入或转 Word 编辑。")
 
 
-def apply_edits(page, edits):
+def apply_edits(page, edits, *, transforms=None):
     import pymupdf as p
     subset = False
     identifiers = set()
@@ -318,6 +319,16 @@ def apply_edits(page, edits):
         if token != identifier:
             page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
     for edit in edits:
+        if edit.kind in ('seam_stamp', 'seam_remove'):
+            from app.seamstamp import apply_seam
+            apply_seam(page, edit)
+            continue
+        if edit.kind == 'page_geometry':
+            from app.pagegeometry import apply_geometry
+            matrix = apply_geometry(page, edit)
+            if transforms is not None:
+                transforms.append(matrix)
+            continue
         if edit.kind == "mosaic":
             from app.mosaic import apply_mosaic
             apply_mosaic(page, edit)
@@ -430,7 +441,7 @@ def apply_edits(page, edits):
     return subset
 
 
-def apply_outline(doc, pages, entries, warnings):
+def apply_outline(doc, pages, entries, warnings, *, transforms=None):
     import pymupdf as p
     targets = {ref.page_id: index for index, ref in reversed(list(enumerate(pages)))}
     rows, actions = [], []
@@ -449,6 +460,8 @@ def apply_outline(doc, pages, entries, warnings):
             destination["page"] = index if index is not None else -1
             if "to" in destination:
                 destination["to"] = p.Point(destination["to"])
+                if transforms and index in transforms:
+                    destination['to'] *= transforms[index]
             style = dict(destination)
             style.pop("to", None)
             style["kind"] = p.LINK_NONE

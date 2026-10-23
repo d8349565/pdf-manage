@@ -2558,9 +2558,15 @@ class MainWindow(QMainWindow):
         tools.addAction(self.extract_action)
         tools.addAction(self.split_action)
         tools.addAction(self.split_page_action)
+        self.page_size_action = self._act('调整页面大小…', self.resize_pages)
+        tools.addAction(self.page_size_action)
+        self.deskew_action = self._act('扫描纠偏…', self.open_deskew)
+        tools.addAction(self.deskew_action)
         tools.addAction(self._act("页码处理…", self.open_page_numbers))
         self.watermark_action = self._act("水印…", self.open_watermarks)
         tools.addAction(self.watermark_action)
+        self.seam_stamp_action = self._act('骑缝章…', self.open_seam_stamps)
+        tools.addAction(self.seam_stamp_action)
         self.ocr_action = self._act("文字识别…", self.open_ocr)
         tools.addAction(self.ocr_action)
         tools.addSeparator()
@@ -2833,6 +2839,11 @@ class MainWindow(QMainWindow):
         self.split_action.setEnabled(bool(count) and not read_only and not copy_reason)
         can_split_page = len(self.ws.target_indices()) == 1 and not read_only and not copy_reason
         self.split_page_action.setEnabled(can_split_page)
+        self.page_size_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, 'content_edit'))
+        self.seam_stamp_action.setEnabled(self.page_size_action.isEnabled())
+        self.deskew_action.setEnabled(self.page_size_action.isEnabled())
+        if self._arrange_ready:
+            self.arrange_size_button.setEnabled(self.page_size_action.isEnabled())
         if self._arrange_ready:
             self.arrange_split_button.setEnabled(can_split_page)
 
@@ -3200,6 +3211,14 @@ class MainWindow(QMainWindow):
         self.arrange_split_button = self._btn("分割单页…", self.split_selected_page, icon="split")
         self.arrange_split_button.setToolTip("将选中页沿分割线切成 2 或 3 页，可撤销")
         bar.addWidget(self.arrange_split_button)
+        self.arrange_size_button = QToolButton()
+        self.arrange_size_button.setText('页面工具')
+        self.arrange_size_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        page_tools = QMenu(self.arrange_size_button)
+        page_tools.addActions([self.page_size_action, self.seam_stamp_action, self.deskew_action])
+        self.arrange_size_button.setMenu(page_tools)
+        self.arrange_size_button.setToolTip('调整页面大小、骑缝章、扫描纠偏')
+        bar.addWidget(self.arrange_size_button)
         bar.addWidget(self._btn("全选", self.select_all_pages, icon="select-all"))
         selected_export = self._btn("提取所选页…", self.extract_selected, icon="scissors")
         self._selection_buttons.append(selected_export)
@@ -5087,7 +5106,7 @@ class MainWindow(QMainWindow):
             self.arrange_view.scrollTo(self.model.index(base_pos, 0))
             self.arrange_view._show_landing(base_pos)
             if has_selection:
-                self.statusBar().showMessage(f"已在第 {max(selected) + 1} 页后插入 {inserted_count} 页 · 可拖动调整顺序", 4000)
+                self.statusBar().showMessage(f"已在第 {max(selected) + 1} 页后插入 {inserted_count} 页 · 可拖动排序，或在「页面工具」中匹配尺寸", 6500)
             else:
                 self.statusBar().showMessage(f"已在末尾插入 {inserted_count} 页 · 可拖动调整顺序", 4000)
 
@@ -5580,21 +5599,24 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
             return False
         merged_output = self.ws.path is None and bool(self.ws.protected_paths)
+        page_tool_copy = any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove')
+                             for ref in self.ws.pages for edit in ref.edits)
         while True:
             path = self.ws.path
             is_ofd = bool(path and path.lower().endswith('.ofd'))
-            if save_as or not path or is_ofd:
-                suggested = os.path.splitext(path)[0] + '.pdf' if is_ofd else path or "未命名.pdf"
+            if save_as or not path or is_ofd or page_tool_copy:
+                suggested = (os.path.splitext(path)[0] + '_副本.pdf' if page_tool_copy and path else
+                             os.path.splitext(path)[0] + '.pdf' if is_ofd else path or "未命名.pdf")
                 path, _ = QFileDialog.getSaveFileName(self, "另存为 PDF" if is_ofd else "保存 PDF", export_path(suggested), "PDF (*.pdf)")
                 if not path:
                     return False
                 if not path.lower().endswith(".pdf"):
                     path += ".pdf"
-                if self.ws.blocks_save_to(path):
+                if self.ws.blocks_save_to(path) or page_tool_copy and self.store.is_source_destination(path):
                     QMessageBox.warning(
                         self,
                         "不能覆盖原件",
-                        "合并后不能保存到本次用过的源文件上，请另选一个新文件。",
+                        "请另选一个新文件，以保留本次用过的原件。",
                     )
                     return False
             try:
@@ -5741,6 +5763,18 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"已分割为 {len(incoming)} 页；Ctrl+Z 可撤销。", 6000)
         except (PdfError, ValueError) as exc:
             QMessageBox.warning(self, "分割失败", str(exc))
+
+    def resize_pages(self):
+        from app.pagetoolsui import resize_pages
+        resize_pages(self)
+
+    def open_seam_stamps(self):
+        from app.seamstampui import open_seam_stamps
+        open_seam_stamps(self)
+
+    def open_deskew(self):
+        from app.deskewui import open_deskew
+        open_deskew(self)
 
     def split(self) -> None:
         if not self._allow_operation("modify") or not self._allow_operation("copy"):

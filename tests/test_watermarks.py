@@ -72,10 +72,16 @@ def test_reopened_tiled_watermark_keeps_settings_and_selective_update(image, cou
         replacement = edit("zhixu-watermark-replacement", kind="watermark_update", target=first.annotation_id,
                            size=40, angle=60)
         apply_edits(page, (replacement,))
-        page = doc.reload_page(page)
+        data = doc.tobytes(garbage=4, deflate=True)
+    # Reopen the bytes users save. PyMuPDF 1.28.2 reload_page asserts while
+    # native references from replaced watermark appearances remain alive.
+    with p.open(stream=data, filetype="pdf") as doc:
+        page = doc[0]
         assert {entry["id"] for entry in list_watermarks(page)} == {replacement.annotation_id, second.annotation_id}
         apply_edits(page, (PageEdit("watermark_remove", annotation_id=replacement.annotation_id),))
-        page = doc.reload_page(page)
+        data = doc.tobytes(garbage=4, deflate=True)
+    with p.open(stream=data, filetype="pdf") as doc:
+        page = doc[0]
         assert [entry["id"] for entry in list_watermarks(page)] == [second.annotation_id]
         assert any(a.info.get("content") == "Keep this note" for a in page.annots())
 

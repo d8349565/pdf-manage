@@ -20,7 +20,7 @@ class PageEdit:
 
     @property
     def operation(self):
-        return 'content_edit' if self.kind in ('replace', 'mosaic') or self.kind.startswith('image') else 'annotate'
+        return 'content_edit' if self.kind in ('replace', 'mosaic', 'page_geometry') or self.kind.startswith(('image', 'seam_')) else 'annotate'
 
 
 @dataclass(frozen=True)

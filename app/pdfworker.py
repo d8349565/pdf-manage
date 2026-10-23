@@ -179,6 +179,7 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
                 candidate.closed = False
                 candidate.needs_encryption_choice = False
                 candidate.lost_structures = ()
+                candidate.geometry_limitations = tuple(result.get('geometry_limitations', ()))
                 safety = result["safety"]
                 candidate.safety = PdfSafety(**dict(safety, special_structures=tuple(safety["special_structures"])))
                 candidate.sizes = [pymupdf.Rect(rect) for rect in result["sizes"]]

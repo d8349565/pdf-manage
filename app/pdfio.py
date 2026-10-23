@@ -130,7 +130,7 @@ class _Source:
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
                  "password", "safety", "disk_stamp", "label_rules", "label_starts",
                  "preview_doc", "preview_fonts", "import_warnings", "needs_encryption_choice",
-                 "lost_structures", "safety_scan", "preview_revision")
+                 "lost_structures", "safety_scan", "preview_revision", "geometry_limitations")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
                   authentication: int, disk_stamp, progress_callback=None, *, defer_safety=False) -> None:
@@ -151,6 +151,10 @@ class _Source:
         if progress_callback:
             progress_callback(0, 0, "正在检查签名与文档结构")
         self.safety = inspect_safety(doc, authentication, signature='pending' if defer_safety else None)
+        self.geometry_limitations = tuple(dict.fromkeys(label for key, label in (
+            ('Names/Dests', '命名跳转定位'), ('Dests', '命名跳转定位'),
+            ('OpenAction', '文档打开动作'), ('AA', '文档附加动作'))
+            if doc.xref_get_key(doc.pdf_catalog(), key)[0] != 'null'))
         self.label_rules = tuple(doc.get_page_labels())
         self.label_starts = tuple(rule["startpage"] for rule in self.label_rules)
         self.sizes = []
@@ -358,6 +362,13 @@ class PdfStore:
             rect = src.sizes[ref.source_page]
         except IndexError:
             raise PdfError("页码超出范围") from None
+        for edit in reversed(ref.edits):
+            if edit.kind == 'page_geometry':
+                options = dict(edit.details)
+                width, height = options['width'], options['height']
+                if (src.page_rotation(ref.source_page) + ref.rotation) % 180:
+                    return height, width
+                return width, height
         if ref.rotation % 180:
             return (rect.height, rect.width)
         return (rect.width, rect.height)
@@ -1035,6 +1046,9 @@ class PdfStore:
                     original_progress(current, total, message)
             progress_callback = guarded_progress
         sources = {sid: self._source(sid) for sid in dict.fromkeys(p.source_id for p in pages)}
+        if (any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove') for ref in pages for edit in ref.edits)
+                and self.is_source_destination(dest)):
+            raise PdfError('调整页面、骑缝章或纠偏后请另存副本，不能覆盖来源文件。')
         if not options.editable_copy:
             for source in sources.values():
                 if source.safety.signature != "none":
@@ -1103,15 +1117,30 @@ class PdfStore:
                 raise PdfError("未知压缩档位")
             check_cancel(cancel)
             subset = False
+            geometry_snapshot = None
+            geometry_matrices = {}
+            if any(edit.kind == 'page_geometry' for ref in pages for edit in ref.edits):
+                from app.pdfstructure import capture_navigation
+                geometry_snapshot = capture_navigation(out, range(len(pages)),
+                    allow_structure_loss=options.allow_structure_loss, warnings=warnings)
             if any(ref.edits for ref in pages):
                 from app.pdfedits import apply_edits
                 for index, ref in enumerate(pages):
                     check_cancel(cancel)
                     if ref.edits:
-                        subset |= apply_edits(out[index], ref.edits)
+                        transforms = []
+                        subset |= apply_edits(out[index], ref.edits, transforms=transforms)
+                        if transforms:
+                            matrix = pymupdf.Matrix(1, 1)
+                            for transform in transforms:
+                                matrix *= transform
+                            geometry_matrices[index] = matrix
+            if geometry_snapshot is not None:
+                from app.pagegeometry import restore_geometry_navigation
+                restore_geometry_navigation(out, geometry_snapshot, geometry_matrices)
             if options.outline is not None:
                 from app.pdfedits import apply_outline
-                apply_outline(out, pages, options.outline, warnings)
+                apply_outline(out, pages, options.outline, warnings, transforms=geometry_matrices)
             if options.page_numbers is not None:
                 from app.pagenumbers import apply_page_numbers
                 subset |= apply_page_numbers(out, options.page_numbers, progress_callback, cancel)
@@ -1163,6 +1192,7 @@ class PdfStore:
                 from dataclasses import asdict
                 prepared = dict(temp=tmp, expected=target_stamp, warnings=warnings,
                     password=password, safety=asdict(candidate.safety),
+                    geometry_limitations=candidate.geometry_limitations,
                     sizes=[tuple(rect) for rect in candidate.sizes], rotations=candidate.rotations,
                     label_rules=candidate.label_rules, label_starts=candidate.label_starts)
                 tmp = None
