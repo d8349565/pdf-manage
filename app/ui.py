@@ -2216,6 +2216,8 @@ class MainWindow(QMainWindow):
         self._arrange_ready = False
         self._tool_index = 0
         self._opening_paths = tuple(opening_paths)
+        self._saving = False
+        self._confirming_leave = False
         self.ws = Workspace()
         self.store = PdfStore()
         self._undo_refresh_timer = QTimer(self)
@@ -3592,26 +3594,31 @@ class MainWindow(QMainWindow):
 
     def _sync_selection(self, *, reading_only=False) -> None:
         n = len(self.ws.pages)
-        rows = sorted(i for i in self.ws.selected if 0 <= i < n)
-        if not rows and self.ws.select_all and n:
-            rows = list(range(n))
-        for view in ((self.left_view,) if reading_only else (self.left_view, self.arrange_view)):
-            sm = view.selectionModel()
-            sm.blockSignals(True)
-            sm.clearSelection()
-            if rows:
-                selection = QItemSelection()
-                for row in rows:
-                    idx = self.model.index(row)
-                    selection.select(idx, idx)
-                sm.select(selection, QItemSelectionModel.SelectionFlag.Select)
+        selection = QItemSelection()
+        if self.ws.select_all and n:
+            selection.select(self.model.index(0), self.model.index(n - 1))
+        else:
+            rows = sorted(i for i in self.ws.selected if 0 <= i < n)
+            for position, row in enumerate(rows):
+                if position == 0 or row != rows[position - 1] + 1:
+                    start = row
+                if position == len(rows) - 1 or rows[position + 1] != row + 1:
+                    selection.select(self.model.index(start), self.model.index(row))
+        syncing = self._syncing
+        self._syncing = True
+        try:
+            # 只阻止应用回调递归；视图仍需 selectionChanged 通知来重绘选中样式。
+            for view in ((self.left_view,) if reading_only else (self.left_view, self.arrange_view)):
+                sm = view.selectionModel()
+                sm.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
                 current = self.ws.selected_index
-                if current is not None and 0 <= current < n:
+                if selection and current is not None and 0 <= current < n:
                     sm.setCurrentIndex(
                         self.model.index(current),
-                        QItemSelectionModel.SelectionFlag.Current,
+                        QItemSelectionModel.SelectionFlag.NoUpdate,
                     )
-            sm.blockSignals(False)
+        finally:
+            self._syncing = syncing
 
     def _on_selection_changed(self, _selected: QItemSelection, _deselected: QItemSelection) -> None:
         if self._syncing:
@@ -4691,26 +4698,32 @@ class MainWindow(QMainWindow):
         self.ws.delete_selected()
 
     def confirm_leave(self) -> bool:
-        tools = getattr(self, "annotation_tools", None)
-        if tools is not None and not tools.finish_text_box():
+        if self._saving or self._confirming_leave:
             return False
-        if not self.ws.dirty:
-            return True
-        box = QMessageBox(self)
-        box.setWindowTitle("未保存的更改")
-        box.setText("当前工作区有未保存的更改。")
-        box.setInformativeText("关闭或打开其他文件前，选择是否写入当前文档。")
-        save_btn = box.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("不保存", QMessageBox.ButtonRole.DestructiveRole)
-        cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(save_btn)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is save_btn:
-            return self.save()
-        if clicked is cancel:
-            return False
-        return True
+        self._confirming_leave = True
+        try:
+            tools = getattr(self, "annotation_tools", None)
+            if tools is not None and not tools.finish_text_box():
+                return False
+            if not self.ws.dirty:
+                return True
+            box = QMessageBox(self)
+            box.setWindowTitle("未保存的更改")
+            box.setText("当前工作区有未保存的更改。")
+            box.setInformativeText("关闭或打开其他文件前，选择是否写入当前文档。")
+            save_btn = box.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
+            discard_btn = box.addButton("不保存", QMessageBox.ButtonRole.DestructiveRole)
+            cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(save_btn)
+            box.setEscapeButton(cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            box.deleteLater()
+            if clicked is save_btn:
+                return self.save()
+            return clicked is discard_btn
+        finally:
+            self._confirming_leave = False
 
     def _register_workspace(self, ws: Workspace) -> None:
         self.undo_group.addStack(ws.undo_stack)
@@ -4826,7 +4839,7 @@ class MainWindow(QMainWindow):
         return True
 
     def close_tab(self, tab_id: int) -> bool:
-        if getattr(self, "_task_dialog", None) is not None:
+        if self._saving or self._confirming_leave or getattr(self, "_task_dialog", None) is not None:
             return False
         if getattr(self, "_conv_thread", None) is not None:
             self.statusBar().showMessage("请结束或取消转换后再关闭当前文件", 5000)
@@ -5547,6 +5560,16 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{saved}\n无法自动打开文件夹：{folder}", 10000)
 
     def save(self, save_as: bool = False) -> bool:
+        # 保存与错误提示都会运行事件循环，期间的重复保存或关闭请求不能再次进入。
+        if self._saving or getattr(self, "_task_dialog", None) is not None:
+            return False
+        self._saving = True
+        try:
+            return self._save_document(save_as)
+        finally:
+            self._saving = False
+
+    def _save_document(self, save_as: bool) -> bool:
         tools = getattr(self, "annotation_tools", None)
         if tools is not None and not tools.finish_text_box():
             return False
@@ -5556,31 +5579,44 @@ class MainWindow(QMainWindow):
         if not self.ws.can_save():
             QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
             return False
-        path = self.ws.path
-        is_ofd = bool(path and path.lower().endswith('.ofd'))
-        merged_output = path is None and bool(self.ws.protected_paths)
-        if save_as or not path or is_ofd:
-            suggested = os.path.splitext(path)[0] + '.pdf' if is_ofd else path or "未命名.pdf"
-            path, _ = QFileDialog.getSaveFileName(self, "另存为 PDF" if is_ofd else "保存 PDF", export_path(suggested), "PDF (*.pdf)")
-            if not path:
-                return False
-            if not path.lower().endswith(".pdf"):
-                path += ".pdf"
-            if self.ws.blocks_save_to(path):
-                QMessageBox.warning(
-                    self,
-                    "不能覆盖原件",
-                    "合并后不能保存到本次用过的源文件上，请另选一个新文件。",
-                )
-                return False
-        try:
-            before = list(self.ws.pages)
-            result = self._write_pdf(before, path, "保存 PDF", register_result=True)
-        except PdfError as exc:
-            self.ws.last_error = str(exc)
-            QMessageBox.warning(self, "保存失败", str(exc))
-            self.refresh()
-            return False
+        merged_output = self.ws.path is None and bool(self.ws.protected_paths)
+        while True:
+            path = self.ws.path
+            is_ofd = bool(path and path.lower().endswith('.ofd'))
+            if save_as or not path or is_ofd:
+                suggested = os.path.splitext(path)[0] + '.pdf' if is_ofd else path or "未命名.pdf"
+                path, _ = QFileDialog.getSaveFileName(self, "另存为 PDF" if is_ofd else "保存 PDF", export_path(suggested), "PDF (*.pdf)")
+                if not path:
+                    return False
+                if not path.lower().endswith(".pdf"):
+                    path += ".pdf"
+                if self.ws.blocks_save_to(path):
+                    QMessageBox.warning(
+                        self,
+                        "不能覆盖原件",
+                        "合并后不能保存到本次用过的源文件上，请另选一个新文件。",
+                    )
+                    return False
+            try:
+                before = list(self.ws.pages)
+                result = self._write_pdf(before, path, "保存 PDF", register_result=True)
+                break
+            except PdfError as exc:
+                self.ws.last_error = str(exc)
+                self.refresh()
+                box = QMessageBox(QMessageBox.Icon.Warning, "保存失败", str(exc), parent=self)
+                box.setInformativeText("修改仍保留在当前窗口，可另存到其他位置，或取消后继续编辑。")
+                copy_btn = box.addButton("另存为…", QMessageBox.ButtonRole.AcceptRole)
+                cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+                box.setDefaultButton(cancel)
+                box.setEscapeButton(cancel)
+                box.exec()
+                retry = box.clickedButton() is copy_btn
+                box.deleteLater()
+                if not retry:
+                    return False
+                # 仅在用户明确选择另存为后重试；取消或关闭提示立即结束保存。
+                save_as = True
         if result is None:
             return False
         # 文件已经提交成功。界面或缓存更新出错时，不能再把本次写入报告为失败。
@@ -5918,7 +5954,7 @@ class MainWindow(QMainWindow):
         event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:
-        if getattr(self, "_task_dialog", None) is not None:
+        if self._saving or self._confirming_leave or getattr(self, "_task_dialog", None) is not None:
             event.ignore()
             return
         if getattr(self, "_conv_thread", None) is not None:

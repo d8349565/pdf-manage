@@ -104,7 +104,7 @@ class UpdateChecker(QObject):
 
     @property
     def automatic(self) -> bool:
-        return self.settings.value("updates/automatic", False, type=bool)
+        return self.settings.value("updates/automatic", True, type=bool)
 
     def set_automatic(self, enabled: bool) -> None:
         self.settings.setValue("updates/automatic", enabled)

@@ -3,16 +3,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QSettings, QSize, Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QSettings, QSize, Qt, QUrl
+from PyQt6.QtGui import QDesktopServices, QPixmap
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QApplication, QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
 from app import APP_NAME, APP_ORGANIZATION, APP_PROJECT_URL, APP_SLUG, __version__
 from app.icons import brand_icon, toolbar_icon
 from app.updates import UpdateChecker
+
+LANZOU_URL = "https://leezfy.lanzouq.com/b02qtfd77g"
+LANZOU_PASSWORD = "atxq"
 
 
 class AboutDialog(QDialog):
@@ -158,14 +161,29 @@ class AboutDialog(QDialog):
         self.get_update_button.setObjectName("aboutGetUpdate")
         self.get_update_button.clicked.connect(self.updates.open_release_page)
         update_buttons.addWidget(self.get_update_button)
+        self.lanzou_button = QPushButton("蓝奏云 ↗")
+        self.lanzou_button.setObjectName("aboutLanzouDownload")
+        self.lanzou_button.setIcon(toolbar_icon("cloud-download", "#FFFFFF"))
+        self.lanzou_button.setIconSize(QSize(20, 20))
+        self.lanzou_button.setToolTip(f"打开蓝奏云下载，自动复制密码 {LANZOU_PASSWORD}")
+        self.lanzou_button.setAccessibleName("蓝奏云下载，复制密码并打开网盘")
+        self.lanzou_button.clicked.connect(self._open_lanzou_download)
+        update_buttons.addWidget(self.lanzou_button)
         update_buttons.addStretch()
         updates_layout.addLayout(update_buttons)
+        self.lanzou_status = QLabel(f"蓝奏云密码：{LANZOU_PASSWORD}（点击“蓝奏云”自动复制）")
+        self.lanzou_status.setObjectName("aboutMuted")
+        self.lanzou_status.setTextFormat(Qt.TextFormat.PlainText)
+        self.lanzou_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
+                                                  | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.lanzou_status.setWordWrap(True)
+        updates_layout.addWidget(self.lanzou_status)
         self.auto_updates = QCheckBox("自动检查更新（每天最多一次）")
         self.auto_updates.setObjectName("aboutAutoUpdates")
         self.auto_updates.setChecked(self.updates.automatic)
         self.auto_updates.toggled.connect(self.updates.set_automatic)
         updates_layout.addWidget(self.auto_updates)
-        update_note = QLabel("手动检查或开启自动检查时向 GitHub 查询版本，不上传文档。下载后请关闭软件，再运行安装包。")
+        update_note = QLabel("自动检查更新默认开启，可在上方关闭。仅向 GitHub 查询版本，不上传文档。下载后请关闭软件，再运行安装包。")
         update_note.setObjectName("aboutMuted")
         update_note.setWordWrap(True)
         updates_layout.addWidget(update_note)
@@ -240,7 +258,18 @@ class AboutDialog(QDialog):
         self.update_status.setText(message)
         self.check_update_button.setEnabled(not self.updates.busy)
         self.check_update_button.setText("正在检查…" if self.updates.busy else "检查更新")
-        self.get_update_button.setText("获取新版本 ↗" if self.updates.update_available else "打开发布页 ↗")
+        self.get_update_button.setText("GitHub 下载 ↗" if self.updates.update_available else "GitHub 发布页 ↗")
+
+    def _open_lanzou_download(self) -> None:
+        clipboard = QApplication.clipboard()
+        clipboard.setText(LANZOU_PASSWORD)
+        if clipboard.text() == LANZOU_PASSWORD:
+            message = f"密码 {LANZOU_PASSWORD} 已复制，可在蓝奏云网页中粘贴。"
+        else:
+            message = f"未能复制密码，请在蓝奏云网页中手动输入：{LANZOU_PASSWORD}。"
+        self.lanzou_status.setText(message)
+        if not QDesktopServices.openUrl(QUrl(LANZOU_URL)):
+            self.lanzou_status.setText(f"{message}\n无法打开浏览器，请手动访问：{LANZOU_URL}")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 68:

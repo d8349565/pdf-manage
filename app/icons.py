@@ -25,6 +25,10 @@ _PATHS: dict[str, str] = {
         '<path d="m7.5 10.5 4.5 4.5 4.5-4.5"/>'
         '<path d="M5 18h14"/>'
     ),
+    "cloud-download": (
+        '<path d="M7 17H6a4 4 0 0 1-.8-7.9 7 7 0 0 1 13.6 0A4 4 0 0 1 18 17h-1"/>'
+        '<path d="M12 12v9m-3-3 3 3 3-3"/>'
+    ),
     "save-as": (
         '<rect width="13" height="13" x="8" y="8" rx="2"/>'
         '<path d="M4 16V6a2 2 0 0 1 2-2h10"/>'

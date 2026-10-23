@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import tempfile
+import hashlib
+import math
 import pymupdf
 import pytest
-from PyQt6.QtGui import QPageSize
+from PyQt6.QtCore import QThreadPool
+from PyQt6.QtGui import QImage, QPageSize
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QApplication
 
@@ -384,6 +387,8 @@ def test_print_dialog_preview_shows_physical_sheets(qapp, tmp_path):
     ws.open_replace(store.load(str(src)), str(src))
 
     dlg = PrintDialog(None, ws, store)
+    # Check resolution with the test PDF engine even when no permitted printer exists.
+    dlg.printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
     # 回归：默认的 QPrinter 只有屏幕分辨率（本机 144 dpi），打出来是虚的
     assert dlg.printer.resolution() > 200
 
@@ -614,3 +619,97 @@ def test_apply_sheet_layout_orientation_robustness(qapp):
         geo_p = apply_sheet_layout(printer, opts_portrait, True)
         assert geo_p.height >= geo_p.width, f"Printer {name} portrait height must >= width"
         assert geo_p.portrait is True
+
+
+def _make_color_pdf(path, count=1):
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 16, 16), False)
+    pixmap.set_rect(pixmap.irect, (0, 0, 255))
+    with pymupdf.open() as document:
+        for index in range(count):
+            page = document.new_page(width=300, height=400)
+            page.insert_text((20, 40), f"Color {index + 1}", fontsize=24, color=(1, 0, 0))
+            page.insert_image(pymupdf.Rect(20, 65, 140, 165), stream=pixmap.tobytes("png"))
+            annotation = page.add_rect_annot(pymupdf.Rect(175, 65, 260, 150))
+            annotation.set_colors(stroke=(0, 1, 0), fill=(0, 1, 0))
+            annotation.update()
+        document.save(path)
+
+
+def test_print_preview_color_modes_isolate_late_results(qapp, tmp_path, monkeypatch):
+    source = tmp_path / "color.pdf"
+    _make_color_pdf(source)
+    original = hashlib.sha256(source.read_bytes()).digest()
+    store = PdfStore()
+    ws = Workspace()
+    ws.open_replace(store.load(str(source)), str(source))
+    dialog = PrintDialog(None, ws, store)
+    jobs = []
+    monkeypatch.setattr(QThreadPool.globalInstance(), "start", lambda job, *_: jobs.append(job))
+    try:
+        assert PrintOptions().color_mode == "color"
+        assert dialog._collect_options().color_mode == "color"
+        canvas = dialog.canvas
+        assert canvas._image(0, 192) is None
+        color_key = canvas._image_key(0, 192)
+        dialog.combo_color.setCurrentIndex(dialog.combo_color.findData("grayscale"))
+        assert dialog._collect_options().color_mode == "grayscale"
+        assert canvas._image(0, 192) is None
+        gray_key = canvas._image_key(0, 192)
+        assert gray_key != color_key and len(jobs) == 2
+
+        # Complete the newer gray request first, then the older color request.
+        jobs[1].run()
+        qapp.processEvents()
+        gray = canvas._image(0, 192)
+        assert gray is not None and gray.format() == QImage.Format.Format_Grayscale8
+        assert gray.allGray()
+        jobs[0].run()
+        qapp.processEvents()
+        assert canvas._image(0, 192).cacheKey() == gray.cacheKey()
+        assert not canvas._cache[color_key].allGray()
+        dialog.combo_color.setCurrentIndex(dialog.combo_color.findData("color"))
+        assert not canvas._image(0, 192).allGray()
+        dialog.combo_color.setCurrentIndex(dialog.combo_color.findData("grayscale"))
+        assert canvas._image(0, 192).cacheKey() == gray.cacheKey()
+        assert len(jobs) == 2
+        assert canvas._cache_bytes == sum(image.sizeInBytes() for image in canvas._cache.values())
+        assert hashlib.sha256(source.read_bytes()).digest() == original
+        assert not ws.dirty
+    finally:
+        dialog.close()
+        store.close_all()
+
+
+@pytest.mark.parametrize("color_mode", ["color", "grayscale"])
+@pytest.mark.parametrize("nup,duplex", [(1, "none"), (4, "none"), (4, "long_edge")])
+def test_printed_colors_match_preview_without_changing_source(qapp, tmp_path, color_mode, nup, duplex):
+    source = tmp_path / "color.pdf"
+    _make_color_pdf(source, 6)
+    original = hashlib.sha256(source.read_bytes()).digest()
+    store = PdfStore()
+    try:
+        pages = store.load(str(source))
+        output = tmp_path / "printed.pdf"
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(str(output))
+        indices = [0, 2, 3, 4, 5]
+        options = PrintOptions(color_mode=color_mode, pages_per_face=nup, duplex=duplex,
+                               page_indices=indices, borders=True, reverse=True)
+        render_pages_to_printer(printer, store, pages, options)
+        expected_mode = QPrinter.ColorMode.GrayScale if color_mode == "grayscale" else QPrinter.ColorMode.Color
+        assert printer.colorMode() == expected_mode
+        with pymupdf.open(output) as document:
+            assert len(document) == math.ceil(len(indices) / nup)
+            for page in document:
+                pixels = page.get_pixmap(colorspace=pymupdf.csRGB, alpha=False).samples
+                # RGB color management may round neutral antialiased edges one level apart.
+                gray = not any(max(rgb) - min(rgb) > 1
+                               for rgb in zip(pixels[0::3], pixels[1::3], pixels[2::3]))
+                assert gray == (color_mode == "grayscale")
+                if color_mode == "grayscale":
+                    assert all(image[5] == "DeviceGray" for image in page.get_images())
+        assert hashlib.sha256(source.read_bytes()).digest() == original
+        assert not store.render_qimage(pages[0], 192).allGray()
+    finally:
+        store.close_all()

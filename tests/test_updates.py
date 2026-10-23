@@ -72,23 +72,23 @@ def test_invalid_or_excessive_metadata_is_recoverable(payload):
         updates.release_tag(payload)
 
 
-def test_auto_checks_require_opt_in_and_stop_when_disabled(checker, monkeypatch):
+def test_auto_checks_default_on_and_stop_when_disabled(checker, monkeypatch):
     calls = []
     monkeypatch.setattr(checker, "check", lambda: calls.append(True))
-    assert checker.automatic is False
-    checker.start()
-    checker.check_if_due()
-    assert calls == [] and checker._manager is None
+    assert checker.automatic is True
     assert not checker._startup_timer.isActive() and not checker._automatic_timer.isActive()
-    checker.set_automatic(True)
+    checker.start()
     assert checker._startup_timer.isActive() and checker._automatic_timer.isActive()
     checker.check_if_due()
-    assert calls == [True]
+    assert calls == [True] and checker._manager is None
     checker.set_automatic(False)
+    checker.start()
     checker.check_if_due()
     assert calls == [True]
     assert not checker._startup_timer.isActive() and not checker._automatic_timer.isActive()
     assert updates.UpdateChecker(checker.settings).automatic is False
+    checker.set_automatic(True)
+    assert checker._startup_timer.isActive() and checker._automatic_timer.isActive()
 
 
 def test_auto_checks_respect_interval_opt_out_and_clock_rollback(checker, monkeypatch):

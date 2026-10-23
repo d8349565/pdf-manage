@@ -86,6 +86,7 @@ class PrintOptions:
     cell_order: str = "row"
     borders: bool = False
     reverse: bool = False
+    color_mode: str = "color"  # "color" | "grayscale"
 
 
 @dataclass(frozen=True)
@@ -300,6 +301,10 @@ def apply_sheet_layout(
     )
 
 
+def _image_for_color_mode(image: QImage, color_mode: str) -> QImage:
+    return image.convertToFormat(QImage.Format.Format_Grayscale8) if color_mode == "grayscale" else image
+
+
 def render_pages_to_printer(
     printer: QPrinter,
     store: PdfStore,
@@ -330,6 +335,8 @@ def render_pages_to_printer(
 
     printer.setDuplex(DUPLEX_MODES.get(options.duplex, QPrinter.DuplexMode.DuplexNone))
     printer.setCopyCount(options.copies)
+    printer.setColorMode(QPrinter.ColorMode.GrayScale if options.color_mode == "grayscale"
+                         else QPrinter.ColorMode.Color)
 
     # 第一面的纸张方向必须在 QPainter 开启前设定，否则 QPainter 会沿用旧纸张朝向。
     geometry = apply_sheet_layout(printer, options, faces[0][1])
@@ -373,6 +380,7 @@ def render_pages_to_printer(
                 render_w = min(render_w, max(1, int(math.sqrt(MAX_PRINT_PIXELS * width_pt / max(height_pt, 1)))))
                 try:
                     image = store.render_qimage(pages[page_index], render_w)
+                    image = _image_for_color_mode(image, options.color_mode)
                 except Exception as exc:
                     raise PdfError(f"工作区第 {page_index + 1} 页渲染失败：{exc}") from exc
                 if image.isNull():
@@ -380,7 +388,8 @@ def render_pages_to_printer(
                 check_cancel(cancel_check)
                 painter.drawImage(fit_rect(cell, image.width() / image.height()), image)
                 if options.borders:
-                    painter.setPen(QPen(QColor("#64748B"), max(1, draw_rect.width() * .0007)))
+                    color = QColor("#737373" if options.color_mode == "grayscale" else "#64748B")
+                    painter.setPen(QPen(color, max(1, draw_rect.width() * .0007)))
                     painter.drawRect(cell)
                 del image
             if progress_callback:
@@ -401,16 +410,18 @@ class _PreviewSignals(QObject):
 
 
 class _PreviewJob(QRunnable):
-    def __init__(self, store, ref, key, signals, pending):
+    def __init__(self, store, ref, key, signals, pending, color_mode="color"):
         super().__init__()
         self.store, self.ref, self.key = store, ref, key
         self.signals, self.pending = signals, pending
+        self.color_mode = color_mode
 
     def run(self):
         if self.key not in self.pending:
             return
         try:
             image = self.store.render_qimage(self.ref, self.key[-1])
+            image = _image_for_color_mode(image, self.color_mode)
             error = "" if not image.isNull() else "页面图像为空"
         except Exception as exc:
             image, error = QImage(), str(exc)
@@ -689,7 +700,8 @@ class SheetPreview(QWidget):
             for index, cell in face_cells(content, indices, self.options):
                 self._paint_content(painter, cell, index)
                 if self.options.borders:
-                    painter.setPen(QPen(QColor("#64748B"), max(.5, content.width() * .0007)))
+                    color = QColor("#737373" if self.options.color_mode == "grayscale" else "#64748B")
+                    painter.setPen(QPen(color, max(.5, content.width() * .0007)))
                     painter.drawRect(cell)
 
         painter.setPen(QPen(QColor("#9AA8B2"), 1))
@@ -773,7 +785,7 @@ class SheetPreview(QWidget):
         ref = self.pages[page_index]
         width_pt, height_pt = self.store.page_size(ref)
         bucket = min(bucket, max(1, int(math.sqrt(MAX_PREVIEW_PIXELS * width_pt / max(height_pt, 1)))))
-        return (self._generation, *ref.render_key, bucket)
+        return (self._generation, *ref.render_key, self.options.color_mode, bucket)
 
     def _image(self, page_index: int, width: int) -> QImage | None:
         if not (0 <= page_index < len(self.pages)):
@@ -784,7 +796,8 @@ class SheetPreview(QWidget):
             if self._rendering_enabled and key not in self._pending:
                 self._pending.add(key)
                 QThreadPool.globalInstance().start(
-                    _PreviewJob(self.store, self.pages[page_index], key, self._signals, self._pending), -1)
+                    _PreviewJob(self.store, self.pages[page_index], key, self._signals, self._pending,
+                                self.options.color_mode), -1)
             return None
         self._cache.move_to_end(key)
         return None if image.isNull() else image
@@ -1041,6 +1054,14 @@ class PrintDialog(QDialog):
             self.combo_printer.setEnabled(False)
         self.combo_printer.currentIndexChanged.connect(self._on_printer_changed)
         lay.addWidget(self.combo_printer)
+
+        lay.addWidget(self._caption("颜色模式"))
+        self.combo_color = QComboBox()
+        self.combo_color.setAccessibleName("颜色模式")
+        self.combo_color.addItem("彩色", "color")
+        self.combo_color.addItem("灰度（黑白）", "grayscale")
+        self.combo_color.currentIndexChanged.connect(self._refresh)
+        lay.addWidget(self.combo_color)
 
         # 2. 打印范围
         lay.addWidget(self._caption("打印范围"))
@@ -1363,6 +1384,7 @@ class PrintDialog(QDialog):
             cell_order=self.combo_cell_order.currentData() or "row",
             borders=self.check_borders.isChecked(),
             reverse=self.check_reverse.isChecked(),
+            color_mode=self.combo_color.currentData() or "color",
         )
 
     def _geometries(self, options: PrintOptions) -> dict[bool, SheetGeometry]:

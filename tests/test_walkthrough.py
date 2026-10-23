@@ -875,6 +875,179 @@ def test_arrange_selected_thumbs_are_visibly_stronger(window, tmp_path, qapp):
     assert selected > idle * 3 + 20, f"选中态不够明显：选中 {selected} 未选 {idle}"
 
 
+def test_select_all_notifies_and_paints_without_extra_input(window, tmp_path, qapp):
+    from PyQt6.QtTest import QSignalSpy
+    from PyQt6.QtWidgets import QStyle
+    from app.ui import PageThumbDelegate
+
+    _enter_arrange(window, tmp_path)
+    view = window.arrange_view
+    painted = {}
+
+    class ObservedDelegate(PageThumbDelegate):
+        def paint(self, painter, option, index):
+            super().paint(painter, option, index)
+            painted[index.row()] = bool(option.state & QStyle.StateFlag.State_Selected)
+
+    view.setItemDelegate(ObservedDelegate(view))
+    window.activateWindow()
+    view.setFocus()
+    QTest.qWait(100)
+    painted.clear()
+    notifications = [QSignalSpy(v.selectionModel().selectionChanged)
+                     for v in (window.left_view, view)]
+    QTest.keyClick(view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyRelease(view, Qt.Key.Key_Control)
+
+    assert window.ws.target_indices() == [0, 1, 2, 3]
+    assert all(len(spy) > 0 for spy in notifications), "两个视图都需要收到选择变化通知"
+    assert window.arrange_sel.text() == "已选全部 4 页"
+    assert "已选 4 页" in window.statusBar().currentMessage()
+    QTest.qWait(50)
+    assert all(painted.get(row) for row in (1, 2, 3)), "无额外点击或强制重绘时也应显示选中"
+
+
+@pytest.mark.parametrize("count", [10, 1000])
+@pytest.mark.parametrize("loaded", [False, True], ids=["loading", "loaded"])
+def test_select_all_feedback_while_thumbnails_load(window, tmp_path, qapp, monkeypatch, count, loaded):
+    import threading
+    from time import perf_counter
+    from PyQt6.QtWidgets import QStyle
+    from app.ui import PageThumbDelegate
+
+    source = tmp_path / "generated.pdf"
+    _make_pdf(source, count, "P")
+    release = threading.Event()
+    entered = threading.Event()
+    render = window.store.render_preview
+
+    def wait_for_release(*args, **kwargs):
+        entered.set()
+        if not release.wait(5):
+            raise RuntimeError("Test did not release thumbnail rendering")
+        return render(*args, **kwargs)
+
+    if not loaded:
+        monkeypatch.setattr(window.store, "render_preview", wait_for_release)
+    try:
+        assert window._load_one(str(source))
+        window.resize(1100, 720)
+        window.stack.setCurrentIndex(1)
+        view = window.arrange_view
+        painted = {}
+
+        class ObservedDelegate(PageThumbDelegate):
+            def paint(self, painter, option, index):
+                super().paint(painter, option, index)
+                painted[index.row()] = (bool(option.state & QStyle.StateFlag.State_Selected), perf_counter())
+
+        view.setItemDelegate(ObservedDelegate(view))
+        window.activateWindow()
+        view.setFocus()
+        QTest.qWait(100)
+        if loaded:
+            deadline = perf_counter() + 5
+            while window.model.inflight and perf_counter() < deadline:
+                QTest.qWait(10)
+            assert window.model.thumbs and not window.model.inflight
+        else:
+            assert entered.is_set() and not window.model.thumbs
+        visible = {row for row in range(min(count, 40))
+                   if view.visualRect(window.model.index(row)).intersects(view.viewport().rect())}
+        painted.clear()
+        started = perf_counter()
+        QTest.keyClick(view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+        QTest.keyRelease(view, Qt.Key.Key_Control)
+        handled_ms = (perf_counter() - started) * 1000
+        assert len(window.ws.target_indices()) == count
+        assert window.arrange_sel.text() == f"已选全部 {count} 页"
+        assert f"已选 {count} 页" in window.statusBar().currentMessage()
+        assert window.delete_action.isEnabled()
+        assert not window.ws.dirty
+        deadline = perf_counter() + 2
+        while not visible.issubset(painted) and perf_counter() < deadline:
+            QTest.qWait(5)
+        assert visible and visible.issubset(painted)
+        assert all(painted[row][0] for row in visible)
+        paint_ms = (min(painted[row][1] for row in visible) - started) * 1000
+        print(f"selection pages={count} loaded={loaded} handler_ms={handled_ms:.2f} first_paint_ms={paint_ms:.2f}")
+    finally:
+        window.rendering.close()
+        release.set()
+        QThreadPool.globalInstance().waitForDone(5000)
+        qapp.processEvents()
+
+
+@pytest.mark.parametrize("entry", ["menu", "button"])
+def test_select_all_entries_and_selection_recovery(window, tmp_path, qapp, entry):
+    from PyQt6.QtGui import QAction
+    from PyQt6.QtWidgets import QPushButton
+
+    _enter_arrange(window, tmp_path)
+    window.activateWindow()
+    qapp.processEvents()
+    if entry == "menu":
+        select = next(action.trigger for action in window.findChildren(QAction)
+                      if action.text() == "全选")
+    else:
+        select = next(button.click for button in window.findChildren(QPushButton)
+                      if button.text() == "全选" and button.isVisible())
+    window.ws.set_selection({1, 3}, current=3)
+    window._sync_selection()
+    select()
+    assert window.ws.target_indices() == [0, 1, 2, 3]
+    assert window.ws.preview_index() == 3
+    window.arrange_view.selectionModel().clearSelection()
+    assert window.ws.target_indices() == []
+    select()
+    select()
+    for view in (window.left_view, window.arrange_view):
+        assert {index.row() for index in view.selectedIndexes()} == {0, 1, 2, 3}
+    window.stack.setCurrentIndex(0)
+    number_text = window.page_number.lineEdit().text()
+    window.page_number.setFocus()
+    QTest.keyClick(window.page_number, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyRelease(window.page_number, Qt.Key.Key_Control)
+    assert window.page_number.lineEdit().selectedText() == number_text
+    assert window.ws.target_indices() == [0, 1, 2, 3]
+    window.ws.set_selection({0, 2}, current=2)
+    window._syncing = True
+    window._sync_selection(reading_only=True)
+    assert window._syncing
+    window._syncing = False
+    assert {index.row() for index in window.left_view.selectedIndexes()} == {0, 2}
+    assert len(window.arrange_view.selectedIndexes()) == 4
+    window._sync_selection()
+    assert {index.row() for index in window.arrange_view.selectedIndexes()} == {0, 2}
+    assert window.ws.preview_index() == 2
+
+
+def test_selection_sync_preserves_ctrl_and_shift_clicks(window, tmp_path, qapp):
+    _enter_arrange(window, tmp_path)
+    window.activateWindow()
+    qapp.processEvents()
+    view = window.arrange_view
+    for row, modifiers in ((1, Qt.KeyboardModifier.NoModifier), (3, Qt.KeyboardModifier.ControlModifier)):
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, modifiers,
+                         view.visualRect(window.model.index(row)).center())
+    QTest.keyRelease(view, Qt.Key.Key_Control)
+    assert window.ws.target_indices() == [1, 3]
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier,
+                     view.visualRect(window.model.index(0)).center())
+    QTest.keyRelease(view, Qt.Key.Key_Shift)
+    assert window.ws.target_indices() == [0, 1, 2, 3]
+    assert {index.row() for index in window.left_view.selectedIndexes()} == {0, 1, 2, 3}
+
+
+def test_select_all_empty_workspace_keeps_selection_empty(window):
+    window.select_all_pages()
+    assert not window.ws.target_indices()
+    assert not window.left_view.selectedIndexes()
+    assert not window.arrange_view.selectedIndexes()
+    assert not window.delete_action.isEnabled()
+    assert not window._syncing
+
+
 def test_open_failure_keeps_workspace(window, tmp_path, monkeypatch):
     src = tmp_path / "合同.pdf"
     _make_pdf(src, 2, "C")

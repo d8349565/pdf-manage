@@ -3,7 +3,8 @@ from hashlib import sha256
 
 import pymupdf as p
 import pytest
-from PyQt6.QtCore import QThreadPool, QRect
+from PyQt6.QtCore import QThreadPool, QRect, Qt, QTimer
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
@@ -101,11 +102,15 @@ def test_save_failure_keeps_edits_closes_progress_and_allows_save_as(window, tmp
     win.ws.rotate(90)
     edits = list(win.ws.pages)
     warnings = []
-    def warning(*args):
+    def warning(box):
+        assert box.windowTitle() == '保存失败'
         assert win._task_dialog is None
         assert not any(dialog.isVisible() for dialog in win.findChildren(TaskProgressDialog))
-        warnings.append(args)
-    monkeypatch.setattr(QMessageBox, 'warning', warning)
+        warnings.append(box.text())
+        next(button for button in box.buttons()
+             if box.buttonRole(button) == QMessageBox.ButtonRole.RejectRole).click()
+        return 0
+    monkeypatch.setattr(QMessageBox, 'exec', warning)
     if failure == 'target_changed':
         replacement = tmp_path / 'external.pdf'
         make_image_pdf(replacement, 180)
@@ -137,6 +142,170 @@ def test_save_failure_keeps_edits_closes_progress_and_allows_save_as(window, tmp
     assert sha256(source.read_bytes()).digest() == sha256(expected_source).digest()
     with p.open(target) as saved:
         assert saved[0].rotation == 90
+
+
+@pytest.mark.parametrize('phase', ['writing', 'error_dialog'])
+def test_save_and_close_cannot_reenter_during_failed_save(window, monkeypatch, phase):
+    from app.pdfio import PdfError
+
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+    writes = []
+    prompts = []
+
+    def reenter():
+        assert not window.save()
+        assert not window.confirm_leave()
+        assert not window.close_tab(window._active_tab_id)
+        event = QCloseEvent()
+        window.closeEvent(event)
+        assert not event.isAccepted()
+
+    def denied(*args, **kwargs):
+        writes.append(1)
+        if phase == 'writing' and len(writes) == 1:
+            reenter()
+        raise PdfError('写入被拒绝')
+
+    def cancel(box):
+        prompts.append(box.windowTitle())
+        if phase == 'error_dialog' and len(prompts) == 1:
+            reenter()
+        box.reject()
+        return 0
+
+    monkeypatch.setattr(window, '_write_pdf', denied)
+    monkeypatch.setattr(QMessageBox, 'exec', cancel)
+    assert not window.save()
+    assert writes == [1] and prompts == ['保存失败']
+    assert window.ws.dirty and not window._saving
+
+
+@pytest.mark.parametrize('recovery', ['save_as', 'cancel_destination', 'escape', 'close'])
+def test_readonly_save_can_recover_or_cancel_then_close(window, tmp_path, monkeypatch, recovery):
+    import stat
+
+    source = tmp_path / 'scan.pdf'
+    target = tmp_path / 'copy.pdf'
+    original = source.read_bytes()
+    mode = source.stat().st_mode
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+    edits = list(window.ws.pages)
+    undo_count = window.ws.undo_stack.count()
+    prompts = []
+    execute = QMessageBox.exec
+
+    def respond(box):
+        prompts.append(box.windowTitle())
+        assert prompts == ['保存失败']
+        assert window._task_dialog is None
+        assert not any(dialog.isVisible() for dialog in window.findChildren(TaskProgressDialog))
+        if recovery in ('save_as', 'cancel_destination'):
+            button = next(button for button in box.buttons()
+                          if box.buttonRole(button) == QMessageBox.ButtonRole.AcceptRole)
+            QTimer.singleShot(0, button.click)
+        elif recovery == 'escape':
+            QTimer.singleShot(0, lambda: QTest.keyClick(box, Qt.Key.Key_Escape))
+        else:
+            QTimer.singleShot(0, box.close)
+        return execute(box)
+
+    monkeypatch.setattr(QMessageBox, 'exec', respond)
+    destinations = []
+    def destination(*args):
+        destinations.append(1)
+        return ('' if recovery == 'cancel_destination' else str(target), 'PDF')
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', destination)
+    source.chmod(stat.S_IREAD)
+    try:
+        assert window.save() is (recovery == 'save_as')
+        assert prompts == ['保存失败']
+        assert len(destinations) == int(recovery in ('save_as', 'cancel_destination'))
+        assert not window._saving and not window._confirming_leave
+        assert source.read_bytes() == original
+        assert not list(tmp_path.glob('.zhixu-write-*'))
+        if recovery == 'save_as':
+            assert not window.ws.dirty and window.ws.path == str(target)
+            with p.open(target) as saved:
+                assert saved[0].rotation == 90
+        else:
+            assert window.ws.dirty and window.ws.pages == edits
+            assert window.ws.undo_stack.count() == undo_count
+            assert not target.exists()
+
+            def leave(box):
+                assert box.windowTitle() == '未保存的更改'
+                # Repeated close requests must not stack another confirmation dialog.
+                assert not window.confirm_leave()
+                assert not window.close_tab(window._active_tab_id)
+                next(button for button in box.buttons() if button.text() == choice).click()
+                return 0
+
+            monkeypatch.setattr(QMessageBox, 'exec', leave)
+            choice = '取消'
+            assert not window.close_tab(window._active_tab_id)
+            assert window.ws.dirty and window.ws.pages == edits
+            choice = '不保存'
+            assert window.close_tab(window._active_tab_id)
+            assert not window.ws.pages and not window._confirming_leave
+            assert source.read_bytes() == original
+    finally:
+        source.chmod(mode)
+
+
+@pytest.mark.parametrize('closing', ['tab', 'window'])
+def test_failed_save_on_close_can_cancel_or_discard(window, monkeypatch, closing):
+    from app.pdfio import PdfError
+
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+    edits = list(window.ws.pages)
+    prompts = []
+    writes = []
+    choice = '保存'
+
+    def denied(*args, **kwargs):
+        writes.append(1)
+        raise PdfError('写入被拒绝')
+
+    def respond(box):
+        prompts.append(box.windowTitle())
+        if box.windowTitle() == '保存失败':
+            box.reject()
+        else:
+            next(button for button in box.buttons() if button.text() == choice).click()
+        return 0
+
+    def close():
+        if closing == 'tab':
+            return window.close_tab(window._active_tab_id)
+        event = QCloseEvent()
+        window.closeEvent(event)
+        return event.isAccepted()
+
+    monkeypatch.setattr(window, '_write_pdf', denied)
+    monkeypatch.setattr(QMessageBox, 'exec', respond)
+    assert not close()
+    assert prompts == ['未保存的更改', '保存失败'] and writes == [1]
+    assert window.ws.dirty and window.ws.pages == edits
+    assert not window._saving and not window._confirming_leave
+    choice = '取消'
+    assert not close()
+    assert writes == [1] and window.ws.pages == edits
+    choice = '不保存'
+    assert window.close_tab(window._active_tab_id)
+    assert writes == [1] and not window.ws.pages
+
+
+def test_dismissing_leave_prompt_keeps_unsaved_edits(window, monkeypatch):
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+    edits = list(window.ws.pages)
+    monkeypatch.setattr(QMessageBox, 'exec', lambda box: 0)
+    assert not window.confirm_leave()
+    assert window.ws.dirty and window.ws.pages == edits
+    assert not window._confirming_leave
 
 
 def foreground(win, busy):
