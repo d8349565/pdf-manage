@@ -248,7 +248,8 @@ def close_window(window, qapp):
     qapp.processEvents()
 
 
-def test_panel_preferences_restore_user_choices_while_empty_and_reset_only_ui(qapp, tmp_path, monkeypatch):
+@pytest.mark.parametrize('tool_index', [2, -1])
+def test_panel_preferences_restore_user_choices_while_empty_and_reset_only_ui(qapp, tmp_path, monkeypatch, tool_index):
     import app.ui as ui
     factory = lambda *args: QSettings(str(tmp_path / 'ui.ini'), QSettings.Format.IniFormat)
     monkeypatch.setattr(ui, 'QSettings', factory)
@@ -257,14 +258,14 @@ def test_panel_preferences_restore_user_choices_while_empty_and_reset_only_ui(qa
         first.act_pages.setChecked(True)
         first.act_tools.setChecked(True)
         first.sidebar_mode.setCurrentIndex(1)
-        first.export_tools.setCurrentIndex(2)
+        first.export_tools.setCurrentIndex(tool_index)
         factory().setValue('storage/ocr', str(tmp_path / 'keep-models'))
     finally:
         close_window(first, qapp)
     second = ui.MainWindow()
     try:
         assert second.act_pages.isChecked() and second.act_tools.isChecked()
-        assert second.sidebar_mode.currentIndex() == 1 and second.export_tools.currentIndex() == 2
+        assert second.sidebar_mode.currentIndex() == 1 and second.export_tools.currentIndex() == tool_index
         assert not second.left_panel.isVisible() and not second.tools_panel.isVisible()
         second.reset_ui_preferences()
         assert not second.act_pages.isChecked() and not second.act_tools.isChecked()

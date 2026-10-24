@@ -73,6 +73,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStackedWidget,
@@ -81,7 +82,6 @@ from PyQt6.QtWidgets import (
     QStyledItemDelegate,
     QSizePolicy,
     QToolButton,
-    QToolBox,
     QVBoxLayout,
     QWidget,
 )
@@ -224,7 +224,7 @@ QMainWindow, QWidget {
     font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
     font-size: 14px;
 }
-QFrame#card {
+QFrame#card, QFrame#exportSidebar {
     background: #FFFFFF;
     border: 1px solid #E2EEEC;
     border-radius: 12px;
@@ -242,12 +242,6 @@ QSpinBox {
     border-radius: 6px; padding: 6px; min-height: 24px;
 }
 QSpinBox:focus { border: 2px solid #0D9488; }
-QToolBox { background: transparent; }
-QToolBox::tab {
-    background: #F3F6F5; border-radius: 6px;
-    min-height: 32px; padding: 4px 8px; font-weight: 600;
-}
-QToolBox::tab:selected { background: #E1F3EF; color: #134E4A; }
 QScrollArea { background: transparent; border: none; }
 QLabel#caption {
     color: #134E4A;
@@ -612,64 +606,47 @@ QRadioButton::indicator:checked {
     border-radius: 8px;
     background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 #0F766E, stop:0.48 #0F766E, stop:0.52 #FFFFFF, stop:1 #FFFFFF);
 }
-QWidget#splitPanel, QWidget#splitPanel QWidget {
-    font-family: "Microsoft YaHei UI";
+QFrame#exportSidebar, QFrame#exportSidebar QWidget {
+    font-family: "Microsoft YaHei UI", "Segoe UI";
 }
-QWidget#splitPanel QRadioButton {
-    min-height: 36px;
-    spacing: 10px;
-    color: #334D49;
+QFrame#exportSidebar QWidget[exportPage="true"],
+QWidget#exportToolList { background: transparent; }
+QFrame#exportSidebar QLabel, QFrame#exportSidebar QRadioButton { color: #29413D; }
+QFrame#exportSidebar QLabel#hint, QFrame#exportSidebar QLabel#exportFeedback {
+    color: #526B65; font-size: 13px; font-weight: 400; padding: 0;
 }
-QWidget#splitPanel QRadioButton:checked {
-    color: #134E4A;
-    font-weight: 600;
+QFrame#exportSidebar QPushButton {
+    min-height: 26px; padding: 5px 8px; border-radius: 7px;
 }
-QWidget#splitPanel QRadioButton::indicator {
-    width: 14px;
-    height: 14px;
-    border: 2px solid #99B2AC;
-    border-radius: 9px;
+QFrame#exportSidebar QPushButton#selectPages {
+    min-height: 24px; border-color: transparent; padding: 2px 6px;
 }
-QWidget#splitPanel QRadioButton::indicator:hover {
-    border-color: #0F766E;
+QFrame#exportSidebar QPushButton[pageAction="true"] {
+    border-color: transparent; background: transparent; font-size: 13px;
 }
-QWidget#splitPanel QRadioButton::indicator:checked {
-    border-color: #0F766E;
+QFrame#exportSidebar QPushButton[pageAction="true"]:hover { background: #F0F6F3; }
+QFrame#exportSidebar QPushButton[pageAction="true"][danger="true"]:hover { background: #FEF2F2; }
+QFrame#exportSidebar QToolButton[exportSection="true"] {
+    color: #33483F; background: transparent; border: 1px solid transparent;
+    border-radius: 7px; min-height: 24px; padding: 6px; font-size: 14px; font-weight: 400;
 }
-QWidget#splitPanel QSpinBox {
-    min-height: 26px;
-    padding: 2px 6px;
-    border-radius: 8px;
-    border-color: #C5D5D2;
+QFrame#exportSidebar QToolButton[exportSection="true"]:hover { background: #F1F6F3; }
+QFrame#exportSidebar QToolButton[exportSection="true"]:checked {
+    color: #0F766E; font-weight: 600;
 }
-QWidget#splitPanel QSpinBox:focus {
-    border-color: #0F766E;
+QFrame#exportSidebar QToolButton[exportSection="true"]:pressed { background: #E1EEE7; }
+QFrame#exportSidebar QToolButton[exportSection="true"]:focus { border-color: #0F766E; }
+QFrame#exportSidebar QToolButton[exportSection="true"]:disabled { color: #84958F; }
+QFrame#exportSidebar QPushButton:focus { border: 2px solid #0F766E; }
+QFrame#exportSidebar QPushButton:disabled { color: #84958F; border-color: #E3ECE8; }
+QFrame#exportSidebar QPushButton[primary="true"]:hover:enabled {
+    background: #115E59; border-color: #115E59;
 }
-QWidget#splitPanel QLineEdit {
-    min-height: 26px;
-    border-radius: 8px;
-}
-QWidget#splitPanel QLineEdit:focus {
-    border-color: #0F766E;
-}
-QLabel#splitFeedback {
-    color: #4D6B67;
-    font-size: 13px;
-    font-weight: 400;
-    padding: 0;
-}
-QPushButton#splitSubmit {
-    min-height: 28px;
-    padding: 6px 12px;
-    border-radius: 8px;
-}
-QPushButton#splitSubmit:hover:enabled {
-    background: #0B6F68;
-    border-color: #0B6F68;
-}
-QPushButton#splitSubmit:pressed:enabled {
-    background: #115E59;
-    border-color: #115E59;
+QFrame#exportSidebar QRadioButton { min-height: 28px; spacing: 8px; }
+QFrame#exportSidebar QRadioButton:checked { color: #115E59; font-weight: 600; }
+QFrame#exportSidebar QRadioButton:focus { outline: 1px solid #0F766E; }
+QFrame#exportSidebar QLineEdit, QFrame#exportSidebar QSpinBox {
+    min-height: 26px; border-radius: 7px;
 }
 QListView {
     background: transparent;
@@ -2202,6 +2179,70 @@ class DocumentTabBar(QFrame):
         event.ignore()
 
 
+class _ExportTools(QScrollArea):
+    """One open form, natural row heights and one scrollbar for the tool list."""
+    currentChanged = pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__()
+        self.headers = []
+        self.pages = []
+        self._current = -1
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.viewport().setAutoFillBackground(False)
+        body = QWidget()
+        body.setObjectName("exportToolList")
+        self.rows = QVBoxLayout(body)
+        self.rows.setContentsMargins(0, 0, 0, 0)
+        self.rows.setSpacing(4)
+        self.rows.addStretch()
+        self.setWidget(body)
+
+    def addItem(self, page, title):
+        index = len(self.pages)
+        header = QToolButton()
+        header.setText(title)
+        header.setAccessibleName(title)
+        header.setProperty("exportSection", True)
+        header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        header.setArrowType(Qt.ArrowType.RightArrow)
+        header.setCheckable(True)
+        header.setCursor(Qt.CursorShape.PointingHandCursor)
+        header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        header.setFixedHeight(40)
+        header.clicked.connect(lambda checked, i=index: self.setCurrentIndex(i if checked else -1))
+        self.headers.append(header)
+        self.pages.append(page)
+        self.rows.insertWidget(self.rows.count() - 1, header)
+        self.rows.insertWidget(self.rows.count() - 1, page)
+        page.hide()
+        if index == 0:
+            self.setCurrentIndex(0)
+
+    def currentIndex(self):
+        return self._current
+
+    def setCurrentIndex(self, index):
+        if not -1 <= index < len(self.pages):
+            return
+        changed = index != self._current
+        self._current = index
+        for row, (header, page) in enumerate(zip(self.headers, self.pages)):
+            opened = row == index
+            header.setChecked(opened)
+            header.setArrowType(Qt.ArrowType.DownArrow if opened else Qt.ArrowType.RightArrow)
+            page.setVisible(opened)
+        if index >= 0:
+            QTimer.singleShot(0, self._reveal_current)
+        if changed:
+            self.currentChanged.emit(index)
+
+    def _reveal_current(self):
+        if self._current >= 0:
+            self.ensureWidgetVisible(self.headers[self._current], 0, 8)
+
+
 class MainWindow(QMainWindow):
     first_painted = pyqtSignal()
 
@@ -2409,7 +2450,7 @@ class MainWindow(QMainWindow):
         self.act_pages.setChecked(self._window_settings.value('mainWindow/pagesVisible', False, type=bool))
         self.act_tools.setChecked(self._window_settings.value('mainWindow/toolsVisible', False, type=bool))
         try:
-            self._tool_index = max(0, min(6, self._window_settings.value('mainWindow/toolIndex', 0, type=int)))
+            self._tool_index = max(-1, min(6, self._window_settings.value('mainWindow/toolIndex', 0, type=int)))
         except (TypeError, ValueError):
             self._tool_index = 0
         for key, widget in (('sidebarMode', self.sidebar_mode),):
@@ -2835,6 +2876,7 @@ class MainWindow(QMainWindow):
         if self._tools_ready:
             self.tool_selection.setText(read_only or self._selection_caption() or "选择页面后可旋转或删除")
             self._export_tools.setEnabled(bool(count))
+            self.select_pages_button.setEnabled(bool(count) and len(self.ws.target_indices()) < count)
         self.extract_action.setEnabled(bool(count) and not read_only and not copy_reason)
         self.split_action.setEnabled(bool(count) and not read_only and not copy_reason)
         can_split_page = len(self.ws.target_indices()) == 1 and not read_only and not copy_reason
@@ -3262,8 +3304,10 @@ class MainWindow(QMainWindow):
         self.preview_view.setFocus()
 
     def _tools(self) -> QWidget:
+        from app.pagetoolsui import ClearComboBox, ClearSpinBox
+
         box = QFrame()
-        box.setObjectName("card")
+        box.setObjectName("exportSidebar")
         box.setMinimumWidth(280)
         box.setMaximumWidth(320)
         lay = QVBoxLayout(box)
@@ -3274,36 +3318,38 @@ class MainWindow(QMainWindow):
         selection = QHBoxLayout()
         selection.addWidget(self.tool_selection, 1)
         self.select_pages_button = self._btn("全选", self.select_all_pages)
-        self.select_pages_button.setStyleSheet("min-height: 26px; padding: 4px 8px;")
+        self.select_pages_button.setObjectName("selectPages")
         selection.addWidget(self.select_pages_button)
         lay.addLayout(selection)
         page = QHBoxLayout()
-        page.setSpacing(4)
+        page.setSpacing(8)
         for icon, label, slot in (
             ("rotate-ccw", "左转", lambda: self.rotate(-90)),
             ("rotate-cw", "右转", lambda: self.rotate(90)),
             ("trash", "删除", self.delete_pages),
         ):
             button = self._btn(label, slot, icon=icon, danger=icon == "trash")
-            button.setStyleSheet("padding: 4px 6px;")
+            button.setProperty("pageAction", True)
             self._selection_buttons.append(button)
             page.addWidget(button)
         lay.addLayout(page)
         lay.addWidget(self._sep())
         lay.addWidget(self._caption("导出与转换"))
-        self._export_tools = QToolBox()
-        self.export_tools.setAccessibleName("导出与转换工具")
-        lay.addWidget(self.export_tools, 1)
+        self._export_tools = _ExportTools()
+        self._export_tools.setAccessibleName("导出与转换工具")
+        lay.addWidget(self._export_tools, 1)
 
         def section(title):
             content = QWidget()
+            content.setProperty("exportPage", True)
             inner = QVBoxLayout(content)
-            inner.setContentsMargins(4, 12, 4, 12)
+            inner.setContentsMargins(20, 0, 4, 14)
             inner.setSpacing(10)
-            self.export_tools.addItem(content, title)
+            inner.setAlignment(Qt.AlignmentFlag.AlignTop)
+            self._export_tools.addItem(content, title)
             return inner
 
-        extract = section("提取页面 · 一个新文件")
+        extract = section("提取页面")
         hint = QLabel("留空使用所选页面，或输入页码范围。")
         hint.setWordWrap(True)
         hint.setObjectName("hint")
@@ -3311,25 +3357,24 @@ class MainWindow(QMainWindow):
         self.extract_range = QLineEdit()
         self.extract_range.setPlaceholderText("例如 1-3,5")
         self.extract_range.setAccessibleName("提取页码范围")
+        hint.setBuddy(self.extract_range)
         extract.addWidget(self.extract_range)
-        self.extract_feedback = self._caption("")
+        self.extract_feedback = QLabel("")
+        self.extract_feedback.setObjectName("exportFeedback")
         self.extract_feedback.setWordWrap(True)
         extract.addWidget(self.extract_feedback)
-        self.extract_button = self._btn("提取到新 PDF…", self.extract, icon="scissors")
+        self.extract_button = self._btn("提取到新 PDF…", self.extract, primary=True)
         extract.addWidget(self.extract_button)
-        extract.addStretch()
-        split = section("拆分文件 · 多个 PDF")
-        split.parentWidget().setObjectName("splitPanel")
-        split.setContentsMargins(8, 12, 8, 12)
+        split = section("拆分文件")
         split.setSpacing(8)
         self.split_each = QRadioButton("每页一个文件")
         self.split_every = QRadioButton("每几页一个文件")
-        self.split_count = QSpinBox()
+        self.split_count = ClearSpinBox()
         self.split_count.setRange(1, 1_000_000)
         self.split_count.setValue(5)
         self.split_count.setSuffix(" 页")
         self.split_count.setAccessibleName("每个拆分文件的页数")
-        self.split_count.setFixedWidth(104)
+        self.split_count.setFixedWidth(88)
         self.split_count.setFixedHeight(36)
         self.split_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.split_count.hide()
@@ -3357,16 +3402,14 @@ class MainWindow(QMainWindow):
         split.addWidget(self.split_range)
         split.addSpacing(4)
         self.split_feedback = QLabel("")
-        self.split_feedback.setObjectName("splitFeedback")
+        self.split_feedback.setObjectName("exportFeedback")
         self.split_feedback.setWordWrap(True)
         split.addWidget(self.split_feedback)
-        self.split_button = self._btn("拆分到文件夹…", self.split, icon="split", primary=True)
-        self.split_button.setObjectName("splitSubmit")
+        self.split_button = self._btn("拆分到文件夹…", self.split, primary=True)
         split.addWidget(self.split_button)
-        split.addStretch()
         convert = section("PDF 转 Excel")
         content_label = QLabel("导出内容")
-        self.convert_content = QComboBox()
+        self.convert_content = ClearComboBox()
         self.convert_content.addItem("全部内容（按页导出）", True)
         self.convert_content.addItem("仅表格", False)
         self.convert_content.setAccessibleName("Excel 导出内容")
@@ -3393,32 +3436,32 @@ class MainWindow(QMainWindow):
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         convert.addWidget(hint)
-        self.convert_feedback = self._caption("")
+        self.convert_feedback = QLabel("")
+        self.convert_feedback.setObjectName("exportFeedback")
         self.convert_feedback.setWordWrap(True)
         convert.addWidget(self.convert_feedback)
-        self.convert_button = self._btn("转换为 Excel…", self.convert_to_excel, icon="table", primary=True)
+        self.convert_button = self._btn("转换为 Excel…", self.convert_to_excel, primary=True)
         convert.addWidget(self.convert_button)
-        convert.addStretch()
         compress = section("压缩 PDF")
         hint = QLabel("无损、高质量、均衡或自定义压缩；查看大小与页面预览后另存。")
         hint.setWordWrap(True)
+        hint.setObjectName("hint")
         compress.addWidget(hint)
-        self.compress_button = self._btn("压缩并预览…", self.compress_pdf)
+        self.compress_button = self._btn("压缩并预览…", self.compress_pdf, primary=True)
         compress.addWidget(self.compress_button)
-        compress.addStretch()
         images = section("图片转 PDF")
         hint = QLabel("按列表顺序生成页面，多帧 TIFF 按帧展开。")
         hint.setWordWrap(True)
+        hint.setObjectName("hint")
         images.addWidget(hint)
-        images.addWidget(self._btn("选择与排列图片…", self.images_to_pdf))
-        images.addStretch()
+        images.addWidget(self._btn("选择与排列图片…", self.images_to_pdf, primary=True))
         export_images = section("PDF 转图片")
         hint = QLabel("当前页、所选页或页码范围；PNG / JPEG，150 / 300 DPI。")
         hint.setWordWrap(True)
+        hint.setObjectName("hint")
         export_images.addWidget(hint)
-        self.image_export_button = self._btn("选择范围并导出…", self.pdf_to_images)
+        self.image_export_button = self._btn("选择范围并导出…", self.pdf_to_images, primary=True)
         export_images.addWidget(self.image_export_button)
-        export_images.addStretch()
         security = section("加密、解密与签名保护")
         self.encrypt_button = self._btn("加密另存…", self.encrypt_copy)
         self.decrypt_button = self._btn("解密另存…", self.decrypt_copy)
@@ -3428,11 +3471,12 @@ class MainWindow(QMainWindow):
         security.addWidget(self.editable_button)
         hint = QLabel("解密后另存为无需密码的副本，原加密文件保留；解除权限限制需要管理密码。")
         hint.setWordWrap(True)
+        hint.setObjectName("hint")
         security.addWidget(hint)
         hint = QLabel("签名原件只读。可编辑副本保留签名外观，原数字签名效力不会保留。")
         hint.setWordWrap(True)
+        hint.setObjectName("hint")
         security.addWidget(hint)
-        security.addStretch()
         for field in (self.extract_range, self.split_range, self.convert_range):
             field.textChanged.connect(self._update_export_controls)
         for radio in (self.split_each, self.split_every, self.split_range_mode, self.convert_all, self.convert_selected, self.convert_range_mode):

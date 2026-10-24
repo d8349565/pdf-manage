@@ -254,11 +254,11 @@ def write_pdf_groups(store, pages, groups, dests, *, options=None, progress_call
         raise PdfError(f"已完整写出 {len(results)} 个文件。\n{exc}") from exc
 
 
-def render_preview(refs, passwords, progress, cancel=None):
+def render_preview(refs, passwords, progress, cancel=None, *, width=1100):
     from PyQt6.QtGui import QImage
     with TemporaryWorkspace("pdfpreview") as folder:
         _worker(folder, dict(operation="preview", pages=[asdict(ref) for ref in refs],
-                            passwords=passwords), progress, cancel)
+                            passwords=passwords, width=max(1, min(2400, int(width)))), progress, cancel)
         images = [QImage(str(Path(folder) / f"preview-{index}.png")) for index in range(len(refs))]
         if any(image.isNull() for image in images):
             raise PdfError("无法加载页面预览，请重新计算。")
@@ -318,7 +318,7 @@ def worker_main(folder):
                         raise PdfError("预览文件密码验证失败。")
                     page = doc[item["source_page"]]
                     width = page.rect.height if item["rotation"] % 180 else page.rect.width
-                    scale = min(1100 / max(width, 1),
+                    scale = min(request.get('width', 1100) / max(width, 1),
                                 math.sqrt(4_000_000 / max(1, page.rect.width * page.rect.height)),
                                 8190 / max(1, page.rect.width, page.rect.height))
                     matrix = pymupdf.Matrix(scale, scale).prerotate(item["rotation"])

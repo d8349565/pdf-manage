@@ -134,6 +134,7 @@ def test_excel_real_worker_exports(window, qapp, tmp_path, monkeypatch, selected
                     page.insert_text((55 + c * 100, 75 + r * 50), value)
         doc.save(source)
     assert window._load_one(str(source))
+    window.open_export_tool(2)
     window.convert_content.setCurrentIndex(window.convert_content.findData(False))
     if selected:
         window.ws.select_index(0)
@@ -262,6 +263,7 @@ def test_decrypt_entry_and_owner_prompt(window, tmp_path, monkeypatch, permissio
         doc.save(source, encryption=pymupdf.PDF_ENCRYPT_AES_256,
                  user_pw="", owner_pw="owner", permissions=permissions)
     assert window._load_one(str(source))
+    window.open_export_tool(6)
     window.refresh()
     assert window.decrypt_action.isEnabled() and window.decrypt_button.isEnabled()
     assert window.decrypt_action.text() == "解密另存…"
@@ -1096,7 +1098,7 @@ def test_merge_save_rejects_source_path(window, tmp_path, monkeypatch):
     assert window._load_one(str(b))
     assert window.ws.path is None
     assert window.ws.blocks_save_to(str(a))
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(a), "PDF (*.pdf)"))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: (str(a), "PDF (*.pdf)"))
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Ok)
     assert window.save() is False
     assert a.read_bytes() == a_bytes
@@ -1273,7 +1275,7 @@ def test_pages_and_tools_can_hide(window, qapp, tmp_path):
     assert window.act_tools.shortcut().toString() == "F9"
 
 
-def test_tools_panel_uses_one_type_size(window):
+def test_tools_panel_keeps_readable_labels(window):
     import re
 
     def rule_size(selector: str) -> int:
@@ -1289,10 +1291,11 @@ def test_tools_panel_uses_one_type_size(window):
     assert rule_size("QRadioButton") == 14
     assert rule_size("QLineEdit") == 14
     assert rule_size("QLabel#hint") == 14
+    window.open_export_tool(0)
     texts = {w.text() for w in window.tools_panel.findChildren(QLabel) if w.objectName() == "caption"}
     assert "导出与转换" in texts
-    assert [window.export_tools.itemText(i) for i in range(3)] == [
-        "提取页面 · 一个新文件", "拆分文件 · 多个 PDF", "PDF 转 Excel",
+    assert [header.text() for header in window.export_tools.headers[:3]] == [
+        "提取页面", "拆分文件", "PDF 转 Excel",
     ]
 
 

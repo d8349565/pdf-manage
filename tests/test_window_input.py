@@ -127,6 +127,63 @@ def test_split_and_conversion_choices_are_independent(loaded_window):
     assert window.convert_range.text() == '1-3,5'
 
 
+def test_export_tools_flow_without_stretching_the_open_form(loaded_window):
+    window = loaded_window
+    window.open_export_tool(1)
+    gaps = []
+    for height in (680, 1000):
+        window.resize(1100, height)
+        for _ in range(3):
+            QApplication.processEvents()
+        tools = window.export_tools
+        bottom = window.split_button.mapTo(tools.widget(), window.split_button.rect().bottomLeft()).y()
+        following = tools.headers[2].mapTo(tools.widget(), QPoint()).y()
+        gaps.append(following - bottom)
+        assert 0 < gaps[-1] <= 32, '下一项应紧跟设置，不能被空白推到底部'
+    assert abs(gaps[0] - gaps[1]) <= 2
+    QTest.mouseClick(tools.headers[2], Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    assert window.convert_all.isVisible() and window.export_tools.currentIndex() == 2
+    assert tools.headers[2].isChecked()
+    QTest.mouseClick(tools.headers[2], Qt.MouseButton.LeftButton)
+    assert tools.currentIndex() == -1
+    assert all(page.isHidden() for page in tools.pages)
+    assert window._tool_index == -1
+    window.split_action.trigger()
+    assert window.export_tools.currentIndex() == 1
+    assert tools.headers[1].isChecked()
+
+
+def test_export_settings_scroll_only_for_current_form(loaded_window):
+    window = loaded_window
+    window.resize(1100, 680)
+    window.open_export_tool(2)
+    window.convert_range_mode.setChecked(True)
+    window.convert_range.setText('1-3')
+    for _ in range(3):
+        QApplication.processEvents()
+    tools = window.export_tools
+    scrollbar = tools.verticalScrollBar()
+    long_form_scroll = scrollbar.maximum()
+    assert long_form_scroll > 0
+    window.convert_range.setFocus()
+    QTest.keyClick(window.convert_range, Qt.Key.Key_Tab)
+    QApplication.processEvents()
+    assert window.convert_button.hasFocus()
+    viewport = tools.viewport()
+    assert viewport.rect().contains(window.convert_button.mapTo(viewport, QPoint()))
+    assert viewport.rect().contains(window.convert_button.mapTo(viewport, window.convert_button.rect().bottomRight()))
+    window.open_export_tool(3)
+    for _ in range(3):
+        QApplication.processEvents()
+    assert window.compress_button.isVisible()
+    assert scrollbar.maximum() < long_form_scroll, '短表单不应继承其他工具的高度'
+    QTest.mouseClick(tools.headers[3], Qt.MouseButton.LeftButton)
+    for _ in range(3):
+        QApplication.processEvents()
+    assert scrollbar.maximum() == 0, '折叠全部设置后应完整显示工具列表'
+
+
 def test_page_navigation_and_modes_keep_document_state(loaded_window):
     window = loaded_window
     window._set_zoom(1.25)

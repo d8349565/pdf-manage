@@ -1088,31 +1088,14 @@ class PdfStore:
                     raise PdfError("图片分辨率须为 72～600 DPI，图片质量须为 40～100。")
                 if progress_callback:
                     progress_callback(0, 0, f"正在优化图片 · {dpi} DPI / 质量 {quality}")
-                image_options = pymupdf.mupdf.PdfImageRewriterOptions()
-                lossless_method = pymupdf.mupdf.FZ_RECOMPRESS_JPEG
-                if options.compression == "high":
-                    # Re-encoding an already compressed 300-DPI PNG can spend tens
-                    # of seconds without reducing size. Only rewrite lossless
-                    # images when this document needs resolution reduction.
-                    needs_resample = any(
-                        max(72 * info["width"] / max(.001, math.hypot(*info["transform"][:2])),
-                            72 * info["height"] / max(.001, math.hypot(*info["transform"][2:4]))) > dpi * 1.2
-                        for page in out for info in page.get_image_info())
-                    lossless_method = (pymupdf.mupdf.FZ_RECOMPRESS_SAME if needs_resample
-                                       else pymupdf.mupdf.FZ_RECOMPRESS_NEVER)
-                for colour in ("color", "gray"):
-                    for kind in ("lossy", "lossless"):
-                        prefix = f"{colour}_{kind}_image_"
-                        # High quality keeps lossless line art lossless. Other profiles
-                        # trade some image quality for size, while text stays native.
-                        method = lossless_method if kind == "lossless" else pymupdf.mupdf.FZ_RECOMPRESS_JPEG
-                        setattr(image_options, prefix + "recompress_method", method)
-                        setattr(image_options, prefix + "recompress_quality", str(quality))
-                        setattr(image_options, prefix + "subsample_method", pymupdf.mupdf.FZ_SUBSAMPLE_BICUBIC)
-                        setattr(image_options, prefix + "subsample_threshold", round(dpi * 1.2))
-                        setattr(image_options, prefix + "subsample_to", dpi)
-                image_options.bitonal_image_recompress_method = pymupdf.mupdf.FZ_RECOMPRESS_FAX
-                out.rewrite_images(options=image_options, set_to_gray=options.compression_grayscale)
+                from app.pdfcompress import optimize_images
+                if options.compression_grayscale:
+                    out.recolor(1)
+                optimize_images(out, dpi=dpi, quality=quality, preserve_lossless=options.compression == 'high',
+                                progress=progress_callback, cancel=cancel)
+            elif options.compression == 'quality':
+                from app.pdfcompress import optimize_images
+                optimize_images(out, progress=progress_callback, cancel=cancel)
             elif options.compression not in ("", "quality"):
                 raise PdfError("未知压缩档位")
             check_cancel(cancel)
@@ -1144,7 +1127,7 @@ class PdfStore:
             if options.page_numbers is not None:
                 from app.pagenumbers import apply_page_numbers
                 subset |= apply_page_numbers(out, options.page_numbers, progress_callback, cancel)
-            if subset:
+            if subset or (options.compression and not out.is_form_pdf and not out.has_annots()):
                 out.subset_fonts()
             expected = document_signature(out)
             os.makedirs(folder, exist_ok=True)

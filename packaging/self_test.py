@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import traceback
+from time import monotonic, sleep
 from pathlib import Path
 
 
@@ -165,9 +166,19 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 try:
                     compression.prepare()
                     assert compression.result is not None and compression.export.isEnabled()
-                    assert all(not label.pixmap().isNull() for label in compression.images)
+                    deadline = monotonic() + 15
+                    while not compression.comparison.images and monotonic() < deadline:
+                        qapp.processEvents()
+                        sleep(.01)
+                    assert compression.comparison.images
+                    assert all(not image.isNull() for pair in compression.comparison.images.values() for image in pair)
                 finally:
                     compression.reject()
+                    deadline = monotonic() + 10
+                    while compression.comparison.busy and monotonic() < deadline:
+                        qapp.processEvents()
+                        sleep(.01)
+                    qapp.processEvents()
                     compression.deleteLater()
                 report["checks"].append("frozen parent/child PDF compression and PNG comparison previews")
                 assert not window.store.render_qimage(pages[0], 800).isNull()
