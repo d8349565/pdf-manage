@@ -28,6 +28,10 @@ OCR 增强包单独分发，包含模型、字符字典和推理运行库。源�
 增强包默认安装到 `%LOCALAPPDATA%/ZhiXuPDF/ocr/`，也可在“文件 → 存储管理”选择其他磁盘。
 任务缓存与默认输出位置可独立设置；安装器不打入 OCR 组件，主程序卸载也不会自动删除独立组件或用户选择的存储目录。
 
+每次正式发布同时提供安装器 `ZhiXuPDF-Setup.exe` 和同版绿色包 `ZhiXuPDF-Portable-vX.Y.Z.zip`。绿色包复用同一份目录式程序，只添加便携标记和使用说明；不改变安装器原有流程，不包含个人设置、缓存或 OCR 模型。构建和校验脚本为 `packaging/make_portable.py`、`packaging/verify_portable.py`；所有安装器仍直接生成到固定的 `dist-installer/ZhiXuPDF-Setup.exe`。
+
+正式发布后同步到蓝奏云既有 `ZhiXuPDF-Setup` 文件夹，安装器使用 `ZhiXuPDF-Setup-vX.Y.Z.exe`，绿色包使用 `ZhiXuPDF-Portable-vX.Y.Z-绿色版.zip`。上传副本与 GitHub Release 对应附件保持字节及 SHA-256 一致，不因改名重新构建；保留历史文件，同版上传前先检查避免重复。
+
 ## 每次提交前
 
 检查暂存文件清单和内容，确认没有真实文档、凭证、私人图片或本机路径。新提交的作者邮箱使用公开的 GitHub noreply 邮箱，避免把私人邮箱写入提交记录。

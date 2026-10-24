@@ -100,6 +100,111 @@ def loaded_window(window, tmp_path):
     return window
 
 
+def click_thumbnail(window, row, modifiers=Qt.KeyboardModifier.NoModifier):
+    window.act_pages.setChecked(True)
+    QApplication.processEvents()
+    view = window.left_view
+    assert view.isVisible()
+    index = window.model.index(row)
+    view.scrollTo(index)
+    QApplication.processEvents()
+    point = view.visualRect(index).intersected(view.viewport().rect()).center()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, modifiers, point)
+    # Reader/resize timers must not replace the user's selection after release.
+    QTest.qWait(300)
+
+
+def test_left_thumbnail_standard_clicks_keep_both_views_in_sync_without_flicker(loaded_window):
+    window = loaded_window
+    changes = []
+    window.left_view.selectionModel().selectionChanged.connect(
+        lambda *_: changes.append(set(i.row() for i in window.left_view.selectedIndexes())))
+    for row, modifiers, expected in (
+        (1, Qt.KeyboardModifier.NoModifier, {1}),
+        (2, Qt.KeyboardModifier.ControlModifier, {1, 2}),
+        (1, Qt.KeyboardModifier.ControlModifier, {2}),
+        (2, Qt.KeyboardModifier.ControlModifier, set()),
+        (0, Qt.KeyboardModifier.NoModifier, {0}),
+    ):
+        changes.clear()
+        click_thumbnail(window, row, modifiers)
+        assert window.ws.selected == expected
+        assert set(window.ws.target_indices()) == expected
+        assert set(i.row() for i in window.left_view.selectedIndexes()) == expected
+        assert set(i.row() for i in window.arrange_view.selectedIndexes()) == expected
+        assert changes == [expected], 'One click must not briefly clear or replace the selection'
+        assert window.ws.preview_index() == row
+        assert window.delete_action.isEnabled() == bool(expected)
+    assert not window.ws.dirty
+
+
+def test_left_thumbnail_shift_ctrl_and_plain_click_remain_compatible(loaded_window):
+    window = loaded_window
+    click_thumbnail(window, 1)
+    assert window.ws.selected == {1}
+    click_thumbnail(window, 3, Qt.KeyboardModifier.ShiftModifier)
+    assert window.ws.selected == {1, 2, 3}
+    click_thumbnail(window, 2, Qt.KeyboardModifier.ControlModifier)
+    assert window.ws.selected == {1, 3}
+    click_thumbnail(window, 4)
+    assert window.ws.selected == {4}
+    click_thumbnail(window, 4)
+    assert window.ws.selected == {4}, 'An ordinary click must not unselect the current page'
+    window.stack.setCurrentIndex(1)
+    QApplication.processEvents()
+    view = window.arrange_view
+    view.scrollTo(window.model.index(4))
+    QApplication.processEvents()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=view.visualRect(window.model.index(4)).center())
+    assert window.ws.selected == {4}, 'The arrange view retains its existing single-click behavior'
+
+
+def test_pressing_an_already_selected_thumbnail_keeps_the_group_until_release(loaded_window):
+    window = loaded_window
+    click_thumbnail(window, 1, Qt.KeyboardModifier.ControlModifier)
+    view = window.left_view
+    point = view.visualRect(window.model.index(1)).center()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert window.ws.selected == {0, 1}, 'Pressing a selected page must keep the group available to drag'
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.qWait(300)
+    assert window.ws.selected == {1}
+
+
+@pytest.mark.parametrize('selection', [{0, 2}, set(), set(range(5))])
+def test_reader_scroll_does_not_replace_an_explicit_multiple_or_empty_selection(loaded_window, selection):
+    window = loaded_window
+    window.act_pages.setChecked(True)
+    window.ws.set_selection(selection, 0 if selection else None)
+    window.ws.last_preview_index = 0
+    window._sync_selection()
+    window._set_zoom(1.0)
+    QApplication.processEvents()
+    view = window.preview_view
+    rectangle = view.page_rects[3]
+    view.centerOn(rectangle.center().x(), rectangle.top() + view.viewport().height() / 2 - 4)
+    QTest.qWait(350)
+    window._reading_scrolled()
+    assert window.ws.preview_index() == 3
+    assert window.ws.selected == selection
+    assert set(i.row() for i in window.left_view.selectedIndexes()) == selection
+
+
+def test_ctrl_click_selection_is_used_by_batch_rotate_and_survives_refresh(loaded_window):
+    window = loaded_window
+    before = tuple(window.ws.pages)
+    click_thumbnail(window, 1, Qt.KeyboardModifier.ControlModifier)
+    window.rotate(90)
+    assert [page.rotation for page in window.ws.pages] == [90, 90, 0, 0, 0]
+    assert window.ws.selected == {0, 1}
+    assert set(i.row() for i in window.left_view.selectedIndexes()) == {0, 1}
+    window.ws.undo_stack.undo()
+    window.refresh()
+    assert tuple(window.ws.pages) == before and window.ws.selected == {0, 1}
+    assert not window.ws.dirty
+
+
 def test_split_and_conversion_choices_are_independent(loaded_window):
     window = loaded_window
     window.open_export_tool(1)

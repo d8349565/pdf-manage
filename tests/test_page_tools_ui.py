@@ -162,6 +162,7 @@ def test_size_dialog_reference_and_real_apply_cancel(window, qapp, monkeypatch):
     host._sync_selection()
     original = tuple(host.ws.pages)
     def configure(dialog):
+        dialog.preset.setCurrentIndex(dialog.preset.findData('reference'))
         assert dialog.reference.value() == 1
         assert dialog.target_size() == (300, 400)
         return QDialog.DialogCode.Accepted
@@ -177,18 +178,98 @@ def test_size_dialog_reference_and_real_apply_cancel(window, qapp, monkeypatch):
     assert tuple(host.ws.pages) == original
 
 
-def test_size_dialog_requires_explicit_target_on_first_page(window):
+def test_size_dialog_defaults_to_a4_and_reference_remains_explicit(window):
     host, _ = window
     host.ws.set_selection([0])
     host._sync_selection()
     image = host.store.render_qimage(host.ws.pages[0], 500)
     dialog = PageSizeDialog(host, image)
-    assert not dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
-    dialog.preset.setCurrentIndex(dialog.preset.findData('a4'))
+    assert dialog.preset.currentData() == 'a4' and dialog.reference.isHidden()
     assert dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
     assert dialog.width_input.value() == 210
+    dialog.preset.setCurrentIndex(dialog.preset.findData('reference'))
+    assert not dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
+    assert '请选择' in dialog.status.text()
     dialog.reject()
     dialog.deleteLater()
+
+
+def test_office_presets_show_mm_and_drive_orientation_preview_and_custom_size(window, qapp):
+    from app.pagegeometry import PT_PER_MM
+    host, warnings = window
+    dialog = PageSizeDialog(host, None, [0])
+    dialog.show()
+    try:
+        for key, expected in (
+            ('a4', (210, 297)), ('a3', (297, 420)), ('a5', (148, 210)), ('a6', (105, 148)),
+            ('b5_jis', (182, 257)), ('b4_jis', (257, 364)),
+            ('16k', (195, 270)), ('16k_small', (184, 260)),
+            ('letter', (215.9, 279.4)), ('legal', (215.9, 355.6)),
+            ('b5_iso', (176, 250)), ('b4_iso', (250, 353)),
+        ):
+            index = dialog.preset.findData(key)
+            assert index >= 0 and 'mm' in dialog.preset.itemText(index)
+            dialog.preset.setCurrentIndex(index)
+            for landscape in (False, True):
+                dialog.orientation.setCurrentIndex(dialog.orientation.findData(landscape))
+                width, height = expected[::-1] if landscape else expected
+                target = (width * PT_PER_MM, height * PT_PER_MM)
+                assert dialog.target_size() == pytest.approx(target)
+                assert dialog.preview.paper_size(0) == pytest.approx(target)
+                assert (dialog.width_input.value(), dialog.height_input.value()) == (width, height)
+                assert dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
+                assert dialog.reference.isHidden() and dialog.orientation.isVisible()
+        dialog.preset.setCurrentIndex(dialog.preset.findData('letter'))
+        dialog.preset.setCurrentIndex(dialog.preset.findData('custom'))
+        assert dialog.orientation.isHidden() and dialog.width_input.isVisible()
+        assert (dialog.width_input.value(), dialog.height_input.value()) == (279.4, 215.9)
+        dialog.width_input.setValue(230.5)
+        dialog.height_input.setValue(150.25)
+        assert dialog.target_size() == pytest.approx((230.5 * PT_PER_MM, 150.25 * PT_PER_MM))
+        assert not warnings
+    finally:
+        dialog.reject()
+        dialog.deleteLater()
+        qapp.processEvents()
+
+
+def test_real_resize_relayouts_reader_and_survives_undo_redo_and_save(window, qapp, tmp_path, monkeypatch):
+    from app.pagegeometry import PT_PER_MM
+    host, warnings = window
+    host._set_reading_layout('single')
+    host.ws.set_selection([0])
+    host._sync_selection()
+    before = tuple(host.ws.pages)
+    original = host.store._source(before[0].source_id).data
+    generation = host.preview_view.layout_generation
+    target = (210 * PT_PER_MM, 297 * PT_PER_MM)
+    def configure(dialog):
+        dialog.preset.setCurrentIndex(dialog.preset.findData('a4'))
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(PageSizeDialog, 'exec', configure)
+    resize_pages(host)
+    view = host.preview_view
+    assert not warnings and view.layout_generation > generation
+    assert (view.page_rects[0].width(), view.page_rects[0].height()) == pytest.approx(target)
+    assert view.page_rects[1].top() == pytest.approx(target[1] + 16)
+    wait_for(qapp, lambda: host._preview_image is not None and not host._preview_busy)
+    primary = view._item.sceneBoundingRect()
+    paper = view.page_rects[0]
+    assert (primary.x(), primary.y(), primary.width(), primary.height()) == pytest.approx(
+        (paper.x(), paper.y(), paper.width(), paper.height()))
+    output = tmp_path / 'resized-reader.pdf'
+    host.store.write(host.ws.pages, str(output))
+    with p.open(output) as doc:
+        assert (doc[0].rect.width, doc[0].rect.height) == pytest.approx(target, abs=.001)
+        assert all(page.get_text().count('Generated UI check') == 1 for page in doc)
+        assert (doc[1].rect.width, doc[1].rect.height) == (420, 300)
+    host.ws.undo_stack.undo()
+    host.refresh()
+    assert (view.page_rects[0].width(), view.page_rects[0].height()) == (300, 400)
+    host.ws.undo_stack.redo()
+    host.refresh()
+    assert (view.page_rects[0].width(), view.page_rects[0].height()) == pytest.approx(target)
+    assert host.store._source(before[0].source_id).data == original
 
 
 def test_seam_dialog_apply_reopen_manage_and_cancel(window, qapp, monkeypatch):

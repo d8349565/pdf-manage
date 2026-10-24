@@ -89,6 +89,7 @@ def test_workspace_insert_pages_start_and_end(tmp_path):
 
 
 def test_ui_insert_button_and_action_existence(window):
+    window.stack.setCurrentIndex(1)
     assert hasattr(window, "insert_button")
     assert window.insert_button.text() == "插入页面…"
     assert window.insert_button.toolTip() == "插入 PDF 页面（已选页面后或末尾）"
@@ -157,6 +158,7 @@ def test_ui_insert_disabled_when_readonly(window, tmp_path, monkeypatch):
     doc_a = tmp_path / "A.pdf"
     _make_pdf(doc_a, 2, "A")
     assert window._load_one(str(doc_a))
+    window.stack.setCurrentIndex(1)
 
     # Simulate read-only reason
     monkeypatch.setattr(window.store, "operation_reason", lambda pages, op: "只读保护" if op == "modify" else None)

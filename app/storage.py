@@ -10,8 +10,9 @@ import tempfile
 
 from PyQt6.QtCore import QLockFile, QSettings
 
-from app import APP_ORGANIZATION, APP_SLUG
+from app import APP_SLUG
 from app.output import check_cancel
+from app.runtime import portable_data, portable_root, preferences
 
 
 class StorageError(OSError):
@@ -19,7 +20,7 @@ class StorageError(OSError):
 
 
 def _settings():
-    return QSettings(APP_ORGANIZATION, APP_SLUG)
+    return preferences(QSettings)
 
 
 def settings_location():
@@ -27,27 +28,46 @@ def settings_location():
 
 
 def data_directory():
+    portable = portable_data()
+    if portable is not None:
+        return portable
     local = os.environ.get('LOCALAPPDATA')
     if not local and os.name == 'nt':
         raise StorageError('无法找到应用数据目录，请在存储管理中选择保存位置。')
     return Path(local or tempfile.gettempdir()) / APP_SLUG
 
 
+def _decode_path(value):
+    root = portable_root()
+    if root is not None and value.startswith('portable:'):
+        relative = Path(value[len('portable:'):])
+        if relative.is_absolute() or '..' in relative.parts:
+            raise StorageError('便携存储路径无效，请重新选择文件夹。')
+        return root / relative
+    path = Path(value)
+    if not path.is_absolute():
+        raise StorageError('存储路径无效，请在存储管理中重新选择文件夹。')
+    return path
+
+
+def _encode_path(path):
+    path = Path(path).resolve()
+    root = portable_root()
+    if root is not None and path.is_relative_to(root):
+        return 'portable:' + path.relative_to(root).as_posix()
+    return str(path)
+
+
 def directory(kind):
     value = _settings().value(f'storage/{kind}', '', type=str)
     if value:
-        path = Path(value)
-        if not path.is_absolute():
-            raise StorageError('存储路径无效，请在存储管理中重新选择文件夹。')
-        return path
+        return _decode_path(value)
     return data_directory() / kind
 
 
 def output_directory():
     value = _settings().value('storage/output', '', type=str)
-    if value and not Path(value).is_absolute():
-        raise StorageError('默认输出路径无效，请在存储管理中重新选择文件夹。')
-    return Path(value) if value else None
+    return _decode_path(value) if value else None
 
 
 def export_path(suggested):
@@ -58,8 +78,9 @@ def export_path(suggested):
 def previous_directories(kind):
     values = _settings().value(f'storage/previous-{kind}', [], type=list)
     current = directory(kind).resolve()
-    return list(dict.fromkeys(Path(p) for p in values if Path(p).is_absolute()
-                             and Path(p).resolve() != current))
+    return list(dict.fromkeys(_decode_path(p) for p in values
+                             if (Path(p).is_absolute() or p.startswith('portable:'))
+                             and _decode_path(p).resolve() != current))
 
 
 def check_directory(kind, path):
@@ -85,10 +106,10 @@ def save_directory(kind, path):
     old = settings.value(key, '', type=str)
     previous_key = f'storage/previous-{kind}'
     previous = settings.value(previous_key, [], type=list)
-    value = str(Path(path).resolve()) if path else ''
+    value = _encode_path(path) if path else ''
     history = previous[:]
     if kind in ('ocr', 'cache'):
-        former = str(directory(kind).resolve())
+        former = _encode_path(directory(kind))
         if former != value and former not in history:
             history.append(former)
         settings.setValue(previous_key, history)

@@ -11,6 +11,23 @@ from app.pagepreviewlist import ScrollablePagePreview, draw_fitted_page
 from app.workspace import parse_page_range
 
 
+# Name differing B-series standards and 16K variants explicitly instead of guessing.
+PAPER_SIZES = {
+    'a4': ('A4', 210, 297),
+    'a3': ('A3', 297, 420),
+    'a5': ('A5', 148, 210),
+    'a6': ('A6', 105, 148),
+    'b5_jis': ('B5（JIS）', 182, 257),
+    'b4_jis': ('B4（JIS）', 257, 364),
+    '16k': ('16 开', 195, 270),
+    '16k_small': ('16 开', 184, 260),
+    'letter': ('Letter', 215.9, 279.4),
+    'legal': ('Legal', 215.9, 355.6),
+    'b5_iso': ('B5（ISO）', 176, 250),
+    'b4_iso': ('B4（ISO）', 250, 353),
+}
+
+
 class ClearComboBox(QComboBox):
     """Keep an explicit dropdown indicator with the application's stylesheet."""
     def wheelEvent(self, event):
@@ -117,9 +134,14 @@ class PageSizeDialog(QDialog):
         form = QFormLayout()
         form.addRow('处理范围', self.scope)
         self.preset = ClearComboBox()
-        for text, value in (('匹配参考页', 'reference'), ('A4', 'a4'), ('A3', 'a3'), ('自定义尺寸', 'custom')):
+        self.preset.setAccessibleName('目标纸张大小')
+        self.preset.setMaxVisibleItems(10)
+        for key, (name, width, height) in PAPER_SIZES.items():
+            self.preset.addItem(f'{name} · {width:g} × {height:g} mm', key)
+        self.preset.insertSeparator(self.preset.count())
+        for text, value in (('匹配参考页', 'reference'), ('自定义尺寸', 'custom')):
             self.preset.addItem(text, value)
-        form.addRow('目标尺寸', self.preset)
+        form.addRow('纸张大小', self.preset)
         self.reference = ClearSpinBox()
         self.reference.setRange(0, len(self.pages))
         self.reference.setSpecialValueText('请选择参考页')
@@ -174,8 +196,9 @@ class PageSizeDialog(QDialog):
             if not self.reference.value():
                 raise ValueError('请选择用来匹配尺寸的参考页。')
             return self.host.store.page_size(self.pages[self.reference.value() - 1])
-        if preset in ('a4', 'a3'):
-            size = (210, 297) if preset == 'a4' else (297, 420)
+        if preset in PAPER_SIZES:
+            _, width, height = PAPER_SIZES[preset]
+            size = (width, height)
             if self.orientation.currentData():
                 size = size[::-1]
             return tuple(value * PT_PER_MM for value in size)
@@ -184,10 +207,10 @@ class PageSizeDialog(QDialog):
     def sync(self, *_):
         preset = self.preset.currentData()
         self.form.setRowVisible(2, preset == 'reference')
-        self.form.setRowVisible(3, preset in ('a4', 'a3'))
+        self.form.setRowVisible(3, preset in PAPER_SIZES)
         self.form.setRowVisible(4, preset == 'custom')
         self.reference.setEnabled(preset == 'reference')
-        self.orientation.setEnabled(preset in ('a4', 'a3'))
+        self.orientation.setEnabled(preset in PAPER_SIZES)
         self.width_input.setEnabled(preset == 'custom')
         self.height_input.setEnabled(preset == 'custom')
         try:

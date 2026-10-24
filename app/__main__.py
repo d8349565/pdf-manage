@@ -92,6 +92,13 @@ def main() -> None:
     app.setApplicationVersion(__version__)
     app.setOrganizationName(APP_ORGANIZATION)
     app.setStyle("Fusion")
+    from app.runtime import prepare_profile
+    try:
+        prepare_profile()
+    except OSError as exc:
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(None, '数据目录无法使用', str(exc))
+        raise SystemExit(1)
     image_mode = {'--images-to-pdf': 'pdf', '--compress-image': 'compress'}.get(sys.argv[1] if len(sys.argv) > 1 else '')
     if image_mode:
         from app.imagequick import ImageQuickDialog
@@ -103,9 +110,19 @@ def main() -> None:
         from PyQt6.QtWidgets import QMessageBox
         try:
             from app.pdfshell import serve
-            code = serve(app)
+            clsid = None
+            if '--context-id' in sys.argv:
+                from app.contextmenus import registration_plan
+                position = sys.argv.index('--context-id')
+                clsid = sys.argv[position + 1] if position + 1 < len(sys.argv) else ''
+                if clsid != registration_plan(sys.executable).clsid:
+                    raise ValueError('此右键入口的位置已改变，请从“文件 → 右键快捷工具”修复。')
+            code = serve(app, clsid=clsid)
         except Exception as exc:
-            QMessageBox.critical(None, "右键入口无法启动", f"请重新安装纸序 PDF，并勾选 PDF 右键入口。\n{exc}")
+            from app.runtime import portable_root
+            hint = ('请从“文件 → 右键快捷工具”修复此版本的菜单。' if portable_root() else
+                    '请重新运行安装程序，并勾选右键快捷工具。')
+            QMessageBox.critical(None, "右键入口无法启动", f"{hint}\n{exc}")
             code = 1
         sys.exit(code)
     shell_mode = {"--split-pdf": "split", "--merge-pdf": "merge"}.get(sys.argv[1] if len(sys.argv) > 1 else "")

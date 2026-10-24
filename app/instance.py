@@ -8,6 +8,7 @@ import sys
 import time
 
 from PyQt6.QtCore import QObject, QLockFile, QStandardPaths, QTimer
+from app.runtime import portable_data
 
 
 def instance_scope():
@@ -19,7 +20,7 @@ def instance_scope():
         value = ctypes.c_ulong()
         if ctypes.windll.kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(value)):
             session = value.value
-    folder = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
+    folder = portable_data() or Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
     identity = f'{folder}:{session}:{os.path.normcase(str(installation))}'
     name = 'ZhiXuPDF-' + hashlib.sha256(identity.encode()).hexdigest()[:24]
     folder.mkdir(parents=True, exist_ok=True)

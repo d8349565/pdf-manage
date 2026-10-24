@@ -61,7 +61,10 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
         from app.pdfio import NeedPassword
         from app.printing import PrintOptions, render_pages_to_printer
         from app.ui import MainWindow
-        from app.windows_integration import association_entries, PROG_ID
+        from app.windows_integration import application_identity, association_entries
+        from app.runtime import display_name, portable_data
+        report['edition'] = 'portable' if portable_data() else 'installed'
+        report['portable_data'] = str(portable_data()) if portable_data() else None
 
         qapp = QApplication.instance() or QApplication([])
         qapp.setStyle("Fusion")
@@ -95,12 +98,21 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
             from app.imagecompress import compress_image
             from app.imaging import images_to_pdf
             from PIL import Image
+            from random import Random
             sample_image = folder / '生成 图片.png'
             Image.new('RGBA', (320, 240), (40, 130, 90, 150)).save(sample_image, 'PNG', compress_level=0)
             image_result = compress_image(sample_image)
             assert image_result.path and image_result.after < image_result.before
             with Image.open(sample_image) as original, Image.open(image_result.path) as compressed:
                 assert original.convert('RGBA').tobytes() == compressed.convert('RGBA').tobytes()
+            assert compress_image(sample_image, compact=True, smaller_than=image_result.after).path is None
+            textured = folder / '生成 纹理.png'
+            Image.frombytes('RGB', (160, 120), Random(47).randbytes(160 * 120 * 3)).resize((640, 480)).save(textured, 'PNG')
+            lossless = compress_image(textured)
+            compact = compress_image(textured, compact=True, smaller_than=lossless.after)
+            assert lossless.path and compact.path and compact.after < lossless.after
+            with Image.open(compact.path) as compressed:
+                assert compressed.format == 'WEBP' and compressed.size == (640, 480)
             webp = folder / '生成 WebP.webp'
             Image.new('RGB', (320, 240), (40, 130, 90)).save(webp, 'WEBP', lossless=True)
             from app.imagequick import ImageQuickDialog
@@ -116,7 +128,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                     assert converted.page_count == 1 and converted[0].get_images()
             finally:
                 image_store.close_all()
-            report['checks'].append('standalone PNG compression, alpha preservation, WebP encoder/Qt decoder and image quick dialog')
+            report['checks'].append('adaptive lossless PNG/WebP, explicit smaller lossy WebP, alpha preservation, Qt WebP decoder and image quick dialog')
             locations = StorageDialog()
             installer = RuntimeInstallDialog(folder / 'local-package.zip')
             assert locations.paths['cache'].text() == str(folder / 'cache')
@@ -139,7 +151,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
             assert startup_pdf_paths([sys.executable, str(source)]) == [str(source)]
             window = MainWindow()
             try:
-                assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
+                assert window.windowTitle().endswith(f"{display_name()} v{__version__}")
                 if ocr_runtime is None:
                     from native_window_check import check_native_window
                     report["native_resize"] = check_native_window(window, qapp)
@@ -150,6 +162,81 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 window.ws.open_replace(pages, str(source))
                 window.refresh()
                 qapp.processEvents()
+                from app.contextmenus import ContextMenus, registration_plan
+                from app.contextmenuui import ContextMenuDialog
+                class EmptyRegistry:
+                    def get(self, *args):
+                        return None
+                    def snapshot(self, *args):
+                        return None
+                menus = ContextMenus(sys.executable, registry=EmptyRegistry(), state_file=folder / 'menus.json')
+                context_dialog = ContextMenuDialog(window, manager=menus)
+                assert menus.status() == 'off' and context_dialog.actions['enable'].isEnabled()
+                assert not context_dialog.actions['remove'].isEnabled()
+                context_dialog.close()
+                context_dialog.deleteLater()
+                other = registration_plan(str(folder / 'other/ZhiXuPDF.exe'), portable=not menus.plan.portable)
+                assert menus.plan.clsid != other.clsid and set(menus.plan.trees).isdisjoint(other.trees)
+                convert_menu = next(action.menu() for action in window._menubar.actions() if action.text() == '转换')
+                assert any(action.text() == '压缩图片…' and action.isEnabled() for action in convert_menu.actions())
+                report['checks'].append('edition-isolated menu IDs, default-off controls and in-app image compression entry')
+                from app.pagetoolsui import PageSizeDialog
+                from app.pagegeometry import geometry_edit, PT_PER_MM
+                size_dialog = PageSizeDialog(window, None, [0])
+                assert size_dialog.preset.currentData() == 'a4'
+                target_size = size_dialog.target_size()
+                assert target_size == (210 * PT_PER_MM, 297 * PT_PER_MM)
+                size_dialog.preset.setCurrentIndex(size_dialog.preset.findData('letter'))
+                assert abs(size_dialog.target_size()[0] / PT_PER_MM - 215.9) < .001
+                size_dialog.reject()
+                size_dialog.deleteLater()
+                generation = window.preview_view.layout_generation
+                window.ws.edit_pages({0: pages[0].edited(geometry_edit(window.store, pages[0], target_size))}, 'Generated resize')
+                window.refresh()
+                rectangle = window.preview_view.page_rects[0]
+                assert (rectangle.width(), rectangle.height()) == target_size
+                assert window.preview_view.layout_generation > generation
+                window.ws.undo_stack.undo()
+                window.refresh()
+                assert (window.preview_view.page_rects[0].width(), window.preview_view.page_rects[0].height()) == (400, 400)
+                report['checks'].append('office paper presets, fractional millimeters and reader geometry relayout after resize and undo')
+                from PyQt6.QtCore import QItemSelectionModel, QPointF, Qt
+                from PyQt6.QtGui import QMouseEvent
+                pages_visible = window.act_pages.isChecked()
+                window.act_pages.setChecked(True)
+                window.show()
+                qapp.processEvents()
+                def click_thumbnail(row):
+                    view = window.left_view
+                    index = window.model.index(row)
+                    view.scrollTo(index)
+                    qapp.processEvents()
+                    point = view.visualRect(index).intersected(view.viewport().rect()).center()
+                    local, screen = QPointF(point), QPointF(view.viewport().mapToGlobal(point))
+                    for kind, buttons in ((QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton),
+                                          (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton)):
+                        qapp.sendEvent(view.viewport(), QMouseEvent(kind, local, screen,
+                            Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier))
+                    qapp.processEvents()
+                click_thumbnail(1)
+                assert window.ws.selected == {1}
+                assert window.left_view.selectionMode() == window.left_view.SelectionMode.ExtendedSelection
+                selection_model = window.left_view.selectionModel()
+                selection_model.select(window.model.index(0), QItemSelectionModel.SelectionFlag.Select)
+                assert window.ws.selected == {0, 1}
+                assert {index.row() for index in window.left_view.selectedIndexes()} == {0, 1}
+                selection_model.select(window.model.index(0), QItemSelectionModel.SelectionFlag.Toggle)
+                assert window.ws.selected == {1}
+                selection_model.select(window.model.index(0), QItemSelectionModel.SelectionFlag.Select)
+                assert window.ws.selected == {0, 1}
+                click_thumbnail(0)
+                assert window.ws.selected == {0}
+                click_thumbnail(0)
+                assert window.ws.selected == {0}
+                window.go_to_page(1)
+                window.act_pages.setChecked(pages_visible)
+                window.hide()
+                report['checks'].append('native extended selection mode, model multiselect/toggle synchronization and repeated plain clicks')
                 check_ofd_mosaic(window.store, folder)
                 report['checks'].append('offline OFD worker import, three mosaic styles, PDF worker save and original protection')
                 from app.rasterpdf import rasterize_pdf
@@ -330,7 +417,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
                 qapp.processEvents()
             entries = association_entries(sys.executable)
-            document = next(v for p, n, v in entries if p.endswith(PROG_ID + "\\DefaultIcon"))
+            document = next(v for p, n, v in entries if p.endswith(application_identity(sys.executable)[1] + "\\DefaultIcon"))
             executable = Path(sys.executable).resolve()
             installed_icon = executable.parent / "_internal" / "pdf.ico"
             expected = f'"{installed_icon}",0' if installed_icon.is_file() else f'"{executable}",1'

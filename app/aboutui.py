@@ -10,9 +10,10 @@ from PyQt6.QtWidgets import (
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
-from app import APP_NAME, APP_ORGANIZATION, APP_PROJECT_URL, APP_SLUG, __version__
+from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, __version__
 from app.icons import brand_icon, toolbar_icon
 from app.updates import UpdateChecker
+from app.runtime import portable_root, preferences
 
 LANZOU_URL = "https://leezfy.lanzouq.com/b02qtfd77g"
 LANZOU_PASSWORD = "atxq"
@@ -21,7 +22,7 @@ LANZOU_PASSWORD = "atxq"
 class AboutDialog(QDialog):
     def __init__(self, parent=None, updates=None):
         super().__init__(parent)
-        self.updates = updates if updates is not None else UpdateChecker(QSettings(APP_ORGANIZATION, APP_SLUG), self)
+        self.updates = updates if updates is not None else UpdateChecker(preferences(QSettings), self)
         self.setObjectName("aboutDialog")
         self.setWindowTitle(f"关于 {APP_NAME}")
         self.setWindowIcon(brand_icon())
@@ -157,7 +158,7 @@ class AboutDialog(QDialog):
         self.check_update_button.setObjectName("aboutCheckUpdates")
         self.check_update_button.clicked.connect(self.updates.check)
         update_buttons.addWidget(self.check_update_button)
-        self.get_update_button = QPushButton("打开发布页")
+        self.get_update_button = QPushButton("打开绿色版发布页" if portable_root() else "打开发布页")
         self.get_update_button.setObjectName("aboutGetUpdate")
         self.get_update_button.clicked.connect(self.updates.open_release_page)
         update_buttons.addWidget(self.get_update_button)
@@ -258,7 +259,10 @@ class AboutDialog(QDialog):
         self.update_status.setText(message)
         self.check_update_button.setEnabled(not self.updates.busy)
         self.check_update_button.setText("正在检查…" if self.updates.busy else "检查更新")
-        self.get_update_button.setText("GitHub 下载 ↗" if self.updates.update_available else "GitHub 发布页 ↗")
+        if portable_root():
+            self.get_update_button.setText("GitHub 绿色版下载 ↗" if self.updates.update_available else "GitHub 绿色版发布页 ↗")
+        else:
+            self.get_update_button.setText("GitHub 下载 ↗" if self.updates.update_available else "GitHub 发布页 ↗")
 
     def _open_lanzou_download(self) -> None:
         clipboard = QApplication.clipboard()

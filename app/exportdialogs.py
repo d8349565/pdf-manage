@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QRadioButton, QVBoxLayout, QWidget,
 )
 
-from app import APP_ORGANIZATION, APP_SLUG
 from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES
 from app.pdfio import EncryptionOptions
 from app.workspace import parse_page_range
@@ -87,7 +86,8 @@ class EncryptionDialog(QDialog):
         self.algorithm.setAccessibleName("PDF 加密格式")
         self.algorithm.addItem("AES-256 · 常规加密", pymupdf.PDF_ENCRYPT_AES_256)
         self.algorithm.addItem("AES-128 · 兼容旧版 Foxit", pymupdf.PDF_ENCRYPT_AES_128)
-        self.preferences = QSettings(APP_ORGANIZATION, APP_SLUG)
+        from app.runtime import preferences
+        self.preferences = preferences(QSettings)
         if self.preferences.value("pdf/encryption_algorithm", "aes256") == "aes128":
             self.algorithm.setCurrentIndex(1)
         form.addRow("加密格式", self.algorithm)

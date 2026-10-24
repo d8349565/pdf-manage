@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app import APP_NAME
+from app.runtime import portable_root
 
 APP_REG_NAME = "PDFManage"
 # 保留既有注册标识，以便品牌更新后仍沿用已有的 PDF 打开方式。
@@ -29,22 +30,43 @@ def association_entries(executable: str) -> list[tuple[str, str, str]]:
     command = f'"{exe}" "%1"'
     classes = "Software\\Classes"
     application = f"{classes}\\Applications\\{exe.name}"
-    capabilities = f"Software\\{APP_REG_NAME}\\Capabilities"
-    return [
-        (f"{classes}\\{PROG_ID}", "", "PDF 文档"),
-        (f"{classes}\\{PROG_ID}\\DefaultIcon", "", document_icon),
-        (f"{classes}\\{PROG_ID}\\shell\\open\\command", "", command),
-        (f"{classes}\\.pdf\\OpenWithProgids", PROG_ID, ""),
+    app_name, prog_id, label = application_identity(exe)
+    capabilities = f"Software\\{app_name}\\Capabilities"
+    entries = [
+        (f"{classes}\\{prog_id}", "", "PDF 文档"),
+        (f"{classes}\\{prog_id}\\DefaultIcon", "", document_icon),
+        (f"{classes}\\{prog_id}\\shell\\open\\command", "", command),
+        (f"{classes}\\.pdf\\OpenWithProgids", prog_id, ""),
+        (capabilities, "ApplicationName", label),
+        (capabilities, "ApplicationIcon", f'"{exe}",0'),
+        (capabilities, "ApplicationDescription", "在本机阅读、整理和打印 PDF"),
+        (f"{capabilities}\\FileAssociations", ".pdf", prog_id),
+        ("Software\\RegisteredApplications", app_name, capabilities),
+    ]
+    # Applications\\ZhiXuPDF.exe is shared by filename, so portable editions use
+    # their own ProgID/Capabilities instead of overwriting that installed entry.
+    if portable_root(exe) is None:
+        entries += [
         (application, "FriendlyAppName", APP_NAME),
         (f"{application}\\DefaultIcon", "", document_icon),
         (f"{application}\\SupportedTypes", ".pdf", ""),
         (f"{application}\\shell\\open\\command", "", command),
-        (capabilities, "ApplicationName", APP_NAME),
-        (capabilities, "ApplicationIcon", f'"{exe}",0'),
-        (capabilities, "ApplicationDescription", "在本机阅读、整理和打印 PDF"),
-        (f"{capabilities}\\FileAssociations", ".pdf", PROG_ID),
-        ("Software\\RegisteredApplications", APP_REG_NAME, capabilities),
-    ]
+        ]
+    return entries
+
+
+def application_identity(executable):
+    if portable_root(executable) is None:
+        return APP_REG_NAME, PROG_ID, APP_NAME
+    from app.contextmenus import registration_plan
+    token = registration_plan(executable).token
+    return f'PDFManage.Portable.{token}', f'PDFManage.Portable.{token}.Document', APP_NAME + '（绿色版）'
+
+
+def default_apps_url(executable):
+    if portable_root(executable) is None:
+        return DEFAULT_APPS_URL
+    return 'ms-settings:defaultapps?registeredAppUser=' + application_identity(executable)[0]
 
 
 def register_pdf_application(executable: str) -> None:

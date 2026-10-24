@@ -36,6 +36,7 @@ class ImageQuickDialog(QDialog):
         super().__init__(parent)
         self.paths = [str(Path(path).resolve()) for path in paths]
         self.mode, self.worker, self.output, self.closing = mode, None, None, False
+        self.compact, self.best_result = False, None
         title = '图片转 PDF' if mode == 'pdf' else '压缩图片'
         self.setWindowTitle(f'{title} - 纸序 PDF')
         self.setStyleSheet(STYLE)
@@ -58,7 +59,7 @@ class ImageQuickDialog(QDialog):
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.status)
         self.detail = QLabel('结果保存到原图旁边；同名文件会自动避让。' if mode == 'pdf' else
-                             '保留尺寸，另存副本。JPG/WebP 适度压缩；PNG、BMP、TIFF 无损优化。')
+                             '保留尺寸，另存副本。PNG/BMP 自动比较无损 PNG 与 WebP；JPG/WebP 适度有损压缩。')
         self.detail.setObjectName('detail')
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
@@ -67,6 +68,12 @@ class ImageQuickDialog(QDialog):
         self.progress.setRange(0, 0)
         layout.addWidget(self.progress)
         buttons = QHBoxLayout()
+        self.smaller = QPushButton('更小体积（有损）')
+        self.smaller.setVisible(mode == 'compress')
+        self.smaller.setEnabled(False)
+        self.smaller.setToolTip('从原图另存有损 WebP，尺寸不变；可能改变小字、颜色和纹理细节。')
+        self.smaller.clicked.connect(self.make_smaller)
+        buttons.addWidget(self.smaller)
         buttons.addStretch()
         self.open_folder = QPushButton('打开文件夹')
         self.open_folder.setEnabled(False)
@@ -105,7 +112,8 @@ class ImageQuickDialog(QDialog):
         if self.mode == 'compress':
             if len(self.paths) != 1:
                 raise ValueError('请一次选择一张图片进行快捷压缩。')
-            return compress_image(self.paths[0], progress=report, cancel=cancel)
+            return compress_image(self.paths[0], progress=report, cancel=cancel, compact=self.compact,
+                                  smaller_than=self.best_result.after if self.compact and self.best_result else None)
         raise ValueError('未知图片操作。')
 
     def start(self):
@@ -115,6 +123,21 @@ class ImageQuickDialog(QDialog):
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self.completed)
         self.worker.start()
+
+    def make_smaller(self):
+        if self.closing or self.worker is None or self.worker.isRunning():
+            return
+        self.compact = True
+        self.worker.deleteLater()
+        self.worker = None
+        self.smaller.setEnabled(False)
+        self.open_folder.setEnabled(False)
+        self.finish.setText('取消')
+        self.progress.setRange(0, 0)
+        self.progress.show()
+        self.status.setText('正在从原图生成更小的 WebP…')
+        self.detail.setText('本次使用有损压缩，可能改变细节；保留尺寸、原图和上一份结果。')
+        self.start()
 
     def update_progress(self, current, total, message):
         if not self.closing:
@@ -135,15 +158,25 @@ class ImageQuickDialog(QDialog):
             self.status.setText('操作已取消，原图保留。' if isinstance(error, OperationCancelled) else f'未完成：{error}')
             if not isinstance(error, OperationCancelled):
                 self.detail.setText('请确认图片有效，且所在文件夹允许写入。原图未被覆盖。')
+            self.open_folder.setEnabled(bool(self.output))
+            self.smaller.setEnabled(self.mode == 'compress' and self.compact and not isinstance(error, OperationCancelled))
             return
         result = self.worker.result
-        self.output = result.path
         if self.mode == 'pdf':
+            self.output = result.path
             self.status.setText(f'PDF 已生成：\n{result.path}')
         elif result.path:
-            self.status.setText(f'{size_text(result.before)} → {size_text(result.after)}，减少 {(1-result.after/result.before)*100:.1f}%\n{result.path}')
+            self.output, self.best_result = result.path, result
+            self.status.setText(f'{size_text(result.before)} → {size_text(result.after)}，减少 {(1-result.after/result.before)*100:.1f}%\n{Path(result.path).name}')
+            self.status.setToolTip(result.path)
+            self.detail.setText(result.description + ('。原图和上一份结果均保留。' if self.compact else
+                                '。还想更小，可选“更小体积（有损）”另存 WebP。'))
+        elif self.compact and self.best_result:
+            self.status.setText(f'本次没有比已保存结果更小的版本，保留已有文件：\n{Path(self.output).name}')
+            self.detail.setText(self.best_result.description + '。原图保留。')
         else:
             self.status.setText('图片已经比较紧凑，本次没有找到更小的结果，原图保留。')
+        self.smaller.setEnabled(self.mode == 'compress' and not self.compact)
         self.open_folder.setEnabled(bool(self.output))
 
     def show_output(self):

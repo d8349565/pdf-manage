@@ -80,6 +80,33 @@ def test_spread_order_tail_and_mixed_sizes(qapp):
     assert view.page_at_point(QPointF()) == -1
 
 
+@pytest.mark.parametrize('columns', [1, 2, 4])
+def test_same_source_with_new_page_sizes_rebuilds_layout_and_drops_old_layers(qapp, columns):
+    from PyQt6.QtGui import QImage, QPixmap
+    view = PreviewView()
+    identity = ((1, 0, 0), (1, 1, 0), (1, 2, 0))
+    sizes = [(180, 120), (640, 360), (180, 240)]
+    view.set_pages(identity, sizes, columns=columns)
+    image = QImage(180, 120, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.red)
+    view.set_photo(QPixmap.fromImage(image), 1, sizes[0])
+    view.set_neighbor(1, image)
+    view.set_detail(image, (0, 0), 1)
+    generation = view.layout_generation
+    updated = [(595, 842), sizes[1], sizes[2]]
+    assert view.set_pages(identity, updated, columns=columns)
+    assert view.layout_generation == generation + 1
+    assert (view.page_rects[0].width(), view.page_rects[0].height()) == updated[0]
+    assert view.photo().isNull() and view._detail.pixmap().isNull()
+    assert not view.neighbors
+    for i, rect in enumerate(view.page_rects):
+        assert view.sceneRect().contains(rect)
+        assert not any(rect.intersects(other) for other in view.page_rects[i + 1:])
+    assert not view.set_pages(identity, updated, columns=columns)
+    assert view.layout_generation == generation + 1
+    view.close()
+
+
 def test_long_book_lookup_does_not_scan_all_pages(qapp):
     view = PreviewView()
     view.set_pages(tuple(range(10000)), [(300, 400)] * 10000, spread=True)

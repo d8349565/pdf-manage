@@ -82,7 +82,7 @@ def test_orientation_and_color_profile_are_preserved(tmp_path):
 
 def test_no_gain_does_not_create_a_duplicate_file(tmp_path):
     source = tmp_path / 'tiny.png'
-    Image.new('RGB', (1, 1), 'white').save(source, 'PNG', optimize=True)
+    Image.new('L', (1, 1), 255).save(source, 'PNG', optimize=True)
     result = compress_image(source)
     assert result.path is None and result.before == result.after
     assert list(tmp_path.glob('tiny_压缩*')) == []
@@ -123,9 +123,12 @@ def test_existing_output_is_preserved_and_a_new_name_is_used(tmp_path):
     sample(source)
     existing = tmp_path / 'same_压缩.png'
     existing.write_bytes(b'keep existing user file')
+    existing_webp = tmp_path / 'same_压缩.webp'
+    existing_webp.write_bytes(b'keep existing WebP file')
     result = compress_image(source)
-    assert Path(result.path).name == 'same_压缩 (2).png'
+    assert Path(result.path).stem == 'same_压缩 (2)'
     assert existing.read_bytes() == b'keep existing user file'
+    assert existing_webp.read_bytes() == b'keep existing WebP file'
 
 
 @pytest.mark.parametrize('kind,suffix', [('TIFF','.tiff'), ('WEBP','.webp'), ('PNG','.png')])
@@ -184,6 +187,8 @@ def test_quick_window_starts_automatically_and_shows_result(qapp, tmp_path):
         wait(qapp, lambda: dialog.worker is not None and dialog.finish.text() == '完成')
         assert dialog.output and dialog.open_folder.isEnabled()
         assert '减少' in dialog.status.text() and Path(dialog.output).exists()
+        assert dialog.status.text().splitlines()[-1] == Path(dialog.output).name
+        assert dialog.status.toolTip() == dialog.output
         assert dialog.rect().contains(dialog.finish.geometry())
     finally:
         dialog.reject()
@@ -306,3 +311,164 @@ entry.main()
                                cwd=tmp_path, capture_output=True, timeout=25, text=True, encoding='utf-8', errors='replace')
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert 'IMAGE_ACTION_PASSED' in completed.stdout
+
+
+def mixed_image(path, *, alpha=False, **metadata):
+    """A generated textured background with small text and sharp colored lines."""
+    image = Image.frombytes('RGB', (160, 120), random.Random(47).randbytes(160 * 120 * 3))
+    image = image.resize((640, 480), Image.Resampling.BICUBIC)
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((20, 30, 610, 95), fill='white', outline='red', width=2)
+    draw.text((30, 45), 'Small text 0123456789 ABC test', fill='black')
+    if alpha:
+        image.putalpha(Image.linear_gradient('L').resize(image.size))
+    image.save(path, 'PNG', **metadata)
+    return image
+
+
+@pytest.mark.parametrize('alpha', [False, True])
+def test_automatic_webp_is_lossless_including_invisible_rgb(tmp_path, alpha):
+    source = tmp_path / 'texture.png'
+    image = mixed_image(source, alpha=alpha)
+    original, modified = source.read_bytes(), source.stat().st_mtime_ns
+    result = compress_image(source)
+    assert result.path and Path(result.path).suffix == '.webp'
+    assert result.after < result.before and '无损' in result.description
+    with Image.open(result.path) as after:
+        assert after.size == image.size
+        assert after.convert('RGBA').tobytes() == image.convert('RGBA').tobytes()
+    assert source.read_bytes() == original and source.stat().st_mtime_ns == modified
+
+
+def test_webp_keeps_icc_exif_and_resolution(tmp_path):
+    from PIL import ImageCms
+    source = tmp_path / 'color-managed.png'
+    exif = Image.Exif()
+    exif[315] = 'Generated test'
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+    mixed_image(source, dpi=(144, 120), exif=exif, icc_profile=profile)
+    with Image.open(source) as before:
+        dpi = before.info['dpi']
+    result = compress_image(source)
+    assert result.path and Path(result.path).suffix == '.webp'
+    with Image.open(result.path) as after:
+        assert after.info['icc_profile'] == profile
+        assert after.getexif()[315] == 'Generated test'
+        assert float(after.getexif()[282]) == pytest.approx(dpi[0], abs=.001)
+        assert float(after.getexif()[283]) == pytest.approx(dpi[1], abs=.001)
+        assert after.getexif()[296] == 2
+
+
+def test_high_bit_depth_and_wide_images_keep_png(tmp_path):
+    import struct
+    source = tmp_path / '16bit.png'
+    image = Image.frombytes('I;16', (512, 64), struct.pack('<32768H', *(index * 2 for index in range(32768))))
+    image.save(source, 'PNG', compress_level=0)
+    result = compress_image(source)
+    assert result.path and Path(result.path).suffix == '.png'
+    with Image.open(result.path) as after:
+        assert after.tobytes() == image.tobytes()
+    with pytest.raises(ValueError, match='颜色模式'):
+        compress_image(source, compact=True)
+    wide = tmp_path / 'wide.png'
+    Image.new('RGB', (16384, 1), '#AABBCC').save(wide, 'PNG', compress_level=0)
+    result = compress_image(wide)
+    assert result.path and Path(result.path).suffix == '.png'
+    with pytest.raises(ValueError, match='16383'):
+        compress_image(wide, compact=True)
+
+
+def test_optional_webp_encoder_failure_keeps_png_candidate(tmp_path, monkeypatch):
+    source = tmp_path / 'fallback.png'
+    sample(source)
+    original = Image.Image.save
+    def unsupported_webp(self, file, format=None, **options):
+        if format == 'WEBP':
+            raise OSError('Generated encoder failure')
+        return original(self, file, format, **options)
+    monkeypatch.setattr(Image.Image, 'save', unsupported_webp)
+    result = compress_image(source)
+    assert result.path and Path(result.path).suffix == '.png'
+    with Image.open(source) as before, Image.open(result.path) as after:
+        assert before.convert('RGBA').tobytes() == after.convert('RGBA').tobytes()
+
+
+@pytest.mark.parametrize('alpha', [False, True])
+def test_explicit_compact_webp_is_smaller_and_keeps_dimensions_and_alpha(tmp_path, alpha):
+    source = tmp_path / 'compact.png'
+    image = mixed_image(source, alpha=alpha)
+    original = source.read_bytes()
+    lossless = compress_image(source)
+    saved_lossless = Path(lossless.path).read_bytes()
+    compact = compress_image(source, compact=True, smaller_than=lossless.after)
+    assert compact.path and compact.after < lossless.after
+    assert Path(compact.path).stem == 'compact_更小'
+    assert '有损' in compact.description
+    with Image.open(compact.path) as after:
+        assert after.size == image.size
+        assert after.convert('RGBA').getchannel('A').tobytes() == image.convert('RGBA').getchannel('A').tobytes()
+        assert after.convert('RGB').tobytes() != image.convert('RGB').tobytes()
+    assert source.read_bytes() == original and Path(lossless.path).read_bytes() == saved_lossless
+    refused = compress_image(source, compact=True, smaller_than=1)
+    assert refused.path is None and not list(tmp_path.glob('compact_更小 (2).*'))
+
+
+def test_compact_does_not_discard_png_color_interpretation(tmp_path):
+    import struct
+    from PIL import PngImagePlugin
+    source = tmp_path / 'linear.png'
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add(b'gAMA', struct.pack('>I', 100000))
+    mixed_image(source, pnginfo=metadata)
+    original = source.read_bytes()
+    with pytest.raises(ValueError, match='颜色信息'):
+        compress_image(source, compact=True)
+    result = compress_image(source)
+    assert result.path and Path(result.path).suffix == '.png'
+    assert source.read_bytes() == original and not list(tmp_path.glob('*_更小*'))
+
+
+def test_quick_window_generates_smaller_version_with_one_button(qapp, tmp_path):
+    from app.imagequick import ImageQuickDialog
+    source = tmp_path / 'two-modes.png'
+    mixed_image(source)
+    dialog = ImageQuickDialog([str(source)], 'compress')
+    dialog.show()
+    try:
+        wait(qapp, lambda: dialog.finish.text() == '完成')
+        assert dialog.smaller.isVisible() and dialog.smaller.isEnabled()
+        first = Path(dialog.output)
+        data = first.read_bytes()
+        dialog.smaller.click()
+        assert dialog.finish.text() == '取消' and not dialog.smaller.isEnabled()
+        assert dialog.progress.isVisible()
+        wait(qapp, lambda: dialog.finish.text() == '完成')
+        assert dialog.worker.error is None and Path(dialog.output) != first
+        assert Path(dialog.output).stat().st_size < len(data)
+        assert first.read_bytes() == data and '有损' in dialog.detail.text()
+        assert dialog.open_folder.isEnabled() and not dialog.smaller.isEnabled()
+    finally:
+        dialog.reject()
+        dialog.deleteLater()
+        qapp.processEvents()
+
+
+def test_quick_window_keeps_better_lossless_result_when_compact_is_larger(qapp, tmp_path):
+    from app.imagequick import ImageQuickDialog
+    source = tmp_path / 'flat.png'
+    Image.new('RGB', (320, 240), '#AABBCC').save(source, 'PNG', compress_level=0)
+    dialog = ImageQuickDialog([str(source)], 'compress')
+    dialog.show()
+    try:
+        wait(qapp, lambda: dialog.finish.text() == '完成')
+        first = Path(dialog.output)
+        data = first.read_bytes()
+        dialog.smaller.click()
+        wait(qapp, lambda: dialog.finish.text() == '完成')
+        assert dialog.worker.error is None and Path(dialog.output) == first
+        assert first.read_bytes() == data and '没有比已保存结果更小' in dialog.status.text()
+        assert not list(tmp_path.glob('flat_更小*'))
+    finally:
+        dialog.reject()
+        dialog.deleteLater()
+        qapp.processEvents()

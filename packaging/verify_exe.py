@@ -84,7 +84,8 @@ def main() -> None:
                      "app.pdf2excel.raster_grid", "app.pdf2excel.alignment_grid", "app.textselection",
                      "app.pdf2excel.page_builder", "PIL.Image", "PIL.PngImagePlugin",
                      "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "app.updates", "markdown",
-                     "app.imagecompress", "app.imagequick", "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
+                     "app.imagecompress", "app.imagequick", "app.runtime", "app.contextmenus", "app.contextmenuui",
+                     "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
         assert required in python_modules, f"Missing module: {required}"
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
     for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "rapidocr", "onnxruntime", "cv2", "pandas", "lxml", "libssl", "libcrypto"):
@@ -108,6 +109,8 @@ def main() -> None:
             environment.pop(key, None)
         environment["PATH"] = str(Path(os.environ["SystemRoot"]) / "System32")
         environment["TEMP"] = environment["TMP"] = str(folder)
+        environment['LOCALAPPDATA'] = str(folder / 'local-appdata')
+        environment['APPDATA'] = str(folder / 'roaming-appdata')
         result_path = folder / "self-test.json"
         started = time.perf_counter()
         command = [str(copy), "--self-test", str(result_path)]

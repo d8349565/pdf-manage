@@ -96,6 +96,8 @@ if errorlevel 1 goto failed
 echo [5/6] Inspecting the application package...
 "%BUILD_PYTHON%" "packaging\verify_exe.py" --skip-runtime
 if errorlevel 1 goto failed
+"%BUILD_PYTHON%" "packaging\make_portable.py"
+if errorlevel 1 goto failed
 
 if "%SKIP_SETUP%"=="1" goto done
 

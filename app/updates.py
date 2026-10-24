@@ -9,6 +9,7 @@ from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 
 from app import APP_PROJECT_URL, APP_SLUG, __version__
+from app.runtime import portable_root
 
 RELEASES_URL = f"{APP_PROJECT_URL}/releases"
 LATEST_RELEASE_URL = f"{RELEASES_URL}/latest"
@@ -23,7 +24,7 @@ def version_parts(tag: str) -> tuple[int, int, int]:
     return tuple(map(int, tag.removeprefix("v").split(".")))
 
 
-def release_tag(payload: bytes) -> str:
+def release_tag(payload: bytes, *, portable=None) -> str:
     """Only accept a stable release with a completed Windows installer upload."""
     if len(payload) > MAX_RESPONSE_BYTES:
         raise ValueError("更新信息过大，请打开发布页查看。")
@@ -43,13 +44,16 @@ def release_tag(payload: bytes) -> str:
         f"{APP_SLUG}-Setup.v{raw_ver}.exe",
         f"{APP_SLUG}-Setup.{raw_ver}.exe",
     )
+    portable = portable_root() is not None if portable is None else portable
+    if portable:
+        installer_names = (f'{APP_SLUG}-Portable-v{raw_ver}.zip',)
     assets = release.get("assets")
     if not isinstance(assets, list) or not any(
         isinstance(asset, dict) and asset.get("name") in installer_names
         and asset.get("state") == "uploaded" and type(asset.get("size")) is int and asset["size"] > 0
         for asset in assets
     ):
-        raise ValueError("正式版安装包尚未就绪，请稍后重试或打开发布页。")
+        raise ValueError("正式版" + ('绿色 ZIP' if portable else '安装包') + "尚未就绪，请稍后重试或打开发布页。")
     return tag
 
 

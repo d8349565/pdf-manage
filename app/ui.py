@@ -86,7 +86,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app import APP_NAME, APP_EXE_NAME, APP_ORGANIZATION, APP_SLUG, __version__
+from app import APP_NAME, APP_EXE_NAME, __version__
+from app.runtime import display_name, portable_root
 from app.icons import brand_icon, toolbar_icon
 from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
@@ -898,6 +899,8 @@ class PageListView(QListView):
         self.setUniformItemSizes(False)
         self.setIconSize(QSize(THUMB_W, int(THUMB_W * THUMB_RATIO_DEFAULT)))
         self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
+        if not arrange:
+            self.setToolTip('单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。')
         self.setItemDelegate(PageThumbDelegate(self))
         self.setMovement(QListView.Movement.Static)
         if arrange:
@@ -1171,6 +1174,8 @@ class PreviewView(QGraphicsView):
         return self._item.pixmap()
 
     def set_pages(self, signature, sizes, *, spread=False, columns=None) -> bool:
+        # A size edit keeps the source and rotation but invalidates every layer's geometry.
+        signature = (signature, tuple(sizes))
         columns = columns if columns is not None else (2 if spread else 1)
         if signature == self.page_signature and columns == self.page_columns:
             return False
@@ -1896,7 +1901,7 @@ class TitleBar(QWidget):
         host._menubar.setNativeMenuBar(False)
         host._menubar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         lay.addWidget(host._menubar)
-        host.title_label = ElidedTitleLabel(f"{APP_NAME} v{__version__}", self)
+        host.title_label = ElidedTitleLabel(f"{display_name()} v{__version__}", self)
         host.title_label.setObjectName("windowTitle")
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -2357,7 +2362,8 @@ class MainWindow(QMainWindow):
             view.verticalScrollBar().valueChanged.connect(self._prune_visible_thumbs)
         mark("window_build_ready")
         self._shortcuts()
-        self._window_settings = QSettings(APP_ORGANIZATION, APP_SLUG)
+        from app.runtime import preferences
+        self._window_settings = preferences(QSettings)
         geometry = self._window_settings.value("mainWindow/geometry", QByteArray())
         if isinstance(geometry, QByteArray):
             self.restoreGeometry(geometry)
@@ -2564,6 +2570,8 @@ class MainWindow(QMainWindow):
         self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
         file_menu.addAction(self.storage_action)
         if sys.platform == "win32":
+            if portable_root() is not None:
+                file_menu.addAction(self._act('右键快捷工具…', self.manage_context_menus))
             file_menu.addSeparator()
             file_menu.addAction(self._act("设为默认 PDF 应用…", self.choose_default_application))
         file_menu.addSeparator()
@@ -2620,6 +2628,7 @@ class MainWindow(QMainWindow):
         convert = self._menubar.addMenu("转换")
         convert.addAction(self._act("Word 转 PDF…", self.open_word_converter))
         convert.addAction(self._act("图片转 PDF…", self.images_to_pdf))
+        convert.addAction(self._act('压缩图片…', self.compress_image_file))
         convert.addAction(self._act("Markdown 转 PDF…", self.convert_markdown))
         convert.addSeparator()
         convert.addAction(self._act("PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
@@ -2683,6 +2692,15 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
         except OSError as exc:
             QMessageBox.warning(self, '存储管理', str(exc))
+
+    def manage_context_menus(self) -> None:
+        from app.contextmenuui import ContextMenuDialog
+        try:
+            dialog = ContextMenuDialog(self)
+            dialog.exec()
+            dialog.deleteLater()
+        except OSError as exc:
+            QMessageBox.warning(self, '右键快捷工具', str(exc))
 
     def _workbench_bar(self) -> QWidget:
         bar = QFrame()
@@ -3345,7 +3363,7 @@ class MainWindow(QMainWindow):
             inner = QVBoxLayout(content)
             inner.setContentsMargins(20, 0, 4, 14)
             inner.setSpacing(10)
-            inner.setAlignment(Qt.AlignmentFlag.AlignTop)
+            # The outer list owns spare space; forms need their full wrapped height.
             self._export_tools.addItem(content, title)
             return inner
 
@@ -3620,7 +3638,7 @@ class MainWindow(QMainWindow):
             name = os.path.basename(self.ws.path) if self.ws.path else (
                 os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else "未命名")
             star = " *" if self.ws.dirty else ""
-            self.setWindowTitle(f"{name}{star} — {APP_NAME} v{__version__}")
+            self.setWindowTitle(f"{name}{star} — {display_name()} v{__version__}")
             self.statusBar().showMessage(self._status_line())
         finally:
             self._syncing = False
@@ -3655,7 +3673,7 @@ class MainWindow(QMainWindow):
             return f"已选第 {row + 1} 页"
         return f"已选 {sel} 页"
 
-    def _sync_selection(self, *, reading_only=False) -> None:
+    def _sync_selection(self, *, reading_only=False, origin=None) -> None:
         n = len(self.ws.pages)
         selection = QItemSelection()
         if self.ws.select_all and n:
@@ -3673,6 +3691,8 @@ class MainWindow(QMainWindow):
             # 只阻止应用回调递归；视图仍需 selectionChanged 通知来重绘选中样式。
             for view in ((self.left_view,) if reading_only else (self.left_view, self.arrange_view)):
                 sm = view.selectionModel()
+                if sm is origin:
+                    continue
                 sm.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
                 current = self.ws.selected_index
                 if selection and current is not None and 0 <= current < n:
@@ -3693,11 +3713,17 @@ class MainWindow(QMainWindow):
         cur = sm.currentIndex()
         current = cur.row() if cur.isValid() else None
         self.ws.set_selection(rows, current)
-        self._sync_selection()
+        if sm is self.left_view.selectionModel() and current is not None:
+            self.ws.last_preview_index = current
+        self._sync_selection(origin=sm)
         self._update_preview()
 
     def _on_click(self, index: QModelIndex) -> None:
         if self._syncing or not index.isValid():
+            return
+        if self.sender() is self.left_view:
+            self.ws.last_preview_index = index.row()
+            self._update_preview()
             return
         mods = QGuiApplication.keyboardModifiers()
         if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
@@ -3710,6 +3736,12 @@ class MainWindow(QMainWindow):
 
     def _on_current_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         if self._syncing or not current.isValid():
+            return
+        if self.sender() is self.left_view.selectionModel():
+            self.ws.last_preview_index = current.row()
+            if current.row() in self.ws.selected:
+                self.ws.selected_index = current.row()
+            self._update_preview()
             return
         mods = QGuiApplication.keyboardModifiers()
         if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
@@ -4272,7 +4304,10 @@ class MainWindow(QMainWindow):
         if index != self.ws.preview_index() and (self._scrolling or index != view.active_page):
             self._scroll_navigation = True
             try:
-                self.ws.select_index(index)
+                if len(self.ws.selected) == 1 and not self.ws.select_all:
+                    self.ws.select_index(index)
+                else:
+                    self.ws.last_preview_index = index
                 self._sync_selection(reading_only=True)
                 self._update_preview(lightweight=True)
             finally:
@@ -5398,6 +5433,15 @@ class MainWindow(QMainWindow):
         except (PdfError, OSError) as exc:
             QMessageBox.warning(self, "图片转换未完成", str(exc))
 
+    def compress_image_file(self):
+        from app.imagequick import ImageQuickDialog
+        from app.imaging import IMAGE_FILTER
+        path, _ = QFileDialog.getOpenFileName(self, '选择要压缩的图片', '', IMAGE_FILTER)
+        if path:
+            dialog = ImageQuickDialog([path], 'compress', self)
+            dialog.exec()
+            dialog.deleteLater()
+
     def pdf_to_images(self):
         if not self._allow_operation("copy") or not self.ws.pages:
             return
@@ -5722,11 +5766,11 @@ class MainWindow(QMainWindow):
             return
         from PyQt6.QtCore import QUrl
         from PyQt6.QtGui import QDesktopServices
-        from app.windows_integration import DEFAULT_APPS_URL, register_pdf_application
+        from app.windows_integration import default_apps_url, register_pdf_application
 
         try:
             register_pdf_application(sys.executable)
-            if not QDesktopServices.openUrl(QUrl(DEFAULT_APPS_URL)):
+            if not QDesktopServices.openUrl(QUrl(default_apps_url(sys.executable))):
                 raise OSError(f"无法打开 Windows 设置，请在系统设置的「默认应用」中选择{APP_NAME}。")
             self.statusBar().showMessage(f"请在 Windows 设置中将 .pdf 的默认应用选择为「{APP_NAME}」", 12000)
         except OSError as exc:

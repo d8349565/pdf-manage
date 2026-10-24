@@ -97,9 +97,11 @@ class _ShellController(QObject):
             self.idle_timer.start()
 
 
-def serve(application) -> int:
+def serve(application, *, clsid=None) -> int:
     global _controller
     pythoncom.CoInitialize()
+    clsid = clsid or PDF_MERGE_CLSID
+    MergeDropTarget._reg_clsid_ = clsid
     registrations = []
     application.setQuitOnLastWindowClosed(False)
     _controller = _ShellController(application)
@@ -107,7 +109,7 @@ def serve(application) -> int:
     pump.setInterval(20)
     pump.timeout.connect(pythoncom.PumpWaitingMessages)
     try:
-        registrations = factory.RegisterClassFactories([PDF_MERGE_CLSID])
+        registrations = factory.RegisterClassFactories([clsid])
         pythoncom.CoResumeClassObjects()
         pump.start()
         return application.exec()
