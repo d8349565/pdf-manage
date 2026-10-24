@@ -203,7 +203,7 @@ class ImageImportDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        hint(layout, "支持 PNG、JPEG、BMP、TIFF。列表顺序就是页序；多帧 TIFF 按帧生成页面。")
+        hint(layout, "支持 PNG、JPEG、WebP、BMP、TIFF。列表顺序就是页序；多帧 TIFF 按帧生成页面。")
 
         # File list card ---------------------------------------------------------
         files_card = QFrame()
@@ -366,7 +366,7 @@ class ImageImportDialog(QDialog):
         if count == 0:
             self.placeholder.setVisible(True)
             self.files.setVisible(False)
-            self.feedback.setText("请拖入或选择 PNG、JPEG、BMP、TIFF 文件。重复文件自动忽略。")
+            self.feedback.setText("请拖入或选择 PNG、JPEG、WebP、BMP、TIFF 文件。重复文件自动忽略。")
             return
         self.placeholder.setVisible(False)
         self.files.setVisible(True)
@@ -429,7 +429,7 @@ class ImageImportDialog(QDialog):
             self.add_paths(paths)
         else:
             if event.mimeData().hasUrls():
-                self.feedback.setText("未发现支持的图片。请拖入 PNG、JPEG、BMP、TIFF 文件或包含图片的文件夹。")
+                self.feedback.setText("未发现支持的图片。请拖入 PNG、JPEG、WebP、BMP、TIFF 文件或包含图片的文件夹。")
             event.ignore()
 
     def eventFilter(self, watched, event):

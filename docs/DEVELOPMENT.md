@@ -42,7 +42,7 @@ python -m venv .venv
 | `app/deskew.py`、`app/deskewui.py` | 不依赖 OCR 的小角度分析、逐页确认与纠偏 |
 | `app/pagepreviewlist.py` | 页面工具共用的连续滚动预览与按需渲染 |
 | `app/printing.py`、`app/pdf2excel/` | 打印和表格转 Excel |
-| `app/compression.py`、`app/imaging.py` | 压缩与图片转换 |
+| `app/compression.py`、`app/imaging.py`、`app/imagecompress.py`、`app/imagequick.py` | PDF 压缩、图片转换与独立图片快捷工具 |
 | `app/ocr/`、`app/ocrui.py` | 可选离线 OCR、文字层输出与操作弹窗 |
 | `app/storage.py`、`app/storageui.py` | 存储偏好、组件迁移、任务临时目录与受限清理 |
 | `app/rasterpdf.py`、`app/rasterui.py` | 图片版 PDF 输出与未知签名的安全影像副本 |
@@ -177,3 +177,16 @@ Windows 安装与文件关联沿用 `PDFManage` 注册标识，以保持原有�
 `tests/test_ofd.py` 包含生成文档的文字定位回归，以及使用外部授权样本的可选验证。外部样本通过环境变量 `ZHIXU_OFD_SAMPLE` 指定，并将 pytest 的 `--basetemp` 指向仓库外的专用验证目录；未指定样本时仅跳过样本检查。样本检查覆盖打开、像素预览、保存后图像一致性、打印到 PDF、界面取消和另存、原件哈希与覆盖保护。真实样本及所有派生 PDF、图片、运行日志均不得入库；不要将文件名、业务正文或本机路径固化到测试与文档中。当前已用一份授权发票完成上述验证，尚未验证实体打印机和更多银行回单版式。
 
 2026-10-21：缺省与显式 `DeltaX` 的文字定位检查，以及 `tests/test_ocr_ui.py` 中的 OCR 另存成功、取消和已有界面检查，共 8 项通过。本次仅使用生成文档；未读取业务样本、未执行真实 OCR 推理或实体打印。
+
+
+## 图片右键工具与安装界面
+
+资源管理器的图片入口使用 `--images-to-pdf "图片路径"` 与 `--compress-image "图片路径"`，支持 JPG、JPEG、PNG、WebP、BMP、TIF、TIFF，按单个选中文件启动独立窗口；不经过 PDF 阅读窗口或单实例转发。开始操作后自动在原图旁保存结果，同名文件采用新名称。图片转 PDF 复用现有转换器，多帧 TIFF 按帧展开；输出先在目标磁盘暂存，再排他提交，防止覆盖处理中出现的同名文件。
+
+`app/imagecompress.py` 只依赖 Pillow 与通用文件提交工具。JPEG 使用质量 85、保留来源色彩采样并优化编码，WebP 使用质量 85；PNG 逐像素核对精确调色板候选并保留透明度、颜色配置和文本，BMP 转为 PNG，TIFF 使用无损 Deflate。保留显示方向、尺寸和适用的颜色／EXIF 信息。输出不小于来源时不生成副本；多帧或动态图片明确拒绝，不静默丢帧；单图限制为 6400 万像素。保存前核对来源是否改变，取消或失败清理本次临时文件，不修改原图。
+
+安装任务保留桌面快捷方式与 `contextmenus` 两项，其中后者是唯一的右键工具开关，统一控制 PDF、图片、Word、Markdown。升级取消该项会删除本程序历史及新增菜单；卸载按所属键清理，不改图片默认打开方式或 Windows UserChoice。Windows 11 的经典右键入口通常位于“显示更多选项”。实际资源管理器与安装／卸载行为需在安装后的 Windows 环境验收。
+
+安装界面使用 Inno Setup 6.6+ 的原生现代样式；本机验证编译器为 6.7.3。`packaging/make_icon.py` 在现有图标生成步骤中同时创建品牌向导插图，构建不下载视觉素材。简体中文语言资源固定在 `packaging/ChineseSimplified.isl`，来源为 Inno Setup 官方源码，保留上游署名及 `packaging/licenses/InnoSetup.txt`；许可与构建资源按公开仓库规则维护。WebP 需要 Qt 的 qwebp 插件及 Pillow 的 `_webp`，已纳入打包检查。
+
+需要核查实际注册项时，可为 ISCC 传入 `/DZhiXuPreprocessOutput=仓库内输出路径` 保存展开后的安装脚本；没有该参数时不产生额外脚本。安装器仍只生成到 `dist-installer/ZhiXuPDF-Setup.exe`。

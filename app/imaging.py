@@ -13,8 +13,8 @@ from app.output import OperationCancelled, check_cancel, commit_file, stamp
 from app.pdfio import PdfError, PdfStore
 from app.storage import TemporaryWorkspace
 
-IMAGE_FILTER = "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
+IMAGE_FILTER = "图片 (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
 
 def images_to_pdf(paths, dest, safety_store, progress, cancel):

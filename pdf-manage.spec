@@ -81,6 +81,7 @@ KEEP_PLUGIN = (
     "plugins/imageformats/qsvg",
     "plugins/imageformats/qjpeg",
     "plugins/imageformats/qtiff",
+    "plugins/imageformats/qwebp",
     "plugins/iconengines/qsvgicon",
     "plugins/styles/qmodernwindowsstyle",
     "plugins/tls/qschannelbackend",
@@ -177,7 +178,6 @@ a = Analysis(
         "PIL._avif",
         "PIL._imagingft",
         "PIL._imagingcms",
-        "PIL._webp",
         "lxml",
         "IPython",
         # 更新检查使用 Qt Network + Windows Schannel；不携带 Python TLS / OpenSSL。

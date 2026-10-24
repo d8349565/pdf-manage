@@ -92,6 +92,13 @@ def main() -> None:
     app.setApplicationVersion(__version__)
     app.setOrganizationName(APP_ORGANIZATION)
     app.setStyle("Fusion")
+    image_mode = {'--images-to-pdf': 'pdf', '--compress-image': 'compress'}.get(sys.argv[1] if len(sys.argv) > 1 else '')
+    if image_mode:
+        from app.imagequick import ImageQuickDialog
+        app.setWindowIcon(_window_icon())
+        win = ImageQuickDialog(sys.argv[2:], image_mode)
+        win.show()
+        sys.exit(app.exec())
     if len(sys.argv) > 1 and sys.argv[1] == "--pdf-shell-server":
         from PyQt6.QtWidgets import QMessageBox
         try:

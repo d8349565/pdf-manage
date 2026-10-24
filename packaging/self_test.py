@@ -92,6 +92,31 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 assert removed == 0 and skipped
             assert not Path(scratch).exists()
             from app.storageui import StorageDialog, RuntimeInstallDialog
+            from app.imagecompress import compress_image
+            from app.imaging import images_to_pdf
+            from PIL import Image
+            sample_image = folder / '生成 图片.png'
+            Image.new('RGBA', (320, 240), (40, 130, 90, 150)).save(sample_image, 'PNG', compress_level=0)
+            image_result = compress_image(sample_image)
+            assert image_result.path and image_result.after < image_result.before
+            with Image.open(sample_image) as original, Image.open(image_result.path) as compressed:
+                assert original.convert('RGBA').tobytes() == compressed.convert('RGBA').tobytes()
+            webp = folder / '生成 WebP.webp'
+            Image.new('RGB', (320, 240), (40, 130, 90)).save(webp, 'WEBP', lossless=True)
+            from app.imagequick import ImageQuickDialog
+            from app.pdfio import PdfStore
+            quick = ImageQuickDialog([str(sample_image)], 'compress')
+            quick.closing = True  # Inspect construction without starting another job.
+            quick.close()
+            quick.deleteLater()
+            image_store = PdfStore()
+            try:
+                images_to_pdf([str(webp)], str(folder / 'WebP.pdf'), image_store, lambda *args: None, lambda: False)
+                with pymupdf.open(folder / 'WebP.pdf') as converted:
+                    assert converted.page_count == 1 and converted[0].get_images()
+            finally:
+                image_store.close_all()
+            report['checks'].append('standalone PNG compression, alpha preservation, WebP encoder/Qt decoder and image quick dialog')
             locations = StorageDialog()
             installer = RuntimeInstallDialog(folder / 'local-package.zip')
             assert locations.paths['cache'].text() == str(folder / 'cache')
@@ -237,7 +262,6 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 if ocr_runtime is not None:
                     from app.ocr.contracts import OCROptions
                     from app.ocr.service import run_ocr
-                    from time import monotonic, sleep
                     scan = folder / "OCR 合成扫描.pdf"
                     recognized = folder / "OCR 搜索副本.pdf"
                     with pymupdf.open() as text_doc:
