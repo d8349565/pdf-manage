@@ -72,16 +72,21 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF"; ValueTy
 #sub ImageRegistry
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuCompressImage"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: string; ValueName: ""; ValueData: "图片转 PDF"; Flags: uninsdeletekey; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF\command"; ValueType: none; Flags: deletekey; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: string; ValueName: ""; ValueData: "合并为 PDF"; Flags: uninsdeletekey; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --images-to-pdf ""%1"""; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF\DropTarget"; ValueType: string; ValueName: "CLSID"; ValueData: "{{E31F48C9-1A55-47EB-A535-524A446BBA39}"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuCompressImage"; ValueType: string; ValueName: ""; ValueData: "压缩图片"; Flags: uninsdeletekey; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuCompressImage"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuCompressImage"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuCompressImage\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --compress-image ""%1"""; Tasks: contextmenus
 #endsub
 #for {ImageIndex = 0; ImageIndex < DimOf(ImageExtensions); ImageIndex++} ImageRegistry
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{E31F48C9-1A55-47EB-A535-524A446BBA39}"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{E31F48C9-1A55-47EB-A535-524A446BBA39}"; ValueType: string; ValueName: ""; ValueData: "纸序 PDF 图片合并入口"; Flags: uninsdeletekey; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{E31F48C9-1A55-47EB-A535-524A446BBA39}\LocalServer32"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --image-pdf-shell-server"; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{E31F48C9-1A55-47EB-A535-524A446BBA39}\PythonCOM"; ValueType: string; ValueName: ""; ValueData: "app.pdfshell.MergeDropTarget"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\ZhiXuMarkdownToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\ZhiXuMarkdownToPDF"; ValueType: string; ValueName: ""; ValueData: "转换为 PDF"; Flags: uninsdeletekey; Tasks: contextmenus

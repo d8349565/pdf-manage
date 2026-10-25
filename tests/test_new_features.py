@@ -1009,41 +1009,21 @@ def test_word_worker_closes_document_before_commit(tmp_path, monkeypatch):
 
 
 def test_annotation_tools_replace_robustness(qapp, tmp_path):
-    from app.editingui import AnnotationTools
-    from app.pdfio import PdfStore
-    from app.workspace import Workspace
+    from app.ui import MainWindow
     source = tmp_path / "test_replace.pdf"
     make_pdf(source, count=1)
-
-    class DummyHost:
-        def __init__(self):
-            from PyQt6.QtGui import QAction
-            self.capture_action = QAction("框选导出图片")
-            self.store = PdfStore()
-            self.ws = Workspace()
-            self.ws.load_first_or_merge(self.store.load(str(source)), str(source))
-            self.preview_view = type("DummyPreviewView", (), {
-                "viewport": lambda s: type("DummyVp", (), {
-                    "installEventFilter": lambda s, f: None,
-                    "removeEventFilter": lambda s, f: None,
-                })(),
-                "setDragMode": lambda s, m: None,
-                "page_rects": [type("Rect", (), {"topLeft": lambda s: None})()],
-                "_scene": type("Scene", (), {"removeItem": lambda s, i: None, "addItem": lambda s, i: None})(),
-            })()
-        def _allow_operation(self, op): return True
-        def _preview_render_width(self): return 800
-        def _cache_page_image(self, k, img): pass
-        def refresh(self): pass
-        def go_to_page(self, n): pass
-
-    host = DummyHost()
-    tools = AnnotationTools(host)
-    tools.tool.setCurrentIndex(tools.tool.findData("replace"))
-    assert tools.tool.currentData() == "replace"
-    assert tools.ensure_snapshot() is True
-    tools.deactivate()
-    host.store.close_all()
+    host = MainWindow()
+    try:
+        host.open_files_in_tabs([str(source)])
+        tools = host._ensure_annotation_tools()
+        tools.tool.setCurrentIndex(tools.tool.findData("replace"))
+        assert tools.tool.currentData() == "replace"
+        assert tools.ensure_snapshot() is True
+        tools.deactivate()
+    finally:
+        host.ws.reset()
+        host.close()
+        host.store.close_all()
 
 
 def test_replacement_allows_longer_text_when_space_permits(qapp, tmp_path):

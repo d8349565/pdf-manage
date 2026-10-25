@@ -6,6 +6,7 @@ from itertools import count
 
 _instances = count(1)
 _revisions = count(1)
+_copy_groups = count(1)
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class PageRef:
     page_id: int = field(default_factory=lambda: next(_instances), compare=False)
     edits: tuple[PageEdit, ...] = ()
     revision: int = field(default=0, compare=False)
+    copy_group: int = 0
 
     def rotated(self, delta: int) -> PageRef:
         return replace(self, rotation=(self.rotation + delta) % 360)
@@ -329,9 +331,13 @@ class Workspace:
     def _unique_pages(pages, existing=()):
         seen = {p.page_id for p in existing}
         result = []
+        groups = {}
         for page in pages:
             if page.page_id in seen:
-                page = replace(page, page_id=next(_instances))
+                key = (page.source_id, page.copy_group)
+                if key not in groups:
+                    groups[key] = next(_copy_groups)
+                page = replace(page, page_id=next(_instances), copy_group=groups[key])
             seen.add(page.page_id)
             result.append(page)
         return result

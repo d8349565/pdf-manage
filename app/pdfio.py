@@ -4,8 +4,8 @@ import os
 import math
 import tempfile
 import threading
-from collections import OrderedDict
-from contextlib import ExitStack, contextmanager
+from collections import Counter, OrderedDict
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 
 from PyQt6.QtGui import QImage
@@ -598,12 +598,12 @@ class PdfStore:
             raise PdfError("检查期间目标文件被其他程序修改，请另存新文件。")
         return stamp
 
-    def _output_layout(self, pages, sources, options):
+    def _output_layout(self, pages, sources, options, *, force_rebuild=False):
         warnings = []
         numbers = {sid: [p.source_page for p in pages if p.source_id == sid] for sid in sources}
         single = len(sources) == 1
         sid = next(iter(sources))
-        preserve_structure = single and len(numbers[sid]) == len(set(numbers[sid]))
+        preserve_structure = not force_rebuild and single and len(numbers[sid]) == len(set(numbers[sid]))
         for ordinal, (source_id, source) in enumerate(sources.items(), 1):
             special = source.safety.special_structures
             unchanged = single and numbers[source_id] == list(range(len(source.sizes)))
@@ -630,6 +630,8 @@ class PdfStore:
             page_object_signature, restore_navigation,
         )
         documents = {}
+        copy_documents = {}
+        copy_signatures = {}
         out = None
         numbers, preserve_structure, warnings = self._output_layout(pages, sources, options)
         single = len(sources) == 1
@@ -640,6 +642,12 @@ class PdfStore:
                 documents[source_id] = doc
                 if doc.is_encrypted and doc.authenticate(source.password or "") <= 0:
                     raise PdfError("无法读取源文档的加密信息")
+            if (preserve_structure and documents[sid].is_form_pdf
+                    and (numbers[sid] != list(range(len(sources[sid].sizes)))
+                         or len({ref.copy_group for ref in pages}) > 1)):
+                # Document.select removes the AcroForm catalog, even when widgets remain visible.
+                numbers, preserve_structure, warnings = self._output_layout(
+                    pages, sources, options, force_rebuild=True)
             snapshots = {}
             used_fields = set()
             for ordinal, (source_id, doc) in enumerate(documents.items(), 1):
@@ -654,6 +662,19 @@ class PdfStore:
                 except ValueError as exc:
                     raise WriteNeedsConfirmation(f"来源 {ordinal}：{exc}\n"
                                                  "请明确确认后另存副本，原件不会覆盖。", "structure") from exc
+            if not preserve_structure:
+                groups = {}
+                for ref in pages:
+                    if ref.copy_group:
+                        groups.setdefault((ref.source_id, ref.copy_group), []).append(ref.source_page)
+                for ordinal, (key, selected) in enumerate(groups.items(), len(documents) + 1):
+                    source = sources[key[0]]
+                    doc = pymupdf.open(stream=source.data, filetype="pdf")
+                    copy_documents[key] = doc
+                    if doc.is_encrypted and doc.authenticate(source.password or "") <= 0:
+                        raise PdfError("无法读取复制页面的信息")
+                    namespace_form_fields(doc, used_fields, ordinal, selected)
+                    copy_signatures[key] = {number: page_object_signature(doc[number]) for number in set(selected)}
             if preserve_structure:
                 out = documents.pop(sid)
                 if numbers[sid] != list(range(out.page_count)):
@@ -664,19 +685,33 @@ class PdfStore:
                         progress_callback(index + 1, len(pages), "正在保留文档结构并整理页面")
             else:
                 out = pymupdf.open()
-                remaining = {source_id: len(values) for source_id, values in numbers.items()}
+                keys = [(ref.source_id, ref.copy_group) if (ref.source_id, ref.copy_group) in copy_documents
+                        else (ref.source_id, 0) for ref in pages]
+                remaining = Counter(keys)
+                form_data = {}
+                for key, ref in zip(keys, pages):
+                    doc = copy_documents.get(key, documents[ref.source_id])
+                    if key not in form_data and doc.is_form_pdf:
+                        form_data[key] = doc.tobytes()
                 for index, ref in enumerate(pages):
-                    remaining[ref.source_id] -= 1
-                    out.insert_pdf(documents[ref.source_id], from_page=ref.source_page, to_page=ref.source_page,
-                                   rotate=(sources[ref.source_id].page_rotation(ref.source_page) + ref.rotation) % 360,
-                                   links=False, annots=True, widgets=True, join_duplicates=True,
-                                   final=int(remaining[ref.source_id] == 0))
+                    key = keys[index]
+                    remaining[key] -= 1
+                    doc = copy_documents.get(key, documents[ref.source_id])
+                    # MuPDF can drop sibling widgets when a form source handle is reused.
+                    with (pymupdf.open(stream=form_data[key], filetype="pdf")
+                          if key in form_data else nullcontext(doc)) as insert_source:
+                        out.insert_pdf(insert_source, from_page=ref.source_page, to_page=ref.source_page,
+                                       rotate=(sources[ref.source_id].page_rotation(ref.source_page) + ref.rotation) % 360,
+                                       links=False, annots=True, widgets=True, join_duplicates=True,
+                                       final=int(key in form_data or remaining[key] == 0))
                     if progress_callback:
                         progress_callback(index + 1, len(pages), "正在组装 PDF 并保留页面对象")
                 copy_document_properties(out, documents, warnings,
                     source_paths={sid: _path_key(source.path) for sid, source in sources.items()})
             for index, ref in enumerate(pages):
-                if page_object_signature(out[index]) != snapshots[ref.source_id]["objects"][ref.source_page]:
+                expected = copy_signatures.get((ref.source_id, ref.copy_group),
+                                               snapshots[ref.source_id]["objects"])[ref.source_page]
+                if page_object_signature(out[index]) != expected:
                     raise PdfError(f"第 {index + 1} 页的批注或表单未完整保留，已停止写入，原文件未改动。")
             # 全页原序的单一来源保留原始跳转定义；重排、抽取及合并才重新映射。
             if not preserve_structure or numbers[sid] != list(range(len(sources[sid].sizes))):
@@ -689,7 +724,7 @@ class PdfStore:
                 out.close()
             raise
         finally:
-            for doc in documents.values():
+            for doc in (*documents.values(), *copy_documents.values()):
                 doc.close()
 
     def prepare_safety_step(self, ref):

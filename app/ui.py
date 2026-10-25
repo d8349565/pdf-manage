@@ -908,8 +908,7 @@ class PageListView(QListView):
         self.setUniformItemSizes(False)
         self.setIconSize(QSize(THUMB_W, int(THUMB_W * THUMB_RATIO_DEFAULT)))
         self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
-        if not arrange:
-            self.setToolTip('单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。')
+        self.setToolTip('单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。拖动调整顺序，Ctrl+拖动复制页面。')
         self.setItemDelegate(PageThumbDelegate(self))
         self.setMovement(QListView.Movement.Static)
         if arrange:
@@ -1123,15 +1122,23 @@ class PageListView(QListView):
         drag.setHotSpot(QPoint(pix.width() // 2, pix.height() // 2))
         self.model().drag_source_ws = self.model().ws
         try:
-            drag.exec(Qt.DropAction.MoveAction)
+            drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
         finally:
+            self.model().drag_source_ws = None
             self._set_drop_row(None)
             drag.deleteLater()
 
+    def _accept_page_drag(self, event):
+        model = self.model()
+        source_ws = getattr(model, 'drag_source_ws', None) or model.ws
+        copy = source_ws is not model.ws or bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        self._set_drop_row(self._drop_row_at(event.position().toPoint()))
+        event.setDropAction(Qt.DropAction.CopyAction if copy else Qt.DropAction.MoveAction)
+        event.accept()
+
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasFormat(MIME):
-            self._set_drop_row(self._drop_row_at(event.position().toPoint()))
-            event.acceptProposedAction()
+            self._accept_page_drag(event)
             return
         if _document_paths_from_mime(event.mimeData()):
             model = self.model()
@@ -1143,8 +1150,7 @@ class PageListView(QListView):
 
     def dragMoveEvent(self, event) -> None:
         if event.mimeData().hasFormat(MIME):
-            self._set_drop_row(self._drop_row_at(event.position().toPoint()))
-            event.acceptProposedAction()
+            self._accept_page_drag(event)
             return
         if _document_paths_from_mime(event.mimeData()):
             model = self.model()
@@ -1200,15 +1206,26 @@ class PageListView(QListView):
             if hasattr(host, "insert_pages_from_workspace") and host.insert_pages_from_workspace(
                 source_ws, sources, at_index=at_index, target_view=self
             ):
-                event.acceptProposedAction()
+                event.setDropAction(Qt.DropAction.CopyAction)
+                event.accept()
                 return
             event.ignore()
             return
         if not sources or any(row < 0 or row >= count for row in sources):
             event.ignore()
             return
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            host = self._host or self.window()
+            at_index = hit.row() if hit.isValid() else count
+            if host.insert_pages_from_workspace(model.ws, sources, at_index=at_index, target_view=self):
+                event.setDropAction(Qt.DropAction.CopyAction)
+                event.accept()
+            else:
+                event.ignore()
+            return
         model.ws.move_pages(sources, dest)
-        event.acceptProposedAction()
+        event.setDropAction(Qt.DropAction.MoveAction)
+        event.accept()
         model.reordered.emit()
         landing = model.ws.selected_index
         if landing is not None:
@@ -1721,7 +1738,7 @@ class PageListModel(QAbstractListModel):
         return flag
 
     def supportedDropActions(self):
-        return Qt.DropAction.MoveAction
+        return Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
 
     def mimeTypes(self):
         return [MIME]
@@ -3094,6 +3111,8 @@ class MainWindow(QMainWindow):
         self.page_total.setText(f"–{last + 1} / {count} 页" if paired else f"/ {count} 页")
         self.previous_page.setEnabled(first is not None and first > 0)
         self.next_page.setEnabled(last is not None and last < count - 1)
+        self.first_page.setEnabled(first is not None and first > 0)
+        self.last_page.setEnabled(last is not None and last < count - 1)
         for button, label in ((self.previous_page, "上一"), (self.next_page, "下一")):
             name = label + ("组页面" if self.preview_view.spread else "页")
             button.setAccessibleName(name)
@@ -3228,6 +3247,8 @@ class MainWindow(QMainWindow):
         page_bar = QHBoxLayout(page_controls)
         page_bar.setContentsMargins(0, 0, 0, 0)
         page_bar.setSpacing(4)
+        self.first_page = self._icon_btn("skip-back", "第一页", lambda: self.go_to_page(1))
+        page_bar.addWidget(self.first_page)
         self.previous_page = self._icon_btn("chevron-left", "上一页", lambda: self.step_page(-1))
         page_bar.addWidget(self.previous_page)
         self.page_number = QSpinBox()
@@ -3246,6 +3267,8 @@ class MainWindow(QMainWindow):
         page_bar.addWidget(self.page_total)
         self.next_page = self._icon_btn("chevron-right", "下一页", lambda: self.step_page(1))
         page_bar.addWidget(self.next_page)
+        self.last_page = self._icon_btn("skip-forward", "最后一页", lambda: self.go_to_page(len(self.ws.pages)))
+        page_bar.addWidget(self.last_page)
         page_bar.addStretch()
         self._reader_zoom_controls = QWidget()
         zoom_bar = QHBoxLayout(self._reader_zoom_controls)
@@ -5348,7 +5371,7 @@ class MainWindow(QMainWindow):
         at_index: int | None = None,
         target_view: PageListView | None = None,
     ) -> bool:
-        if source_ws is self.ws:
+        if self._saving or getattr(self, '_task_dialog', None) is not None:
             return False
         if self.ws.pages and not self._allow_operation("modify"):
             return False
@@ -5357,7 +5380,8 @@ class MainWindow(QMainWindow):
             return False
         source_pages = [source_ws.pages[row] for row in rows]
         self._finish_document_checks(source_pages)
-        reason = self.store.operation_reason(source_pages, "modify")
+        reason = (self.store.operation_reason(source_pages, "copy")
+                  or self.store.operation_reason(source_pages, "modify"))
         if reason:
             self._warn_merge_readonly(source_ws.path or "来源文档", source_pages, reason)
             return False
@@ -5374,7 +5398,7 @@ class MainWindow(QMainWindow):
         view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
         view.scrollTo(self.model.index(base_pos, 0))
         view._show_landing(base_pos)
-        self.statusBar().showMessage(f"已跨文档并入 {len(incoming)} 页 · 原文档保留不变", 4000)
+        self.statusBar().showMessage(f"已复制 {len(incoming)} 页 · Ctrl+Z 可撤销", 4000)
         return True
 
     def drop_pages_onto_tab(self, target_tab_id: int, source_ws: Workspace, sources: list[int]) -> bool:

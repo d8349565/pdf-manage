@@ -33,6 +33,48 @@ def window(input_app):
     app.processEvents()
 
 
+@pytest.mark.parametrize('layout',['single','spread','four'])
+@pytest.mark.parametrize('count',[0,1,7])
+def test_first_last_page_buttons_follow_current_document(window,input_app,tmp_path,layout,count):
+    if count:
+        source=tmp_path/'generated-navigation.pdf'
+        with pymupdf.open() as doc:
+            for i in range(count):doc.new_page().insert_text((50,80),f'Page {i+1}')
+            doc.save(source)
+        window.open_files_in_tabs([str(source)])
+    window.resize(1500,950)
+    window.act_tools.setChecked(False)
+    window._set_reading_layout(layout)
+    input_app.processEvents()
+    assert window.first_page.accessibleName()=='第一页'
+    assert window.last_page.accessibleName()=='最后一页'
+    assert not window.first_page.isEnabled()
+    assert window.last_page.isEnabled()==(count>1)
+    undo_count=window.ws.undo_stack.count()
+    window.last_page.click();input_app.processEvents()
+    assert window.ws.preview_index()==(count-1 if count else None)
+    assert not window.last_page.isEnabled()
+    window.first_page.click();input_app.processEvents()
+    assert window.ws.preview_index()==(0 if count else None)
+    assert window.ws.undo_stack.count()==undo_count
+
+
+def test_first_last_page_buttons_use_the_activated_tab_page_count(window,input_app,tmp_path):
+    tabs=[]
+    for count in (7,2):
+        source=tmp_path/f'generated-{count}.pdf'
+        with pymupdf.open() as doc:
+            for i in range(count):doc.new_page().insert_text((50,80),f'Generated {i}')
+            doc.save(source)
+        window.open_files_in_tabs([str(source)])
+        tabs.append(window._active_tab_id)
+        window.last_page.click();input_app.processEvents()
+        assert window.ws.preview_index()==count-1 and not window.last_page.isEnabled()
+    window.activate_tab(tabs[0]);input_app.processEvents()
+    assert window.ws.preview_index()==6 and not window.last_page.isEnabled()
+    window.first_page.click();assert window.ws.preview_index()==0
+
+
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows native hit testing')
 @pytest.mark.parametrize('scale', [1.0, 1.25, 1.5, 2.0])
 @pytest.mark.parametrize('origin', [(0, 0), (-1920, -300), (1920, 200)])

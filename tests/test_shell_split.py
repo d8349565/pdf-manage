@@ -83,6 +83,49 @@ def test_shell_controller_opens_independent_windows_and_cleans_up(qapp, tmp_path
     assert not controller.windows
 
 
+def test_image_shell_collects_one_mixed_batch_and_opens_the_complete_pdf(qapp,tmp_path,monkeypatch):
+    pytest.importorskip('pythoncom')
+    from PIL import Image
+    from PyQt6.QtGui import QDesktopServices
+    from PyQt6.QtTest import QTest
+    from app.pdfshell import _ShellController
+    first,second,third=[tmp_path/name for name in ('图1.tiff','图2.png','图10.jpg')]
+    Image.new('RGB',(80,100),'blue').save(first,'TIFF',save_all=True,
+        append_images=[Image.new('RGB',(80,100),'green')])
+    Image.new('RGB',(90,140),'yellow').save(second)
+    Image.new('RGB',(100,60),'red').save(third)
+    original={path:path.read_bytes() for path in (first,second,third)}
+    opened=[]
+    monkeypatch.setattr(QDesktopServices,'openUrl',lambda url:opened.append(url.toLocalFile()) or False)
+    controller=_ShellController(qapp,'images')
+    try:
+        controller.requested.emit([str(third),str(second),str(first)])
+        qapp.processEvents()
+        assert len(controller.windows)==1
+        dialog=controller.windows[0]
+        assert dialog.worker is None and not opened
+        assert [dialog.order_list.item(i).text() for i in range(3)]==[first.name,second.name,third.name]
+        dialog.order_list.setCurrentRow(2);dialog.move_image(-1)
+        dialog.finish.click()
+        for _ in range(1000):
+            qapp.processEvents()
+            if dialog.finish.text()=='完成':break
+            QTest.qWait(10)
+        assert dialog.worker.error is None and len(opened)==1
+        assert dialog.paths==list(map(str,(first,third,second)))
+        assert Path(opened[0])==Path(dialog.output) and '重试' in dialog.detail.text()
+        with pymupdf.open(dialog.output) as doc:
+            assert len(doc)==4
+            assert [page.rect.width>page.rect.height for page in doc]==[False,False,True,False]
+        dialog.open_pdf.click();assert len(opened)==2
+        assert all(path.read_bytes()==data for path,data in original.items())
+    finally:
+        for dialog in list(controller.windows):dialog.reject()
+        QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+        qapp.processEvents();controller.idle_timer.stop()
+    assert not controller.windows
+
+
 @pytest.mark.parametrize("mode, invalid", [("merge", "missing.pdf"), ("split", "notes.txt"), ("unknown", "valid.pdf")])
 def test_shell_invalid_request_keeps_open_document(window, tmp_path, monkeypatch, mode, invalid):
     source = make_pdf(tmp_path / "original.pdf")

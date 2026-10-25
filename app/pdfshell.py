@@ -8,7 +8,7 @@ from win32com.server import factory
 from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
 
-from app.windows_integration import PDF_MERGE_CLSID
+from app.windows_integration import IMAGE_PDF_CLSID, PDF_MERGE_CLSID
 
 _controller = None
 _FORMAT = (win32con.CF_HDROP, None, pythoncom.DVASPECT_CONTENT, -1, pythoncom.TYMED_HGLOBAL)
@@ -49,7 +49,7 @@ class MergeDropTarget:
             paths = [shell.DragQueryFile(medium.data_handle, i)
                      for i in range(shell.DragQueryFile(medium.data_handle, -1))]
             if not paths:
-                raise ValueError("没有收到所选文件，请重新选择 PDF。")
+                raise ValueError("没有收到所选文件，请重新选择文件。")
         except Exception as exc:
             _controller.failed.emit(f"无法接收资源管理器所选文件：{exc}")
             return 0
@@ -61,9 +61,10 @@ class _ShellController(QObject):
     requested = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, application):
+    def __init__(self, application, mode="merge"):
         super().__init__(application)
         self.application = application
+        self.mode = mode
         self.windows = []
         self.requested.connect(self.open_merge, Qt.ConnectionType.QueuedConnection)
         self.failed.connect(self.show_error, Qt.ConnectionType.QueuedConnection)
@@ -74,17 +75,21 @@ class _ShellController(QObject):
         self.idle_timer.start()
 
     def open_merge(self, paths):
-        from app.ui import MainWindow
-
         self.idle_timer.stop()
-        window = MainWindow(opening_paths=paths)
+        if self.mode == "images":
+            from app.imagequick import ImageQuickDialog
+            window = ImageQuickDialog(paths, "pdf")
+        else:
+            from app.ui import MainWindow
+            window = MainWindow(opening_paths=paths)
         window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.windows.append(window)
         window.destroyed.connect(lambda _=None, w=window: self.forget(w))
         window.show()
-        window.updates.start()
-        # COM 回调立即返回，读取和错误反馈交给窗口的正常加载流程。
-        QTimer.singleShot(0, lambda: window.open_startup_files(paths, "merge"))
+        if self.mode != "images":
+            window.updates.start()
+            # COM 回调立即返回，读取和错误反馈交给窗口的正常加载流程。
+            QTimer.singleShot(0, lambda: window.open_startup_files(paths, "merge"))
 
     def forget(self, window):
         self.windows.remove(window)
@@ -97,14 +102,14 @@ class _ShellController(QObject):
             self.idle_timer.start()
 
 
-def serve(application, *, clsid=None) -> int:
+def serve(application, *, clsid=None, mode="merge") -> int:
     global _controller
     pythoncom.CoInitialize()
-    clsid = clsid or PDF_MERGE_CLSID
+    clsid = clsid or (IMAGE_PDF_CLSID if mode == "images" else PDF_MERGE_CLSID)
     MergeDropTarget._reg_clsid_ = clsid
     registrations = []
     application.setQuitOnLastWindowClosed(False)
-    _controller = _ShellController(application)
+    _controller = _ShellController(application, mode)
     pump = QTimer(_controller)
     pump.setInterval(20)
     pump.timeout.connect(pythoncom.PumpWaitingMessages)

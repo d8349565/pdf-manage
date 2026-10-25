@@ -5,7 +5,7 @@ from bisect import bisect_left
 from dataclasses import dataclass, field
 import math
 
-from PyQt6.QtCore import QEvent, QMarginsF, QObject, QRunnable, QRectF, QSize, QThreadPool, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QMarginsF, QObject, QPointF, QRunnable, QRectF, QSize, QThreadPool, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -87,6 +87,9 @@ class PrintOptions:
     borders: bool = False
     reverse: bool = False
     color_mode: str = "color"  # "color" | "grayscale"
+    booklet: bool = False
+    booklet_binding: str = "left"  # "left" | "right"
+    booklet_sides: str = "both"  # "both" | "front" | "back"
 
 
 @dataclass(frozen=True)
@@ -121,8 +124,8 @@ class Sheet:
     back: int | None
     front_portrait: bool
     back_portrait: bool
-    front_pages: tuple[int, ...] = ()
-    back_pages: tuple[int, ...] = ()
+    front_pages: tuple[int | None, ...] = ()
+    back_pages: tuple[int | None, ...] = ()
 
     @property
     def mixed(self) -> bool:
@@ -168,6 +171,21 @@ def build_sheets(
         return []
     if options.pages_per_face not in (1, 2, 4, 6, 9, 16) or options.cell_order not in ("row", "column"):
         raise ValueError("不支持的多页排版设置。")
+    if options.booklet:
+        if options.booklet_binding not in ("left", "right") or options.booklet_sides not in ("both", "front", "back"):
+            raise ValueError("不支持的小册子打印设置。")
+        padded = [*valid, *([None] * (-len(valid) % 4))]
+        portrait = options.orientation == "portrait"
+        sheets = []
+        for number in range(len(padded) // 4):
+            front = (padded[-1 - 2 * number], padded[2 * number])
+            back = (padded[2 * number + 1], padded[-2 - 2 * number])
+            if options.booklet_binding == "right":
+                front, back = front[::-1], back[::-1]
+            sheets.append(Sheet(next((i for i in front if i is not None), None),
+                                next((i for i in back if i is not None), None),
+                                portrait, portrait, front, back))
+        return sheets[::-1] if options.reverse else sheets
     if options.reverse:
         valid.reverse()
     if options.pages_per_face > 1:
@@ -206,10 +224,12 @@ def face_pages(sheet, back=False):
 def face_cells(outer, indices, options):
     """The same grid and ordering drive preview and printer output."""
     columns, rows = {1: (1, 1), 2: (2, 1), 4: (2, 2), 6: (3, 2),
-                     9: (3, 3), 16: (4, 4)}[options.pages_per_face]
+                     9: (3, 3), 16: (4, 4)}[2 if options.booklet else options.pages_per_face]
     width, height = outer.width() / columns, outer.height() / rows
-    gap = min(width, height) * .02 if options.pages_per_face > 1 else 0
+    gap = min(width, height) * .02 if options.booklet or options.pages_per_face > 1 else 0
     for position, index in enumerate(indices):
+        if index is None:
+            continue
         row, column = (divmod(position, columns) if options.cell_order == "row"
                        else (position % rows, position // rows))
         yield index, QRectF(outer.x() + column * width + gap / 2,
@@ -320,11 +340,11 @@ def render_pages_to_printer(
     if not sheets:
         return
 
-    faces: list[tuple[tuple[int, ...], bool]] = []
+    faces: list[tuple[tuple[int | None, ...], bool]] = []
     for sheet in sheets:
-        if sheet.front is not None:
+        if face_pages(sheet) and (not options.booklet or options.booklet_sides in ("both", "front")):
             faces.append((face_pages(sheet), sheet.front_portrait))
-        if sheet.back is not None:
+        if face_pages(sheet, True) and (not options.booklet or options.booklet_sides in ("both", "back")):
             faces.append((face_pages(sheet, True), sheet.back_portrait))
     if not faces:
         return
@@ -333,7 +353,10 @@ def render_pages_to_printer(
     if progress_callback:
         progress_callback(0, len(faces), "正在准备打印任务")
 
-    printer.setDuplex(DUPLEX_MODES.get(options.duplex, QPrinter.DuplexMode.DuplexNone))
+    duplex = options.duplex
+    if options.booklet:
+        duplex = ("long_edge" if sheets[0].front_portrait else "short_edge") if options.booklet_sides == "both" else "none"
+    printer.setDuplex(DUPLEX_MODES.get(duplex, QPrinter.DuplexMode.DuplexNone))
     printer.setCopyCount(options.copies)
     printer.setColorMode(QPrinter.ColorMode.GrayScale if options.color_mode == "grayscale"
                          else QPrinter.ColorMode.Color)
@@ -623,6 +646,8 @@ class SheetPreview(QWidget):
         )
 
         front_label = self._face_label(face_pages(sheet))
+        if self.options.booklet and self.options.booklet_sides == "back":
+            front_label += "（本次不打印）"
         front_y = row.top + (row.row_h - row.front_h) / 2
         front_rect = QRectF(x0, front_y, row.front_w, row.front_h)
         self._paint_face(
@@ -630,7 +655,7 @@ class SheetPreview(QWidget):
             front_rect,
             row.front_geo,
             sheet.front,
-            binding=front_binding_edge(self.duplex, sheet.front_portrait),
+            binding="" if self.options.booklet else front_binding_edge(self.duplex, sheet.front_portrait),
             caption=f"正面 · {front_label}" if duplex else front_label,
             page_indices=face_pages(sheet),
         )
@@ -652,13 +677,16 @@ class SheetPreview(QWidget):
             back_binding = front_binding_edge(self.duplex, sheet.back_portrait)
         else:
             back_binding = back_binding_edge(self.duplex, sheet.back_portrait, axis)
+        back_label = self._face_label(face_pages(sheet, True))
+        if self.options.booklet and self.options.booklet_sides == "front":
+            back_label += "（本次不打印）"
         self._paint_face(
             painter,
             back_rect,
             row.back_geo,
             sheet.back,
-            binding=back_binding,
-            caption=f"背面 · {self._face_label(face_pages(sheet, True))}",
+            binding="" if self.options.booklet else back_binding,
+            caption=f"背面 · {back_label}",
             page_indices=face_pages(sheet, True),
         )
 
@@ -666,6 +694,8 @@ class SheetPreview(QWidget):
         return "空白" if page_index is None else f"第 {page_index + 1} 页"
 
     def _face_label(self, indices):
+        if None in indices:
+            return "｜".join(self._page_label(i) for i in indices)
         return "第 " + ", ".join(str(i + 1) for i in indices) + " 页" if indices else "空白"
 
     def _paint_face(
@@ -706,6 +736,10 @@ class SheetPreview(QWidget):
 
         painter.setPen(QPen(QColor("#9AA8B2"), 1))
         painter.drawRect(rect)
+        if self.options.booklet:
+            painter.setPen(QPen(QColor("#0F766E"), 1, Qt.PenStyle.DashLine))
+            painter.drawLine(QPointF(rect.center().x(), rect.top() + 4),
+                             QPointF(rect.center().x(), rect.bottom() - 4))
         if binding:
             self._paint_binding_edge(painter, rect, binding)
 
@@ -996,6 +1030,7 @@ class PrintDialog(QDialog):
         lay.addWidget(self.scroll, 1)
 
         self.label_summary = QLabel("")
+        self.label_summary.setWordWrap(True)
         self.label_summary.setStyleSheet("color: #475569; font-size: 12px;")
         lay.addWidget(self.label_summary)
         return container
@@ -1108,7 +1143,37 @@ class PrintDialog(QDialog):
         copies_row.addWidget(self.spin_copies)
         lay.addLayout(copies_row)
 
-        lay.addWidget(self._caption("每面排列"))
+        lay.addWidget(self._caption("排版方式"))
+        self.combo_layout = QComboBox()
+        self.combo_layout.setAccessibleName("打印排版方式")
+        self.combo_layout.addItem("普通打印", "normal")
+        self.combo_layout.addItem("小册子（对折装订）", "booklet")
+        self.combo_layout.currentIndexChanged.connect(self._refresh)
+        lay.addWidget(self.combo_layout)
+        self.booklet_controls = QWidget()
+        booklet_layout = QVBoxLayout(self.booklet_controls)
+        booklet_layout.setContentsMargins(0, 0, 0, 0)
+        booklet_layout.addWidget(QLabel("每面两页，自动编排对折后的页序。"))
+        booklet_layout.addWidget(self._caption("装订方向"))
+        self.combo_booklet_binding = QComboBox()
+        self.combo_booklet_binding.setAccessibleName("装订方向")
+        self.combo_booklet_binding.addItem("左侧装订", "left")
+        self.combo_booklet_binding.addItem("右侧装订", "right")
+        self.combo_booklet_binding.currentIndexChanged.connect(self._refresh)
+        booklet_layout.addWidget(self.combo_booklet_binding)
+        booklet_layout.addWidget(self._caption("本次打印"))
+        self.combo_booklet_sides = QComboBox()
+        self.combo_booklet_sides.setAccessibleName("小册子打印面")
+        self.combo_booklet_sides.addItem("双面（自动双面打印机）", "both")
+        self.combo_booklet_sides.addItem("仅正面（手动双面第 1 步）", "front")
+        self.combo_booklet_sides.addItem("仅反面（手动双面第 2 步）", "back")
+        self.combo_booklet_sides.currentIndexChanged.connect(self._refresh)
+        booklet_layout.addWidget(self.combo_booklet_sides)
+        self.booklet_controls.hide()
+        lay.addWidget(self.booklet_controls)
+
+        self.label_nup = self._caption("每面排列")
+        lay.addWidget(self.label_nup)
         self.combo_nup = QComboBox()
         for count in (1, 2, 4, 6, 9, 16):
             self.combo_nup.addItem(f"{count} 页", count)
@@ -1151,7 +1216,8 @@ class PrintDialog(QDialog):
         lay.addWidget(self.combo_margin)
 
         # 7. 纸张面数
-        lay.addWidget(self._caption("纸张面数"))
+        self.label_sides = self._caption("纸张面数")
+        lay.addWidget(self.label_sides)
         self.btn_duplex_group = QButtonGroup(self)
         self.radio_single = QRadioButton("单面打印")
         self.radio_single.setChecked(True)
@@ -1368,23 +1434,31 @@ class PrintDialog(QDialog):
 
     def _collect_options(self) -> PrintOptions:
         printer_name = self.combo_printer.currentText()
+        booklet = self.combo_layout.currentData() == "booklet"
+        orientation = self.combo_orient.currentData() or "auto"
+        sides = self.combo_booklet_sides.currentData() or "both"
         if self.radio_single.isChecked():
             duplex = "none"
         else:
             duplex = self.combo_duplex_mode.currentData() or "long_edge"
+        if booklet:
+            duplex = ("long_edge" if orientation == "portrait" else "short_edge") if sides == "both" else "none"
         return PrintOptions(
             printer_name=printer_name,
             duplex=duplex,
-            orientation=self.combo_orient.currentData() or "auto",
+            orientation=orientation,
             copies=self.spin_copies.value(),
             page_indices=self._collect_indices(),
             paper=self.combo_paper.currentData(),
             margin_mm=float(self.combo_margin.currentData() or 0.0),
-            pages_per_face=self.combo_nup.currentData() or 1,
+            pages_per_face=2 if booklet else self.combo_nup.currentData() or 1,
             cell_order=self.combo_cell_order.currentData() or "row",
             borders=self.check_borders.isChecked(),
             reverse=self.check_reverse.isChecked(),
             color_mode=self.combo_color.currentData() or "color",
+            booklet=booklet,
+            booklet_binding=self.combo_booklet_binding.currentData() or "left",
+            booklet_sides=sides,
         )
 
     def _geometries(self, options: PrintOptions) -> dict[bool, SheetGeometry]:
@@ -1403,12 +1477,18 @@ class PrintDialog(QDialog):
         options = self._collect_options()
         duplex = options.duplex
         is_double = duplex != "none"
-        self.label_hint.setVisible(is_double)
+        self.label_hint.setVisible(is_double or options.booklet)
+        self.booklet_controls.setVisible(options.booklet)
+        for widget in (self.label_nup, self.combo_nup, self.label_sides, self.radio_single,
+                       self.radio_double, self.combo_duplex_mode):
+            widget.setVisible(not options.booklet)
+        self.check_reverse.setText("按相反纸张顺序打印" if options.booklet else "按相反页序打印")
 
         geometries = self._geometries(options)
         sheets = build_sheets(self.pages, options, self.store)
-        self.canvas.set_data(self.pages, sheets, geometries, duplex, options)
-        self.combo_cell_order.setVisible(options.pages_per_face > 1)
+        preview_duplex = ("long_edge" if options.orientation == "portrait" else "short_edge") if options.booklet else duplex
+        self.canvas.set_data(self.pages, sheets, geometries, preview_duplex, options)
+        self.combo_cell_order.setVisible(options.pages_per_face > 1 and not options.booklet)
         self.check_borders.setVisible(options.pages_per_face > 1)
         if getattr(self, "_auto_fit", False) and self.isVisible():
             self._fit_window()
@@ -1418,7 +1498,12 @@ class PrintDialog(QDialog):
         if sheets_n:
             text = f"{pages_n} 页内容 → 需要 {sheets_n} 张纸"
             single_sheets = math.ceil(pages_n / options.pages_per_face)
-            if is_double and single_sheets > sheets_n:
+            if options.booklet:
+                blank = -pages_n % 4
+                text += f"（小册子，补 {blank} 个空白页）"
+                if options.booklet_sides != "both":
+                    text += " · 本次仅打印" + ("正面" if options.booklet_sides == "front" else "反面")
+            elif is_double and single_sheets > sheets_n:
                 text += f"（双面，比单面省 {single_sheets - sheets_n} 张）"
             if options.copies > 1:
                 text += f" × {options.copies} 份 = {sheets_n * options.copies} 张"
@@ -1434,6 +1519,15 @@ class PrintDialog(QDialog):
         self._update_sheet_counter()
 
     def _update_hint(self) -> None:
+        options = self._collect_options()
+        if options.booklet:
+            text = "绿色虚线是对折线。打印后按纸张顺序叠放、对折，沿折线装订。"
+            if options.booklet_sides == "both":
+                text += " 自动双面使用" + ("纵向长边翻转。" if options.orientation == "portrait" else "横向短边翻转。")
+            else:
+                text += " 先打正面，按打印机进纸方式放回纸张，再选仅反面；必要时勾选相反纸张顺序。请先少量试打。"
+            self.label_hint.setText(text)
+            return
         duplex = "none" if self.radio_single.isChecked() else (
             self.combo_duplex_mode.currentData() or "long_edge"
         )

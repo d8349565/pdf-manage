@@ -1,11 +1,13 @@
 """Small standalone image actions for Explorer; no PDF reader window is created."""
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
 from dataclasses import replace
 
 from PyQt6.QtCore import QTimer, Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout
+from PyQt6.QtWidgets import (QAbstractItemView, QDialog, QHBoxLayout, QLabel, QListWidget,
+                            QListWidgetItem, QProgressBar, QPushButton, QVBoxLayout)
 
 from app.output import OperationCancelled, commit_file, stamp
 from app.progress import OperationThread
@@ -35,9 +37,14 @@ class ImageQuickDialog(QDialog):
     def __init__(self, paths, mode, parent=None):
         super().__init__(parent)
         self.paths = [str(Path(path).resolve()) for path in paths]
+        if mode == 'pdf' and len(self.paths) > 1:
+            self.paths.sort(key=lambda path: ([int(part) if part.isdigit() else part.casefold()
+                for part in re.split(r'(\d+)', Path(path).name)], path.casefold()))
         self.mode, self.worker, self.output, self.closing = mode, None, None, False
         self.compact, self.best_result = False, None
         title = '图片转 PDF' if mode == 'pdf' else '压缩图片'
+        if mode == 'pdf' and len(self.paths) > 1:
+            title = '合并图片为 PDF'
         self.setWindowTitle(f'{title} - 纸序 PDF')
         self.setStyleSheet(STYLE)
         self.resize(520, 260)
@@ -53,7 +60,30 @@ class ImageQuickDialog(QDialog):
         self.filename.setText(Path(self.paths[0]).name if self.paths else '未收到图片')
         self.filename.setWordWrap(True)
         layout.addWidget(self.filename)
-        self.status = QLabel('正在准备…')
+        self.order_list = None
+        self.order_buttons = []
+        if mode == 'pdf' and len(self.paths) > 1:
+            self.filename.setText(f'已选择 {len(self.paths)} 张图片，按以下顺序合并：')
+            self.order_list = QListWidget()
+            self.order_list.setAccessibleName('合并图片顺序')
+            self.order_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+            self.order_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+            for path in self.paths:
+                item = QListWidgetItem(Path(path).name)
+                item.setToolTip(path)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                self.order_list.addItem(item)
+            self.order_list.setCurrentRow(0)
+            layout.addWidget(self.order_list)
+            order_buttons = QHBoxLayout()
+            for title, delta in (('上移', -1), ('下移', 1)):
+                button = QPushButton(title)
+                button.clicked.connect(lambda checked=False, step=delta: self.move_image(step))
+                self.order_buttons.append(button)
+                order_buttons.addWidget(button)
+            layout.addLayout(order_buttons)
+            self.resize(520, 480)
+        self.status = QLabel('按文件名自然排序，可拖动或用上移、下移调整。' if self.order_list is not None else '正在准备…')
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -66,6 +96,7 @@ class ImageQuickDialog(QDialog):
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
         self.progress.setRange(0, 0)
+        self.progress.setVisible(self.order_list is None)
         layout.addWidget(self.progress)
         buttons = QHBoxLayout()
         self.smaller = QPushButton('更小体积（有损）')
@@ -75,16 +106,37 @@ class ImageQuickDialog(QDialog):
         self.smaller.clicked.connect(self.make_smaller)
         buttons.addWidget(self.smaller)
         buttons.addStretch()
+        self.open_pdf = QPushButton('打开 PDF')
+        self.open_pdf.setVisible(False)
+        self.open_pdf.clicked.connect(self.show_pdf)
+        buttons.addWidget(self.open_pdf)
         self.open_folder = QPushButton('打开文件夹')
         self.open_folder.setEnabled(False)
         self.open_folder.clicked.connect(self.show_output)
         buttons.addWidget(self.open_folder)
-        self.finish = QPushButton('取消')
+        self.finish = QPushButton('合并并打开' if self.order_list is not None else '取消')
+        self.finish.setDefault(self.order_list is not None)
         self.finish.setObjectName('primary')
-        self.finish.clicked.connect(self.reject)
+        self.finish.clicked.connect(self.finish_clicked)
         buttons.addWidget(self.finish)
         layout.addLayout(buttons)
-        QTimer.singleShot(0, self.start)
+        if self.order_list is None:
+            QTimer.singleShot(0, self.start)
+
+    def move_image(self, delta):
+        if self.worker is not None or self.order_list is None:
+            return
+        row = self.order_list.currentRow()
+        if 0 <= row + delta < self.order_list.count():
+            item = self.order_list.takeItem(row)
+            self.order_list.insertItem(row + delta, item)
+            self.order_list.setCurrentRow(row + delta)
+
+    def finish_clicked(self):
+        if self.order_list is not None and self.worker is None and not self.closing:
+            self.start()
+        else:
+            self.reject()
 
     def work(self, report, cancel):
         from app.imagecompress import IMAGE_SUFFIXES, available_path, compress_image
@@ -119,6 +171,14 @@ class ImageQuickDialog(QDialog):
     def start(self):
         if self.worker is not None or self.closing:
             return
+        if self.order_list is not None:
+            self.paths = [self.order_list.item(i).data(Qt.ItemDataRole.UserRole)
+                          for i in range(self.order_list.count())]
+            self.order_list.setEnabled(False)
+            for button in self.order_buttons:
+                button.setEnabled(False)
+            self.finish.setText('取消')
+            self.progress.show()
         self.worker = OperationThread(self.work, self, cancellable=True)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self.completed)
@@ -178,6 +238,13 @@ class ImageQuickDialog(QDialog):
             self.status.setText('图片已经比较紧凑，本次没有找到更小的结果，原图保留。')
         self.smaller.setEnabled(self.mode == 'compress' and not self.compact)
         self.open_folder.setEnabled(bool(self.output))
+        if self.mode == 'pdf':
+            self.open_pdf.setVisible(True)
+            self.show_pdf()
+
+    def show_pdf(self):
+        if self.output and not QDesktopServices.openUrl(QUrl.fromLocalFile(self.output)):
+            self.detail.setText('PDF 已保存，但暂时无法自动打开。可点“打开 PDF”重试，或打开文件夹查看。')
 
     def show_output(self):
         if self.output:

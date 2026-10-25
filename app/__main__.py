@@ -106,18 +106,20 @@ def main() -> None:
         win = ImageQuickDialog(sys.argv[2:], image_mode)
         win.show()
         sys.exit(app.exec())
-    if len(sys.argv) > 1 and sys.argv[1] == "--pdf-shell-server":
+    if len(sys.argv) > 1 and sys.argv[1] in ("--pdf-shell-server", "--image-pdf-shell-server"):
         from PyQt6.QtWidgets import QMessageBox
         try:
             from app.pdfshell import serve
+            mode = "images" if sys.argv[1] == "--image-pdf-shell-server" else "merge"
             clsid = None
             if '--context-id' in sys.argv:
                 from app.contextmenus import registration_plan
                 position = sys.argv.index('--context-id')
                 clsid = sys.argv[position + 1] if position + 1 < len(sys.argv) else ''
-                if clsid != registration_plan(sys.executable).clsid:
+                plan = registration_plan(sys.executable)
+                if clsid != (plan.image_clsid if mode == "images" else plan.clsid):
                     raise ValueError('此右键入口的位置已改变，请从“文件 → 右键快捷工具”修复。')
-            code = serve(app, clsid=clsid)
+            code = serve(app, clsid=clsid, mode=mode)
         except Exception as exc:
             from app.runtime import portable_root
             hint = ('请从“文件 → 右键快捷工具”修复此版本的菜单。' if portable_root() else

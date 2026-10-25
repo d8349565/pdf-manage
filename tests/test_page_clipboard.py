@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pymupdf as p
 import pytest
-from PyQt6.QtCore import QMimeData, QPoint, Qt, QUrl, QThreadPool
-from PyQt6.QtGui import QColor, QImage, QKeySequence
+from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl, QThreadPool
+from PyQt6.QtGui import QColor, QDropEvent, QImage, QKeySequence
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QLineEdit, QMenu, QMessageBox
 
@@ -13,6 +13,7 @@ from app.output import OperationCancelled
 from app.pageclipboard import read_pages
 from app.pdfio import PdfStore
 from app.ui import MainWindow
+from app.workspace import PageEdit, Workspace
 
 
 @pytest.fixture(scope='session')
@@ -326,6 +327,97 @@ def test_copied_clipboard_bitmap_remains_available_after_its_tab_closes(host,tmp
     assert cached.is_file()
     assert window.paste_pages() and len(window.ws.pages)==2
     assert cached.is_file()
+
+
+@pytest.mark.parametrize('arrange',[False,True])
+def test_ctrl_drop_copies_selection_once_and_preserves_original_order(host,tmp_path,qapp,arrange):
+    window,state,_=host
+    source=tmp_path/'generated-drag.pdf';pdf(source,4)
+    window.open_files_in_tabs([str(source)])
+    window.act_pages.setChecked(True)
+    if arrange:window.stack.setCurrentIndex(1)
+    window.ws.set_selection([0,2],current=2);window._sync_selection();qapp.processEvents()
+    view=window.arrange_view if arrange else window.left_view
+    before=list(window.ws.pages)
+    mime=window.model.mimeData([window.model.index(i) for i in (0,2)])
+    event=QDropEvent(QPointF(view.visualRect(window.model.index(1)).center()),
+        Qt.DropAction.CopyAction|Qt.DropAction.MoveAction,mime,Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier)
+    view.dropEvent(event);qapp.processEvents()
+    assert event.isAccepted() and event.dropAction()==Qt.DropAction.CopyAction
+    assert [ref.source_page for ref in window.ws.pages]==[0,0,2,1,2,3]
+    assert len({ref.page_id for ref in window.ws.pages})==6
+    assert state['reads']==state['writes']==0
+    window.ws.undo_stack.undo();assert window.ws.pages==before
+    window.ws.undo_stack.redo();assert len(window.ws.pages)==6
+
+
+def test_copied_annotations_can_be_changed_and_deleted_without_affecting_the_source(qapp,tmp_path):
+    source=tmp_path/'generated-note.pdf';output=tmp_path/'copied-notes.pdf'
+    with p.open() as doc:
+        page=doc.new_page();page.insert_text((40,60),'Original text')
+        note=page.add_text_annot((80,80),'original note');token=note.info['id']
+        doc.save(source)
+    original=source.read_bytes();store=PdfStore()
+    try:
+        pages=store.load(str(source))
+        first=Workspace._unique_pages(pages,pages)[0]
+        second=Workspace._unique_pages(pages,pages)[0]
+        first=first.edited(PageEdit('note_text',text='copy only',annotation_id=token))
+        second=second.edited(PageEdit('delete',annotation_id=token))
+        store.write([pages[0],first,second],str(output))
+        with p.open(output) as doc:
+            assert [[a.info['content'] for a in (page.annots() or ())] for page in doc]==[
+                ['original note'],['copy only'],[]]
+            assert all('Original text' in page.get_text() for page in doc)
+    finally:
+        store.close_all()
+    assert source.read_bytes()==original
+
+
+@pytest.mark.parametrize('background',[False,True])
+def test_copied_form_batches_are_independent_but_keep_their_own_cross_page_fields(qapp,tmp_path,background):
+    source=tmp_path/'generated-linked-form.pdf';output=tmp_path/'copied-forms.pdf'
+    with p.open() as original,p.open() as linked:
+        page=original.new_page()
+        field=p.Widget();field.field_name='generated_name';field.field_type=p.PDF_WIDGET_TYPE_TEXT
+        field.field_value='original';field.rect=p.Rect(50,50,200,90);page.add_widget(field)
+        linked.insert_pdf(original)
+        linked.insert_pdf(original,join_duplicates=True)
+        linked.save(source)
+    original_bytes=source.read_bytes()
+    store=PdfStore()
+    try:
+        pages=store.load(str(source))
+        copied=Workspace._unique_pages(pages,pages)
+        second_copy=Workspace._unique_pages(pages,pages)
+        if background:
+            from app.pdfworker import write_pdf
+            write_pdf(store,[copied[0],pages[0],copied[1],pages[1],*second_copy],str(output))
+        else:
+            store.write([copied[0],pages[0],copied[1],pages[1],*second_copy],str(output))
+        with p.open(output) as doc:
+            names=[next(page.widgets()).field_name for page in doc]
+            assert names[0]==names[2] and names[1]==names[3] and names[4]==names[5]
+            assert len({names[0],names[1],names[4]})==3
+            roots=[doc.xref_get_key(next(page.widgets()).xref,'Parent')[1] for page in doc]
+            assert roots[0]==roots[2] and roots[1]==roots[3] and roots[4]==roots[5]
+            assert len({roots[0],roots[1],roots[4]})==3
+            doc.xref_set_key(int(roots[0].split()[0]),'V',p.get_pdf_str('copy only'))
+            for index in (0,2):
+                doc.xref_set_key(next(doc[index].widgets()).xref,'V',p.get_pdf_str('copy only'))
+            doc.saveIncr()
+        with p.open(output) as doc:
+            assert doc.is_form_pdf
+            assert [next(page.widgets()).field_value for page in doc]==[
+                'copy only','original','copy only','original','original','original']
+        # Extract/reorder must also retain an interactive form catalog.
+        store.write([pages[1]],str(tmp_path/'one-form-page.pdf'))
+        with p.open(tmp_path/'one-form-page.pdf') as doc:
+            assert doc.is_form_pdf and next(doc[0].widgets()).field_value=='original'
+    finally:
+        store.close_all()
+    assert source.read_bytes()==original_bytes
 
 
 def test_workspace_undo_signal_is_disconnected_when_window_is_destroyed(qapp,tmp_path,monkeypatch):

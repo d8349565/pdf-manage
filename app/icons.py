@@ -115,6 +115,8 @@ _PATHS: dict[str, str] = {
     "redo": '<path d="m15 4 5 5-5 5"/><path d="M20 9h-9a7 7 0 0 0 0 14"/>',
     "chevron-left": '<path d="m15 18-6-6 6-6"/>',
     "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+    "skip-back": '<path d="M5 5v14m13-14-8 7 8 7"/>',
+    "skip-forward": '<path d="M19 5v14M6 5l8 7-8 7"/>',
     "more-horizontal": '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     "panel-left": (
         '<rect width="18" height="18" x="3" y="3" rx="2"/>'

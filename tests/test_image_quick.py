@@ -169,6 +169,12 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def keep_pdf_open_requests_inside_the_test(monkeypatch):
+    from PyQt6.QtGui import QDesktopServices
+    monkeypatch.setattr(QDesktopServices, 'openUrl', lambda url: True)
+
+
 def wait(qapp, predicate):
     deadline = monotonic() + 15
     while not predicate() and monotonic() < deadline:
@@ -205,6 +211,28 @@ def test_closing_before_start_does_not_process_an_image(qapp, tmp_path):
     qapp.processEvents()
     assert dialog.worker is None and not list(tmp_path.glob('early_压缩*'))
     dialog.deleteLater()
+
+
+@pytest.mark.parametrize('cancel',[False,True])
+def test_image_merge_failure_or_cancel_never_opens_a_result(qapp,tmp_path,monkeypatch,cancel):
+    from PyQt6.QtGui import QDesktopServices
+    from app.imagequick import ImageQuickDialog
+    source=tmp_path/'generated.png';sample(source)
+    opened=[]
+    monkeypatch.setattr(QDesktopServices,'openUrl',lambda url:opened.append(url) or True)
+    dialog=ImageQuickDialog([str(source),str(tmp_path/'missing.jpg')],'pdf')
+    dialog.show()
+    try:
+        if cancel:
+            dialog.reject();qapp.processEvents();assert dialog.worker is None
+        else:
+            dialog.finish.click()
+            wait(qapp,lambda:dialog.finish.text()=='完成')
+            assert dialog.worker.error is not None
+        assert not opened and dialog.output is None
+        assert not list(tmp_path.glob('*.pdf'))
+    finally:
+        dialog.reject();dialog.deleteLater();qapp.processEvents()
 
 
 def test_closing_a_running_quick_action_waits_for_cancellation(qapp, tmp_path, monkeypatch):
@@ -282,6 +310,8 @@ def test_cold_cli_uses_image_tool_without_loading_the_pdf_reader(tmp_path, mode)
     script.write_text('''
 import sys,time
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QDesktopServices
+QDesktopServices.openUrl=staticmethod(lambda url: True)
 from app import __main__ as entry
 mode,path=sys.argv[1:]
 sys.argv=['ZhiXuPDF.exe',mode,path]

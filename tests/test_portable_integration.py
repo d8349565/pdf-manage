@@ -109,6 +109,26 @@ def test_portable_relative_paths_follow_the_folder_when_moved(tmp_path, monkeypa
         storage.directory('cache')
 
 
+def test_image_menu_upgrade_removes_single_file_commands_and_rolls_back_on_failure(tmp_path):
+    registry=MemoryRegistry()
+    menus=manager(executable(tmp_path/'generated-portable',True),registry)
+    menus.enable()
+    image_roots=[root for root in menus.plan.trees if root.endswith('.ImagePDF')]
+    for root in image_roots:
+        registry.delete(root+'\\DropTarget')
+        registry.set(root,'MultiSelectModel','Single')
+        registry.set(root+'\\command','', 'generated old command')
+    before=deepcopy(registry.data)
+    registry.fail_after=1
+    with pytest.raises(PermissionError):menus.repair()
+    assert registry.data==before
+    menus.repair()
+    assert menus.status()=='enabled'
+    assert all(registry.snapshot(root+'\\command') is None for root in image_roots)
+    menus.remove()
+    assert menus.status()=='off' and not registry.data
+
+
 def test_installed_and_portable_plans_and_open_with_entries_are_disjoint(tmp_path):
     installed = executable(tmp_path / 'installed')
     portable = executable(tmp_path / 'portable', True)
@@ -116,7 +136,14 @@ def test_installed_and_portable_plans_and_open_with_entries_are_disjoint(tmp_pat
     assert first.clsid != second.clsid and first.token != second.token
     assert second.clsid != PDF_MERGE_CLSID
     assert set(first.trees).isdisjoint(second.trees)
-    assert len(first.trees) == len(second.trees) == 22
+    assert len(first.trees) == len(second.trees) == 23
+    assert first.image_clsid != second.image_clsid
+    assert first.image_clsid != first.clsid
+    for plan in (first,second):
+        image_entries=[tree for root,tree in plan.trees.items() if root.endswith('.ImagePDF')]
+        assert image_entries
+        assert all(tree['']['MultiSelectModel']=='Player' and 'command' not in tree
+                   and tree['DropTarget']['CLSID']==plan.image_clsid for tree in image_entries)
     for plan in (first, second):
         for tree in plan.trees.values():
             assert tree[''][OWNER] == plan.executable

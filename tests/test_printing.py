@@ -3,10 +3,11 @@ from __future__ import annotations
 import tempfile
 import hashlib
 import math
+from pathlib import Path
 import pymupdf
 import pytest
 from PyQt6.QtCore import QThreadPool
-from PyQt6.QtGui import QImage, QPageSize
+from PyQt6.QtGui import QFontDatabase, QImage, QPageSize
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QApplication
 
@@ -21,6 +22,7 @@ from app.printing import (
     back_is_upside_down,
     binding_flip_axis,
     build_sheets,
+    face_pages,
     front_binding_edge,
     render_pages_to_printer,
 )
@@ -33,6 +35,9 @@ def qapp():
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
+    font = Path('C:/Windows/Fonts/msyh.ttc')
+    if font.is_file():
+        QFontDatabase.addApplicationFont(str(font))
     return app
 
 
@@ -49,6 +54,95 @@ def test_duplex_modes_mapping():
     assert DUPLEX_MODES["none"] == QPrinter.DuplexMode.DuplexNone
     assert DUPLEX_MODES["long_edge"] == QPrinter.DuplexMode.DuplexLongSide
     assert DUPLEX_MODES["short_edge"] == QPrinter.DuplexMode.DuplexShortSide
+
+
+@pytest.mark.parametrize('count,expected',[
+    (1,[((None,0),(None,None))]),
+    (4,[((3,0),(1,2))]),
+    (5,[((None,0),(1,None)),((None,2),(3,4))]),
+    (8,[((7,0),(1,6)),((5,2),(3,4))]),
+])
+@pytest.mark.parametrize('binding',['left','right'])
+def test_booklet_imposition_retains_blank_positions_and_binding(count,expected,binding):
+    pages=list(range(count))
+    options=PrintOptions(booklet=True,booklet_binding=binding,page_indices=list(range(count)))
+    sheets=build_sheets(pages,options,None)
+    if binding=='right':expected=[(front[::-1],back[::-1]) for front,back in expected]
+    assert [(face_pages(sheet),face_pages(sheet,True)) for sheet in sheets]==expected
+    assert all(not sheet.front_portrait and not sheet.back_portrait for sheet in sheets)
+    options.reverse=True
+    assert build_sheets(pages,options,None)==sheets[::-1]
+
+
+@pytest.mark.parametrize('sides',['both','front','back'])
+@pytest.mark.parametrize('count',[1,5])
+def test_booklet_pdf_print_has_the_same_slots_as_preview(qapp,tmp_path,sides,count):
+    source=tmp_path/'generated-booklet.pdf';output=tmp_path/'printed-booklet.pdf'
+    colors=[(1,0,0),(0,1,0),(0,0,1),(1,1,0),(1,0,1)]
+    with pymupdf.open() as doc:
+        for i in range(count):
+            page=doc.new_page(width=300,height=400)
+            page.draw_rect(page.rect,color=colors[i],fill=colors[i])
+        doc.save(source)
+    original=source.read_bytes()
+    store=PdfStore()
+    try:
+        pages=store.load(str(source))
+        options=PrintOptions(booklet=True,booklet_sides=sides,page_indices=list(range(count)),
+                             paper=QPageSize.PageSizeId.A4)
+        sheets=build_sheets(pages,options,store)
+        expected=[]
+        for sheet in sheets:
+            if sides in ('both','front'):expected.append(face_pages(sheet))
+            if sides in ('both','back'):expected.append(face_pages(sheet,True))
+        printer=QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(str(output))
+        render_pages_to_printer(printer,store,pages,options)
+        with pymupdf.open(output) as printed:
+            assert len(printed)==len(expected)
+            for page,indices in zip(printed,expected):
+                assert page.rect.width>page.rect.height
+                pix=page.get_pixmap(colorspace=pymupdf.csRGB,alpha=False)
+                for half,index in enumerate(indices):
+                    actual=pix.pixel(round(pix.width*(.25+.5*half)),pix.height//2)
+                    wanted=(255,255,255) if index is None else tuple(255*c for c in colors[index])
+                    assert max(abs(a-b) for a,b in zip(actual,wanted))<5
+        assert source.read_bytes()==original
+    finally:
+        store.close_all()
+
+
+def test_booklet_controls_reuse_range_grayscale_and_restore_regular_print_settings(qapp,tmp_path):
+    source=tmp_path/'generated.pdf';_make_pdf(source,[(300,400)]*8)
+    store=PdfStore();ws=Workspace()
+    ws.load_first_or_merge(store.load(str(source)),str(source))
+    dialog=PrintDialog(None,ws,store)
+    try:
+        dialog.combo_nup.setCurrentIndex(dialog.combo_nup.findData(4))
+        dialog.radio_custom.setChecked(True)
+        dialog.edit_range.setText('2-6')
+        dialog.combo_color.setCurrentIndex(dialog.combo_color.findData('grayscale'))
+        dialog.combo_layout.setCurrentIndex(dialog.combo_layout.findData('booklet'))
+        options=dialog._collect_options()
+        assert options.booklet and options.pages_per_face==2 and options.duplex=='short_edge'
+        assert options.page_indices==list(range(1,6)) and options.color_mode=='grayscale'
+        assert dialog.combo_nup.isHidden() and not dialog.booklet_controls.isHidden()
+        assert len(dialog.canvas.sheets)==2 and '3 个空白页' in dialog.label_summary.text()
+        dialog.show();qapp.processEvents()
+        from PyQt6.QtTest import QTest
+        for _ in range(500):
+            qapp.processEvents()
+            if not dialog.canvas._pending:break
+            QTest.qWait(10)
+        assert dialog.grab().save(str(tmp_path/'booklet-preview.png'))
+        dialog.combo_booklet_sides.setCurrentIndex(dialog.combo_booklet_sides.findData('back'))
+        assert dialog._collect_options().duplex=='none' and dialog.canvas.duplex=='short_edge'
+        dialog.combo_layout.setCurrentIndex(dialog.combo_layout.findData('normal'))
+        assert not dialog._collect_options().booklet and dialog._collect_options().pages_per_face==4
+        assert dialog.booklet_controls.isHidden() and not ws.dirty
+    finally:
+        dialog.close();ws.reset();store.close_all()
 
 
 def test_render_pages_to_printer_auto_orientation(qapp, tmp_path):
