@@ -91,12 +91,12 @@ def test_workspace_insert_pages_start_and_end(tmp_path):
 def test_ui_insert_button_and_action_existence(window):
     window.stack.setCurrentIndex(1)
     assert hasattr(window, "insert_button")
-    assert window.insert_button.text() == "插入页面…"
+    assert window.insert_button.text() == "插入页面"
     assert window.insert_button.toolTip() == "插入 PDF 页面（已选页面后或末尾）"
     assert not window.insert_button.icon().isNull()
 
     assert hasattr(window, "insert_action")
-    assert window.insert_action.text() == "插入页面…"
+    assert window.insert_action.text() == "插入页面"
 
 
 def test_ui_insert_files_after_selection(window, tmp_path, monkeypatch, qapp):

@@ -343,13 +343,13 @@ class Workspace:
         pages[index] = prepared if prepared is not None else pages[index].edited(edit)
         self._push(pages, self.path, text)
 
-    def edit_pages(self, changes, text):
+    def edit_pages(self, changes, text, *, as_copy=False, outline=...):
         pages = list(self.pages)
         for index, ref in changes.items():
             if not 0 <= index < len(pages) or ref.page_id != pages[index].page_id:
                 raise ValueError("页面已不在工作区。")
             pages[index] = ref
-        self._push(pages, self.path, text)
+        self._push(pages, None if as_copy else self.path, text, outline=outline)
 
     def replace_page_with(self, index, incoming, *, outline=None):
         if not 0 <= index < len(self.pages) or not incoming:

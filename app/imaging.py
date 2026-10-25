@@ -17,42 +17,49 @@ IMAGE_FILTER = "图片 (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)"
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
 
+def image_pdf_data(paths, progress=None, cancel=None):
+    """Create image pages in memory, also used by mixed document import."""
+    with pymupdf.open() as doc:
+        for index, path in enumerate(paths):
+            check_cancel(cancel)
+            reader = QImageReader(path)
+            reader.setAutoTransform(True)
+            frame_count = reader.imageCount()
+            is_tiff = Path(path).suffix.lower() in (".tif", ".tiff")
+            if is_tiff and frame_count < 1:
+                raise PdfError(f"无法读取 TIFF 帧目录：{Path(path).name}")
+            for frame in range(max(1, frame_count)):
+                if frame and not reader.jumpToImage(frame):
+                    raise PdfError(f"无法跳转到 {Path(path).name} 第 {frame + 1} 帧")
+                check_cancel(cancel)
+                image = reader.read()
+                if image.isNull():
+                    raise PdfError(f"无法读取 {Path(path).name} 第 {frame + 1} 帧：{reader.errorString()}")
+                buffer = QBuffer()
+                buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+                if not image.save(buffer, "PNG"):
+                    raise PdfError(f"无法编码图片：{Path(path).name}")
+                dpi_x = image.dotsPerMeterX() * .0254
+                dpi_y = image.dotsPerMeterY() * .0254
+                dpi_x = dpi_x if 36 <= dpi_x <= 1200 else 150
+                dpi_y = dpi_y if 36 <= dpi_y <= 1200 else 150
+                page = doc.new_page(width=image.width() * 72 / dpi_x, height=image.height() * 72 / dpi_y)
+                page.insert_image(page.rect, stream=bytes(buffer.data()), keep_proportion=False)
+                if progress:
+                    progress(index, len(paths), f"正在导入 {Path(path).name} · 第 {frame + 1} 帧")
+            if progress:
+                progress(index + 1, len(paths), f"已导入 {Path(path).name} · {frame + 1} 页")
+        check_cancel(cancel)
+        return doc.tobytes(garbage=4, deflate=True)
+
+
 def images_to_pdf(paths, dest, safety_store, progress, cancel):
     if safety_store.is_source_destination(dest):
         raise PdfError("图片转 PDF 请另存新文件，不能覆盖已打开的 PDF。")
     safety_store._check_destination(dest)
     with TemporaryWorkspace('images') as folder:
         intermediate = os.path.join(folder, "images.pdf")
-        with pymupdf.open() as doc:
-            for index, path in enumerate(paths):
-                check_cancel(cancel)
-                reader = QImageReader(path)
-                reader.setAutoTransform(True)
-                frame_count = reader.imageCount()
-                is_tiff = Path(path).suffix.lower() in (".tif", ".tiff")
-                if is_tiff and frame_count < 1:
-                    raise PdfError(f"无法读取 TIFF 帧目录：{Path(path).name}")
-                for frame in range(max(1, frame_count)):
-                    if frame and not reader.jumpToImage(frame):
-                        raise PdfError(f"无法跳转到 {Path(path).name} 第 {frame + 1} 帧")
-                    check_cancel(cancel)
-                    image = reader.read()
-                    if image.isNull():
-                        raise PdfError(f"无法读取 {Path(path).name} 第 {frame + 1} 帧：{reader.errorString()}")
-                    buffer = QBuffer()
-                    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-                    if not image.save(buffer, "PNG"):
-                        raise PdfError(f"无法编码图片：{Path(path).name}")
-                    dpi_x = image.dotsPerMeterX() * .0254
-                    dpi_y = image.dotsPerMeterY() * .0254
-                    dpi_x = dpi_x if 36 <= dpi_x <= 1200 else 150
-                    dpi_y = dpi_y if 36 <= dpi_y <= 1200 else 150
-                    page = doc.new_page(width=image.width() * 72 / dpi_x, height=image.height() * 72 / dpi_y)
-                    page.insert_image(page.rect, stream=bytes(buffer.data()), keep_proportion=False)
-                    progress(index, len(paths), f"正在导入 {Path(path).name} · 第 {frame + 1} 帧")
-                progress(index + 1, len(paths), f"已导入 {Path(path).name} · {frame + 1} 页")
-            check_cancel(cancel)
-            doc.save(intermediate, garbage=4, deflate=True)
+        Path(intermediate).write_bytes(image_pdf_data(paths, progress, cancel))
         store = PdfStore()
         try:
             pages = store.load(intermediate)

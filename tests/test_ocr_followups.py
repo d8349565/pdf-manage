@@ -21,6 +21,18 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def isolated_text_clipboard(monkeypatch):
+    """Generated OCR copy tests must not clear or inspect the user's clipboard."""
+    class Clipboard:
+        value=''
+        def clear(self): self.value=''
+        def setText(self,value): self.value=value
+        def text(self): return self.value
+    clipboard=Clipboard()
+    monkeypatch.setattr(QApplication,'clipboard',staticmethod(lambda:clipboard))
+
+
 def make_ocr(path, *, rotation=0, extra_scan=False):
     with p.open() as doc:
         page = doc.new_page(width=400, height=500)
@@ -88,14 +100,17 @@ def test_organization_and_directional_conversion_groups(qapp):
     window = MainWindow()
     try:
         menus = {action.text(): action.menu() for action in window._menubar.actions() if action.menu()}
-        assert '组织' in menus and '转换' in menus and '工具' not in menus
+        assert '页面' in menus and '文档' in menus and '扫描' in menus and '转换' in menus and '工具' not in menus
         conversion = menus['转换'].actions()
         assert [action.text() for action in conversion] == [
-            'Word 转 PDF…', '图片转 PDF…', 'Markdown 转 PDF…', '',
-            'PDF 转 Word…', 'PDF 转 Excel…', 'PDF 转 TXT…', 'PDF 转图片…', 'PDF 转图片版…']
+            'Word 转 PDF', '图片转 PDF', 'Markdown 转 PDF', '',
+            'PDF 转 Word', 'PDF 转 Excel', 'PDF 转 TXT', 'PDF 转图片', 'PDF 转图片版']
         assert conversion[3].isSeparator()
         assert all('批量' not in action.text() for action in conversion)
-        assert all(action.isSeparator() or action.text().endswith('…') for action in menus['组织'].actions())
+        assert window.whiten_action in menus['扫描'].actions()
+        assert window.ocr_action in menus['扫描'].actions()
+        assert window.insert_action in menus['页面'].actions()
+        assert window.watermark_action in menus['文档'].actions()
     finally:
         window.close()
         qapp.processEvents()

@@ -98,7 +98,7 @@ def _snapshot_sources(store, pages, dests, folder, progress, cancel):
             data = source.data
             record = dict(path=source.path, password=source.password, stamp=source.disk_stamp,
                           needs_encryption_choice=source.needs_encryption_choice,
-                          lost_structures=source.lost_structures)
+                          lost_structures=source.lost_structures, requires_copy=source.requires_copy)
         if progress:
             progress(0, 0, f"正在准备来源快照 · {os.path.basename(source.path)}")
         snapshot = Path(folder) / f"source-{index}.pdf"
@@ -178,6 +178,7 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
                 candidate.password, candidate.lock = result["password"], threading.Lock()
                 candidate.closed = False
                 candidate.needs_encryption_choice = False
+                candidate.requires_copy = False
                 candidate.lost_structures = ()
                 candidate.geometry_limitations = tuple(result.get('geometry_limitations', ()))
                 safety = result["safety"]
@@ -332,6 +333,7 @@ def worker_main(folder):
                 source.path, source.disk_stamp = record["path"], tuple(record["stamp"])
                 source.needs_encryption_choice = record.get("needs_encryption_choice", False)
                 source.lost_structures = tuple(record.get("lost_structures", ()))
+                source.requires_copy = record.get("requires_copy", False)
                 loaded[sid] = source
             store._sources = loaded
             store._written_stamps = {key: tuple(value) for key, value in request["written_stamps"].items()}

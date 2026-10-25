@@ -17,7 +17,7 @@ class DeskewEstimate:
     message: str = '方向参考不足，请手动确认。'
 
 
-def estimate_angle(image, cancel=None):
+def estimate_angle(image, cancel=None, *, horizontal_only=False):
     """Return clockwise correction degrees, not the scan's measured tilt."""
     check_cancel(cancel)
     gray = image.convert('L')
@@ -53,8 +53,9 @@ def estimate_angle(image, cancel=None):
         rotated = source.rotate(-angle, resample=Image.Resampling.NEAREST, fillcolor=0)
         rows = list(rotated.resize((1, rotated.height), Image.Resampling.BOX).get_flattened_data())
         columns = list(rotated.resize((rotated.width, 1), Image.Resampling.BOX).get_flattened_data())
+        profiles = (rows,) if horizontal_only else (rows, columns)
         return max(((sum((b - a) ** 2 for a, b in zip(values, values[1:])) / len(values), values)
-                    for values in (rows, columns)), key=lambda item: item[0])
+                    for values in profiles), key=lambda item: item[0])
 
     coarse = [(angle / 2, profile(angle / 2)[0]) for angle in range(-20, 21)]
     best = max(coarse, key=lambda item: item[1])[0]

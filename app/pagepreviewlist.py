@@ -70,11 +70,7 @@ class _Paper(QStyledItemDelegate):
     def paint(self, painter, option, index):
         view = self.parent()
         source_row = view.rows[index.row()]
-        width, height = view.paper_size(source_row)
-        paper_width = min(520, max(100, view.viewport().width() - 38), 1200 * width / height)
-        paper_height = paper_width * height / width
-        area = QRectF(option.rect.x() + (option.rect.width() - paper_width) / 2,
-                      option.rect.y() + 31, paper_width, paper_height)
+        area = view.paper_rect(source_row,option.rect)
         painter.save()
         painter.setPen(QColor('#53635B'))
         painter.drawText(option.rect.adjusted(18, 2, -18, 0), Qt.AlignmentFlag.AlignTop,
@@ -109,6 +105,10 @@ class ScrollablePagePreview(QListView):
         self.store, self.pages = store, pages
         self.paper_size = paper_size or (lambda row: store.page_size(pages[row]))
         self.draw_content = draw_content
+        self.fit_page = False
+        self.max_paper_width = 520
+        self.render_when_hidden = False
+        self._page_wheel = 0
         self.rows, self.remove_group = [], ''
         self.images, self.errors = OrderedDict(), {}
         self.generation, self.busy, self.closed = 0, False, False
@@ -150,9 +150,46 @@ class ScrollablePagePreview(QListView):
         self.schedule()
 
     def item_size(self, position):
+        if self.fit_page:
+            return QSize(max(100,self.viewport().width()-4),max(120,self.viewport().height()-2))
         width, height = self.paper_size(self.rows[position])
-        paper_width = min(520, max(100, self.viewport().width() - 38), 1200 * width / height)
+        paper_width = min(self.max_paper_width, max(100, self.viewport().width() - 38), 1200 * width / height)
         return QSize(max(100, self.viewport().width() - 4), round(paper_width * height / width) + 54)
+
+    def paper_rect(self,row,rectangle):
+        width,height=self.paper_size(row)
+        available=max(80,self.viewport().width()-38)
+        if self.fit_page:
+            scale=min(available/width,max(80,self.viewport().height()-58)/height)
+            paper_width,paper_height=width*scale,height*scale
+        else:
+            paper_width=min(self.max_paper_width,available,1200*width/height)
+            paper_height=paper_width*height/width
+        return QRectF(rectangle.x()+(rectangle.width()-paper_width)/2,
+                      rectangle.y()+31,paper_width,paper_height)
+
+    def set_fit_page(self,enabled):
+        row=self.current_source_row
+        self.fit_page=enabled
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerItem if enabled else QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.verticalScrollBar().setSingleStep(1 if enabled else 55)
+        self._page_wheel=0
+        self.refresh_pages(layout=True)
+        if row is not None:
+            self.scroll_to_page(row)
+
+    def wheelEvent(self,event):
+        if self.fit_page and not event.modifiers():
+            delta=event.angleDelta().y() or event.pixelDelta().y()
+            self._page_wheel+=delta
+            unit=120 if event.angleDelta().y() else 45
+            steps=int(self._page_wheel/unit)
+            self._page_wheel-=steps*unit
+            if steps:
+                bar=self.verticalScrollBar();bar.setValue(bar.value()-steps)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
     def image_key(self, row):
         width, height = self.store.page_size(self.pages[row])
@@ -173,7 +210,7 @@ class ScrollablePagePreview(QListView):
         return list(range(max(0, start), min(len(self.rows), max(stop, start) + 2)))
 
     def render_next(self):
-        if self.closed or not self.isVisible():
+        if self.closed or not self.isVisible() and (not self.render_when_hidden or not self.window().isVisible()):
             return
         positions = self.visible_positions()
         if positions:

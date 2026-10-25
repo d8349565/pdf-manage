@@ -130,7 +130,7 @@ class _Source:
     __slots__ = ("path", "doc", "lock", "sizes", "rotations", "closed", "data",
                  "password", "safety", "disk_stamp", "label_rules", "label_starts",
                  "preview_doc", "preview_fonts", "import_warnings", "needs_encryption_choice",
-                 "lost_structures", "safety_scan", "preview_revision", "geometry_limitations")
+                 "lost_structures", "safety_scan", "preview_revision", "geometry_limitations", "requires_copy")
 
     def __init__(self, path: str, doc: pymupdf.Document, data: bytes, password,
                   authentication: int, disk_stamp, progress_callback=None, *, defer_safety=False) -> None:
@@ -148,6 +148,7 @@ class _Source:
         self.disk_stamp = disk_stamp
         self.needs_encryption_choice = False
         self.lost_structures = ()
+        self.requires_copy = False
         if progress_callback:
             progress_callback(0, 0, "正在检查签名与文档结构")
         self.safety = inspect_safety(doc, authentication, signature='pending' if defer_safety else None)
@@ -226,6 +227,7 @@ class _Source:
 
 class PdfStore:
     def __init__(self) -> None:
+        self._owned_workspaces = {}
         self._native_lock = threading.RLock()
         self._sources: dict[str, _Source] = {}
         self._n = 0
@@ -254,6 +256,9 @@ class PdfStore:
         self._written_stamps.clear()
         for src in sources:
             src.close()
+        for workspace in self._owned_workspaces.values():
+            workspace.cleanup()
+        self._owned_workspaces.clear()
 
     def close_except(self, keep: set[str]) -> None:
         display = getattr(self, '_display_key', None)
@@ -264,6 +269,9 @@ class PdfStore:
         for sid in [s for s in self._sources if s not in keep]:
             src = self._sources.pop(sid)
             src.close()
+            workspace = self._owned_workspaces.pop(sid, None)
+            if workspace is not None:
+                workspace.cleanup()
         with self._annotation_lock:
             for key in list(self._annotation_cache):
                 if key[0].split(":edit:", 1)[0] not in keep:
@@ -283,6 +291,26 @@ class PdfStore:
         with cancellable_lock(self._native_lock, cancel):
             return self._load(path, password, progress_callback=progress_callback, cancel=cancel,
                               defer_safety=defer_safety)
+
+    def load_clipboard_image(self, image, *, progress_callback=None, cancel=None):
+        from pathlib import Path
+        from app.storage import TemporaryWorkspace
+        if image.isNull() or image.width()*image.height()>64_000_000:
+            raise PdfError('剪贴板图片无效或超过 6400 万像素。')
+        check_cancel(cancel)
+        workspace=TemporaryWorkspace('clipboard')
+        try:
+            path=str(Path(workspace.name)/'剪贴板图片.png')
+            if progress_callback:
+                progress_callback(0,0,'正在准备剪贴板图片…')
+            if not image.save(path,'PNG'):
+                raise PdfError('无法准备剪贴板图片，请检查缓存目录的可用空间。')
+            pages=self.load(path,progress_callback=progress_callback,cancel=cancel)
+            self._owned_workspaces[pages[0].source_id]=workspace
+            return pages
+        except Exception:
+            workspace.cleanup()
+            raise
 
     def _load(self, path, password=None, *, progress_callback=None, cancel=None, defer_safety=False):
         path = os.path.abspath(path)
@@ -304,12 +332,18 @@ class PdfStore:
         try:
             stamp = _file_stamp(path)
             warnings = ()
+            is_image = False
             if path.lower().endswith('.ofd'):
                 from app.pdfworker import import_ofd
                 data, warnings = import_ofd(path, progress_callback, cancel)
             else:
-                with open(path, "rb") as fh:
-                    data = fh.read()
+                from app.imaging import IMAGE_SUFFIXES, image_pdf_data
+                is_image = path.lower().endswith(IMAGE_SUFFIXES)
+                if is_image:
+                    data = image_pdf_data([path], progress_callback, cancel)
+                else:
+                    with open(path, "rb") as fh:
+                        data = fh.read()
             if _file_stamp(path) != stamp:
                 raise PdfError("读取期间文件被其他程序修改，请重新打开。")
         except OSError as exc:
@@ -332,6 +366,7 @@ class PdfStore:
             sid = self._register(path, doc, data, password, authentication, stamp, progress_callback,
                                  defer_safety=defer_safety)
             self._source(sid).import_warnings = tuple(warnings)
+            self._source(sid).requires_copy = is_image
             if cancel and cancel():
                 self._sources.pop(sid).close()
                 check_cancel(cancel)
@@ -422,6 +457,7 @@ class PdfStore:
             sid = self._register(origin.path, doc, data, origin.password, 0, origin.disk_stamp)
             self._source(sid).needs_encryption_choice = (
                 origin.safety.encrypted or origin.needs_encryption_choice)
+            self._source(sid).requires_copy = origin.requires_copy
             self._source(sid).lost_structures = tuple(dict.fromkeys(
                 (*origin.lost_structures, *origin.safety.special_structures)))
         except Exception:
@@ -1046,6 +1082,8 @@ class PdfStore:
                     original_progress(current, total, message)
             progress_callback = guarded_progress
         sources = {sid: self._source(sid) for sid in dict.fromkeys(p.source_id for p in pages)}
+        if any(source.requires_copy for source in sources.values()) and self.is_source_destination(dest):
+            raise PdfError('图片导入或扫描件增强后请另存副本，不能覆盖来源文件。')
         if (any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove') for ref in pages for edit in ref.edits)
                 and self.is_source_destination(dest)):
             raise PdfError('调整页面、骑缝章或纠偏后请另存副本，不能覆盖来源文件。')

@@ -93,11 +93,10 @@ class ArrangePreview(QObject):
         index = self.view.indexAt(point)
         if not index.isValid():
             index = self.view.currentIndex()
-        if not index.isValid():
-            return
         menu = QMenu(self.view)
-        action = menu.addAction("放大预览（Esc 关闭）")
-        if menu.exec(self.view.viewport().mapToGlobal(point)) is action:
+        action = menu.addAction("放大预览（Esc 关闭）") if index.isValid() else None
+        self.view.add_page_paste_action(menu,point)
+        if menu.exec(self.view.viewport().mapToGlobal(point)) is action and action is not None:
             self.show(index, pinned=True)
 
     def eventFilter(self, watched, event):

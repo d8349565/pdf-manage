@@ -489,7 +489,7 @@ class WordConverterWindow(QWidget):
             return
         row = item.row()
         menu = QMenu(self)
-        act_change = menu.addAction(f"选择输出 {self.target_kind} 位置…")
+        act_change = menu.addAction(f"选择输出 {self.target_kind} 位置")
         act_open_src = menu.addAction(f"打开源 {self.source_kind} 所在目录")
         act_open_dest = menu.addAction(f"打开输出 {self.target_kind} 所在目录")
         menu.addSeparator()

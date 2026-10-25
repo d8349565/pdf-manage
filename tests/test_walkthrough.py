@@ -266,7 +266,7 @@ def test_decrypt_entry_and_owner_prompt(window, tmp_path, monkeypatch, permissio
     window.open_export_tool(6)
     window.refresh()
     assert window.decrypt_action.isEnabled() and window.decrypt_button.isEnabled()
-    assert window.decrypt_action.text() == "解密另存…"
+    assert window.decrypt_action.text() == "解密另存"
     prompts, writes = [], []
     def password(*args):
         prompts.append(args)
@@ -1195,6 +1195,8 @@ def test_thumb_size_hint_follows_icon_w(window, tmp_path):
 
 
 def test_icon_toolbar_has_names_and_tooltips(window):
+    window._ensure_arrange()
+    window._ensure_tools()
     required = {
         "缩小",
         "放大",
@@ -1203,17 +1205,18 @@ def test_icon_toolbar_has_names_and_tooltips(window):
         "上一页",
         "下一页",
     }
-    named = [btn for btn in window.findChildren(QToolButton) if btn.accessibleName()]
+    named = [btn for btn in window.findChildren(QToolButton)
+             if btn.accessibleName() and btn.toolButtonStyle()==Qt.ToolButtonStyle.ToolButtonIconOnly]
     names = {btn.accessibleName() for btn in named}
     assert required <= names
     for btn in named:
-        assert btn.toolTip()
+        assert btn.toolTip(),(btn.text(),btn.accessibleName(),btn.objectName())
         if btn is not window.reading_orb:
             assert btn.icon() and not btn.icon().isNull()
     from PyQt6.QtWidgets import QPushButton
     labels = {btn.text() for btn in window.findChildren(QPushButton)} | names
-    assert {"打开 PDF", "保存", "另存为", "阅读", "整理页面", "左转", "右转", "删除页面", "全选"} <= labels
-    assert window.append_action.text() == "合并文件…" and window.append_action.isEnabled()
+    assert {"打开 PDF / OFD / 图片", "保存", "另存为", "阅读", "整理页面", "左转所选页", "右转所选页", "删除所选页", "全选"} <= labels
+    assert window.append_action.text() == "合并文件" and window.append_action.isEnabled()
 
 
 def test_toolbar_icon_not_clipped_to_top_left(qapp):
@@ -1232,6 +1235,7 @@ def test_toolbar_icon_not_clipped_to_top_left(qapp):
 
 def test_menu_selected_item_shows_highlight(window, qapp):
     menu = next(m for m in window.findChildren(QMenu) if m.menuAction().text() == "视图")
+    menu = next(action.menu() for action in menu.actions() if action.text() == '缩放')
     action = next(a for a in menu.actions() if a.text() == "放大")
     menu.popup(QPoint(80, 80))
     qapp.processEvents()
@@ -1293,7 +1297,7 @@ def test_tools_panel_keeps_readable_labels(window):
     assert rule_size("QLabel#hint") == 14
     window.open_export_tool(0)
     texts = {w.text() for w in window.tools_panel.findChildren(QLabel) if w.objectName() == "caption"}
-    assert "导出与转换" in texts
+    assert "快捷工具" in texts
     assert [header.text() for header in window.export_tools.headers[:3]] == [
         "提取页面", "拆分文件", "PDF 转 Excel",
     ]

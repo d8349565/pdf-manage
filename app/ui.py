@@ -30,6 +30,7 @@ from PyQt6.QtCore import (
     QMimeData,
     QRect,
     pyqtSignal,
+    pyqtSlot,
     QVariantAnimation,
     QEasingCurve,
 )
@@ -53,6 +54,7 @@ from PyQt6.QtGui import (
     QDrag,
 )
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
     QDialog,
@@ -773,13 +775,18 @@ QToolButton#docTabNew:hover {
 """
 
 
-def _pdf_paths_from_mime(mime: QMimeData) -> list[str]:
+def _is_image_path(path):
+    from app.imaging import IMAGE_SUFFIXES
+    return str(path).lower().endswith(IMAGE_SUFFIXES)
+
+
+def _document_paths_from_mime(mime: QMimeData) -> list[str]:
     if not mime.hasUrls():
         return []
     return [
         u.toLocalFile()
         for u in mime.urls()
-        if u.toLocalFile().lower().endswith((".pdf", ".ofd"))
+        if u.isLocalFile() and (u.toLocalFile().lower().endswith((".pdf", ".ofd")) or _is_image_path(u.toLocalFile()))
     ]
 
 
@@ -883,6 +890,8 @@ class PageListView(QListView):
         self._host = None
         self._acc = 0
         self._drop_row: int | None = None
+        self._paste_anchor = None
+        self._pending_paste_gap = None
         self._highlight_rect = QRectF()
         self._highlight_opacity = 1.0
         self._drop_motion = QVariantAnimation(self)
@@ -931,6 +940,116 @@ class PageListView(QListView):
         """落点格：拖到空白处按「落到末尾」算，与 drop_target 的口径一致。"""
         hit = self.indexAt(pos)
         return hit.row() if hit.isValid() else self.model().rowCount() - 1
+
+    def paste_gap(self):
+        if self._paste_anchor is not None and self.model() is not None:
+            pages,position,selection=self._paste_anchor
+            if pages is self.model().ws.pages and selection==self.model().ws.selected:
+                return position
+        return None
+
+    def clear_paste_gap(self,*_):
+        if self._paste_anchor is not None:
+            self._paste_anchor=None
+            self.viewport().update()
+
+    def selection_paste_changed(self,*_):
+        if self._paste_anchor is not None and self.paste_gap() is None:
+            self.clear_paste_gap()
+
+    def _gap_at(self,point):
+        """Inspect nearby cards only, including gaps in a wrapped page grid."""
+        count=self.model().rowCount()
+        candidates={}
+        for dx,dy in ((0,-12),(0,12),(-12,0),(12,0),(0,-24),(0,24),(-24,0),(24,0)):
+            index=self.indexAt(point+QPoint(dx,dy))
+            if index.isValid():
+                candidates[index.row()]=self.visualRect(index)
+        if not candidates:
+            if count and point.y()<self.visualRect(self.model().index(0)).top():
+                return 0
+            return count
+        def distance(rect):
+            return max(rect.left()-point.x(),0,point.x()-rect.right())+max(rect.top()-point.y(),0,point.y()-rect.bottom())
+        row=min(candidates,key=lambda value:distance(candidates[value]))
+        rectangle=candidates[row]
+        if not self._arrange or point.y()<rectangle.top() or point.y()>rectangle.bottom():
+            return row if point.y()<rectangle.center().y() else row+1
+        return row if point.x()<rectangle.center().x() else row+1
+
+    def _select_paste_gap(self,position):
+        self._paste_anchor=(self.model().ws.pages,position,frozenset(self.model().ws.selected))
+        self.viewport().update()
+        if self._host is not None:
+            caption=f'第 {position+1} 页前' if position<self.model().rowCount() else '文档末尾'
+            self._host.statusBar().showMessage(f'粘贴位置：{caption} · Ctrl+V 粘贴为页面',5000)
+
+    def mousePressEvent(self,event):
+        self._pending_paste_gap=None
+        if event.button()==Qt.MouseButton.LeftButton:
+            self.clear_paste_gap()
+            if self.model() is not None and not event.modifiers() and not self.indexAt(event.position().toPoint()).isValid():
+                point=event.position().toPoint()
+                self._pending_paste_gap=(point,self._gap_at(point))
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self,event):
+        if self._pending_paste_gap is not None:
+            if (event.position().toPoint()-self._pending_paste_gap[0]).manhattanLength()>QApplication.startDragDistance():
+                self._pending_paste_gap=None
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self,event):
+        pending=self._pending_paste_gap
+        self._pending_paste_gap=None
+        super().mouseReleaseEvent(event)
+        if (pending is not None and event.button()==Qt.MouseButton.LeftButton
+                and (event.position().toPoint()-pending[0]).manhattanLength()<=QApplication.startDragDistance()):
+            self._select_paste_gap(pending[1])
+
+    def add_page_paste_action(self,menu,point):
+        if self._host is None:
+            return
+        hit=self.indexAt(point)
+        if hit.isValid():
+            if hit.row() not in self.model().ws.target_indices():
+                self.setCurrentIndex(hit)
+                self.selectionModel().select(hit,QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            menu.addAction(self._host.copy_pages_action)
+            menu.addSeparator()
+            rows=self.model().ws.target_indices()
+            position=max(rows)+1 if hit.row() in rows else hit.row()+1
+        else:
+            position=self._gap_at(point)
+        caption=f'在第 {position} 页后粘贴为页面' if position else '在文档开头粘贴为页面'
+        action=menu.addAction(caption+'\tCtrl+V')
+        action.setEnabled(self._host.paste_pages_action.isEnabled())
+        action.triggered.connect(lambda:self._host.paste_pages(at_index=position,target_view=self))
+        return action
+
+    def contextMenuEvent(self,event):
+        menu=QMenu(self)
+        self.add_page_paste_action(menu,event.pos())
+        menu.exec(event.globalPos())
+
+    def _paint_paste_gap(self):
+        position=self.paste_gap()
+        count=self.model().rowCount() if self.model() is not None else 0
+        if position is None or not count:
+            return
+        index=min(position,count-1)
+        rectangle=self.visualRect(self.model().index(index))
+        if self._arrange and (position==count or position>0 and abs(self.visualRect(self.model().index(position-1)).top()-rectangle.top())<3):
+            x=rectangle.right()+5 if position==count else rectangle.left()-5
+            start,end=QPointF(x,rectangle.top()+8),QPointF(x,rectangle.bottom()-8)
+        else:
+            y=rectangle.bottom()+4 if position==count else rectangle.top()-4
+            start,end=QPointF(rectangle.left()+8,y),QPointF(rectangle.right()-8,y)
+        painter=QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor('#0F766E'),3,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        painter.drawLine(start,end)
+        painter.end()
 
     def _set_drop_row(self, row: int | None) -> None:
         if row == self._drop_row:
@@ -1014,7 +1133,7 @@ class PageListView(QListView):
             self._set_drop_row(self._drop_row_at(event.position().toPoint()))
             event.acceptProposedAction()
             return
-        if _pdf_paths_from_mime(event.mimeData()):
+        if _document_paths_from_mime(event.mimeData()):
             model = self.model()
             if model is not None and not model.store.operation_reason(model.ws.pages, "modify"):
                 self._set_drop_row(self._drop_row_at(event.position().toPoint()))
@@ -1027,7 +1146,7 @@ class PageListView(QListView):
             self._set_drop_row(self._drop_row_at(event.position().toPoint()))
             event.acceptProposedAction()
             return
-        if _pdf_paths_from_mime(event.mimeData()):
+        if _document_paths_from_mime(event.mimeData()):
             model = self.model()
             if model is not None and not model.store.operation_reason(model.ws.pages, "modify"):
                 self._set_drop_row(self._drop_row_at(event.position().toPoint()))
@@ -1041,7 +1160,7 @@ class PageListView(QListView):
 
     def dropEvent(self, event) -> None:
         model = self.model()
-        pdf_paths = _pdf_paths_from_mime(event.mimeData())
+        pdf_paths = _document_paths_from_mime(event.mimeData())
         if pdf_paths:
             pos = event.position().toPoint()
             hit = self.indexAt(pos)
@@ -1097,6 +1216,7 @@ class PageListView(QListView):
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
+        self._paint_paste_gap()
         rect = self._highlight_rect
         if rect.isEmpty():
             return
@@ -2063,7 +2183,7 @@ class _TabPill(QFrame):
                 self._hover_timer.start()
             event.acceptProposedAction()
             return
-        if _pdf_paths_from_mime(mime):
+        if _document_paths_from_mime(mime):
             self._set_drop_target(True)
             event.acceptProposedAction()
             return
@@ -2071,7 +2191,7 @@ class _TabPill(QFrame):
 
     def dragMoveEvent(self, event) -> None:
         mime = event.mimeData()
-        if mime.hasFormat(MIME) or _pdf_paths_from_mime(mime):
+        if mime.hasFormat(MIME) or _document_paths_from_mime(mime):
             event.acceptProposedAction()
             return
         event.ignore()
@@ -2101,7 +2221,7 @@ class _TabPill(QFrame):
             else:
                 event.ignore()
             return
-        pdf_paths = _pdf_paths_from_mime(mime)
+        pdf_paths = _document_paths_from_mime(mime)
         if pdf_paths:
             self._bar._host.open_files_in_tabs(pdf_paths)
             event.acceptProposedAction()
@@ -2164,19 +2284,19 @@ class DocumentTabBar(QFrame):
         self.setVisible(len(tabs) > 1)
 
     def dragEnterEvent(self, event) -> None:
-        if _pdf_paths_from_mime(event.mimeData()):
+        if _document_paths_from_mime(event.mimeData()):
             event.acceptProposedAction()
             return
         event.ignore()
 
     def dragMoveEvent(self, event) -> None:
-        if _pdf_paths_from_mime(event.mimeData()):
+        if _document_paths_from_mime(event.mimeData()):
             event.acceptProposedAction()
             return
         event.ignore()
 
     def dropEvent(self, event) -> None:
-        pdf_paths = _pdf_paths_from_mime(event.mimeData())
+        pdf_paths = _document_paths_from_mime(event.mimeData())
         if pdf_paths:
             self._host.open_files_in_tabs(pdf_paths)
             event.acceptProposedAction()
@@ -2263,6 +2383,7 @@ class MainWindow(QMainWindow):
         self._tool_index = 0
         self._opening_paths = tuple(opening_paths)
         self._saving = False
+        self._closing = False
         self._confirming_leave = False
         self.ws = Workspace()
         self.store = PdfStore()
@@ -2397,13 +2518,13 @@ class MainWindow(QMainWindow):
         self.act_pages.setToolTip("页面栏 (F8)")
         self.act_pages.setStatusTip("显示或隐藏左侧页面栏 (F8)")
         self.act_pages.toggled.connect(self._set_pages_visible)
-        self.act_tools = QAction("工具栏", self)
+        self.act_tools = QAction("工具面板", self)
         self.act_tools.setCheckable(True)
         self.act_tools.setChecked(False)
         self.act_tools.setShortcut(QKeySequence("F9"))
         self.act_tools.setIcon(toolbar_icon("panel-right"))
-        self.act_tools.setToolTip("工具栏 (F9)")
-        self.act_tools.setStatusTip("显示或隐藏右侧工具栏 (F9)")
+        self.act_tools.setToolTip("工具面板 (F9)")
+        self.act_tools.setStatusTip("显示或隐藏右侧工具面板 (F9)")
         self.act_tools.toggled.connect(self._set_tools_visible)
 
     def _set_pages_visible(self, on: bool) -> None:
@@ -2553,7 +2674,7 @@ class MainWindow(QMainWindow):
         self.model.busy.connect(self._note_render_busy)
         self.setMenuWidget(TitleBar(self))
         file_menu = self._menubar.addMenu("文件")
-        self.open_action = self._act("打开 PDF / OFD", self.open_files, QKeySequence.StandardKey.Open)
+        self.open_action = self._act("打开 PDF / OFD / 图片", self.open_files, QKeySequence.StandardKey.Open)
         file_menu.addAction(self.open_action)
         file_menu.addSeparator()
         self.save_action = self._act("保存", self.save, QKeySequence.StandardKey.Save)
@@ -2568,12 +2689,12 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self.storage_action = self._act('存储管理…', self.manage_storage)
         self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
-        file_menu.addAction(self.storage_action)
+        settings_menu=file_menu.addMenu("应用设置")
+        settings_menu.addAction(self.storage_action)
         if sys.platform == "win32":
             if portable_root() is not None:
-                file_menu.addAction(self._act('右键快捷工具…', self.manage_context_menus))
-            file_menu.addSeparator()
-            file_menu.addAction(self._act("设为默认 PDF 应用…", self.choose_default_application))
+                settings_menu.addAction(self._act('右键快捷工具…', self.manage_context_menus))
+            settings_menu.addAction(self._act("设为默认 PDF 应用…", self.choose_default_application))
         file_menu.addSeparator()
         file_menu.addAction(self._act("退出", self.close))
         edit = self._menubar.addMenu("编辑")
@@ -2583,6 +2704,15 @@ class MainWindow(QMainWindow):
         self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
+        self.copy_pages_action = self._act('复制页面', self.copy_pages, QKeySequence.StandardKey.Copy)
+        self.copy_pages_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.copy_pages_action.setStatusTip('复制所选页面，可粘贴到本文件或本窗口的其他标签页。')
+        for page_view in (self.left_view,self.arrange_view):
+            page_view.addAction(self.copy_pages_action)
+        edit.addAction(self.copy_pages_action)
+        self.paste_pages_action = self._act('粘贴为页面', self.paste_pages, QKeySequence.StandardKey.Paste)
+        self.paste_pages_action.setStatusTip('将复制的 PDF、图片文件或截图粘贴为新页面；可先点击缩略图或页面间隙。')
+        edit.addAction(self.paste_pages_action)
         edit.addSeparator()
         edit.addAction(self._act("全选", self.select_all_pages, QKeySequence.StandardKey.SelectAll))
         edit.addAction(self.find_action)
@@ -2595,40 +2725,46 @@ class MainWindow(QMainWindow):
         edit.addAction(self.capture_action)
         edit.addSeparator()
         self.insert_action = self._act("插入页面…", self.insert_files)
-        edit.addAction(self.insert_action)
         self.append_action = self._act("合并文件…", self.append_files)
-        edit.addAction(self.append_action)
         self.delete_action = self._act("删除页面", self.delete_pages)
-        edit.addAction(self.delete_action)
-        tools = self._menubar.addMenu("组织")
+        tools = self._menubar.addMenu("页面")
+        tools.addActions([self.insert_action,self.append_action])
+        tools.addSeparator()
         self.extract_action = self._act("提取页面…", lambda: self.open_export_tool(0))
         self.split_action = self._act("拆分文件…", lambda: self.open_export_tool(1))
         self.split_page_action = self._act("分割单页…", self.split_selected_page)
-        tools.addAction(self.extract_action)
-        tools.addAction(self.split_action)
-        tools.addAction(self.split_page_action)
+        tools.addActions([self.extract_action,self.split_action,self.split_page_action])
+        tools.addSeparator()
         self.page_size_action = self._act('调整页面大小…', self.resize_pages)
         tools.addAction(self.page_size_action)
-        self.deskew_action = self._act('扫描纠偏…', self.open_deskew)
-        tools.addAction(self.deskew_action)
-        tools.addAction(self._act("页码处理…", self.open_page_numbers))
+        rotation=tools.addMenu('旋转页面')
+        self.page_rotate_actions=[self._act('向左旋转 90°',lambda:self.rotate(-90)),
+                                  self._act('向右旋转 90°',lambda:self.rotate(90))]
+        rotation.addActions(self.page_rotate_actions)
+        tools.addAction(self.delete_action)
+        document = self._menubar.addMenu('文档')
+        self.page_numbers_action=self._act('页码处理…',self.open_page_numbers)
         self.watermark_action = self._act("水印…", self.open_watermarks)
-        tools.addAction(self.watermark_action)
         self.seam_stamp_action = self._act('骑缝章…', self.open_seam_stamps)
-        tools.addAction(self.seam_stamp_action)
-        self.ocr_action = self._act("文字识别…", self.open_ocr)
-        tools.addAction(self.ocr_action)
-        tools.addSeparator()
-        self.compress_action = self._act("文档压缩…", lambda: self.open_export_tool(3))
+        document.addActions([self.page_numbers_action,self.watermark_action,self.seam_stamp_action])
+        document.addSeparator()
+        compression=document.addMenu('压缩')
+        self.compress_action = self._act("压缩 PDF…", lambda: self.open_export_tool(3))
+        self.image_compress_action=self._act('压缩图片…',self.compress_image_file)
+        compression.addActions([self.compress_action,self.image_compress_action])
+        security=document.addMenu('安全与副本')
         self.encrypt_action = self._act("加密另存…", self.encrypt_copy)
         self.decrypt_action = self._act("解密另存…", self.decrypt_copy)
-        self.editable_action = self._act("编辑副本…", self.editable_copy)
-        for action in (self.compress_action, self.encrypt_action, self.decrypt_action, self.editable_action):
-            tools.addAction(action)
+        self.editable_action = self._act("制作可编辑副本…", self.editable_copy)
+        security.addActions([self.encrypt_action,self.decrypt_action,self.editable_action])
+        scans=self._menubar.addMenu('扫描')
+        self.whiten_action = self._act('扫描件增强…', self.open_whitening)
+        self.deskew_action = self._act('扫描纠偏…', self.open_deskew)
+        self.ocr_action = self._act("文字识别（OCR）…", self.open_ocr)
+        scans.addActions([self.whiten_action,self.deskew_action,self.ocr_action])
         convert = self._menubar.addMenu("转换")
         convert.addAction(self._act("Word 转 PDF…", self.open_word_converter))
         convert.addAction(self._act("图片转 PDF…", self.images_to_pdf))
-        convert.addAction(self._act('压缩图片…', self.compress_image_file))
         convert.addAction(self._act("Markdown 转 PDF…", self.convert_markdown))
         convert.addSeparator()
         convert.addAction(self._act("PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
@@ -2645,15 +2781,17 @@ class MainWindow(QMainWindow):
         view.addAction(self._act("大纲书签", self.open_outline))
         view.addSeparator()
         view.addMenu(self.reading_settings_menu)
-        view.addAction(self.reading_orb.restore_action)
         view.addSeparator()
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
-        view.addAction(self._act('恢复界面', self.reset_ui_preferences))
         view.addSeparator()
-        view.addAction(self._act("放大", self.zoom_in, QKeySequence.StandardKey.ZoomIn))
-        view.addAction(self._act("缩小", self.zoom_out, QKeySequence.StandardKey.ZoomOut))
-        view.addAction(self._act("适合宽度", self.zoom_fit, QKeySequence("Ctrl+0")))
+        zoom_menu=view.addMenu('缩放')
+        zoom_menu.addAction(self._act("放大", self.zoom_in, QKeySequence.StandardKey.ZoomIn))
+        zoom_menu.addAction(self._act("缩小", self.zoom_out, QKeySequence.StandardKey.ZoomOut))
+        zoom_menu.addAction(self._act("适合宽度", self.zoom_fit, QKeySequence("Ctrl+0")))
+        restore=view.addMenu('界面恢复')
+        restore.addAction(self.reading_orb.restore_action)
+        restore.addAction(self._act('恢复界面布局',self.reset_ui_preferences))
         self.about_action = self._act("关于", self.show_about)
         self.about_action.setStatusTip("查看版本、检查更新、项目地址与赞赏信息")
         self._menubar.addAction(self.about_action)
@@ -2866,11 +3004,11 @@ class MainWindow(QMainWindow):
                                              else "当前文档未加密，无需解密。"))
         self.decrypt_action.setEnabled(encrypted and not signature_reason)
         self.decrypt_action.setToolTip(decrypt_hint)
-        self.editable_action.setText('影像副本…' if unknown_signature else '编辑副本…')
+        self.editable_action.setText('制作影像副本' if unknown_signature else '制作可编辑副本')
         self.editable_action.setEnabled(bool(count) and not (raster_reason if unknown_signature
                                         else self.store.operation_reason(self.ws.pages, 'editable_copy')))
         if self._tools_ready:
-            self.editable_button.setText('制作影像副本…' if unknown_signature else '制作可编辑副本…')
+            self.editable_button.setText('制作影像副本' if unknown_signature else '制作可编辑副本')
             for button, action in ((self.compress_button, self.compress_action),
                                    (self.image_export_button, self.image_export_action),
                                    (self.encrypt_button, self.encrypt_action),
@@ -2880,6 +3018,7 @@ class MainWindow(QMainWindow):
             self.decrypt_button.setToolTip(decrypt_hint)
         self.print_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "print"))
         self.append_action.setEnabled(not read_only)
+        self.paste_pages_action.setEnabled(not read_only)
         if hasattr(self, "insert_action"):
             self.insert_action.setEnabled(not read_only)
         if hasattr(self, "insert_button"):
@@ -2888,7 +3027,10 @@ class MainWindow(QMainWindow):
             view.setDragEnabled(not read_only)
             view.setAcceptDrops(not read_only)
         selected = bool(self.ws.target_indices())
+        self.copy_pages_action.setEnabled(selected and not read_only and not copy_reason)
         self.delete_action.setEnabled(selected and not read_only)
+        for action in self.page_rotate_actions:
+            action.setEnabled(selected and not read_only)
         for button in self._selection_buttons:
             button.setEnabled(selected and not read_only)
         if self._tools_ready:
@@ -2902,6 +3044,7 @@ class MainWindow(QMainWindow):
         self.page_size_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, 'content_edit'))
         self.seam_stamp_action.setEnabled(self.page_size_action.isEnabled())
         self.deskew_action.setEnabled(self.page_size_action.isEnabled())
+        self.whiten_action.setEnabled(self.page_size_action.isEnabled() and not copy_reason)
         if self._arrange_ready:
             self.arrange_size_button.setEnabled(self.page_size_action.isEnabled())
         if self._arrange_ready:
@@ -3044,6 +3187,7 @@ class MainWindow(QMainWindow):
             label.setVisible(bool(error or summary))
 
     def _act(self, text, slot, shortcut=None) -> QAction:
+        text=text.removesuffix('…').removesuffix('...')
         action = QAction(text, self)
         if shortcut is not None:
             action.setShortcut(shortcut)
@@ -3130,7 +3274,7 @@ class MainWindow(QMainWindow):
         hint.setObjectName("hint")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         welcome.addWidget(hint)
-        self.welcome_open = self._btn("打开 PDF / OFD", self.open_files, primary=True, icon="folder-open")
+        self.welcome_open = self._btn("打开 PDF / OFD / 图片", self.open_files, primary=True, icon="folder-open")
         welcome.addWidget(self.welcome_open, 0, Qt.AlignmentFlag.AlignHCenter)
         drop_hint = QLabel("也可以把文件拖到这里 · Ctrl+O")
         drop_hint.setObjectName("hint")
@@ -3272,12 +3416,8 @@ class MainWindow(QMainWindow):
         self.arrange_split_button.setToolTip("将选中页沿分割线切成 2 或 3 页，可撤销")
         bar.addWidget(self.arrange_split_button)
         self.arrange_size_button = QToolButton()
-        self.arrange_size_button.setText('页面工具')
-        self.arrange_size_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        page_tools = QMenu(self.arrange_size_button)
-        page_tools.addActions([self.page_size_action, self.seam_stamp_action, self.deskew_action])
-        self.arrange_size_button.setMenu(page_tools)
-        self.arrange_size_button.setToolTip('调整页面大小、骑缝章、扫描纠偏')
+        self.arrange_size_button.setDefaultAction(self.page_size_action)
+        self.arrange_size_button.setText('页面大小')
         bar.addWidget(self.arrange_size_button)
         bar.addWidget(self._btn("全选", self.select_all_pages, icon="select-all"))
         selected_export = self._btn("提取所选页…", self.extract_selected, icon="scissors")
@@ -3352,9 +3492,9 @@ class MainWindow(QMainWindow):
             page.addWidget(button)
         lay.addLayout(page)
         lay.addWidget(self._sep())
-        lay.addWidget(self._caption("导出与转换"))
+        lay.addWidget(self._caption("快捷工具"))
         self._export_tools = _ExportTools()
-        self._export_tools.setAccessibleName("导出与转换工具")
+        self._export_tools.setAccessibleName("快捷工具面板")
         lay.addWidget(self._export_tools, 1)
 
         def section(title):
@@ -3480,7 +3620,7 @@ class MainWindow(QMainWindow):
         export_images.addWidget(hint)
         self.image_export_button = self._btn("选择范围并导出…", self.pdf_to_images, primary=True)
         export_images.addWidget(self.image_export_button)
-        security = section("加密、解密与签名保护")
+        security = section("安全与副本")
         self.encrypt_button = self._btn("加密另存…", self.encrypt_copy)
         self.decrypt_button = self._btn("解密另存…", self.decrypt_copy)
         self.editable_button = self._btn("制作可编辑副本…", self.editable_copy)
@@ -3518,6 +3658,7 @@ class MainWindow(QMainWindow):
         view.clicked.connect(self._on_click)
         view.selectionModel().currentChanged.connect(self._on_current_changed)
         view.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        view.selectionModel().selectionChanged.connect(view.selection_paste_changed)
         if not arrange:
             view.viewport().installEventFilter(self)
         return view
@@ -3569,6 +3710,7 @@ class MainWindow(QMainWindow):
         danger: bool = False,
         icon: str | None = None,
     ) -> QPushButton:
+        text=text.removesuffix('…').removesuffix('...')
         btn = QPushButton(text)
         btn.setAccessibleName(text)
         btn.setToolTip(text)
@@ -4825,7 +4967,12 @@ class MainWindow(QMainWindow):
 
     def _register_workspace(self, ws: Workspace) -> None:
         self.undo_group.addStack(ws.undo_stack)
-        ws.undo_stack.indexChanged.connect(lambda *_: self._undo_refresh_timer.start())
+        ws.undo_stack.indexChanged.connect(self._schedule_undo_refresh)
+
+    @pyqtSlot()
+    def _schedule_undo_refresh(self):
+        if not self._closing:
+            self._undo_refresh_timer.start()
 
     def _live_render_keys(self) -> set[tuple]:
         keys: set[tuple] = set()
@@ -4991,14 +5138,17 @@ class MainWindow(QMainWindow):
         self.close_tab(self._active_tab_id)
 
     def open_files(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF / OFD", "", "PDF / OFD (*.pdf *.ofd)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF / OFD / 图片", "",
+            "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
         if paths:
             self.open_files_in_tabs(paths)
 
     def open_files_in_tabs(self, paths: list[str]) -> bool:
-        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith((".pdf", ".ofd"))]
+        valid_paths = [os.path.abspath(p) for p in paths if p and (p.lower().endswith((".pdf", ".ofd")) or _is_image_path(p))]
         if not valid_paths:
             return False
+        if any(_is_image_path(path) for path in valid_paths):
+            return self._open_image_document(valid_paths)
         opened_any = False
         for index, path in enumerate(valid_paths, start=1):
             norm = os.path.normcase(path)
@@ -5037,29 +5187,75 @@ class MainWindow(QMainWindow):
         self._sync_tab_bar()
         return opened_any
 
+    def _open_image_document(self, paths):
+        incoming = []
+        for index, path in enumerate(paths, 1):
+            pages = self._try_load(path, index, len(paths))
+            if pages is None:
+                self._release_unused_docs()
+                return False
+            reason = self.store.operation_reason(pages, 'modify')
+            if reason:
+                self._warn_merge_readonly(path, pages, reason)
+                self._release_unused_docs()
+                return False
+            incoming.extend(pages)
+        if self.ws.pages or self.ws.dirty or self.ws.path:
+            ws = Workspace()
+            self._register_workspace(ws)
+            tab = _DocumentTab(ws=ws)
+            self._tabs.append(tab)
+            self.activate_tab(tab.tab_id)
+        self._zoom_mode = 'page'
+        self.ws.insert_pages(incoming, at_index=0)
+        self.ws.select_index(0)
+        self.refresh()
+        self._sync_tab_bar()
+        self.statusBar().showMessage('图片已作为页面加入；可继续拖入 PDF 或图片，保存时另存 PDF。', 6500)
+        return True
+
     def insert_dropped_files(
         self,
         paths: list[str],
         *,
         at_index: int | None = None,
         target_view: PageListView | None = None,
+        open_empty_in_tabs: bool = True,
     ) -> bool:
-        valid_paths = [os.path.abspath(p) for p in paths if p and p.lower().endswith((".pdf", ".ofd"))]
+        valid_paths = [os.path.abspath(p) for p in paths if p and (p.lower().endswith((".pdf", ".ofd")) or _is_image_path(p))]
         if not valid_paths:
             return False
-        if not self.ws.pages:
+        if not self.ws.pages and open_empty_in_tabs:
             return self.open_files_in_tabs(valid_paths)
         if not self._allow_operation("modify"):
             return False
         base_pos = len(self.ws.pages) if at_index is None else max(0, min(at_index, len(self.ws.pages)))
-        inserted_count = 0
-        cur_pos = base_pos
+        target_workspace,before=self.ws,tuple(self.ws.pages)
+        incoming = []
         for index, path in enumerate(valid_paths, start=1):
-            pages = self._load_one(path, index, len(valid_paths), insert_at=cur_pos)
-            if not pages:
-                break
-            cur_pos += len(pages)
-            inserted_count += len(pages)
+            pages = self._try_load(path, index, len(valid_paths))
+            if pages is None:
+                self._release_unused_docs()
+                return False
+            reason = self.store.operation_reason(pages, 'modify')
+            if reason:
+                self._warn_merge_readonly(path, pages, reason)
+                self._release_unused_docs()
+                return False
+            incoming.extend(pages)
+        if self.ws is not target_workspace or tuple(self.ws.pages)!=before:
+            self._release_unused_docs()
+            self.statusBar().showMessage('工作区已改变，请重新选择插入位置。',5000)
+            return False
+        return self.insert_prepared_pages(incoming,at_index=base_pos,target_view=target_view)
+
+    def insert_prepared_pages(self,incoming,*,at_index=None,target_view=None):
+        if not incoming or self.ws.pages and not self._allow_operation('modify'):
+            return False
+        base_pos=len(self.ws.pages) if at_index is None else max(0,min(at_index,len(self.ws.pages)))
+        incoming_outline = self.store.outline_entries(incoming, group_sources=True) if self.ws.outline is not None else None
+        self.ws.insert_pages(incoming, at_index=base_pos, outline=incoming_outline)
+        inserted_count = len(incoming)
         if inserted_count > 0:
             inserted_range = list(range(base_pos, base_pos + inserted_count))
             self.ws.set_selection(inserted_range, current=base_pos)
@@ -5071,6 +5267,78 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"已插入 {inserted_count} 页 · 可拖动调整顺序或 Ctrl+Z 撤销", 4000)
             return True
         return False
+
+    def paste_pages(self,checked=False,*,at_index=None,target_view=None):
+        if self._saving or getattr(self,'_task_dialog',None) is not None:
+            self.statusBar().showMessage('请等待当前任务结束后再粘贴页面。',5000)
+            return False
+        if self.ws.pages and not self._allow_operation('modify'):
+            return False
+        if target_view is None:
+            focus=QApplication.focusWidget()
+            target_view=next((view for view in (self.left_view,self.arrange_view)
+                              if focus is view or focus is not None and view.isAncestorOf(focus)),None)
+            target_view=target_view or (self.arrange_view if self._in_arrange() else self.left_view)
+        if at_index is None:
+            at_index=target_view.paste_gap()
+            if at_index is None:
+                selected=self.ws.target_indices()
+                at_index=max(selected)+1 if selected else len(self.ws.pages)
+        count=len(self.ws.pages)
+        try:
+            from app.pageclipboard import PageToken, read_pages
+            paths,image=read_pages()
+            if isinstance(image,PageToken):
+                copied=getattr(self,'_page_copy',None)
+                if copied is None or copied.token!=image.token:
+                    raise ValueError('页面复制记录已失效，请在当前窗口重新复制页面。')
+                pages=Workspace._unique_pages(copied.pages,copied.pages)
+                for operation in ('copy','modify'):
+                    self.store.require_operation(pages,operation)
+                inserted=self.insert_prepared_pages(pages,at_index=at_index,target_view=target_view)
+            elif paths:
+                self._page_copy=None
+                inserted=self.insert_dropped_files(list(paths),at_index=at_index,target_view=target_view,open_empty_in_tabs=False)
+            else:
+                self._page_copy=None
+                target_workspace,before=self.ws,tuple(self.ws.pages)
+                pages=run_operation(self,'粘贴图片为页面',lambda progress,cancel:
+                    self.store.load_clipboard_image(image,progress_callback=progress,cancel=cancel),cancellable=True)
+                if self.ws is not target_workspace or tuple(self.ws.pages)!=before:
+                    self._release_unused_docs()
+                    self.statusBar().showMessage('工作区已改变，请重新选择粘贴位置。',5000)
+                    return False
+                inserted=self.insert_prepared_pages(pages,at_index=at_index,target_view=target_view)
+            if inserted:
+                target_view.setFocus()
+                self.statusBar().showMessage(f'已粘贴 {len(self.ws.pages)-count} 页 · Ctrl+Z 可撤销，原文件保留。',6000)
+            else:
+                self._release_unused_docs()
+            return inserted
+        except OperationCancelled:
+            self.statusBar().showMessage('粘贴已取消，页面未改变。',5000)
+        except (ValueError,PdfError,OSError) as exc:
+            self.statusBar().showMessage(str(exc),6500)
+        self._release_unused_docs()
+        return False
+
+    def copy_pages(self,checked=False):
+        rows=self.ws.target_indices()
+        if not rows or self._saving or getattr(self,'_task_dialog',None) is not None:
+            return False
+        pages=tuple(self.ws.pages[row] for row in rows)
+        try:
+            self._finish_document_checks(pages)
+            for operation in ('copy','modify'):
+                self.store.require_operation(pages,operation)
+            from app.pageclipboard import write_pages
+            self._page_copy=write_pages(pages)
+            self._release_unused_docs()
+            self.statusBar().showMessage(f'已复制 {len(pages)} 页 · Ctrl+V 可粘贴到本文件或其他标签页',6500)
+            return True
+        except (ValueError,PdfError,OSError) as exc:
+            self.statusBar().showMessage(str(exc),6500)
+            return False
 
     def insert_pages_from_workspace(
         self,
@@ -5118,9 +5386,13 @@ class MainWindow(QMainWindow):
         return self.insert_pages_from_workspace(source_ws, sources, at_index=len(self.ws.pages))
 
     def append_files(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "追加 PDF", "", "PDF (*.pdf)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "合并 PDF / 图片", "",
+            "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
         if paths:
-            self._ingest(paths, replace=False)
+            if self.ws.pages or any(_is_image_path(path) for path in paths):
+                self.insert_dropped_files(paths)
+            else:
+                self._ingest(paths, replace=False)
 
     def open_startup_files(self, paths: list[str], mode: str = "") -> None:
         try:
@@ -5161,29 +5433,20 @@ class MainWindow(QMainWindow):
     def insert_files(self) -> None:
         if self.ws.pages and not self._allow_operation("modify"):
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, "插入 PDF", "", "PDF (*.pdf)")
+        paths, _ = QFileDialog.getOpenFileNames(self, "插入 PDF / 图片", "",
+            "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
         if not paths:
             return
         selected = self.ws.target_indices()
         has_selection = bool(selected)
         base_pos = (max(selected) + 1) if has_selection else len(self.ws.pages)
 
-        inserted_count = 0
-        cur_pos = base_pos
-        for index, path in enumerate(paths, start=1):
-            pages = self._load_one(path, index, len(paths), insert_at=cur_pos)
-            if not pages:
-                break
-            cur_pos += len(pages)
-            inserted_count += len(pages)
-
-        if inserted_count > 0:
-            inserted_range = list(range(base_pos, base_pos + inserted_count))
-            self.ws.set_selection(inserted_range, current=base_pos)
-            self.refresh()
-            self._sync_selection()
-            self.arrange_view.scrollTo(self.model.index(base_pos, 0))
-            self.arrange_view._show_landing(base_pos)
+        if not self.ws.pages and not any(_is_image_path(path) for path in paths):
+            self._ingest(paths, replace=True)
+            return
+        before_count = len(self.ws.pages)
+        if self.insert_dropped_files(paths, at_index=base_pos):
+            inserted_count = len(self.ws.pages) - before_count
             if has_selection:
                 self.statusBar().showMessage(f"已在第 {max(selected) + 1} 页后插入 {inserted_count} 页 · 可拖动排序，或在「页面工具」中匹配尺寸", 6500)
             else:
@@ -5230,13 +5493,14 @@ class MainWindow(QMainWindow):
     def _try_load(self, path: str, index: int = 1, total: int = 1, *, defer_safety=False):
         password = None
         is_ofd = path.lower().endswith('.ofd')
+        is_image = _is_image_path(path)
         # 多选打开时把批次信息放进标题，否则用户不知道进度条管的是第几个文件。
-        title = "打开 OFD" if is_ofd else "打开 PDF"
+        title = "导入图片" if is_image else ("打开 OFD" if is_ofd else "打开 PDF")
         if total > 1:
             title += f" · 文件 {index} / {total}"
         while True:
             try:
-                if is_ofd:
+                if is_ofd or is_image:
                     pages = run_operation(self, title, lambda progress, cancel:
                         self.store.load(path, progress_callback=progress, cancel=cancel), cancellable=True)
                     warnings = self.store._source(pages[0].source_id).import_warnings
@@ -5280,7 +5544,10 @@ class MainWindow(QMainWindow):
         incoming_outline = self.store.outline_entries(pages, group_sources=True) if self.ws.outline is not None else None
         if not self.ws.pages:
             self._zoom_mode = 'page'
-            self.ws.open_replace(pages, os.path.abspath(path))
+            if _is_image_path(path):
+                self.ws.insert_pages(pages, at_index=0)
+            else:
+                self.ws.open_replace(pages, os.path.abspath(path))
         elif insert_at is not None:
             self.ws.insert_pages(pages, at_index=insert_at, outline=incoming_outline)
         else:
@@ -5295,6 +5562,9 @@ class MainWindow(QMainWindow):
 
     def _release_unused_docs(self) -> None:
         keep = set(self.ws.live_sources())
+        copied=getattr(self,'_page_copy',None)
+        if copied is not None:
+            keep.update(ref.source_id for ref in copied.pages)
         for tab in getattr(self, "_tabs", ()):
             keep |= tab.ws.live_sources()
         if set(self.store._sources) <= keep:
@@ -5864,6 +6134,10 @@ class MainWindow(QMainWindow):
         from app.deskewui import open_deskew
         open_deskew(self)
 
+    def open_whitening(self):
+        from app.scanwhiteui import open_whitening
+        open_whitening(self)
+
     def split(self) -> None:
         if not self._allow_operation("modify") or not self._allow_operation("copy"):
             return
@@ -6062,14 +6336,16 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def dragEnterEvent(self, event) -> None:
-        if _pdf_paths_from_mime(event.mimeData()):
+        if _document_paths_from_mime(event.mimeData()):
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
-        paths = _pdf_paths_from_mime(event.mimeData())
+        paths = _document_paths_from_mime(event.mimeData())
         if paths:
             pos = event.position().toPoint()
-            if self._in_arrange() and self.ws.pages and self.stack.geometry().contains(pos):
+            image_document = self.ws.path is None and any(_is_image_path(ref.source_path) for ref in self.ws.pages)
+            if self.ws.pages and (any(_is_image_path(path) for path in paths) or image_document
+                                  or (self._in_arrange() and self.stack.geometry().contains(pos))):
                 self.insert_dropped_files(paths, at_index=len(self.ws.pages), target_view=self.arrange_view)
             else:
                 self.open_files_in_tabs(paths)

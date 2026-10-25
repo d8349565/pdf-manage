@@ -637,7 +637,8 @@ def test_reading_settings_stay_available_from_the_view_menu(loaded_window):
     window = loaded_window
     view_menu = next(action.menu() for action in window._menubar.actions() if action.text() == '视图')
     assert window.reading_settings_menu.menuAction() in view_menu.actions()
-    assert window.reading_orb.restore_action in view_menu.actions()
+    restore=next(action.menu() for action in view_menu.actions() if action.text()=='界面恢复')
+    assert window.reading_orb.restore_action in restore.actions()
     window.reading_zoom_actions['width'].trigger()
     assert window._zoom_mode == 'width'
     assert window.reading_zoom_actions['width'].isChecked()
