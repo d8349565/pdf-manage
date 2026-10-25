@@ -1,0 +1,33 @@
+纸序 PDF：开源许可与分发说明
+
+本项目自行编写且有权授权的源码使用 MIT 许可，全文见同目录 LICENSE
+或源码仓库根目录 LICENSE。第三方代码、运行库、字体和其他资源保留各自
+的许可与版权，不因项目采用 MIT 而变更许可。
+
+Windows 程序组合了 PyMuPDF / MuPDF（GNU AGPL 第 3 版）、PyQt6
+（GNU GPL 第 3 版）和 Qt（本构建所用 wheel 附带 LGPL 第 3 版）。
+该组合发行不能仅按 MIT 对外授权；应同时满足适用的 AGPL/GPL/LGPL 条款。
+全文分别见 AGPL-3.0.txt、GPL-3.0.txt、LGPL-3.0.txt，以及 dependencies/
+中的上游原始许可与声明。MuPDF 的版权说明另见 MuPDF-NOTICE.txt。
+PyQt6: Copyright (c) 2026 Riverbank Computing Limited <info@riverbankcomputing.com>.
+PyQt6 按现状提供，不提供设计、适销性或特定用途适用性等担保。
+
+无论是否收费、是否修改代码，重新分发程序时均须遵守适用许可，包括保留
+许可和版权声明、告知接收者权利，并按条款提供与程序匹配的对应源码及构建
+材料。自有源码的 MIT 许可不免除这些义务。开源许可不禁止商业使用；若无法
+遵守适用的开源条款，应向相关权利人取得所需的其他授权。
+
+本软件按现状提供，不提供适销性、特定用途适用性等担保。具体权利、义务和
+责任限制以上游完整许可文本为准，本说明不增加限制或替代上游许可。
+
+本次构建实际使用的依赖版本、对应源码和源码获取方式见 SOURCES.txt。
+dependencies/ 保留各 Python 依赖发行物提供的许可，包括其中的第三方声明。
+Python 的许可全文见 python/LICENSE.txt。PyInstaller 的许可与 bootloader
+例外见 dependencies/PyInstaller/，不能把其构建工具许可简单等同于应用许可。
+本机已有 Microsoft Word 仅通过系统接口调用，不包含在本程序发行物中。
+
+官方源码及同版下载：
+https://github.com/d8349565/pdf-manage/releases
+
+首次补齐这套交付材料的源码构建不会改写既有发布附件。重新分发时须使用
+重新构建并通过许可检查的程序目录、安装器和绿色 ZIP，不可复用缺少许可的旧包。

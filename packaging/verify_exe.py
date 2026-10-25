@@ -19,6 +19,7 @@ from PyInstaller.archive.readers import CArchiveReader
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from app import APP_NAME, APP_EXE_NAME, APP_SLUG, __version__
+from license_bundle import verify_license_bundle
 
 
 def main() -> None:
@@ -70,6 +71,7 @@ def main() -> None:
     archive = CArchiveReader(str(exe))
     internal = exe.parent / "_internal"
     assert internal.is_dir(), "Missing _internal dependency directory"
+    license_files = verify_license_bundle(internal)
     names = set(archive.toc) | {p.relative_to(internal).as_posix()
                                 for p in internal.rglob("*") if p.is_file()}
     assert any("qwindows.dll" in n for n in names)
@@ -92,7 +94,8 @@ def main() -> None:
         assert not any(unwanted.lower() in n.lower() for n in names), unwanted
 
     (ROOT / "build").mkdir(exist_ok=True)
-    report = {"ok": True, "checks": ["x64 PE resources, version, icons and packaged dependencies"],
+    report = {"ok": True, "checks": ["x64 PE resources, version, icons, packaged dependencies and license notices"],
+              "license_files": len(license_files),
               "runtime_tests": "not_run", "functional_tests": "not_run"}
     if args.skip_runtime or not args.run_runtime:
         write_report(exe, archive, report)

@@ -17,10 +17,12 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from app import APP_EXE_NAME, __version__
+from license_bundle import verify_license_bundle
 
 
 def inspect_archive(archive_path, executable):
     prefix = 'ZhiXuPDF-Portable/'
+    license_files = verify_license_bundle(Path(executable).parent / '_internal')
     with zipfile.ZipFile(archive_path) as archive:
         names = archive.namelist()
         assert len({name.casefold() for name in names}) == len(names)
@@ -39,6 +41,7 @@ def inspect_archive(archive_path, executable):
                 assert str(relative) in (APP_EXE_NAME, 'portable.ini', '绿色版使用说明.txt')
         assert prefix + APP_EXE_NAME in names and prefix + 'portable.ini' in names
         assert any(name.startswith(prefix + '_internal/') for name in names)
+        assert all(prefix + '_internal/' + name in names for name in license_files), 'Missing license files in portable ZIP'
         assert archive.testzip() is None
         expected = hashlib.sha256(Path(executable).read_bytes()).hexdigest()
         assert hashlib.sha256(archive.read(prefix + APP_EXE_NAME)).hexdigest() == expected

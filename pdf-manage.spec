@@ -13,6 +13,8 @@ from PyInstaller.utils.win32.versioninfo import (
 ROOT = Path(SPECPATH).resolve()
 sys.path.insert(0, str(ROOT))
 from app import APP_NAME, APP_SLUG, __version__
+sys.path.insert(0, str(ROOT / "packaging"))
+from license_bundle import collect_license_data
 
 VERSION_PARTS = tuple(map(int, __version__.split(".")))
 if len(VERSION_PARTS) != 3 or any(v < 0 or v > 65535 for v in VERSION_PARTS):
@@ -134,6 +136,7 @@ a = Analysis(
            (str(ROOT / "app" / "assets" / "app.png"), "app/assets"),
            (str(ROOT / "app" / "assets" / "pdf.svg"), "app/assets"),
            (str(ROOT / "packaging" / "licenses"), "licenses")]
+          + collect_license_data(ROOT)
           + ([(str(DONATION_IMAGE), "app/assets")] if DONATION_IMAGE.is_file() else []),
     hiddenimports=collect_submodules("app")
     + [

@@ -1023,6 +1023,10 @@ def test_annotation_tools_replace_robustness(qapp, tmp_path):
     finally:
         host.ws.reset()
         host.close()
+        from PyQt6.QtCore import QThreadPool
+        QThreadPool.globalInstance().waitForDone(10000)
+        host.deleteLater()
+        qapp.processEvents()
         host.store.close_all()
 
 

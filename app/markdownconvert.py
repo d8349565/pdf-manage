@@ -3,14 +3,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import math
 import os
+import stat
 import tempfile
-import urllib.parse
-import urllib.request
+from xml.etree import ElementTree as ET
 
 import markdown as md_lib
 from PyQt6 import QtSvg
-from PyQt6.QtCore import QByteArray, QMarginsF, QRectF, QSize, QSizeF, Qt, QUrl
+from PyQt6.QtCore import QByteArray, QBuffer, QIODevice, QMarginsF, QRectF, QSizeF, Qt, QUrl
 from PyQt6.QtGui import (
     QFont, QFontDatabase, QImage, QImageReader, QPageLayout, QPageSize, QPainter,
     QPdfWriter, QTextDocument,
@@ -28,6 +29,8 @@ class MarkdownPdfOptions:
 
 
 _font_family = None
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_PIXELS = 20_000_000
 
 
 def markdown_font():
@@ -64,57 +67,59 @@ class _LocalDocument(QTextDocument):
         return image
 
     def _load_image(self, name, url_str):
-        # 1. Network image / badge (e.g. shields.io, github avatars, web links)
-        if name.scheme() in ("http", "https"):
-            try:
-                encoded_url = urllib.parse.quote(url_str, safe=":/%?=&,-+#@_")
-                req = urllib.request.Request(
-                    encoded_url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                )
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = resp.read()
-                return self._bytes_to_image(data, url_str)
-            except Exception as exc:
-                self.warnings.append(f"图片未加载：{url_str}")
-                return None
-
-        # 2. Local image
-        candidates = []
-        if name.isLocalFile():
-            candidates.append(Path(name.toLocalFile()))
-        candidates.append(self.root / name.path().lstrip("/"))
-        candidates.append(Path(name.path()))
-        candidates.append(Path.cwd() / name.path().lstrip("/"))
-
-        target = None
-        for c in candidates:
-            try:
-                if c.is_file():
-                    target = c
-                    break
-            except OSError:
-                pass
-
-        if target is None:
-            self.warnings.append(f"图片未找到：{url_str}")
+        # Reject remote names before any filesystem call, including Windows UNC paths.
+        if not name.isValid() or name.scheme().lower() not in ("", "file") or name.host():
+            self.warnings.append(f"已跳过非本地图片：{url_str}")
             return None
-
         try:
-            data = target.read_bytes()
+            local = name.toLocalFile() if name.isLocalFile() else name.path(QUrl.ComponentFormattingOption.FullyDecoded)
+            if not local or local.replace("\\", "/").startswith("//"):
+                raise ValueError("不加载网络共享或设备路径中的图片")
+            target = Path(os.path.abspath(self.root / local))
+            if not target.is_relative_to(self.root) or target == self.root:
+                raise ValueError("图片须位于 Markdown 所在目录或子目录")
+            # Check each component before following it; junctions may point at network shares.
+            current = self.root
+            for part in target.relative_to(self.root).parts:
+                if ":" in part:
+                    raise ValueError("不加载设备路径或文件数据流中的图片")
+                current = current / part
+                info = current.lstat()
+                if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                    raise ValueError("不加载通过链接引用的图片")
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError("图片路径不是普通文件")
+            with target.open("rb") as stream:
+                data = stream.read(MAX_IMAGE_BYTES + 1)
+            if len(data) > MAX_IMAGE_BYTES:
+                raise ValueError("单张图片不能超过 10 MB")
             return self._bytes_to_image(data, target.name)
-        except Exception as exc:
-            self.warnings.append(f"图片无法读取：{target.name}")
+        except (OSError, ValueError, ET.ParseError) as exc:
+            self.warnings.append(f"图片未加载：{url_str}（{exc}）")
             return None
 
     def _bytes_to_image(self, data, name_hint):
         is_svg = name_hint.lower().endswith(".svg") or b"<svg" in data[:1024]
         if is_svg:
+            # An allowed SVG must not introduce a second, unchecked resource loader.
+            xml_header = data.replace(b"\x00", b"").lower()
+            if b"<!doctype" in xml_header or b"<!entity" in xml_header:
+                raise ValueError("SVG 不支持文档类型或实体声明")
+            root = ET.fromstring(data)
+            for index, element in enumerate(root.iter()):
+                if index >= 10000:
+                    raise ValueError("SVG 图形过于复杂")
+                for key, value in element.attrib.items():
+                    if key.rsplit("}", 1)[-1].lower() == "href" and not value.startswith("#"):
+                        raise ValueError("SVG 不支持引用外部图片或文件")
             renderer = QtSvg.QSvgRenderer(QByteArray(data))
             if not renderer.isValid():
-                return None
+                raise ValueError("SVG 图片无效")
             sz = renderer.defaultSize()
-            scale = 2.5  # High-DPI for crisp vector badges and icons
+            if sz.width() <= 0 or sz.height() <= 0:
+                raise ValueError("SVG 图片尺寸无效")
+            scale = min(2.5, 8192 / max(sz.width(), sz.height()),
+                        math.sqrt(MAX_IMAGE_PIXELS / (sz.width() * sz.height())))
             w, h = max(1, int(sz.width() * scale)), max(1, int(sz.height() * scale))
             img = QImage(w, h, QImage.Format.Format_ARGB32)
             img.fill(0)
@@ -123,9 +128,18 @@ class _LocalDocument(QTextDocument):
             painter.end()
             return img
 
-        img = QImage.fromData(data)
+        buffer = QBuffer()
+        buffer.setData(QByteArray(data))
+        buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+        reader = QImageReader(buffer)
+        if bytes(reader.format()).lower() in (b"svg", b"svgz"):
+            raise ValueError("此 SVG 编码或压缩格式暂不支持，请另存为普通 SVG")
+        size = reader.size()
+        if size.width() <= 0 or size.height() <= 0 or size.width() * size.height() > MAX_IMAGE_PIXELS:
+            raise ValueError("图片尺寸无效或超过 2000 万像素")
+        img = reader.read()
         if img.isNull():
-            return None
+            raise ValueError("图片无法解码")
         # Keep high definition, but scale down if it exceeds printable width
         if img.width() > self.max_width:
             img = img.scaledToWidth(self.max_width, Qt.TransformationMode.SmoothTransformation)

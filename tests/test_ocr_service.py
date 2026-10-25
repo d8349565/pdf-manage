@@ -30,6 +30,19 @@ def make_runtime(root):
     return root
 
 
+def test_compatible_runtime_is_independent_of_main_program_version(tmp_path,monkeypatch):
+    runtime=make_runtime(tmp_path/'legacy-package')
+    manifest_path=runtime/'manifest.json'
+    manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+    manifest['app_series']='0.9'
+    manifest_path.write_text(json.dumps(manifest),encoding='utf-8')
+    before=manifest_path.read_bytes()
+    monkeypatch.setattr('app.__version__','99.99.99')
+    resolved,checked=validate_runtime(runtime)
+    assert resolved==runtime.resolve() and checked['app_series']=='0.9'
+    assert manifest_path.read_bytes()==before
+
+
 def test_install_retries_transient_windows_directory_lock(tmp_path,monkeypatch):
     source=make_runtime(tmp_path/'package'); archive=tmp_path/'package.zip'
     with zipfile.ZipFile(archive,'w') as bundle:
