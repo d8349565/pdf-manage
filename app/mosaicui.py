@@ -127,7 +127,7 @@ class MosaicDialog(QDialog):
         self.strength.setVisible(not solid)
         self.color_button.setVisible(solid)
         self.color_button.setText("选择颜色 · " + self.color.name().upper())
-        self.color_button.setIcon(toolbar_icon("square", self.color.name(), 16))
+        self.color_button.setIcon(toolbar_icon("square", self.color.name(), 16, themed=False))
         self.strength_label.setText("像素块大小" if self.style.currentData() == "pixelate" else "模糊强度")
         self.slider.setToolTip("数值越大，遮挡越强；效果按页面尺寸计算，不受阅读缩放影响。")
         self.generation += 1

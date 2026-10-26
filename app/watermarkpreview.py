@@ -106,7 +106,8 @@ class PagePreview(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         if self.image is None or self.paper.isEmpty():
-            painter.setPen(QColor("#64748B"))
+            from app.themes import ui_color
+            painter.setPen(QColor(ui_color("muted")))
             painter.drawText(self.contentsRect(), Qt.AlignmentFlag.AlignCenter, self.message)
             return
         ratio = self.devicePixelRatioF()

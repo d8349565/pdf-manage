@@ -1,5 +1,6 @@
 """Lazily created outline and review controls for the existing reader."""
 from __future__ import annotations
+from app.themes import set_theme_style, ui_color
 
 from dataclasses import replace
 import math
@@ -25,7 +26,7 @@ class NoteViewerDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("便签备注")
         self.resize(380, 260)
-        self.setStyleSheet("""
+        set_theme_style(self, """
             QDialog { background: #FFFFFF; }
             QLabel#noteHeader { color: #0F766E; font-size: 14px; font-weight: 600; }
             QTextEdit { border: 1.5px solid #FDE047; border-radius: 8px; padding: 10px; font-size: 13px; color: #713F12; background: #FEFCE8; }
@@ -152,7 +153,7 @@ class OutlinePanel(QWidget):
             item.setData(0, Qt.ItemDataRole.UserRole, index)
             if entry.target_id is not None and target is None:
                 item.setToolTip(0, "目标页已删除；撤销删除可恢复跳转。")
-                item.setForeground(0, QColor("#D97706"))
+                item.setForeground(0, QColor(ui_color("warning")))
             if parents:
                 parents[-1].addChild(item)
             else:
@@ -340,7 +341,7 @@ class AnnotationHoverBar(QFrame):
         self._hide_timer.timeout.connect(self.hide)
 
         self.setObjectName("annotHoverBar")
-        self.setStyleSheet("""
+        set_theme_style(self, """
             QFrame#annotHoverBar {
                 background: #FFFFFF;
                 border: 1px solid #D7E8E4;
@@ -383,7 +384,7 @@ class AnnotationHoverBar(QFrame):
         layout.setSpacing(6)
 
         self.content_box = QWidget(self)
-        self.content_box.setStyleSheet("background: transparent;")
+        set_theme_style(self.content_box, "background: transparent;")
         c_layout = QVBoxLayout(self.content_box)
         c_layout.setContentsMargins(0, 0, 0, 0)
         c_layout.setSpacing(4)
@@ -641,7 +642,7 @@ class AnnotationTools(QWidget):
         sep1 = self.options_separator = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
         sep1.setFixedSize(1, 20)
-        sep1.setStyleSheet('background: #DCE5DF; border: none;')
+        set_theme_style(sep1, 'background: #DCE5DF; border: none;')
         bar_layout.addWidget(sep1)
 
         # Color picker swatch button
@@ -667,7 +668,7 @@ class AnnotationTools(QWidget):
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setStyleSheet("color: #E2EEEC; margin: 4px 2px;")
+        set_theme_style(sep2, "color: #E2EEEC; margin: 4px 2px;")
         sep2.hide()
         bar_layout.addWidget(sep2)
 
@@ -752,7 +753,7 @@ class AnnotationTools(QWidget):
 
     def _update_color_button_style(self):
         name = self.color.name()
-        self.color_button.setIcon(toolbar_icon("circle", name, 18))
+        self.color_button.setIcon(toolbar_icon("circle", name, 18, themed=False))
 
     def choose_color(self):
         color = QColorDialog.getColor(self.color, self, "选择批注颜色")
@@ -1392,7 +1393,7 @@ class AnnotationTools(QWidget):
 
         actions = QFrame(self.view.viewport())
         actions.setObjectName("inlineReplaceActions")
-        actions.setStyleSheet(
+        set_theme_style(actions,
             "QFrame#inlineReplaceActions { background: #FFFFFF; border: 1px solid #D7E8E4; border-radius: 6px; } "
             "QToolButton { min-width: 24px; min-height: 24px; padding: 0; border-radius: 4px; } "
             "QToolButton#apply { background: #0F766E; border: none; } "

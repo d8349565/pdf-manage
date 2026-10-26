@@ -1,4 +1,5 @@
 """Image-only PDF settings and a recovery route for uncertain signatures."""
+from app.themes import set_theme_style
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QUrl
@@ -33,7 +34,7 @@ class RasterDialog(QDialog):
         self.count, self.current, self.selected = count, current, tuple(selected)
         self.setWindowTitle('制作影像副本' if recovery else 'PDF 转图片版')
         self.setObjectName('ocrSettings')
-        self.setStyleSheet(SETTINGS_QSS)
+        set_theme_style(self, SETTINGS_QSS)
         self.setMinimumWidth(580)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)

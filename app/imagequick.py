@@ -1,4 +1,5 @@
 """Small standalone image actions for Explorer; no PDF reader window is created."""
+from app.themes import set_theme_style
 from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
@@ -46,7 +47,7 @@ class ImageQuickDialog(QDialog):
         if mode == 'pdf' and len(self.paths) > 1:
             title = '合并图片为 PDF'
         self.setWindowTitle(f'{title} - 纸序 PDF')
-        self.setStyleSheet(STYLE)
+        set_theme_style(self, STYLE)
         self.resize(520, 260)
         self.setMinimumWidth(440)
         layout = QVBoxLayout(self)

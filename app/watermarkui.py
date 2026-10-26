@@ -1,4 +1,5 @@
 """Compact watermark controls with asynchronous page preview."""
+from app.themes import set_theme_style
 import base64
 import uuid
 from collections import OrderedDict
@@ -77,7 +78,7 @@ class WatermarkDialog(QDialog):
         self._background_size = (1, 1)
         self.setObjectName("watermarkDialog")
         self.setWindowTitle("水印 · 纸序 PDF")
-        self.setStyleSheet(STYLE)
+        set_theme_style(self, STYLE)
         self.setMinimumSize(700, 500)
         available = host.screen().availableGeometry()
         self.resize(min(940, available.width() - 60), min(650, available.height() - 80))
@@ -405,7 +406,7 @@ class WatermarkDialog(QDialog):
     def update_color(self):
         from app.icons import toolbar_icon
         self.color_button.setText(self.color.name().upper())
-        self.color_button.setIcon(toolbar_icon("circle", self.color.name(), 16))
+        self.color_button.setIcon(toolbar_icon("circle", self.color.name(), 16, themed=False))
 
     def set_status(self, text, error=False):
         if self.status.text() != text:

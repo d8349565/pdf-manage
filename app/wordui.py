@@ -1,5 +1,6 @@
 """Standalone Word batch window, separate from the PDF reading workspace."""
 from __future__ import annotations
+from app.themes import set_theme_style, ui_color
 
 import os
 from collections import Counter
@@ -41,7 +42,7 @@ QPushButton[mode="true"] {
 }
 QPushButton[mode="true"]:hover {
     color: #134E4A;
-    background: rgba(255, 255, 255, 0.6);
+    background: #F0FDFA;
 }
 QPushButton[mode="true"]:checked {
     background: #FFFFFF;
@@ -114,7 +115,7 @@ class WordConverterWindow(QWidget):
         self._message = ""
         self.setWindowTitle(f"批量 {self.source_kind} 转 {self.target_kind} · {APP_NAME}")
         self.setWindowIcon(brand_icon())
-        self.setStyleSheet(STYLESHEET + MODE_QSS)
+        set_theme_style(self, STYLESHEET + MODE_QSS)
         self.resize(1030, 693)
         self.setMinimumSize(720, 460)
         self.inputs = []
@@ -144,7 +145,7 @@ class WordConverterWindow(QWidget):
         top_row = QHBoxLayout()
         top_row.setSpacing(10)
         self.title = QLabel(f"批量 {self.source_kind} 转 {self.target_kind}")
-        self.title.setStyleSheet("font-size: 18px; font-weight: 700; color: #134E4A;")
+        set_theme_style(self.title, "font-size: 18px; font-weight: 700; color: #134E4A;")
         top_row.addWidget(self.title)
         top_row.addStretch()
 
@@ -190,7 +191,7 @@ class WordConverterWindow(QWidget):
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
         caption = QLabel("待转换文件")
-        caption.setStyleSheet("font-size: 15px; font-weight: 600; color: #134E4A;")
+        set_theme_style(caption, "font-size: 15px; font-weight: 600; color: #134E4A;")
         caption.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         header_row.addWidget(caption)
 
@@ -257,7 +258,7 @@ class WordConverterWindow(QWidget):
 
         tip = QLabel("双击第二列可单独指定保存位置 · 选中按 Delete 移除")
         tip.setObjectName("hint")
-        tip.setStyleSheet("font-size: 12px; color: #64748B;")
+        set_theme_style(tip, "font-size: 12px; color: #64748B;")
         tip.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
         action_row.addWidget(tip)
         card_layout.addLayout(action_row)
@@ -265,14 +266,14 @@ class WordConverterWindow(QWidget):
         # 4. 微浅分割线
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.HLine)
-        divider.setStyleSheet("background: #E2EEEC; min-height: 1px; max-height: 1px; border: none;")
+        set_theme_style(divider, "background: #E2EEEC; min-height: 1px; max-height: 1px; border: none;")
         card_layout.addWidget(divider)
 
         # 5. 输出位置控制行（融入卡片内，防止无节制横向拉伸）
         output_row = QHBoxLayout()
         output_row.setSpacing(10)
         out_caption = QLabel("输出位置")
-        out_caption.setStyleSheet("font-weight: 600; color: #134E4A; font-size: 13px;")
+        set_theme_style(out_caption, "font-weight: 600; color: #134E4A; font-size: 13px;")
         out_caption.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         output_row.addWidget(out_caption)
 
@@ -298,11 +299,11 @@ class WordConverterWindow(QWidget):
         card_layout.addLayout(output_row)
 
         self.output_hint = hint(card_layout, "")
-        self.output_hint.setStyleSheet("font-size: 12px; color: #64748B;")
+        set_theme_style(self.output_hint, "font-size: 12px; color: #64748B;")
 
         # 6. 高级选项（收纳入卡片底部，消灭孤立控件）
         self.advanced = QCheckBox("高级选项")
-        self.advanced.setStyleSheet("font-size: 13px; color: #4D6B67;")
+        set_theme_style(self.advanced, "font-size: 13px; color: #4D6B67;")
         card_layout.addWidget(self.advanced)
 
         self.options = QWidget()
@@ -328,7 +329,7 @@ class WordConverterWindow(QWidget):
         options_layout.addWidget(self.pdf_mode_row)
         self.pdf_mode.currentIndexChanged.connect(self._update_direction_labels)
         self.engine_hint = hint(options_layout, "")
-        self.engine_hint.setStyleSheet("font-size: 12px; color: #64748B;")
+        set_theme_style(self.engine_hint, "font-size: 12px; color: #64748B;")
         self.options.hide()
         self.advanced.toggled.connect(self.options.setVisible)
         self.recursive.toggled.connect(self.rescan)
@@ -346,12 +347,12 @@ class WordConverterWindow(QWidget):
         self.summary = QLabel()
         self.summary.setObjectName("hint")
         self.summary.setWordWrap(True)
-        self.summary.setStyleSheet("color: #134E4A; font-size: 13px; font-weight: 600;")
+        set_theme_style(self.summary, "color: #134E4A; font-size: 13px; font-weight: 600;")
         self.summary.setMinimumWidth(360)
         self.notice = QLabel("复杂排版和缺失字体请核对转换结果。已有同名输出默认跳过。")
         self.notice.setObjectName("hint")
         self.notice.setWordWrap(True)
-        self.notice.setStyleSheet("color: #64748B; font-size: 12px;")
+        set_theme_style(self.notice, "color: #64748B; font-size: 12px;")
         self.notice.setMinimumWidth(360)
         info_box.addWidget(self.summary)
         info_box.addWidget(self.notice)
@@ -672,17 +673,17 @@ class WordConverterWindow(QWidget):
                 self.table.item(row, 0).text() in self._manual_targets else "双击可选择保存位置"
             item.setToolTip(f"{text}\n\n{manual}")
             if self.table.item(row, 0) and self.table.item(row, 0).text() in self._manual_targets:
-                item.setForeground(QColor("#0F766E"))
+                item.setForeground(QColor(ui_color("accent")))
         elif column == 2:
             item.setToolTip(text)
             if "跳过" in text:
-                item.setForeground(QColor("#D97706"))
+                item.setForeground(QColor(ui_color("warning")))
             elif "成功" in text:
-                item.setForeground(QColor("#059669"))
+                item.setForeground(QColor(ui_color("success")))
             elif "失败" in text:
-                item.setForeground(QColor("#DC2626"))
+                item.setForeground(QColor(ui_color("danger")))
             elif "待转换" in text:
-                item.setForeground(QColor("#0D9488"))
+                item.setForeground(QColor(ui_color("accent")))
         else:
             item.setToolTip(text)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)

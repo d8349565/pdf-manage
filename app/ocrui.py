@@ -1,4 +1,5 @@
 """Small OCR setup/result dialogs using the existing task runner."""
+from app.themes import set_theme_style
 from pathlib import Path
 
 from PyQt6.QtCore import QUrl, Qt
@@ -58,7 +59,7 @@ class OCRDialog(QDialog):
         self.setWindowTitle('OCR 文字识别')
         from app.storageui import SETTINGS_QSS, settings_form
         self.setObjectName('ocrSettings')
-        self.setStyleSheet(SETTINGS_QSS)
+        set_theme_style(self, SETTINGS_QSS)
         self.setMinimumWidth(520)
         layout = QVBoxLayout(self)
         layout.setSpacing(12)

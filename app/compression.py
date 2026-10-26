@@ -1,5 +1,6 @@
 """Compression preview prepared in temporary files, exported only on request."""
 from __future__ import annotations
+from app.themes import set_theme_style
 
 import os
 import tempfile
@@ -73,7 +74,7 @@ class CompressionDialog(QDialog):
         self.advanced.hide()
         self.note = hint(layout, "保留图片像素、文字和矢量，自动比较更小的无损编码。需要更小体积时，可选择其他档位。")
         self.summary = hint(layout, "点击计算后，查看压缩前后大小和页面效果。")
-        self.summary.setStyleSheet('font-size: 16px; font-weight: 600; color: #174A3A;')
+        set_theme_style(self.summary, 'font-size: 16px; font-weight: 600; color: #174A3A;')
         self.result_note = hint(layout, '')
         self.result_note.hide()
         toolbar = QHBoxLayout()

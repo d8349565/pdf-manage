@@ -1,4 +1,5 @@
 """Confirm proposed paper corners in synchronized, continuous before/after previews."""
+from app.themes import set_theme_style
 from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
@@ -230,7 +231,7 @@ class WhiteningDialog(QDialog):
         body=QHBoxLayout();body.setSpacing(14)
         panel=QWidget();panel.setFixedWidth(235)
         controls=QVBoxLayout(panel);controls.setContentsMargins(0,0,0,0);controls.setSpacing(10)
-        heading=QLabel('扫描件增强');heading.setStyleSheet('font-size: 20px; font-weight: 600;')
+        heading=QLabel('扫描件增强');set_theme_style(heading, 'font-size: 20px; font-weight: 600;')
         controls.addWidget(heading)
         controls.addWidget(QLabel('效果'))
         self.mode=ClearComboBox()
@@ -269,7 +270,7 @@ class WhiteningDialog(QDialog):
                 spin=QDoubleSpinBox();spin.setRange(0,100);spin.setDecimals(1);spin.setSuffix('%')
                 spin.setKeyboardTracking(False)
                 spin.setMaximumWidth(86)
-                spin.setStyleSheet('QDoubleSpinBox {padding: 4px 3px; min-height: 28px;}')
+                set_theme_style(spin, 'QDoubleSpinBox {padding: 4px 3px; min-height: 28px;}')
                 spin.setAccessibleName(name+axis+'位置');spin.valueChanged.connect(self.coordinate_changed)
                 grid.addWidget(spin,i,j+1);pair.append(spin)
             self.corner_inputs.append(pair)
@@ -320,12 +321,12 @@ class WhiteningDialog(QDialog):
         self.save_image=QPushButton('导出当前页 PNG');self.save_image.clicked.connect(self.export_image)
         footer.addWidget(self.save_image)
         warning=QLabel('增强页转为图片，文字层不保留；原件保留，可撤销。')
-        warning.setWordWrap(True);warning.setStyleSheet('color: #5d6f68; font-size: 12px;')
+        warning.setWordWrap(True);set_theme_style(warning, 'color: #5d6f68; font-size: 12px;')
         footer.addWidget(warning,1)
         self.buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         apply=self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         apply.setText('应用到文档');apply.setDefault(True)
-        apply.setStyleSheet('QPushButton {background: #0f766e; color: white; border-color: #0f766e; font-weight: 600;} QPushButton:disabled {background: #dbe7e0; color: #7e9187;}')
+        set_theme_style(apply, 'QPushButton {background: #0f766e; color: white; border-color: #0f766e; font-weight: 600;} QPushButton:disabled {background: #dbe7e0; color: #7e9187;}')
         self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
         self.buttons.accepted.connect(self.accept);self.buttons.rejected.connect(self.reject)
         footer.addWidget(self.buttons);layout.addLayout(footer)

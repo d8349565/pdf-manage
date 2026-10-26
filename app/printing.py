@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.themes import set_theme_style, ui_color
 
 from collections import OrderedDict
 from bisect import bisect_left
@@ -612,10 +613,10 @@ class SheetPreview(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        painter.fillRect(event.rect(), QColor("#EDF2F1"))
+        painter.fillRect(event.rect(), QColor(ui_color("#EDF2F1")))
 
         if not self._rows:
-            painter.setPen(QColor("#94A3B8"))
+            painter.setPen(QColor(ui_color("#94A3B8")))
             painter.drawText(
                 self.rect(), Qt.AlignmentFlag.AlignCenter, "当前没有要打印的页面"
             )
@@ -637,7 +638,7 @@ class SheetPreview(QWidget):
         x0 = (self.width() - row.row_w) / 2
         duplex = self.duplex != "none"
 
-        painter.setPen(QColor("#64748B"))
+        painter.setPen(QColor(ui_color("#64748B")))
         painter.setFont(self._font(10, bold=True))
         painter.drawText(
             QRectF(x0, row.top - self.HEADER_H, row.row_w, self.HEADER_H),
@@ -743,7 +744,7 @@ class SheetPreview(QWidget):
         if binding:
             self._paint_binding_edge(painter, rect, binding)
 
-        painter.setPen(QColor("#64748B"))
+        painter.setPen(QColor(ui_color("#64748B")))
         painter.setFont(self._font(9))
         painter.drawText(
             QRectF(rect.x(), rect.bottom() + 2, rect.width(), self.CAPTION_H),
@@ -791,7 +792,7 @@ class SheetPreview(QWidget):
 
     def _paint_flip_arrow(self, painter: QPainter, gap: QRectF, axis: str) -> None:
         cx, cy = gap.center().x(), gap.center().y()
-        painter.setPen(QPen(QColor("#94A3B8"), 2))
+        painter.setPen(QPen(QColor(ui_color("#94A3B8")), 2))
         if axis == "lr":
             painter.drawLine(int(cx - 10), int(cy), int(cx + 10), int(cy))
             painter.drawLine(int(cx + 10), int(cy), int(cx + 4), int(cy - 5))
@@ -800,7 +801,7 @@ class SheetPreview(QWidget):
             painter.drawLine(int(cx), int(cy - 10), int(cx), int(cy + 10))
             painter.drawLine(int(cx), int(cy + 10), int(cx - 5), int(cy + 4))
             painter.drawLine(int(cx), int(cy + 10), int(cx + 5), int(cy + 4))
-        painter.setPen(QColor("#94A3B8"))
+        painter.setPen(QColor(ui_color("#94A3B8")))
         painter.setFont(self._font(8))
         painter.drawText(
             QRectF(gap.x(), cy + 14, gap.width(), 16),
@@ -881,7 +882,7 @@ class PrintDialog(QDialog):
         self.setWindowTitle("打印")
         self.resize(1120, 760)
         self.setMinimumSize(880, 600)
-        self.setStyleSheet(
+        set_theme_style(self,
             """
             QDialog {
                 background: #FFFFFF;
@@ -1000,7 +1001,7 @@ class PrintDialog(QDialog):
 
         self.btn_prev = self._tool_btn("chevron-left", "上一张纸", self._prev_sheet)
         self.label_sheet = QLabel("第 1 / 1 张纸")
-        self.label_sheet.setStyleSheet("color: #4D6B67; font-size: 13px;")
+        set_theme_style(self.label_sheet, "color: #4D6B67; font-size: 13px;")
         self.btn_next = self._tool_btn("chevron-right", "下一张纸", self._next_sheet)
         toolbar.addWidget(self.btn_prev)
         toolbar.addWidget(self.label_sheet)
@@ -1011,7 +1012,7 @@ class PrintDialog(QDialog):
 
         self.label_hint = QLabel("")
         self.label_hint.setWordWrap(True)
-        self.label_hint.setStyleSheet(
+        set_theme_style(self.label_hint,
             "background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 6px;"
             "padding: 7px 10px; color: #134E4A; font-size: 12px;"
         )
@@ -1022,7 +1023,7 @@ class PrintDialog(QDialog):
         self.scroll = QScrollArea()
         self.scroll.setWidget(self.canvas)
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet(
+        set_theme_style(self.scroll,
             "QScrollArea { background: #EDF2F1; border: 1px solid #CBD5E1; border-radius: 4px; }"
         )
         self.scroll.verticalScrollBar().valueChanged.connect(self._update_sheet_counter)
@@ -1031,7 +1032,7 @@ class PrintDialog(QDialog):
 
         self.label_summary = QLabel("")
         self.label_summary.setWordWrap(True)
-        self.label_summary.setStyleSheet("color: #475569; font-size: 12px;")
+        set_theme_style(self.label_summary, "color: #475569; font-size: 12px;")
         lay.addWidget(self.label_summary)
         return container
 
@@ -1071,7 +1072,7 @@ class PrintDialog(QDialog):
         outer.addWidget(scroll, 1)
 
         title = QLabel("打印设置")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #134E4A;")
+        set_theme_style(title, "font-size: 16px; font-weight: bold; color: #134E4A;")
         lay.addWidget(title)
 
         # 1. 打印机
@@ -1125,7 +1126,7 @@ class PrintDialog(QDialog):
         lay.addLayout(range_row)
 
         self.label_range_error = QLabel("")
-        self.label_range_error.setStyleSheet("color: #DC2626; font-size: 11px;")
+        set_theme_style(self.label_range_error, "color: #DC2626; font-size: 11px;")
         self.label_range_error.setVisible(False)
         lay.addWidget(self.label_range_error)
 
@@ -1237,7 +1238,7 @@ class PrintDialog(QDialog):
 
         self.label_duplex_warn = QLabel("")
         self.label_duplex_warn.setWordWrap(True)
-        self.label_duplex_warn.setStyleSheet(
+        set_theme_style(self.label_duplex_warn,
             "background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px;"
             "padding: 7px 9px; color: #92400E; font-size: 11px;"
         )
@@ -1263,7 +1264,7 @@ class PrintDialog(QDialog):
 
     def _caption(self, text: str) -> QLabel:
         label = QLabel(text)
-        label.setStyleSheet("font-weight: bold; color: #334155; margin-top: 6px;")
+        set_theme_style(label, "font-weight: bold; color: #334155; margin-top: 6px;")
         return label
 
     # ---- 交互 ----

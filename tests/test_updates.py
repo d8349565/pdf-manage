@@ -201,3 +201,126 @@ def test_rate_limit_falls_back_to_release_redirect(checker):
     assert "发现新版本 v99999.0.0" in checker.message
     assert disposed == ["api", "head"]
 
+
+def test_release_notes_are_optional_bounded_and_do_not_weaken_asset_validation():
+    info = updates.release_info(release_payload(body="- 新增：软件内查看更新内容。", published_at="2026-10-26T12:21:34Z"))
+    assert info.notes == "- 新增：软件内查看更新内容。"
+    assert info.published_at == "2026-10-26T12:21:34Z"
+    assert updates.release_info(release_payload(body=None, published_at=[])).notes == ""
+    assert updates.release_info(release_payload(body={"html": "unexpected"})).notes == ""
+    long = updates.release_info(release_payload(body="文" * (updates.MAX_NOTES_CHARS + 1)))
+    assert "完整发布说明" in long.notes and len(long.notes) < updates.MAX_NOTES_CHARS + 100
+    with pytest.raises(ValueError):
+        updates.release_info(release_payload(body=info.notes, assets=[]))
+
+
+def test_notes_cache_matches_its_tag_and_survives_failed_refresh(checker):
+    checker._reply = SimpleNamespace(bytesAvailable=lambda: 0, attribute=lambda key: 200,
+                                     error=lambda: QNetworkReply.NetworkError.NoError, deleteLater=lambda: None)
+    checker._buffer.extend(release_payload(body="- 修复：更新窗口可读。", published_at="2026-10-26T12:21:34Z"))
+    checker._finished()
+    restored = updates.UpdateChecker(checker.settings)
+    assert restored.release_notes == "- 修复：更新窗口可读。"
+    assert restored.published_at == "2026-10-26T12:21:34Z"
+    checker._reply = SimpleNamespace(bytesAvailable=lambda: 0, attribute=lambda key: 404,
+                                     error=lambda: QNetworkReply.NetworkError.ContentNotFoundError, deleteLater=lambda: None)
+    checker._finished()
+    assert checker.error and checker.release_notes == restored.release_notes
+    checker.settings.setValue("updates/latestTag", "v99999.0.1")
+    mismatched = updates.UpdateChecker(checker.settings)
+    assert mismatched.release_notes == "" and mismatched.published_at == ""
+
+
+def test_redirect_fallback_never_attaches_old_notes_to_a_new_version(checker):
+    from PyQt6.QtCore import QUrl
+    from PyQt6.QtNetwork import QNetworkRequest
+
+    checker.latest_tag = "v99998.0.0"
+    checker.release_notes = "上一个版本的说明"
+    checker.published_at = "2026-10-25T00:00:00Z"
+    checker._fallback = True
+    attrs = {
+        QNetworkRequest.Attribute.HttpStatusCodeAttribute: 302,
+        QNetworkRequest.Attribute.RedirectionTargetAttribute: QUrl(f"{APP_PROJECT_URL}/releases/tag/v99999.0.0"),
+    }
+    checker._reply = SimpleNamespace(bytesAvailable=lambda: 0, attribute=lambda key: attrs.get(key),
+                                     error=lambda: QNetworkReply.NetworkError.NoError, deleteLater=lambda: None)
+    checker._finished()
+    assert checker.latest_tag == "v99999.0.0"
+    assert checker.release_notes == "" and checker.published_at == ""
+    assert updates.UpdateChecker(checker.settings).release_notes == ""
+
+
+def test_release_entries_preserve_unfamiliar_copy_and_continuation_lines():
+    from app.updateui import release_entries
+
+    notes = "## 本次更新\n\n一段没有分类的说明。\n- 新增：第一行\n  补充条件。\n- 说明：需要组件。\n- 其他未分类内容"
+    entries = release_entries(notes)
+    assert ("新增", "第一行\n  补充条件。") in entries
+    assert ("说明", "需要组件。") in entries
+    assert "一段没有分类的说明。" in "\n".join(text for _, text in entries)
+    assert ("", "其他未分类内容") in entries
+
+
+def test_update_dialog_reads_safe_text_and_recovers_between_states(checker, qapp):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QLabel
+    from app.updateui import UpdateDialog
+
+    checker.latest_tag = "v99999.0.0"
+    checker.release_notes = '- 新增：<img src="file:///private.png">\n- 说明：需要独立组件。'
+    checker.published_at = "2026-10-26T12:21:34Z"
+    dialog = UpdateDialog(checker)
+    dialog.show()
+    qapp.processEvents()
+    try:
+        entries = dialog.findChildren(QLabel, "releaseEntry")
+        assert all(label.textFormat() == Qt.TextFormat.PlainText for label in entries)
+        assert any('file:///private.png' in label.text() for label in entries)
+        assert dialog.scroll.isVisible() and not dialog.empty.isVisible()
+        assert not dialog.precautions_body.isVisible()
+        dialog.precautions_button.click()
+        assert dialog.precautions_body.isVisible()
+        checker.busy = True
+        checker.changed.emit()
+        assert dialog.scroll.isVisible() and not dialog.refresh_button.isEnabled()
+        assert dialog.precautions_body.isVisible()
+        checker.busy = False
+        checker.error = "无法连接 GitHub"
+        checker.changed.emit()
+        assert dialog.error_label.isVisible() and "已保存" in dialog.error_label.text()
+        checker.release_notes = ""
+        checker.changed.emit()
+        assert dialog.empty.isVisible() and "无法连接" in dialog.empty_detail.text()
+        checker.busy = True
+        checker.changed.emit()
+        assert "正在获取" in dialog.empty_title.text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        qapp.processEvents()
+
+
+def test_open_update_dialog_follows_theme_without_losing_notes(checker, qapp):
+    from app.themes import current_theme, theme_manager
+    from app.updateui import UpdateDialog
+
+    previous = current_theme().key
+    checker.latest_tag = "v99999.0.0"
+    checker.release_notes = "- 新增：更新内容。\n- 说明：保留完整使用限制。"
+    dialog = UpdateDialog(checker)
+    dialog.show()
+    try:
+        dialog.precautions_button.click()
+        for key in ("night", "forest"):
+            theme_manager().apply(key)
+            assert current_theme().colors["surface"] in dialog.styleSheet()
+            assert current_theme().colors["accent"] in dialog.styleSheet()
+            assert dialog.precautions_button.isChecked()
+            assert "保留完整使用限制" in dialog.precautions_preview.text()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        qapp.processEvents()
+        theme_manager().apply(previous)
+

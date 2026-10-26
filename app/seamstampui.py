@@ -1,4 +1,5 @@
 """Simple stamp setup with continuous, lazy page previews."""
+from app.themes import set_theme_style
 import base64
 import uuid
 
@@ -29,7 +30,7 @@ class SeamStampDialog(QDialog):
         self.setObjectName('seamStampDialog')
         self.setMinimumSize(780, 540)
         self.resize(1000, 620)
-        self.setStyleSheet("""
+        set_theme_style(self, """
             QDialog#seamStampDialog QComboBox { min-height: 28px; padding: 4px 28px 4px 9px; border-radius: 5px; }
             QDialog#seamStampDialog QComboBox::drop-down { width: 25px; border-left: 1px solid #D7E8E4; }
             QDialog#seamStampDialog QDoubleSpinBox { min-height: 28px; padding: 3px 24px 3px 9px; }
@@ -58,12 +59,12 @@ class SeamStampDialog(QDialog):
         self.group.setAccessibleName('已有骑缝章')
         controls.addWidget(self.group)
         title = QLabel('选择印章图片')
-        title.setStyleSheet('font-size: 15px; font-weight: 600;')
+        set_theme_style(title, 'font-size: 15px; font-weight: 600;')
         controls.addWidget(title)
         self.seal_preview = QLabel('支持透明 PNG 或 JPEG')
         self.seal_preview.setMinimumHeight(122)
         self.seal_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.seal_preview.setStyleSheet('background: white; border: 1px dashed #C3D4C9; border-radius: 7px; color: #60756A;')
+        set_theme_style(self.seal_preview, 'background: white; border: 1px dashed #C3D4C9; border-radius: 7px; color: #60756A;')
         self.seal_preview.setAccessibleName('完整印章及分片线预览')
         controls.addWidget(self.seal_preview)
         self.choose = QPushButton('选择图片…')
@@ -86,7 +87,7 @@ class SeamStampDialog(QDialog):
         form.addRow('印章大小', self.width_input)
         controls.addLayout(form)
         self.dimensions = QLabel('宽高自动保持比例')
-        self.dimensions.setStyleSheet('color: #60756A; font-size: 11px;')
+        set_theme_style(self.dimensions, 'color: #60756A; font-size: 11px;')
         controls.addWidget(self.dimensions)
         self.advanced_toggle = QToolButton()
         self.advanced_toggle.setText('更多设置 · 默认右侧居中')
@@ -112,12 +113,12 @@ class SeamStampDialog(QDialog):
         controls.addStretch()
         hint = QLabel('同一枚章按页数分片。支持撤销；保存时另存副本。')
         hint.setWordWrap(True)
-        hint.setStyleSheet('color: #60756A; font-size: 11px;')
+        set_theme_style(hint, 'color: #60756A; font-size: 11px;')
         controls.addWidget(hint)
         body.addWidget(settings)
         right = QVBoxLayout()
         self.preview_caption = QLabel('连续预览 · 滚轮查看上下页')
-        self.preview_caption.setStyleSheet('color: #53685B; font-size: 12px;')
+        set_theme_style(self.preview_caption, 'color: #53685B; font-size: 12px;')
         right.addWidget(self.preview_caption)
         self.preview = ScrollablePagePreview(host.store, self.pages, draw_content=self.draw_preview)
         self.preview.page_changed.connect(lambda row: self.preview_caption.setText(f'第 {row + 1} 页 · 滚轮查看上下页'))
@@ -126,7 +127,7 @@ class SeamStampDialog(QDialog):
         layout.addLayout(body, 1)
         self.status = QLabel()
         self.status.setWordWrap(True)
-        self.status.setStyleSheet('color: #53685B; font-size: 12px;')
+        set_theme_style(self.status, 'color: #53685B; font-size: 12px;')
         layout.addWidget(self.status)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.apply_button = self.buttons.button(QDialogButtonBox.StandardButton.Ok)

@@ -7,6 +7,8 @@ from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QApplication
 
+from app.themes import ui_color
+
 # 24×24 outline glyphs, 1.5px stroke, 3px inset so they stay crisp at toolbar size.
 # Metaphors: document for PDF, tray-arrow for save, copy for save-as.
 _PATHS: dict[str, str] = {
@@ -243,21 +245,38 @@ def _pixmap(name: str, color: str, logical: int, scale: float | None = None) -> 
 
 
 @lru_cache(maxsize=256)
-def _cached_toolbar_icon(name: str, color: str, size: int, scale: float) -> QIcon:
+def _cached_toolbar_icon(name: str, color: str, size: int, scale: float,
+                         disabled_color: str = "#94A3B8", theme_source: str | None = None) -> QIcon:
+    # The cache key separates fixed swatches from themed icons with identical pixels.
     icon = QIcon()
     pm = _pixmap(name, color, size, scale)
-    disabled = _pixmap(name, "#94A3B8", size, scale)
+    disabled = _pixmap(name, disabled_color, size, scale)
     for mode in (QIcon.Mode.Normal, QIcon.Mode.Active, QIcon.Mode.Selected):
         icon.addPixmap(pm, mode)
     icon.addPixmap(disabled, QIcon.Mode.Disabled)
     return icon
 
 
-def toolbar_icon(name: str, color: str = "#0F766E", size: int = 20) -> QIcon:
+_ICON_SOURCES: dict[int, tuple[str, str, int, bool]] = {}
+
+
+def toolbar_icon(name: str, color: str = "#0F766E", size: int = 20, *, themed: bool = True) -> QIcon:
     app = QApplication.instance()
     scale = max(float(app.devicePixelRatio()) if app else 1.0, 2.0)
+    actual = ui_color(color, foreground=True) if themed else color
+    disabled = ui_color("disabled")
     # 返回共享像素的副本，调用方修改 QIcon 时不会污染缓存。
-    return QIcon(_cached_toolbar_icon(name, color, size, scale))
+    icon = QIcon(_cached_toolbar_icon(name, actual, size, scale, disabled, color if themed else None))
+    if themed:
+        _ICON_SOURCES[icon.cacheKey()] = (name, color, size, themed)
+    return icon
+
+
+def refresh_theme_icon(target) -> None:
+    source = _ICON_SOURCES.get(target.icon().cacheKey())
+    if source is not None:
+        name, color, size, themed = source
+        target.setIcon(toolbar_icon(name, color, size, themed=themed))
 
 
 def brand_icon() -> QIcon:

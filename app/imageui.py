@@ -1,4 +1,5 @@
 """Lightweight, reversible placement and transforms for paper images."""
+from app.themes import set_theme_style
 import base64
 import math
 import uuid
@@ -94,7 +95,7 @@ class ImageTools(QObject):
         self.shown_values = {}
         self.bar = QFrame(self.view.viewport())
         self.bar.setObjectName('imageBar')
-        self.bar.setStyleSheet("""
+        set_theme_style(self.bar, """
             QFrame#imageBar {
                 background: #FFFFFF;
                 border: 1px solid #D7E8E4;

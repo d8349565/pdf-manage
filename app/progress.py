@@ -1,5 +1,6 @@
 """Shared progress UI and worker for file operations."""
 from __future__ import annotations
+from app.themes import set_theme_style
 from time import monotonic
 from threading import Event
 
@@ -22,7 +23,7 @@ class TaskProgressDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setFixedWidth(460)
-        self.setStyleSheet('''
+        set_theme_style(self, '''
             QDialog#taskProgress { background: #FFFFFF; }
             QDialog#taskProgress QLabel { background: transparent; border: none;
                 color: #536762; font-family: "Microsoft YaHei UI"; font-size: 12px; }

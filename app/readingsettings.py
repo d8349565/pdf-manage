@@ -1,4 +1,5 @@
 """An edge-docked, session-only shortcut to the reader's shared settings menu."""
+from app.themes import set_theme_style, theme_manager, ui_color
 from PyQt6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QColor, QCursor, QIcon, QPainter, QPen, QRegion
 from PyQt6.QtWidgets import (
@@ -27,7 +28,7 @@ class ReadingSettingsOrb(QToolButton):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAccessibleName('阅读设置')
-        self.setStyleSheet('''
+        set_theme_style(self, '''
             QToolButton#readingSettingsOrb {
                 min-width: 40px; min-height: 40px; padding: 0; border-radius: 14px;
                 background: #FCFFFD; border: 1px solid #D5E5DD;
@@ -56,6 +57,8 @@ class ReadingSettingsOrb(QToolButton):
         self.hide_action.triggered.connect(self.hide_temporarily)
         self.restore_action = QAction(self._reading_icon, '显示阅读悬浮球', host)
         self.restore_action.triggered.connect(self.restore)
+        theme_manager().changed.connect(self._refresh_theme)
+        self._refresh_theme()
         menu.addSeparator()
         menu.addAction(self.hide_action)
         self.view.setMouseTracking(True)
@@ -63,6 +66,14 @@ class ReadingSettingsOrb(QToolButton):
         self.view.viewport().setMouseTracking(True)
         self.view.viewport().installEventFilter(self)
         self.hide()
+
+    def _refresh_theme(self, *_args):
+        self._reading_icon = toolbar_icon('reading-settings', '#0F766E', 24)
+        self.restore_action.setIcon(self._reading_icon)
+        shadow = QColor(ui_color('text'))
+        shadow.setAlpha(22)
+        self.graphicsEffect().setColor(shadow)
+        self.update()
 
     def _target(self, expanded=None):
         viewport = self.view.viewport()
@@ -213,7 +224,7 @@ class ReadingSettingsOrb(QToolButton):
         opacity = max(0.0, min(1.0, progress))
         if opacity < 1:
             painter.setOpacity(1 - opacity)
-            painter.setPen(QPen(QColor('#0F766E'), 1.6, Qt.PenStyle.SolidLine,
+            painter.setPen(QPen(QColor(ui_color('#0F766E')), 1.6, Qt.PenStyle.SolidLine,
                                 Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             painter.drawLine(8, 17, 5, 21)
             painter.drawLine(5, 21, 8, 25)

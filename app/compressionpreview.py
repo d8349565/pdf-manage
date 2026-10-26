@@ -1,4 +1,5 @@
 """Two continuous PDF columns sharing one scroll position, scale and render queue."""
+from app.themes import PAPER_HINT_COLOR, set_theme_style, ui_color
 from bisect import bisect_right
 from collections import OrderedDict
 import math
@@ -64,7 +65,7 @@ class CompressionPreview(QAbstractScrollArea):
         self.horizontalScrollBar().setSingleStep(60)
         self.verticalScrollBar().valueChanged.connect(self.scrolled)
         self.horizontalScrollBar().valueChanged.connect(self.viewport().update)
-        self.setStyleSheet('QAbstractScrollArea { background: #EAF0EB; border: 1px solid #CED8D1; border-radius: 6px; }'
+        set_theme_style(self, 'QAbstractScrollArea { background: #EAF0EB; border: 1px solid #CED8D1; border-radius: 6px; }'
                            'QAbstractScrollArea:focus { border-color: #0F766E; }'
                            'QScrollBar:vertical { background: #DFE8E2; width: 14px; margin: 0; }'
                            'QScrollBar:horizontal { background: #DFE8E2; height: 14px; margin: 0; }'
@@ -205,10 +206,10 @@ class CompressionPreview(QAbstractScrollArea):
 
     def paintEvent(self, event):
         painter = QPainter(self.viewport())
-        painter.fillRect(self.viewport().rect(), QColor('#EAF0EB'))
+        painter.fillRect(self.viewport().rect(), QColor(ui_color('#EAF0EB')))
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if not self.pages:
-            painter.setPen(QColor('#53635B'))
+            painter.setPen(QColor(ui_color('#53635B')))
             painter.drawText(self.viewport().rect().adjusted(24, 24, -24, -24),
                              Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.message)
             return
@@ -229,16 +230,17 @@ class CompressionPreview(QAbstractScrollArea):
                 painter.setClipRect(QRectF(left, 0, column, self.viewport().height()))
                 x = left + (max(14, (column - width * scale) / 2) - self.horizontalScrollBar().value())
                 paper = QRectF(x, top + 29, width * scale, height * scale)
-                painter.setPen(QColor('#53635B'))
+                painter.setPen(QColor(ui_color('#53635B')))
                 painter.drawText(QRectF(left + 14, top + 4, column - 28, 24), f'第 {page + 1} 页')
                 painter.fillRect(paper, QColor('white'))
                 if images:
                     painter.drawImage(paper, images[side])
                 else:
+                    painter.setPen(QColor(PAPER_HINT_COLOR))
                     painter.drawText(paper.adjusted(16, 16, -16, -16),
                                      Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
                                      self.errors.get(key, '正在准备页面…'))
-                painter.setPen(QPen(QColor('#CAD5CD'), 1))
+                painter.setPen(QPen(QColor(ui_color('#CAD5CD')), 1))
                 painter.drawRect(paper)
                 painter.restore()
 

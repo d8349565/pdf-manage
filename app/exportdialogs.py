@@ -1,5 +1,6 @@
 """Small, purpose-specific dialogs for the existing PDF tool area."""
 from __future__ import annotations
+from app.themes import set_theme_style
 
 from pathlib import Path
 
@@ -208,7 +209,7 @@ class ImageImportDialog(QDialog):
         # File list card ---------------------------------------------------------
         files_card = QFrame()
         files_card.setObjectName("card")
-        files_card.setStyleSheet(CARD_QSS)
+        set_theme_style(files_card, CARD_QSS)
         files_layout = QVBoxLayout(files_card)
         files_layout.setContentsMargins(16, 14, 16, 14)
         files_layout.setSpacing(10)
@@ -216,13 +217,13 @@ class ImageImportDialog(QDialog):
         files_header = QHBoxLayout()
         files_header.setSpacing(10)
         files_title = QLabel("待转换图片 · 可直接拖入")
-        files_title.setStyleSheet("font-weight: 600; color: #134E4A;")
+        set_theme_style(files_title, "font-weight: 600; color: #134E4A;")
         files_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         files_header.addWidget(files_title)
         files_header.addStretch()
 
         self.count_label = QLabel("0 张")
-        self.count_label.setStyleSheet("color: #4D6B67;")
+        set_theme_style(self.count_label, "color: #4D6B67;")
         self.count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         files_header.addWidget(self.count_label)
 
@@ -242,7 +243,7 @@ class ImageImportDialog(QDialog):
         self.placeholder = QLabel("把图片拖到这里\n\n或点击右上角「添加图片…」")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
-        self.placeholder.setStyleSheet("color: #4D6B67; background: transparent; font-size: 14px;")
+        set_theme_style(self.placeholder, "color: #4D6B67; background: transparent; font-size: 14px;")
         list_area.addWidget(self.placeholder, 1)
 
         self.files = QListWidget()
@@ -262,7 +263,7 @@ class ImageImportDialog(QDialog):
         drop_zone_layout = QVBoxLayout(drop_zone)
         drop_zone_layout.setContentsMargins(8, 8, 8, 8)
         drop_zone_layout.addLayout(list_area)
-        drop_zone.setStyleSheet(
+        set_theme_style(drop_zone,
             "QFrame#dropZone { background: #FAFCFB; border: 1.5px dashed #C5D5D2; border-radius: 9px; }\n"
             "QFrame#dropZone[active=\"true\"] { background: #F0FDFA; border: 1.5px dashed #0D9488; }"
         )

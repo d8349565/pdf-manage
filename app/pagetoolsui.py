@@ -1,4 +1,6 @@
 """Page size controls and a shared, bounded preview for page tools."""
+from app.themes import ui_color
+
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
@@ -45,7 +47,7 @@ class ClearComboBox(QComboBox):
         center = area.center()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor('#3B6654' if self.isEnabled() else '#9BAAA1'), 1.8))
+        painter.setPen(QPen(QColor(ui_color('#3B6654' if self.isEnabled() else '#9BAAA1')), 1.8))
         painter.drawPolyline(QPolygonF([QPointF(center.x() - 4, center.y() - 2),
             QPointF(center.x(), center.y() + 2), QPointF(center.x() + 4, center.y() - 2)]))
 
@@ -54,7 +56,7 @@ def _draw_spin_controls(widget):
     option = QStyleOptionSpinBox()
     widget.initStyleOption(option)
     painter = QPainter(widget)
-    painter.setPen(QPen(QColor('#3B6654' if widget.isEnabled() else '#9BAAA1'), 1.4))
+    painter.setPen(QPen(QColor(ui_color('#3B6654' if widget.isEnabled() else '#9BAAA1')), 1.4))
     for control, plus in ((QStyle.SubControl.SC_SpinBoxUp, True), (QStyle.SubControl.SC_SpinBoxDown, False)):
         area = widget.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, option, control, widget)
         center = area.center()

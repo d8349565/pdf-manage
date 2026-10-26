@@ -1,22 +1,21 @@
 """Product information and optional support, opened from the About menu."""
 from __future__ import annotations
+from app.themes import set_theme_style
 
 from pathlib import Path
 
-from PyQt6.QtCore import QSettings, QSize, Qt, QUrl
-from PyQt6.QtGui import QDesktopServices, QPixmap
+from PyQt6.QtCore import QSettings, QSize, Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
 from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, __version__
 from app.icons import brand_icon, toolbar_icon
 from app.updates import UpdateChecker
+from app.updateui import LANZOU_PASSWORD, open_lanzou_download, show_update_dialog
 from app.runtime import portable_root, preferences
-
-LANZOU_URL = "https://leezfy.lanzouq.com/b02qtfd77g"
-LANZOU_PASSWORD = "atxq"
 
 
 class AboutDialog(QDialog):
@@ -28,7 +27,7 @@ class AboutDialog(QDialog):
         self.setWindowIcon(brand_icon())
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet("""
+        set_theme_style(self, """
             QDialog#aboutDialog, QDialog#aboutDialog QWidget {
                 background: transparent; color: #173C36; border: none;
                 font-family: "Segoe UI", "Microsoft YaHei UI"; font-size: 14px;
@@ -129,7 +128,7 @@ class AboutDialog(QDialog):
         version.setObjectName("aboutVersion")
         details.addWidget(version, 0, 1, Qt.AlignmentFlag.AlignRight)
         project = QLabel(
-            f'<a href="{APP_PROJECT_URL}" style="color: #0F766E; text-decoration: none;">'
+            f'<a href="{APP_PROJECT_URL}" style="text-decoration: none;">'
             f'{APP_PROJECT_URL.removeprefix("https://")} ↗</a>'
         )
         project.setObjectName("aboutProjectLink")
@@ -154,10 +153,17 @@ class AboutDialog(QDialog):
         self.update_status.setWordWrap(True)
         updates_layout.addWidget(self.update_status)
         update_buttons = QHBoxLayout()
+        self.view_updates_button = QPushButton("查看更新内容")
+        self.view_updates_button.setObjectName("aboutViewUpdates")
+        self.view_updates_button.clicked.connect(lambda: show_update_dialog(self, self.updates))
+        update_buttons.addWidget(self.view_updates_button)
         self.check_update_button = QPushButton("检查更新")
         self.check_update_button.setObjectName("aboutCheckUpdates")
         self.check_update_button.clicked.connect(self.updates.check)
         update_buttons.addWidget(self.check_update_button)
+        update_buttons.addStretch()
+        updates_layout.addLayout(update_buttons)
+        update_buttons = QHBoxLayout()
         self.get_update_button = QPushButton("打开绿色版发布页" if portable_root() else "打开发布页")
         self.get_update_button.setObjectName("aboutGetUpdate")
         self.get_update_button.clicked.connect(self.updates.open_release_page)
@@ -265,15 +271,7 @@ class AboutDialog(QDialog):
             self.get_update_button.setText("GitHub 下载 ↗" if self.updates.update_available else "GitHub 发布页 ↗")
 
     def _open_lanzou_download(self) -> None:
-        clipboard = QApplication.clipboard()
-        clipboard.setText(LANZOU_PASSWORD)
-        if clipboard.text() == LANZOU_PASSWORD:
-            message = f"密码 {LANZOU_PASSWORD} 已复制，可在蓝奏云网页中粘贴。"
-        else:
-            message = f"未能复制密码，请在蓝奏云网页中手动输入：{LANZOU_PASSWORD}。"
-        self.lanzou_status.setText(message)
-        if not QDesktopServices.openUrl(QUrl(LANZOU_URL)):
-            self.lanzou_status.setText(f"{message}\n无法打开浏览器，请手动访问：{LANZOU_URL}")
+        self.lanzou_status.setText(open_lanzou_download())
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 68:

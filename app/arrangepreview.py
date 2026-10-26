@@ -1,4 +1,5 @@
 """Temporary enlarged page preview without taking focus from page sorting."""
+from app.themes import set_theme_style
 from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, QTimer, Qt
 from PyQt6.QtGui import QCursor, QPixmap
 from PyQt6.QtWidgets import QApplication, QLabel, QMenu
@@ -16,7 +17,7 @@ class ArrangePreview(QObject):
         self.popup = QLabel(host, Qt.WindowType.ToolTip | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.popup.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.popup.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.popup.setStyleSheet("background: white; border: 1px solid #94A3B8; padding: 6px;")
+        set_theme_style(self.popup, "background: white; border: 1px solid #94A3B8; padding: 6px;")
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(140)

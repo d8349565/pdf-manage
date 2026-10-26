@@ -1,4 +1,5 @@
 """Non-destructive document search with cancellable background scanning."""
+from app.themes import set_theme_style
 from threading import Event
 
 from PyQt6.QtCore import QEvent, QObject, QRunnable, QThreadPool, QSize, QTimer, Qt, pyqtSignal
@@ -54,7 +55,7 @@ class SearchBar(QFrame):
         self.setFixedHeight(40)
         self.setMaximumWidth(520)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet("""
+        set_theme_style(self, """
             QFrame#searchBar {
                 background: #FFFFFF; border: 1px solid #D7E3DF; border-radius: 7px;
             }
@@ -135,7 +136,7 @@ class SearchBar(QFrame):
             layout.addWidget(button)
         divider = QFrame()
         divider.setFixedSize(1, 16)
-        divider.setStyleSheet("background: #DFE8E3; border: none;")
+        set_theme_style(divider, "background: #DFE8E3; border: none;")
         layout.addWidget(divider)
         layout.addWidget(self.close_button)
         for key, slot in (("Shift+Return", lambda: self.step(-1)), ("Shift+Enter", lambda: self.step(-1)), ("Escape", self.close_search)):

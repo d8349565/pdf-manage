@@ -1,4 +1,5 @@
 """Continuous page previews: one background render at a time, bounded cache."""
+from app.themes import PAPER_HINT_COLOR, set_theme_style, ui_color
 from collections import OrderedDict
 from threading import Event
 
@@ -72,7 +73,7 @@ class _Paper(QStyledItemDelegate):
         source_row = view.rows[index.row()]
         area = view.paper_rect(source_row,option.rect)
         painter.save()
-        painter.setPen(QColor('#53635B'))
+        painter.setPen(QColor(ui_color('#53635B')))
         painter.drawText(option.rect.adjusted(18, 2, -18, 0), Qt.AlignmentFlag.AlignTop,
                          f'第 {source_row + 1} 页 · {index.row() + 1} / {len(view.rows)}')
         painter.fillRect(area, QColor('white'))
@@ -85,13 +86,13 @@ class _Paper(QStyledItemDelegate):
             else:
                 draw_fitted_page(painter, area, image)
         else:
-            painter.setPen(QColor('#738078'))
+            painter.setPen(QColor(PAPER_HINT_COLOR))
             message = view.errors.get(key, '正在准备页面…')
             painter.drawText(area.adjusted(16, 16, -16, -16),
                              Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, message)
             if key not in view.errors:
                 view.schedule()
-        painter.setPen(QPen(QColor('#CED8D1'), 1))
+        painter.setPen(QPen(QColor(ui_color('#CED8D1')), 1))
         painter.drawRect(area)
         painter.restore()
 
@@ -129,7 +130,7 @@ class ScrollablePagePreview(QListView):
         self.setResizeMode(QListView.ResizeMode.Adjust)
         self.setSpacing(0)
         self.setMinimumSize(330, 320)
-        self.setStyleSheet('QListView { background: #EAF0EB; border: 1px solid #D5DFD6; border-radius: 8px; }')
+        set_theme_style(self, 'QListView { background: #EAF0EB; border: 1px solid #D5DFD6; border-radius: 8px; }')
         self.setAccessibleName('连续页面预览，滚轮查看上下页')
         self.verticalScrollBar().setSingleStep(55)
         self.verticalScrollBar().valueChanged.connect(self.schedule)

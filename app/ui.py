@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.themes import (
+    THEMES, current_theme, initialize_theme, set_theme_style, theme_manager, theme_swatch, ui_color,
+)
 
 import ctypes
 import math
@@ -89,7 +92,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app import APP_NAME, APP_EXE_NAME, __version__
-from app.runtime import display_name, portable_root
+from app.runtime import display_name, portable_root, preferences
 from app.icons import brand_icon, toolbar_icon
 from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
@@ -791,7 +794,7 @@ def _document_paths_from_mime(mime: QMimeData) -> list[str]:
 
 
 class PageThumbDelegate(QStyledItemDelegate):
-    """选中：青绿描边 + 角标；未选：淡边框并把缩略图压暗。"""
+    """选中：主题色描边和角标；文档缩略图保持原色。"""
 
     def paint(self, painter, option, index) -> None:
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
@@ -806,14 +809,14 @@ class PageThumbDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         if selected:
-            painter.setPen(QPen(QColor("#0F766E"), 2))
-            painter.setBrush(QColor("#F0FDFA"))
+            painter.setPen(QPen(QColor(ui_color("#0F766E")), 2))
+            painter.setBrush(QColor(ui_color("#F0FDFA")))
         elif hover:
-            painter.setPen(QPen(QColor("#5EEAD4"), 2))
-            painter.setBrush(QColor("#F0FDFA"))
+            painter.setPen(QPen(QColor(ui_color("#5EEAD4")), 2))
+            painter.setBrush(QColor(ui_color("#F0FDFA")))
         else:
-            painter.setPen(QPen(QColor("#E1E7EB"), 1))
-            painter.setBrush(QColor("#FFFFFF"))
+            painter.setPen(QPen(QColor(ui_color("#E1E7EB")), 1))
+            painter.setBrush(QColor(ui_color("#FFFFFF")))
         painter.drawRoundedRect(QRectF(rect), 10, 10)
 
         label_h = 22
@@ -844,7 +847,7 @@ class PageThumbDelegate(QStyledItemDelegate):
         font.setPixelSize(12)
         font.setBold(selected)
         painter.setFont(font)
-        painter.setPen(QColor("#0F766E") if selected else QColor("#4D6B67"))
+        painter.setPen(QColor(ui_color("#0F766E")) if selected else QColor(ui_color("#4D6B67")))
         label_rect = QRect(rect.x() + 4, rect.bottom() - label_h, rect.width() - 8, label_h)
         painter.drawText(
             label_rect,
@@ -857,9 +860,9 @@ class PageThumbDelegate(QStyledItemDelegate):
             cx = rect.right() - 12
             cy = rect.top() + 12
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor("#0F766E"))
+            painter.setBrush(QColor(ui_color("#0F766E")))
             painter.drawEllipse(QPointF(cx, cy), r, r)
-            pen = QPen(QColor("#FFFFFF"), 2)
+            pen = QPen(QColor(ui_color("on_accent")), 2)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
@@ -870,7 +873,7 @@ class PageThumbDelegate(QStyledItemDelegate):
             mark.lineTo(cx + r * 0.48, cy - r * 0.35)
             painter.drawPath(mark)
         elif focused:
-            painter.setPen(QPen(QColor("#94A3B8"), 1))
+            painter.setPen(QPen(QColor(ui_color("#94A3B8")), 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(QRectF(rect.adjusted(4, 4, -4, -4)), 8, 8)
 
@@ -1046,7 +1049,7 @@ class PageListView(QListView):
             start,end=QPointF(rectangle.left()+8,y),QPointF(rectangle.right()-8,y)
         painter=QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor('#0F766E'),3,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(ui_color('#0F766E')),3,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
         painter.drawLine(start,end)
         painter.end()
 
@@ -1240,10 +1243,12 @@ class PageListView(QListView):
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setOpacity(self._highlight_opacity)
-        painter.setPen(QPen(QColor("#0D9488"), 2))
-        painter.setBrush(QColor(13, 148, 136, 56))
+        painter.setPen(QPen(QColor(ui_color("#0D9488")), 2))
+        landing = QColor(ui_color("accent"))
+        landing.setAlpha(56)
+        painter.setBrush(landing)
         painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 8, 8)
-        painter.setPen(QPen(QColor("#0D9488"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(QColor(ui_color("#0D9488")), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(QPointF(rect.left() + 4, rect.top() + 12), QPointF(rect.left() + 4, rect.bottom() - 12))
         painter.end()
 
@@ -1292,7 +1297,8 @@ class PreviewView(QGraphicsView):
         self.setScene(self._scene)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setBackgroundBrush(QColor("#F4F7F6"))
+        self.setProperty("themeCanvas", "canvas")
+        self.setBackgroundBrush(QColor(ui_color("canvas")))
         # 稳态下位图恰好是 1:1 设备像素，此提示只在缩放过渡期间生效，
         # 让等待重渲染的这段时间不再是锯齿块。
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
@@ -1449,9 +1455,9 @@ class PreviewView(QGraphicsView):
         for index in self.visible_pages(rect):
             page = self.page_rects[index]
             if page.intersects(rect):
-                painter.fillRect(page.translated(2 / scale, 3 / scale), QColor("#E4EAE7"))
+                painter.fillRect(page.translated(2 / scale, 3 / scale), QColor(ui_color("#E4EAE7")))
                 painter.fillRect(page, Qt.GlobalColor.white)
-                pen = QPen(QColor("#D7E3DF"))
+                pen = QPen(QColor(ui_color("#D7E3DF")))
                 pen.setCosmetic(True)
                 painter.setPen(pen)
                 painter.drawRect(page)
@@ -1830,7 +1836,7 @@ class PageListModel(QAbstractListModel):
             if len(self._placeholders) > 64:
                 self._placeholders.clear()
             hit = QPixmap(box)
-            hit.fill(QColor("#E8F1F4"))
+            hit.fill(QColor(ui_color("#E8F1F4")))
             self._placeholders[key] = hit
         return hit
 
@@ -1977,7 +1983,7 @@ class _HoverIconButton(QToolButton):
         self._paint(color)
 
     def _paint(self, color: str) -> None:
-        self.setIcon(toolbar_icon(self._name, color, CAPTION_PX))
+        self.setIcon(toolbar_icon(self._name, color, CAPTION_PX, themed=color != self._hover))
         self.setIconSize(QSize(CAPTION_PX, CAPTION_PX))
 
     def enterEvent(self, event) -> None:
@@ -2391,6 +2397,8 @@ class MainWindow(QMainWindow):
     def __init__(self, *, opening_paths=()) -> None:
         mark("window_init_started")
         super().__init__()
+        self._window_settings = preferences(QSettings)
+        initialize_theme(self._window_settings)
         self._painted = False
         self._readable_painted = False
         self._readable_sources = set()
@@ -2427,7 +2435,7 @@ class MainWindow(QMainWindow):
             | Qt.WindowType.WindowMaximizeButtonHint
         )
         self.setWindowIcon(brand_icon())
-        self.setStyleSheet(STYLESHEET)
+        set_theme_style(self, STYLESHEET)
         self.rendering = RenderScheduler(self.store, self)
         self.model = PageListModel(self.ws, self.store, rendering=self.rendering)
         self.model.live_keys = self._live_render_keys
@@ -2500,8 +2508,8 @@ class MainWindow(QMainWindow):
             view.verticalScrollBar().valueChanged.connect(self._prune_visible_thumbs)
         mark("window_build_ready")
         self._shortcuts()
-        from app.runtime import preferences
-        self._window_settings = preferences(QSettings)
+        theme_manager().changed.connect(self._sync_theme_controls)
+        self._sync_theme_controls()
         geometry = self._window_settings.value("mainWindow/geometry", QByteArray())
         if isinstance(geometry, QByteArray):
             self.restoreGeometry(geometry)
@@ -2641,12 +2649,12 @@ class MainWindow(QMainWindow):
         self.render_progress.setRange(0, 0)
         self.render_progress.setTextVisible(False)
         self.render_progress.setFixedSize(88, 5)
-        self.render_progress.setStyleSheet(
+        set_theme_style(self.render_progress,
             "QProgressBar { border: none; background: #DDEBE5; border-radius: 2px; }"
             "QProgressBar::chunk { background: #149587; border-radius: 2px; }")
         self.render_label = QLabel("正在渲染页面", status_widgets)
         # Match the status message height so rendering does not resize the reader.
-        self.render_label.setStyleSheet("font-size: 13px;")
+        set_theme_style(self.render_label, "font-size: 13px;")
         self.render_label.ensurePolished()
         messages = ("正在打开 PDF", "正在渲染页面", "正在生成缩略图")
         self.render_label.setFixedSize(
@@ -2669,13 +2677,25 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.protection_label)
         self.protection_copy_button = QPushButton('制作影像副本…', status_widgets)
         self.protection_copy_button.setAccessibleName('为无法确认签名结构的原件制作影像副本')
-        self.protection_copy_button.setStyleSheet('min-height: 0px; padding: 4px 8px;')
+        set_theme_style(self.protection_copy_button, 'min-height: 0px; padding: 4px 8px;')
         self.protection_copy_button.setMinimumWidth(self.protection_copy_button.sizeHint().width())
         self.protection_copy_button.clicked.connect(lambda: self.rasterize_document(recovery=True))
         self.protection_copy_button.hide()
         status_layout.addWidget(self.protection_copy_button)
         # 一次注册，避免 QStatusBar 为每个控件重复重建整个布局。
         self.statusBar().addPermanentWidget(status_widgets)
+        self.update_notice_button = QToolButton(self.statusBar())
+        self.update_notice_button.setObjectName("updateNotice")
+        set_theme_style(self.update_notice_button, '''
+            QToolButton#updateNotice { color: #0F766E; background: #E9F3ED;
+                border: 1px solid #C8DDD0; border-radius: 6px; padding: 3px 10px; }
+            QToolButton#updateNotice:hover { background: #DCEDE2; }
+            QToolButton#updateNotice:focus { border: 2px solid #0F766E; }
+        ''')
+        self.update_notice_button.setAccessibleName("查看新版本的更新内容")
+        self.update_notice_button.clicked.connect(self.show_updates)
+        self.update_notice_button.hide()
+        self.statusBar().addPermanentWidget(self.update_notice_button)
         # 只在真的忙的时候轮询，空闲就停表。
         self._render_status_timer = QTimer(self)
         self._render_status_timer.setInterval(120)
@@ -2798,6 +2818,28 @@ class MainWindow(QMainWindow):
         view.addAction(self._act("大纲书签", self.open_outline))
         view.addSeparator()
         view.addMenu(self.reading_settings_menu)
+        self.theme_menu = view.addMenu("界面主题")
+        self.theme_menu.setObjectName("themeMenu")
+        self.theme_menu.setToolTipsVisible(True)
+        set_theme_style(self.theme_menu, '''
+            QMenu#themeMenu::item:checked {
+                background: #CCFBF1; color: #0F766E; font-weight: 600;
+            }
+        ''')
+        self.theme_group = QActionGroup(self)
+        self.theme_group.setExclusive(True)
+        self.theme_actions = {}
+        for theme in THEMES:
+            label = theme.name + ("（默认）" if theme.key == "graphite" else "（深色）" if theme.key == "night" else "")
+            action = QAction(theme_swatch(theme), label, self)
+            action.setCheckable(True)
+            action.setData(theme.key)
+            action.setToolTip(theme.description)
+            action.setStatusTip(theme.description + "，点击立即切换并自动保存。")
+            action.triggered.connect(lambda checked=False, key=theme.key: self.change_theme(key))
+            self.theme_group.addAction(action)
+            self.theme_menu.addAction(action)
+            self.theme_actions[theme.key] = action
         view.addSeparator()
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
@@ -2829,15 +2871,36 @@ class MainWindow(QMainWindow):
         dialog.exec()
         dialog.deleteLater()
 
+    def change_theme(self, key: str) -> None:
+        saved = theme_manager().apply(key, self._window_settings)
+        theme = current_theme()
+        message = f"已切换为“{theme.name}”主题，下次打开时继续使用。" if saved else f"已切换为“{theme.name}”主题，但无法保存设置，本次运行有效。"
+        self.statusBar().showMessage(message, 5000)
+
+    def _sync_theme_controls(self, *_args) -> None:
+        theme = current_theme()
+        for key, action in self.theme_actions.items():
+            action.setChecked(key == theme.key)
+        self.theme_button.setIcon(theme_swatch(theme))
+        self.theme_button.setToolTip(f"界面主题：{theme.name}，点击切换")
+        self.theme_button.setAccessibleName(f"界面主题，当前为{theme.name}")
+
+    def show_updates(self) -> None:
+        from app.updateui import show_update_dialog
+        show_update_dialog(self, self.updates)
+
     def _update_release_notice(self) -> None:
         available = self.updates.update_available
+        self.update_notice_button.setText(f"查看更新 {self.updates.latest_tag}")
+        self.update_notice_button.setVisible(available)
+        self.update_notice_button.setToolTip("在软件内查看本次更新内容与下载入口")
         self.about_action.setText("关于 · 有新版本" if available else "关于")
         self.about_action.setStatusTip(
-            f"发现新版本 {self.updates.latest_tag}，点击获取" if available
+            f"发现新版本 {self.updates.latest_tag}，可在“关于”中查看更新内容" if available
             else "查看版本、检查更新、项目地址与赞赏信息")
         if available and self._notified_update_tag != self.updates.latest_tag:
             self._notified_update_tag = self.updates.latest_tag
-            self.statusBar().showMessage(f"发现新版本 {self.updates.latest_tag}，点击“关于 · 有新版本”获取。", 15000)
+            self.statusBar().showMessage(f"发现新版本 {self.updates.latest_tag}，点击“查看更新”了解更新内容。", 15000)
 
     def manage_storage(self) -> None:
         from app.storageui import StorageDialog
@@ -2864,7 +2927,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(6, 2, 6, 2)
         layout.setSpacing(2)
         bar.setFixedHeight(40)
-        bar.setStyleSheet("QFrame#workbench QToolButton { padding: 0; min-width: 26px; min-height: 26px; } QSpinBox { padding: 2px; min-height: 24px; }")
+        set_theme_style(bar, "QFrame#workbench QToolButton { padding: 0; min-width: 26px; min-height: 26px; } QSpinBox { padding: 2px; min-height: 24px; }")
         actions = QHBoxLayout()
         actions.setSpacing(2)
         for action, icon in (
@@ -2947,6 +3010,17 @@ class MainWindow(QMainWindow):
             button = self._action_btn(action)
             button.setFixedSize(28, 28)
             layout.addWidget(button)
+        self.theme_button = QToolButton(bar)
+        self.theme_button.setObjectName("themeSwitch")
+        self.theme_button.setText("主题")
+        self.theme_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.theme_button.setIconSize(QSize(28, 14))
+        self.theme_button.setFixedSize(84, 28)
+        self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.theme_button.setMenu(self.theme_menu)
+        set_theme_style(self.theme_button, "QToolButton#themeSwitch { min-width: 0; min-height: 0; padding: 0 6px; }")
+        layout.addWidget(self.theme_button)
         return bar
 
     def open_export_tool(self, index: int) -> None:
@@ -3260,7 +3334,7 @@ class MainWindow(QMainWindow):
         self.page_number.setMinimumWidth(32)
         self.page_number.setMaximumWidth(64)
         self.page_number.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self.page_number.setStyleSheet("padding: 1px 2px; min-height: 22px;")
+        set_theme_style(self.page_number, "padding: 1px 2px; min-height: 22px;")
         self.page_number.valueChanged.connect(self.go_to_page)
         page_bar.addWidget(self.page_number)
         self.page_total = QLabel("/ 0 页")
@@ -3325,7 +3399,7 @@ class MainWindow(QMainWindow):
         self.banner.hide()
         self.navigation_bar = QFrame()
         self.navigation_bar.setObjectName("readerToolbar")
-        self.navigation_bar.setStyleSheet('''
+        set_theme_style(self.navigation_bar, '''
             QFrame#readerToolbar { background: transparent; border: none; }
             QFrame#readerToolbar QWidget { background: transparent; }
             QFrame#readerToolbar QToolButton { min-width: 26px; min-height: 26px; padding: 0; border-radius: 6px; }
@@ -3341,7 +3415,7 @@ class MainWindow(QMainWindow):
         layout_menu.setObjectName('readingSettingsMenu')
         layout_menu.setAccessibleName('阅读设置')
         layout_menu.setToolTipsVisible(True)
-        layout_menu.setStyleSheet('''
+        set_theme_style(layout_menu, '''
             QMenu#readingSettingsMenu {
                 background: #FFFFFF; color: #29483B; border: 1px solid #D5E5DD;
                 border-radius: 9px; padding: 6px; font-size: 13px;
@@ -3762,7 +3836,7 @@ class MainWindow(QMainWindow):
     def _sep(self) -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #E2EEEC;")
+        set_theme_style(line, "color: #E2EEEC;")
         return line
 
     def _shortcuts(self) -> None:

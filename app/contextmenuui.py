@@ -1,4 +1,5 @@
 """An explicit opt-in control for this copy's Explorer shortcuts."""
+from app.themes import set_theme_style
 from pathlib import Path
 import sys
 
@@ -14,7 +15,7 @@ class ContextMenuDialog(QDialog):
     def __init__(self, parent=None, *, manager=None):
         super().__init__(parent)
         self.setWindowTitle('右键快捷工具 - 纸序 PDF')
-        self.setStyleSheet(STYLE)
+        set_theme_style(self, STYLE)
         self.resize(580, 350)
         self.setMinimumWidth(500)
         self.manager = manager

@@ -1,5 +1,6 @@
 """Small output dialogs, loaded only when a conversion is requested."""
 from __future__ import annotations
+from app.themes import set_theme_style
 
 from dataclasses import replace
 from pathlib import Path
@@ -40,7 +41,7 @@ class MarkdownDialog(QDialog):
 
         files_header = QHBoxLayout()
         files_title = QLabel("待转换 Markdown 文件 · 可直接拖入")
-        files_title.setStyleSheet("font-weight: 600; color: #134E4A;")
+        set_theme_style(files_title, "font-weight: 600; color: #134E4A;")
         files_header.addWidget(files_title)
         files_header.addStretch()
 
@@ -246,7 +247,7 @@ class PageNumbersDialog(QDialog):
         left_card_layout.setSpacing(10)
 
         card_title = QLabel("页码规则设置")
-        card_title.setStyleSheet("font-weight: 600; color: #134E4A;")
+        set_theme_style(card_title, "font-weight: 600; color: #134E4A;")
         left_card_layout.addWidget(card_title)
 
         form = QFormLayout()
@@ -298,17 +299,17 @@ class PageNumbersDialog(QDialog):
         preview_card_layout.setSpacing(10)
 
         prev_title = QLabel("实时效果预览")
-        prev_title.setStyleSheet("font-weight: 600; color: #134E4A;")
+        set_theme_style(prev_title, "font-weight: 600; color: #134E4A;")
         preview_card_layout.addWidget(prev_title)
 
         preview_viewport = QFrame()
-        preview_viewport.setStyleSheet("background: #E8EFEB; border: 1px solid #D5E2DE; border-radius: 8px;")
+        set_theme_style(preview_viewport, "background: #E8EFEB; border: 1px solid #D5E2DE; border-radius: 8px;")
         pv_layout = QVBoxLayout(preview_viewport)
         pv_layout.setContentsMargins(12, 12, 12, 12)
 
         self.preview = QLabel("正在预览当前页…")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setStyleSheet("background: transparent;")
+        set_theme_style(self.preview, "background: transparent;")
         pv_layout.addWidget(self.preview)
 
         preview_card_layout.addWidget(preview_viewport, 1)

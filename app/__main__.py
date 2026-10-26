@@ -16,6 +16,7 @@ from PyQt6.QtGui import QGuiApplication, QIcon
 from PyQt6.QtWidgets import QApplication
 
 from app import APP_NAME, APP_ORGANIZATION, __version__
+from app.themes import initialize_theme, set_theme_style
 
 
 def _qt_messages(mode, context, message: str) -> None:
@@ -99,6 +100,8 @@ def main() -> None:
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.critical(None, '数据目录无法使用', str(exc))
         raise SystemExit(1)
+    from app.runtime import preferences
+    initialize_theme(preferences())
     image_mode = {'--images-to-pdf': 'pdf', '--compress-image': 'compress'}.get(sys.argv[1] if len(sys.argv) > 1 else '')
     if image_mode:
         from app.imagequick import ImageQuickDialog
@@ -148,13 +151,13 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--word-to-pdf":
         from app.wordui import WordConverterWindow
         win = WordConverterWindow(sys.argv[2:])
-        win.setStyleSheet(STYLESHEET)
+        set_theme_style(win, STYLESHEET)
         win.show()
         sys.exit(app.exec())
     if len(sys.argv) > 1 and sys.argv[1] == "--markdown-to-pdf":
         from app.outputui import MarkdownDialog
         win = MarkdownDialog(paths=sys.argv[2:])
-        win.setStyleSheet(STYLESHEET)
+        set_theme_style(win, STYLESHEET)
         win.show()
         sys.exit(app.exec())
     win = MainWindow(opening_paths=paths)

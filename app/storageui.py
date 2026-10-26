@@ -1,4 +1,5 @@
 """Storage settings reuse the application's existing dialogs and task progress."""
+from app.themes import set_theme_style
 from pathlib import Path
 import tempfile
 
@@ -87,7 +88,7 @@ class RuntimeInstallDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle('安装 OCR 增强包')
         self.setObjectName('ocrInstaller')
-        self.setStyleSheet(SETTINGS_QSS)
+        set_theme_style(self, SETTINGS_QSS)
         self.setMinimumWidth(620)
         self.directory = storage.directory('ocr')
         layout = QVBoxLayout(self)
@@ -131,7 +132,7 @@ class StorageDialog(QDialog):
         width = min(780, available.width() - 48)
         self.setMinimumWidth(min(650, width))
         self.resize(width, min(680, available.height() - 64))
-        self.setStyleSheet(SETTINGS_QSS)
+        set_theme_style(self, SETTINGS_QSS)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)

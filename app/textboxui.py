@@ -1,4 +1,5 @@
 """Page-local text entry with controls anchored to the box."""
+from app.themes import set_theme_style
 import math
 import pymupdf as p
 from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, QTimer, Qt
@@ -41,7 +42,7 @@ class InlineTextBox(QObject):
         for edge, cursor in cursors.items():
             handle = QFrame(self.frame)
             handle.setObjectName('textBoxResizeHandle')
-            handle.setStyleSheet('QFrame#textBoxResizeHandle { background: #0F766E; border: 1px solid white; border-radius: 2px; }')
+            set_theme_style(handle, 'QFrame#textBoxResizeHandle { background: #0F766E; border: 1px solid white; border-radius: 2px; }')
             handle.setFixedSize(10, 10)
             handle.setCursor(cursor)
             handle.setToolTip('拖动调整文本框宽高；文字放不下时高度会自动增长')
@@ -49,7 +50,7 @@ class InlineTextBox(QObject):
             self.handles[edge] = handle
         self.toolbar = QFrame(self.view.viewport())
         self.toolbar.setObjectName("textBoxControls")
-        self.toolbar.setStyleSheet("""
+        set_theme_style(self.toolbar, """
             QFrame#textBoxControls { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; }
             QToolButton { min-height: 26px; min-width: 24px; padding: 2px 5px; border: none; border-radius: 4px; font-size: 12px; color: #334155; }
             QToolButton:hover { background: #E2EEEC; }
@@ -133,7 +134,7 @@ class InlineTextBox(QObject):
         self.editor.setFocus()
 
     def style_changed(self, *_):
-        self.color_button.setIcon(toolbar_icon("circle", self.color.name(), 16))
+        self.color_button.setIcon(toolbar_icon("circle", self.color.name(), 16, themed=False))
         self.font.setToolTip(f"选择字体（当前：{self.font.currentFont().family()}）")
         self.error.hide()
         self.position()

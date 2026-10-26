@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import dataclass
 
 from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
@@ -16,6 +17,23 @@ LATEST_RELEASE_URL = f"{RELEASES_URL}/latest"
 LATEST_RELEASE_API = "https://api.github.com/repos/" + APP_PROJECT_URL.split("github.com/", 1)[1] + "/releases/latest"
 CHECK_INTERVAL = 24 * 60 * 60
 MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_NOTES_CHARS = 64 * 1024
+
+
+@dataclass(frozen=True)
+class ReleaseInfo:
+    tag: str
+    notes: str = ""
+    published_at: str = ""
+
+
+def _notes_text(value) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if len(text) > MAX_NOTES_CHARS:
+        return text[:MAX_NOTES_CHARS] + "\n\n内容较长，请打开完整发布说明继续阅读。"
+    return text
 
 
 def version_parts(tag: str) -> tuple[int, int, int]:
@@ -24,7 +42,7 @@ def version_parts(tag: str) -> tuple[int, int, int]:
     return tuple(map(int, tag.removeprefix("v").split(".")))
 
 
-def release_tag(payload: bytes, *, portable=None) -> str:
+def release_info(payload: bytes, *, portable=None) -> ReleaseInfo:
     """Only accept a stable release with a completed Windows installer upload."""
     if len(payload) > MAX_RESPONSE_BYTES:
         raise ValueError("更新信息过大，请打开发布页查看。")
@@ -54,7 +72,13 @@ def release_tag(payload: bytes, *, portable=None) -> str:
         for asset in assets
     ):
         raise ValueError("正式版" + ('绿色 ZIP' if portable else '安装包') + "尚未就绪，请稍后重试或打开发布页。")
-    return tag
+    published_at = release.get("published_at")
+    return ReleaseInfo(tag, _notes_text(release.get("body")),
+                       published_at if isinstance(published_at, str) and len(published_at) <= 40 else "")
+
+
+def release_tag(payload: bytes, *, portable=None) -> str:
+    return release_info(payload, portable=portable).tag
 
 
 def release_tag_from_redirect(location: str | QUrl | None) -> str:
@@ -80,11 +104,25 @@ class UpdateChecker(QObject):
         self.settings = settings
         self.busy = False
         self.message = "点击检查最新正式版。"
+        self.error = ""
+        self.last_check_succeeded = False
         self.latest_tag = str(settings.value("updates/latestTag", ""))
         try:
             version_parts(self.latest_tag)
         except ValueError:
             self.latest_tag = ""
+        self.release_notes = ""
+        self.published_at = ""
+        cached = settings.value("updates/releaseDetails", "")
+        if self.latest_tag and isinstance(cached, str) and len(cached) <= MAX_RESPONSE_BYTES:
+            try:
+                details = json.loads(cached)
+                if isinstance(details, dict) and details.get("tag") == self.latest_tag:
+                    self.release_notes = _notes_text(details.get("notes"))
+                    date = details.get("published_at")
+                    self.published_at = date if isinstance(date, str) and len(date) <= 40 else ""
+            except (ValueError, RecursionError):
+                pass
         self._manager = None
         self._reply = None
         self._buffer = bytearray()
@@ -152,6 +190,7 @@ class UpdateChecker(QObject):
         self.settings.sync()
         self.busy = True
         self.message = "正在检查更新…"
+        self.error = ""
         self._fallback = False
         self._start_request(LATEST_RELEASE_API, head=False)
         self.changed.emit()
@@ -219,7 +258,11 @@ class UpdateChecker(QObject):
                 location = reply.attribute(QNetworkRequest.Attribute.RedirectionTargetAttribute)
                 if not location and hasattr(reply, "rawHeader"):
                     location = bytes(reply.rawHeader(b"Location")).decode("ascii", "replace")
-                self.latest_tag = release_tag_from_redirect(location)
+                tag = release_tag_from_redirect(location)
+                if tag != self.latest_tag:
+                    self.release_notes = ""
+                    self.published_at = ""
+                self.latest_tag = tag
             else:
                 if status in (403, 429):
                     raise ValueError("GitHub 暂时限制了请求，请稍后重试或打开发布页。")
@@ -229,13 +272,23 @@ class UpdateChecker(QObject):
                     raise ValueError("安全连接验证失败，请检查系统时间或网络，或打开发布页。")
                 if reply.error() != QNetworkReply.NetworkError.NoError or status != 200:
                     raise ValueError("无法连接 GitHub，请检查网络后重试，或打开发布页。")
-                self.latest_tag = release_tag(bytes(self._buffer))
+                info = release_info(bytes(self._buffer))
+                self.latest_tag = info.tag
+                self.release_notes = info.notes
+                self.published_at = info.published_at
             self.settings.setValue("updates/latestTag", self.latest_tag)
+            self.settings.setValue("updates/releaseDetails", json.dumps({
+                "tag": self.latest_tag, "notes": self.release_notes, "published_at": self.published_at,
+            }, ensure_ascii=False))
             self.settings.sync()
+            self.error = ""
+            self.last_check_succeeded = True
             self.message = (f"发现新版本 {self.latest_tag}。" if self.update_available
                             else f"当前已是最新版本（v{__version__}）。")
         except ValueError as exc:
             self.message = str(exc)
+            self.error = self.message
+            self.last_check_succeeded = False
         finally:
             self._reply = None
             self._buffer.clear()
@@ -246,9 +299,10 @@ class UpdateChecker(QObject):
 
     def open_release_page(self) -> bool:
         # Construct from the fixed repository and a validated tag, not html_url.
-        url = f"{RELEASES_URL}/tag/{self.latest_tag}" if self.update_available else f"{RELEASES_URL}/latest"
+        url = f"{RELEASES_URL}/tag/{self.latest_tag}" if self.latest_tag else LATEST_RELEASE_URL
         if QDesktopServices.openUrl(QUrl(url)):
             return True
         self.message = f"无法打开浏览器，请手动访问：{url}"
+        self.error = self.message
         self.changed.emit()
         return False
