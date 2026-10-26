@@ -8,7 +8,7 @@ from pathlib import Path
 from PyQt6.QtCore import QEvent, QUrl, Qt, QTimer
 from PyQt6.QtGui import QColor, QDesktopServices, QFontMetrics
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QCheckBox, QFileDialog, QFrame, QHeaderView,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QHeaderView,
     QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QSizePolicy,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -313,6 +313,20 @@ class WordConverterWindow(QWidget):
         self.overwrite = QCheckBox(f"明确覆盖已有 {self.target_kind}（源文件保留）")
         options_layout.addWidget(self.recursive)
         options_layout.addWidget(self.overwrite)
+        self.pdf_mode_row=QWidget()
+        mode_layout=QHBoxLayout(self.pdf_mode_row)
+        mode_layout.setContentsMargins(0,0,0,0)
+        mode_label=QLabel('Word 排版方式')
+        self.pdf_mode=QComboBox()
+        self.pdf_mode.addItem('保留原版式（推荐）','layout')
+        self.pdf_mode.addItem('Word 重排（适合大幅修改正文）','word')
+        self.pdf_mode.setAccessibleName('Word 排版方式')
+        mode_label.setBuddy(self.pdf_mode)
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.pdf_mode)
+        mode_layout.addStretch()
+        options_layout.addWidget(self.pdf_mode_row)
+        self.pdf_mode.currentIndexChanged.connect(self._update_direction_labels)
         self.engine_hint = hint(options_layout, "")
         self.engine_hint.setStyleSheet("font-size: 12px; color: #64748B;")
         self.options.hide()
@@ -362,9 +376,13 @@ class WordConverterWindow(QWidget):
         self.table.setAccessibleName(f"{self.source_kind} 转换清单，双击第二列可选择输出位置")
         self.overwrite.setText(f"明确覆盖已有 {self.target_kind}（源文件保留）")
         self.ocr_install.setVisible(self.direction == "pdf_to_word")
-        primary_hint = ("扫描页自动离线识别，需安装识别组件；已有 OCR 文字直接导出可编辑正文和表格。其他 PDF 使用本机 Word 重排。"
+        self.pdf_mode_row.setVisible(self.direction == "pdf_to_word")
+        preserve_layout=self.pdf_mode.currentData()=='layout'
+        pdf_hint=('按原位置保留文字、标题和表格，色块与插图保留为图像，无需安装 Word。可在更多选项切换为 Word 重排。'
+                  if preserve_layout else '普通 PDF 使用本机 Microsoft Word 重排，适合连续修改正文；已有 OCR 文字直接导出可编辑内容。')
+        primary_hint = (pdf_hint
                         if self.direction == "pdf_to_word" else "使用本机 Microsoft Word 离线转换 · 已有同名输出默认跳过")
-        self.engine_hint.setText("扫描页逐页识别，可随时取消；复杂排版、金额和编号请核对。使用 Word 重排时单份最多等待 180 秒。"
+        self.engine_hint.setText("扫描页需安装离线识别组件；缺失字体、竖排文字和复杂图文请核对。保留原版式按位置编辑，Word 重排需本机 Word，单份最多等待 180 秒。"
                                  if self.direction == "pdf_to_word" else "单份超时 180 秒；失败继续下一份。源文件只读打开，禁用宏和外链自动更新。")
         sub_hint = f"可直接拖入 {self.source_kind} 文件或文件夹，重复文件自动忽略。"
         self.intro.setText(f"{primary_hint}\n{sub_hint}")
@@ -730,7 +748,8 @@ class WordConverterWindow(QWidget):
                     f"请为每份 {self.source_kind} 分别选择不同的 {self.target_kind} 保存位置。")
                 return
         needs_native_import = False
-        if self.direction == "pdf_to_word" and word_available():
+        pdf_mode=self.pdf_mode.currentData()
+        if self.direction == "pdf_to_word" and pdf_mode=='word' and word_available():
             def inspect_inputs(progress, cancel):
                 for index, (source, _) in enumerate(items):
                     check_cancel(cancel)
@@ -760,7 +779,7 @@ class WordConverterWindow(QWidget):
         overwrite = self.overwrite.isChecked()
         try:
             results, cancelled, version = run_operation(self, f"批量 {self.source_kind} 转 {self.target_kind}", lambda progress, cancel:
-                convert_batch(items, overwrite, progress, cancel, direction=self.direction), cancellable=True)
+                convert_batch(items, overwrite, progress, cancel, direction=self.direction, pdf_mode=pdf_mode), cancellable=True)
         except Exception as exc:
             QMessageBox.warning(self, "转换未启动", str(exc))
             return

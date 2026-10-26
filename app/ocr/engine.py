@@ -63,11 +63,11 @@ class OCREngine:
             return data
         raise OCRError('OCR 单页处理超过 5 分钟，已停止任务。')
 
-    def recognize(self, image, page_index):
+    def recognize(self, image, page_index, *, word_boxes=True):
         check_cancel(self.cancel)
         try:
             self.process.stdin.write(json.dumps({'image': str(image), 'page_index': page_index,
-                                                 'word_boxes': True}) + '\n')
+                                                 'word_boxes': word_boxes}) + '\n')
             self.process.stdin.flush()
             result = self._receive()
             return [OCRLine(item['text'], tuple(item['bbox']), tuple(item['polygon']),

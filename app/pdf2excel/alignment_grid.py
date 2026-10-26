@@ -138,6 +138,10 @@ def alignment_grid_lines(page,spans):
         if len(logical)<3:
             cursor+=1; continue
         data=[cell for row in logical[1:] for cell in row]
+        # Aligned checkbox lists in side-by-side panels are independent lists,
+        # even when their backgrounds provide apparent header-band evidence.
+        if sum(cell['text'].lstrip().startswith(('[','□','☑','✓','√')) for cell in data)>=len(data)*.5:
+            cursor+=1; continue
         numeric=sum(any(char.isdigit() for char in cell['text']) for cell in data)/len(data)
         left=min(cell['bbox'][0] for row in logical for cell in row)-size*.45
         right=max(cell['bbox'][2] for row in logical for cell in row)+size*.6

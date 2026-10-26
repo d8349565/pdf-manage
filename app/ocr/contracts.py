@@ -21,6 +21,7 @@ class OCROptions:
     skip_existing_text: bool = True
     password: str | None = field(default=None, repr=False)
     runtime_dir: str | None = None
+    preserve_line_text: bool = False
 
 
 @dataclass(frozen=True)

@@ -44,7 +44,10 @@ def prepared_text_pdf(source, directory, progress=None, cancel=None, runtime_dir
         def report(current,total,message):
             if progress:
                 progress(message)
-        result=run_ocr(source,Path(folder)/'recognized.pdf',missing,OCROptions(runtime_dir=runtime_dir),report,cancel)
+        # Keep the recognizer's original spaces and word boundaries for Word.
+        # Character boxes remain the default for the separate searchable-PDF tool.
+        result=run_ocr(source,Path(folder)/'recognized.pdf',missing,
+                       OCROptions(runtime_dir=runtime_dir,preserve_line_text=True),report,cancel)
         if result.failed_pages:
             raise OCRError('部分扫描页未识别成功，未提交文档，请检查清晰度后重试。')
         yield result.output_path

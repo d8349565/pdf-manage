@@ -31,6 +31,10 @@ def detect_tables(
 
     best_tables = []
     best_strategy_name = "lines"
+    # Curved artwork (for example a seal crossing a cell) is not a table
+    # boundary. Supply only measured straight rules to the native grid finder.
+    measured=[((line['bbox'][0],line['bbox'][1]),(line['bbox'][2],line['bbox'][3]))
+              for line in lines if min(abs(line['bbox'][2]-line['bbox'][0]),abs(line['bbox'][3]-line['bbox'][1]))<=EPSILON]
 
     # Use measured rules even when an optional layout model misses a scan.
     for name, strategy in strategies:
@@ -70,7 +74,8 @@ def detect_tables(
                     warnings.append(f'第 {page.number + 1} 页存在正文分栏，不按整页文字猜测表格。')
                 break
         try:
-            detected = page.find_tables(use_layout=False, **strategy)
+            detected = page.find_tables(use_layout=False, **strategy,
+                                        **({'paths':[],'add_lines':measured} if name!='text' and measured else {}))
         except Exception:
             continue
 
