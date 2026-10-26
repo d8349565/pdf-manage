@@ -2763,7 +2763,9 @@ class MainWindow(QMainWindow):
         self.page_numbers_action=self._act('页码处理…',self.open_page_numbers)
         self.watermark_action = self._act("水印…", self.open_watermarks)
         self.seam_stamp_action = self._act('骑缝章…', self.open_seam_stamps)
-        document.addActions([self.page_numbers_action,self.watermark_action,self.seam_stamp_action])
+        self.annot_crop_action = self._act('批注裁剪…', self.open_annotation_crop)
+        document.addActions([self.page_numbers_action,self.watermark_action,
+                             self.seam_stamp_action,self.annot_crop_action])
         document.addSeparator()
         compression=document.addMenu('压缩')
         self.compress_action = self._act("压缩 PDF…", lambda: self.open_export_tool(3))
@@ -3010,6 +3012,7 @@ class MainWindow(QMainWindow):
         self.watermark_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "annotate"))
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.capture_action.setEnabled(bool(count) and not copy_reason)
+        self.annot_crop_action.setEnabled(bool(count) and not copy_reason)
         self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
         sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
@@ -6153,6 +6156,34 @@ class MainWindow(QMainWindow):
     def open_seam_stamps(self):
         from app.seamstampui import open_seam_stamps
         open_seam_stamps(self)
+
+    def open_annotation_crop(self):
+        """按矩形批注框批量裁剪并导出为新 PDF。"""
+        if not self.ws.pages or not self._allow_operation('copy'):
+            return
+        from app.annotcrop import AnnotationCropError, export_annotation_crop
+        from app.annotcropui import AnnotationCropDialog
+        from app.exportdialogs import new_pdf_path
+        dialog = AnnotationCropDialog(len(self.ws.pages), self.ws.selected, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            dialog.deleteLater()
+            return
+        options = dialog.options()
+        dialog.deleteLater()
+        stem = os.path.splitext(os.path.basename(self.ws.path or '文档'))[0]
+        path = new_pdf_path(self, self.store, '批注裁剪导出', f'{stem}_批注裁剪.pdf')
+        if not path:
+            return
+        try:
+            result = run_operation(self, "批注裁剪", lambda progress, cancel:
+                export_annotation_crop(self.store, self.ws.pages, options, path,
+                                       progress, cancel), cancellable=True)
+            QMessageBox.information(self, "批注裁剪完成",
+                f'已导出 {result["regions"]} 个区域，共 {result["out_pages"]} 页：\n{result["path"]}')
+        except OperationCancelled:
+            QMessageBox.information(self, "已取消", "已取消，未生成输出文件，原件保留。")
+        except (AnnotationCropError, PdfError, OSError) as exc:
+            QMessageBox.warning(self, "批注裁剪未完成", str(exc))
 
     def open_deskew(self):
         from app.deskewui import open_deskew

@@ -32,7 +32,7 @@ EXPECTED={
     ('编辑',):['撤销','重做','复制页面','粘贴为页面','全选','全文搜索','审阅与文字修正','框选导出图片'],
     ('页面',):['插入页面','合并文件','提取页面','拆分文件','分割单页','调整页面大小','删除页面'],
     ('页面','旋转页面'):['向左旋转 90°','向右旋转 90°'],
-    ('文档',):['页码处理','水印','骑缝章'],
+    ('文档',):['页码处理','水印','骑缝章','批注裁剪'],
     ('文档','压缩'):['压缩 PDF','压缩图片'],
     ('文档','安全与副本'):['加密另存','解密另存','制作可编辑副本'],
     ('扫描',):['扫描件增强','扫描纠偏','文字识别（OCR）'],
@@ -57,7 +57,7 @@ def test_complete_menu_contract_has_no_missing_or_unexpected_commands(qapp,tmp_p
             if portable:expected.add(('文件','应用设置','右键快捷工具'))
         actual=all_commands(window)
         assert set(actual)==expected,{'missing':expected-set(actual),'unexpected':set(actual)-expected}
-        expected_count=(63 if portable else 62) if sys.platform=='win32' else 61
+        expected_count=(64 if portable else 63) if sys.platform=='win32' else 62
         assert len(actual)==expected_count
     finally:
         window.close();qapp.processEvents()
