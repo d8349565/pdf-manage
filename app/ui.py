@@ -4435,6 +4435,10 @@ class MainWindow(QMainWindow):
             self._update_preview(lightweight=True)
             self._reading_scrolled()
             self._detail_timer.start()
+            # 滚动停下后预热可见页的批注快照，相邻页露出的部分可以直接落笔。
+            tools = getattr(self, "annotation_tools", None)
+            if tools is not None and tools.isVisible():
+                tools.prefetch_visible_pages()
         self.rendering._dispatch()
 
     def _thumb_visible(self, key) -> bool:
@@ -5941,6 +5945,7 @@ class MainWindow(QMainWindow):
         tools = self._ensure_annotation_tools()
         tools._ensure_filter()
         tools.show()
+        tools.prefetch_visible_pages()
         self.review_button.setChecked(True)
 
     def _show_write_notes(self, results):

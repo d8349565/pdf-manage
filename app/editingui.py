@@ -564,8 +564,15 @@ class AnnotationTools(QWidget):
         self.snapshot_key = None
         self.snapshot_index = None
         self.stroke = []
+        self.stroke_page = None
         self._mosaic_stroke = None
         self.overlay = None
+        self._prefetch_queue = []
+        self._prefetch_generation = None
+        self._prefetch_timer = QTimer(self)
+        self._prefetch_timer.setSingleShot(True)
+        self._prefetch_timer.setInterval(120)
+        self._prefetch_timer.timeout.connect(self._prefetch_step)
         self._move_state = None
         self._move_preview = None
         self._move_committing = False
@@ -898,6 +905,58 @@ class AnnotationTools(QWidget):
             return False
         return self._use_snapshot(ref, index, summary)
 
+    def prefetch_visible_pages(self, limit=4):
+        """预热视口内可见页的批注快照。
+
+        连续阅读时相邻页会露出一部分，用户经常顺手在上面落笔。提前把这几页的
+        几何快照准备好，落笔时就是缓存命中，不必再等一次解析。
+        """
+        if not self.isVisible() or getattr(self.host, "_task_dialog", None) is not None:
+            return
+        pages = self.host.ws.pages
+        if not pages:
+            return
+        try:
+            visible = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+            rects = list(self.view.page_rects)
+        except (RuntimeError, AttributeError):
+            return
+        current = self.host.ws.preview_index()
+        queue = []
+        for index, rect in enumerate(rects):
+            if index >= len(pages) or rect is None or index == current or not rect.intersects(visible):
+                continue
+            ref = pages[index]
+            if self.host.store.cached_annotations(ref) is None:
+                queue.append((index, ref))
+            if len(queue) >= limit:
+                break
+        if not queue:
+            return
+        self._prefetch_queue = queue
+        self._prefetch_generation = self.view.layout_generation
+        self._prefetch_timer.start()
+
+    def _prefetch_step(self):
+        queue = self._prefetch_queue
+        if not queue:
+            return
+        index, ref = queue.pop(0)
+        pages = self.host.ws.pages
+        ready = (index < len(pages) and pages[index] is ref and self.isVisible()
+                 and self.view.layout_generation == self._prefetch_generation
+                 and getattr(self.host, "_task_dialog", None) is None)
+        if ready:
+            try:
+                self.host.store.prepare_annotations(ref)
+            except Exception:
+                # 单页预热失败不影响其它页，也不该打断用户当前操作。
+                pass
+        if ready and queue:
+            self._prefetch_timer.start()
+        else:
+            self._prefetch_queue = []
+
     def _use_snapshot(self, ref, index, snapshot):
         self.snapshot, self.snapshot_key = snapshot, ref.render_key
         self.snapshot_index = index
@@ -969,9 +1028,13 @@ class AnnotationTools(QWidget):
                 self.commit(PageEdit("delete", annotation_id=identifier), page_index=index, expected_ref=ref)
 
     def sync_page(self):
+        stroke = self.stroke_page
+        if stroke and self.stroke and (stroke[0] >= len(self.host.ws.pages)
+                                       or self.host.ws.pages[stroke[0]] is not stroke[1]):
+            self.clear_overlay()
+            self._set_feedback("所选页面已改变，已取消本次绘制。")
         mosaic = self._mosaic_stroke
-        if mosaic and (mosaic[0] != self.host.ws.preview_index()
-                       or mosaic[0] >= len(self.host.ws.pages)
+        if mosaic and (mosaic[0] >= len(self.host.ws.pages)
                        or self.host.ws.pages[mosaic[0]] is not mosaic[1]
                        or self.view.layout_generation != mosaic[2]):
             self.clear_overlay()
@@ -1049,6 +1112,7 @@ class AnnotationTools(QWidget):
             self.view._scene.removeItem(self.overlay)
         self.overlay = None
         self.stroke = []
+        self.stroke_page = None
         self._mosaic_stroke = None
 
     def eventFilter(self, watched, event):
@@ -1210,16 +1274,16 @@ class AnnotationTools(QWidget):
                 index = self.view.page_at_point(point)
                 if not 0 <= index < len(self.view.page_rects) or not self.view.page_rects[index].contains(point):
                     return True
-                if index != self.host.ws.preview_index():
-                    self.host.go_to_page(index + 1, reveal=False)
-                    self.snapshot_key = None
+                # 落笔页就是这次批注的归属页。连续阅读时上一页／下一页的可见部分
+                # 也能直接标注，所以不再为了落笔去切换当前页（切页会打断阅读位置）。
                 pressed = bool(QApplication.mouseButtons() & Qt.MouseButton.LeftButton)
-                if not self.ensure_snapshot(geometry_only=kind not in ("highlight", "underline", "replace")):
+                if not self.ensure_snapshot(index, geometry_only=kind not in ("highlight", "underline", "replace")):
                     return True
                 if pressed and not QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
-                    self._set_feedback("当前页已准备好，请重新点击或拖动以添加批注。")
+                    self._set_feedback("本页批注已准备好，请重新点击或拖动以添加批注。")
                     return True
                 self.stroke = [point]
+                self.stroke_page = (index, self.host.ws.pages[index], tuple(self.snapshot["matrix"]))
                 if kind == "mosaic":
                     self._mosaic_stroke = (index, self.host.ws.pages[index], self.view.layout_generation)
                     self.view.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -1243,7 +1307,14 @@ class AnnotationTools(QWidget):
             if not self.stroke:
                 return False
             point = self.view.mapToScene(event.position().toPoint())
-            bounds = self.view.page_rects[self.host.ws.preview_index()]
+            pages = self.host.ws.pages
+            owner = self.stroke_page[0] if self.stroke_page else self.host.ws.preview_index()
+            if (self.stroke_page and (owner >= len(pages) or pages[owner] is not self.stroke_page[1])) \
+                    or not 0 <= owner < len(self.view.page_rects):
+                self.clear_overlay()
+                self._set_feedback("所选页面已改变，已取消本次绘制。")
+                return True
+            bounds = self.view.page_rects[owner]
             point = QPointF(max(bounds.left(), min(bounds.right(), point.x())), max(bounds.top(), min(bounds.bottom(), point.y())))
             if event.type() == QEvent.Type.MouseMove:
                 if kind == "ink":
@@ -1275,9 +1346,10 @@ class AnnotationTools(QWidget):
             if event.button() != Qt.MouseButton.LeftButton:
                 return False
             points = [*self.stroke, point]
+            state = self.stroke_page
             self.clear_overlay()
             try:
-                self.finish(kind, points)
+                self.finish(kind, points, state)
             except (ValueError, PdfError) as exc:
                 QMessageBox.information(self, "本次操作未应用", str(exc))
             except Exception as exc:
@@ -1288,12 +1360,15 @@ class AnnotationTools(QWidget):
             self._set_feedback(f"操作异常：{exc}")
             return False
 
-    def canonical(self, point, index=None):
+    def canonical(self, point, index=None, matrix=None):
         import pymupdf as p
+        state = self.stroke_page
         if index is None:
-            index = self.snapshot_index
+            index = state[0] if state else self.snapshot_index
+        if matrix is None:
+            matrix = state[2] if state and state[0] == index else self.snapshot["matrix"]
         top = self.view.page_rects[index].topLeft()
-        return p.Point(point.x() - top.x(), point.y() - top.y()) * ~p.Matrix(self.snapshot["matrix"])
+        return p.Point(point.x() - top.x(), point.y() - top.y()) * ~p.Matrix(matrix)
 
     def select_at(self, point):
         import pymupdf as p
@@ -1369,10 +1444,13 @@ class AnnotationTools(QWidget):
         widget.raise_()
         actions.raise_()
 
-    def _start_inline_replace(self, ref, area, original, span=None):
+    def _start_inline_replace(self, ref, area, original, span=None, index=None, matrix=None):
         self._close_inline_replace()
         self.hover_bar.hide()
-        index = self.host.ws.preview_index()
+        if index is None:
+            index = self.host.ws.preview_index()
+        if matrix is None:
+            matrix = self.snapshot["matrix"]
         if index is None or index >= len(self.view.page_rects):
             return
         container = QFrame(self.view.viewport())
@@ -1426,7 +1504,7 @@ class AnnotationTools(QWidget):
             "input": edit_input,
             "ref": ref,
             "index": index,
-            "matrix": self.snapshot["matrix"],
+            "matrix": matrix,
             "span": span or {},
             "area": area,
             "original": original,
@@ -1473,14 +1551,27 @@ class AnnotationTools(QWidget):
         apply_btn.clicked.connect(commit)
         cancel_btn.clicked.connect(cancel)
 
-    def finish(self, kind, points):
+    def finish(self, kind, points, state=None):
         import pymupdf as p
         from app.pdfedits import selection_quads
-        index = self.host.ws.preview_index()
-        ref = self.host.ws.pages[index]
-        if ref.render_key != self.snapshot_key:
-            raise ValueError("当前页已改变，请重新操作。")
-        canonical = [self.canonical(pos) for pos in points]
+        pages = self.host.ws.pages
+        if state is None:
+            state = self.stroke_page
+        if state is not None:
+            # 以落笔页为归属页：拖拽过程中「当前页」怎么变都不影响本次批注。
+            index, owner, matrix = state[0], state[1], state[2]
+            if index >= len(pages) or pages[index] is not owner:
+                raise ValueError("所选页面已改变，请重新标注。")
+            ref = owner
+            if kind in ("highlight", "underline", "replace") and ref.render_key != self.snapshot_key:
+                raise ValueError("所选页面的文字层已改变，请重新框选。")
+        else:
+            index = self.host.ws.preview_index()
+            ref = pages[index]
+            matrix = self.snapshot["matrix"]
+            if ref.render_key != self.snapshot_key:
+                raise ValueError("当前页已改变，请重新操作。")
+        canonical = [self.canonical(pos, index, matrix) for pos in points]
         area = p.Rect(canonical[0], canonical[-1]).normalize()
         color = (self.color.redF(), self.color.greenF(), self.color.blueF())
         identifier = "zhixu-" + uuid.uuid4().hex
@@ -1499,7 +1590,7 @@ class AnnotationTools(QWidget):
             if area.width < 16 or area.height < 8:
                 start = points[0] - visible.topLeft()
                 area = p.Rect(start.x(), start.y(), min(start.x() + 220, visible.width()),
-                              min(start.y() + 48, visible.height())) * ~p.Matrix(self.snapshot["matrix"])
+                              min(start.y() + 48, visible.height())) * ~p.Matrix(matrix)
             if area.width < 16 or area.height < 8:
                 raise ValueError("请在页面内留出文本框空间。")
             self.start_text_box(area, index, ref)
@@ -1537,7 +1628,7 @@ class AnnotationTools(QWidget):
             line_area = p.Rect(chars[0][0]["bbox"])
             for char_item, _ in chars[1:]:
                 line_area |= p.Rect(char_item["bbox"])
-            self._start_inline_replace(ref, line_area, original, chars[0][1])
+            self._start_inline_replace(ref, line_area, original, chars[0][1], index=index, matrix=matrix)
             return
         elif kind in ("highlight", "underline"):
             quads = selection_quads(self.snapshot["raw"], area)
@@ -1549,7 +1640,7 @@ class AnnotationTools(QWidget):
         else:
             chosen = canonical if kind == "ink" else [canonical[0], canonical[-1]]
             edit = PageEdit(kind, tuple(tuple(pos) for pos in chosen), color=color, width=self.width.value(), annotation_id=identifier)
-        self.commit(edit, confirm=kind == "replace")
+        self.commit(edit, confirm=kind == "replace", page_index=index, expected_ref=ref)
 
     def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None, prepared_preview=None):
         if getattr(self.host, "_task_dialog", None) is not None:
@@ -1623,7 +1714,8 @@ class AnnotationTools(QWidget):
             self.host.rendering.diagnostics.record("annotation_refresh",
                 duration_ms=round((perf_counter() - refreshed) * 1000, 2))
             self.ensure_snapshot(geometry_only=True)
-            self._set_feedback("修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
+            where = f"第 {index + 1} 页" if index != self.host.ws.preview_index() else ""
+            self._set_feedback(f"{where}修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             return True
         except (ValueError, PdfError) as exc:
             if on_error:

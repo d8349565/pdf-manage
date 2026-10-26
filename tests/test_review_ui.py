@@ -1118,3 +1118,70 @@ def test_adding_annotations_keeps_scroll_zoom_and_replaces_image_without_blank(r
     qapp.processEvents()
     assert (view.horizontalScrollBar().value(), view.verticalScrollBar().value(), view.transform().m11()) == before
     assert not resizes
+
+
+def test_annotation_on_visible_neighbour_page_stays_on_that_page(reader, qapp):
+    """连续阅读时上一页露出的部分可以直接落笔，不能被「当前页」抢走。"""
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("rect"))
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    # 把视口挪到两页交界处，让第 1 页下沿与第 2 页上沿同屏
+    view.centerOn(view.page_rects[0].center().x(), view.page_rects[0].bottom())
+    settle(qapp)
+    # 阅读位置会按视口中心自动判定，这里直接把「当前页」钉在第 2 页，模拟
+    # 用户看着第 2 页、顺手在第 1 页露出的下沿上画框的情形。
+    reader.go_to_page(2, reveal=False)
+    qapp.processEvents()
+    assert reader.ws.preview_index() == 1
+    top = view.page_rects[0].topLeft()
+    height = view.page_rects[0].height()
+    start = view.mapFromScene(top + QPointF(60, height - 110))
+    end = view.mapFromScene(top + QPointF(220, height - 50))
+    assert view.viewport().rect().contains(start)
+    assert view.viewport().rect().contains(end)
+    before_scroll = (view.horizontalScrollBar().value(), view.verticalScrollBar().value(),
+                     view.transform().m11())
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    settle(qapp)
+    # 落笔不再切换当前页，也就不会跳视图
+    assert (view.horizontalScrollBar().value(), view.verticalScrollBar().value(),
+            view.transform().m11()) == before_scroll
+    rects = [edit for edit in reader.ws.pages[0].edits if edit.kind == "rect"]
+    assert len(rects) == 1
+    area = p.Rect(rects[0].points)
+    assert 0 <= area.x0 < area.x1 <= 595 and 0 <= area.y0 < area.y1 <= 842
+    # 落在第 1 页的下半部分，而不是被算到第 2 页
+    assert area.y0 > 400
+    assert not reader.ws.pages[1].edits
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    settle(qapp)
+
+
+def test_visible_neighbour_pages_are_prefetched(reader, qapp):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    view.centerOn(view.page_rects[0].center().x(), view.page_rects[0].bottom())
+    settle(qapp)
+    visible = view.mapToScene(view.viewport().rect()).boundingRect()
+    index = next((i for i, rect in enumerate(view.page_rects)
+                  if i != reader.ws.preview_index() and rect.intersects(visible)), None)
+    assert index is not None
+    ref = reader.ws.pages[index]
+    with reader.store._annotation_lock:
+        reader.store._annotation_cache.pop(ref.render_key, None)
+    assert reader.store.cached_annotations(ref) is None
+    tools.prefetch_visible_pages()
+    for _ in range(100):
+        if reader.store.cached_annotations(ref) is not None:
+            break
+        QTest.qWait(20)
+    assert reader.store.cached_annotations(ref) is not None
