@@ -1,6 +1,7 @@
 """Validate a complete local runtime before executing it; no downloading."""
 import hashlib
 import json
+import os
 from pathlib import Path, PureWindowsPath
 import shutil
 import tempfile
@@ -83,6 +84,21 @@ def _rename_directory(source, destination, cancel=None):
             time.sleep(.1)
 
 
+def _check_runtime_paths(target, names, *temporary_roots):
+    if os.name != 'nt':
+        return
+    for root in (Path(target).resolve(), *temporary_roots):
+        for name in names:
+            path = root / name
+            # Windows counts UTF-16 units; directories also need room for an 8.3 name.
+            length = len(str(path).encode('utf-16-le')) // 2
+            parent_length = len(str(path.parent).encode('utf-16-le')) // 2
+            if length >= (248 if name.endswith('/') else 260) or parent_length >= 248:
+                raise OCRError('OCR 组件安装路径过长，展开后的文件超出 Windows 路径长度限制。\n'
+                               '请选择更靠近磁盘根目录的文件夹，例如 D:\\ZhiXuPDF；中文和空格可以保留。\n'
+                               f'安装位置：{target}')
+
+
 def install_runtime(archive, *, directory=None, progress=None, cancel=None):
     """Stage and validate a trusted local ZIP. Keep the previous installation as backup."""
     from app.storage import runtime_in_use
@@ -92,17 +108,20 @@ def install_runtime(archive, *, directory=None, progress=None, cancel=None):
     if Path(archive).resolve().is_relative_to(target.resolve()):
         raise OCRError('请从组件目录之外选择增强包，避免重装时移动原 ZIP 文件。')
     parent = target.parent.resolve()
-    parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix='.ocr-install-', dir=parent))
+    staging = None
     backup = parent / f'.ocr-backup-{uuid.uuid4().hex}'
     moved_old = False
     installed = False
     try:
+        parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix='.ocr-install-', dir=parent))
         with zipfile.ZipFile(archive) as bundle:
             entries = bundle.infolist()
             if (len(entries) > 10000 or sum(item.file_size for item in entries) > 1024 ** 3
                     or len({item.filename.casefold() for item in entries}) != len(entries)):
                 raise OCRError('增强包体积、文件数量或重复路径异常。')
+            _check_runtime_paths(target, [item.filename for item in entries], staging,
+                                 *([backup] if target.exists() else []))
             for current, entry in enumerate(entries):
                 check_cancel(cancel)
                 name = entry.filename.rstrip('/') if entry.is_dir() else entry.filename
@@ -129,12 +148,15 @@ def install_runtime(archive, *, directory=None, progress=None, cancel=None):
         _rename_directory(staging, target, cancel)
         installed = True
         return str(target)
-    except (OSError, zipfile.BadZipFile) as exc:
-        raise OCRError('OCR 安装失败，请检查增强包、磁盘空间及文件是否正在使用。') from None
+    except zipfile.BadZipFile:
+        raise OCRError('OCR 增强包不是有效的 ZIP，或下载不完整，请重新下载完整的离线增强包。') from None
+    except OSError as exc:
+        raise OCRError(f'OCR 安装失败。\n安装位置：{target}\n系统提示：{exc}\n'
+                       '请确认安装位置允许写入、磁盘空间充足，且组件未被其他程序占用。') from None
     finally:
         if not installed and moved_old:
             _rename_directory(backup, target)
-        if staging.exists():
+        if staging is not None and staging.exists():
             # Only this uniquely created, contained staging directory is removed.
             if staging.resolve().parent != parent or not staging.name.startswith('.ocr-install-'):
                 raise OCRError('安装临时目录路径异常，请人工核对。')
@@ -167,6 +189,7 @@ def relocate_runtime(source, destination, progress=None, cancel=None):
     paths = list(tree_files(source, cancel))
     staging = Path(tempfile.mkdtemp(prefix='.ocr-install-', dir=destination.parent))
     try:
+        _check_runtime_paths(destination, [path.relative_to(source).as_posix() for path in paths], staging)
         for index, path in enumerate(paths):
             check_cancel(cancel)
             copied = staging / path.relative_to(source)

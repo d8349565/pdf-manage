@@ -2,6 +2,7 @@
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import subprocess
@@ -12,7 +13,7 @@ import pytest
 
 from app import __version__
 from app.ocr.contracts import OCROptions, OCRLine, OCRError
-from app.ocr.model_manager import MODEL_NAMES, install_runtime, safe_member, validate_runtime
+from app.ocr.model_manager import MODEL_NAMES, install_runtime, relocate_runtime, safe_member, validate_runtime
 from app.ocr.service import run_ocr
 from app.output import OperationCancelled
 
@@ -41,6 +42,78 @@ def test_compatible_runtime_is_independent_of_main_program_version(tmp_path,monk
     resolved,checked=validate_runtime(runtime)
     assert resolved==runtime.resolve() and checked['app_series']=='0.9'
     assert manifest_path.read_bytes()==before
+
+
+def test_install_supports_chinese_archive_and_directory_names(tmp_path):
+    source = make_runtime(tmp_path / 'source')
+    archive = tmp_path / '文字识别 增强包.zip'
+    with zipfile.ZipFile(archive, 'w') as bundle:
+        for path in source.rglob('*'):
+            if path.is_file():
+                bundle.write(path, path.relative_to(source).as_posix())
+    target = tmp_path / '中文 安装目录' / 'ocr'
+    before = archive.read_bytes()
+    install_runtime(archive, directory=target)
+    assert validate_runtime(target)[0] == target.resolve()
+    assert archive.read_bytes() == before
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows path-length compatibility')
+def test_long_install_path_is_reported_before_replacing_existing_components(tmp_path):
+    source = make_runtime(tmp_path / 'source')
+    archive = tmp_path / 'package.zip'
+    with zipfile.ZipFile(archive, 'w') as bundle:
+        for path in source.rglob('*'):
+            if path.is_file():
+                bundle.write(path, path.relative_to(source).as_posix())
+    target = tmp_path / ('a' * max(1, 210 - len(str(tmp_path)))) / 'ocr'
+    target.mkdir(parents=True)
+    (target / 'keep.txt').write_text('previous installation')
+    copied = []
+    with pytest.raises(OCRError, match='路径过长'):
+        install_runtime(archive, directory=target, progress=lambda *args: copied.append(args))
+    assert not copied
+    assert (target / 'keep.txt').read_text() == 'previous installation'
+    assert not list(target.parent.glob('.ocr-install-*'))
+    assert not list(target.parent.glob('.ocr-backup-*'))
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows path-length compatibility')
+def test_long_relocation_path_preserves_original_components(tmp_path):
+    source = make_runtime(tmp_path / 'source')
+    target = tmp_path / ('a' * max(1, 210 - len(str(tmp_path)))) / 'ocr'
+    with pytest.raises(OCRError, match='路径过长'):
+        relocate_runtime(source, target)
+    assert validate_runtime(source)[0] == source.resolve()
+    assert not target.exists()
+    assert not list(target.parent.glob('.ocr-install-*'))
+
+
+def test_invalid_download_has_an_actionable_install_error(tmp_path):
+    archive = tmp_path / '增强包.zip'
+    archive.write_bytes(b'incomplete download')
+    target = tmp_path / 'installed'
+    with pytest.raises(OCRError, match='下载不完整'):
+        install_runtime(archive, directory=target)
+    assert archive.read_bytes() == b'incomplete download'
+    assert not target.exists()
+    assert not list(tmp_path.glob('.ocr-install-*'))
+
+
+def test_install_error_includes_the_system_reason_and_location(tmp_path, monkeypatch):
+    target = tmp_path / 'installed'
+    target.mkdir()
+    (target / 'keep.txt').write_text('previous installation')
+    original = Path.mkdir
+    def denied(self, *args, **kwargs):
+        if self == target.parent:
+            raise PermissionError('directory access denied')
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'mkdir', denied)
+    with pytest.raises(OCRError) as error:
+        install_runtime(tmp_path / 'package.zip', directory=target)
+    assert str(target) in str(error.value) and 'directory access denied' in str(error.value)
+    assert (target / 'keep.txt').read_text() == 'previous installation'
 
 
 def test_install_retries_transient_windows_directory_lock(tmp_path,monkeypatch):
