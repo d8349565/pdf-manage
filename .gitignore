@@ -47,6 +47,7 @@
 
 # 对外维护说明；旧开发记录、验收记录和截图留在本机。
 /docs/**
+!/docs/USAGE.md
 !/docs/DEVELOPMENT.md
 !/docs/REPOSITORY.md
 !/docs/ACCEPTANCE.md
