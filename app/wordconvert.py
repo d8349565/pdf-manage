@@ -175,7 +175,7 @@ def _worker_command(folder):
     return [sys.executable, "-m", "app", "--word-worker", folder]
 
 
-def _convert_one(source, target, overwrite, progress, cancel, *, direction="word_to_pdf"):
+def _convert_one(source, target, overwrite, progress, cancel, *, direction="word_to_pdf", pdf_mode="layout"):
     from app.pdfio import PdfStore
 
     if stamp(target) is not None and not overwrite:
@@ -189,8 +189,9 @@ def _convert_one(source, target, overwrite, progress, cancel, *, direction="word
         validate_pdf_for_word(source)
         from app.ocr.word_export import convert_ocr_pdf_to_docx
         from app.ocr.export_input import needs_text_export
-        if needs_text_export(source, cancel):
-            return convert_ocr_pdf_to_docx(source, target, overwrite, progress, cancel)
+        if pdf_mode == 'layout' or needs_text_export(source, cancel):
+            return convert_ocr_pdf_to_docx(source, target, overwrite, progress, cancel,
+                                           preserve_layout=pdf_mode == 'layout')
     else:
         PdfStore()._check_destination(target)
     if not word_available():
@@ -283,9 +284,11 @@ def _convert_one(source, target, overwrite, progress, cancel, *, direction="word
             # Word exports into this directory; removal never touches the source document.
 
 
-def convert_batch(items, overwrite, progress, cancel, *, direction="word_to_pdf"):
+def convert_batch(items, overwrite, progress, cancel, *, direction="word_to_pdf", pdf_mode="layout"):
     if direction not in DIRECTIONS:
         raise ValueError("不支持的转换方向。")
+    if pdf_mode not in ('layout','word'):
+        raise ValueError('不支持的 Word 排版方式。')
     if direction == "word_to_pdf" and not word_available():
         raise RuntimeError("未检测到 Microsoft Word。请安装并完成首次启动后再转换。")
     source_keys = {os.path.normcase(os.path.realpath(source)) for source, _ in items}
@@ -302,7 +305,7 @@ def convert_batch(items, overwrite, progress, cancel, *, direction="word_to_pdf"
         def report(phase):
             progress(index, len(items), f"{Path(source).name} · {phase}")
         try:
-            state, message, word_version = _convert_one(source, target, overwrite, report, cancel, direction=direction)
+            state, message, word_version = _convert_one(source, target, overwrite, report, cancel, direction=direction, pdf_mode=pdf_mode)
         except OperationCancelled:
             state, message, word_version = "cancelled", "已取消", ""
         except Exception as exc:

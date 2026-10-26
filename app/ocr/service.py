@@ -1,6 +1,7 @@
 """Independent document processing with checked, non-overwriting output."""
 import os
 import hashlib
+from dataclasses import replace
 from contextlib import ExitStack
 from pathlib import Path
 import tempfile
@@ -18,6 +19,36 @@ from app.storage import StorageError, TemporaryWorkspace
 
 DPI = 200
 MAX_PIXELS = 40_000_000
+
+
+def retry_sparse_lines(engine, image_path, lines, page_index, cancel=None):
+    """Re-read abnormally sparse OCR output from its pixels, never a known answer."""
+    from PIL import Image
+    output=list(lines); attempts=0
+    with Image.open(image_path) as image:
+        for index,line in enumerate(lines):
+            compact=''.join(line.text.split())
+            x0,y0,x1,y1=line.bbox
+            sparse=(len(compact)*2<len(line.text) or
+                    (line.confidence<.9 and len(compact)*max(1,y1-y0)*2<x1-x0))
+            if not compact or not sparse or attempts>=3:
+                continue
+            check_cancel(cancel); attempts+=1
+            padding=max(10,(y1-y0)*.3)
+            bounds=(max(0,int(x0-padding)),max(0,int(y0-padding)),min(image.width,int(x1+padding)),min(image.height,int(y1+padding)))
+            retry=Path(image_path).with_name('line-retry.png')
+            image.crop(bounds).save(retry)
+            candidates=engine.recognize(retry,page_index,word_boxes=False)
+            area=p.Rect(line.bbox)
+            for candidate in candidates:
+                box=p.Rect(candidate.bbox)+p.Rect(bounds[0],bounds[1],bounds[0],bounds[1])
+                if (candidate.confidence<line.confidence+.05 or len(''.join(candidate.text.split()))<=len(compact)
+                        or (box&area).get_area()<area.get_area()*.65):
+                    continue
+                polygon=tuple(v+bounds[i%2] for i,v in enumerate(candidate.polygon))
+                output[index]=replace(candidate,bbox=tuple(box),polygon=polygon)
+                break
+    return output
 
 
 def run_ocr(source_path, destination_path, page_indices, options=None,
@@ -95,7 +126,10 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
                                 pix = page.get_pixmap(dpi=DPI, colorspace=p.csRGB, alpha=False, annots=False)
                                 pix.save(image)
                                 report(current, len(indices), f'正在识别第 {index + 1} 页文字')
-                                lines = engine.recognize(image, index)
+                                lines = (engine.recognize(image,index,word_boxes=False) if options.preserve_line_text
+                                         else engine.recognize(image,index))
+                                if options.preserve_line_text:
+                                    lines=retry_sparse_lines(engine,image,lines,index,cancel_check)
                                 check_cancel(cancel_check)
                                 report(current, len(indices), f'正在写入第 {index + 1} 页文字层')
                                 written = add_text_layer(page, lines, pix, DPI,

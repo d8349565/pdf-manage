@@ -7,11 +7,12 @@ import math
 
 
 def _column_cuts(fragments):
-    body=[item for item in fragments if not item.get('heading') and not item.get('positioned')]
+    body=[item for item in fragments if not item.get('heading')]
     if len(body)<6:
         return [], None
     # Short aligned numeric fields remain rows rather than newspaper columns.
-    if sum(len(item['text'])<13 and any(char.isdigit() for char in item['text']) for item in body)>len(body)*.5:
+    if sum(sum(char.isdigit() for char in item['text'])>=max(1,len(item['text'].replace(' ','')))*.5
+           for item in body)>len(body)*.5:
         return [], None
     size=median(item['size'] for item in body)
     candidates=[]
@@ -35,22 +36,45 @@ def _column_cuts(fragments):
             candidates.append((start-end,(start+end)/2,top,bottom))
     chosen=[]
     for candidate in sorted(candidates,reverse=True):
-        if all(abs(candidate[1]-other[1])>size*3 for other in chosen):
+        if all(abs(candidate[1]-other[1])>size*3 and
+               any(min(candidate[1],other[1])<=item['bbox'][0] and item['bbox'][2]<=max(candidate[1],other[1])
+                   for item in body) for other in chosen):
             chosen.append(candidate)
         if len(chosen)==3:
             break
-    return sorted(item[1] for item in chosen), ((min(item[2] for item in chosen),max(item[3] for item in chosen)) if chosen else None)
+    cuts=sorted(item[1] for item in chosen)
+    if not chosen:
+        return [],None
+    top,bottom=min(item[2] for item in chosen),max(item[3] for item in chosen)
+    # Extend through neighbouring lines, not through a distant page footer. The
+    # overlap used to prove columns is not their complete reading extent.
+    while True:
+        previous=(top,bottom)
+        for item in body:
+            box=item['bbox']
+            if not any(box[0]<cut<box[2] for cut in cuts) and box[1]<=bottom+item['size']*3 and box[3]>=top-item['size']*3:
+                top=min(top,box[1]);bottom=max(bottom,box[3])
+        if previous==(top,bottom):break
+    return cuts,(top,bottom)
+
+
+def _row_order(items):
+    from app.pdf2excel.analyzer import text_rows
+    rows=text_rows([item for item in items if item['kind']=='text'])
+    y={id(item):min(part['bbox'][1] for part in row) for row in rows for item in row}
+    return sorted(items,key=lambda item:(y.get(id(item),item['bbox'][1]),item['bbox'][0]))
 
 
 def _reading_order(items, cuts, region):
     if not cuts:
-        return sorted(items,key=lambda item:(item['bbox'][1],item['bbox'][0]))
+        return _row_order(items)
     spanning=[]
     columns=[]
     for item in items:
         box=item['bbox']
         if box[3]<region[0] or box[1]>region[1] or any(box[0]<cut<box[2] for cut in cuts):
-            item.pop('column',None)
+            for key in ('column','column_count','column_bounds'):
+                item.pop(key,None)
             spanning.append(item)
         else:
             item['column']=sum(box[0]>=cut for cut in cuts)
@@ -114,6 +138,7 @@ def _paragraphs(items):
                 else:
                     separator='' if tail.endswith('-') or (_cjk(tail[-1]) and _cjk(head[0])) else ' '
                 previous['text']=tail+separator+head
+                previous['runs']=previous.get('runs',[dict(text=tail)])+([dict(text=separator)] if separator else [])+current.get('runs',[dict(text=head)])
                 previous['source_text']+='\n'+current['source_text']
                 previous['last_line_box']=item['bbox']
                 previous['bbox']=(min(previous['bbox'][0],item['bbox'][0]),previous['bbox'][1],max(previous['bbox'][2],item['bbox'][2]),item['bbox'][3])
@@ -170,10 +195,14 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
         for line in block.get('lines', ()):
             chars, sizes = [], []
             for span in line.get('spans', ()):
+                style=dict(font=span.get('font'),size=span.get('size',11),
+                           bold=bool(span.get('flags',0)&16),italic=bool(span.get('flags',0)&2),
+                           colour=f"#{span.get('color',0):06X}",hidden=span.get('alpha',255)==0,
+                           image_text=span.get('image_text',False))
                 for char in span.get('chars', ()):
                     rectangle = p.Rect(char['bbox'])
                     if not any(area.contains((rectangle.tl + rectangle.br) / 2) for area in areas):
-                        chars.append(char)
+                        chars.append(dict(char,style=style))
                         sizes.append(span.get('size', 11))
             if not chars:
                 continue
@@ -191,7 +220,15 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
                     bounds |= p.Rect(char['bbox'])
                 hidden = all(span.get('alpha', 255) == 0 for span in line.get('spans', ()))
                 size = min(median(part_sizes), bounds.height / 1.3) if hidden else median(part_sizes)
-                fragments.append(dict(kind='text', text=text, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
+                runs=[]
+                for char in part:
+                    style=char['style']
+                    if runs and all(runs[-1].get(key)==value for key,value in style.items()):
+                        runs[-1]['text']+=char['c'].replace('\xa0',' ')
+                        runs[-1]['bbox']=tuple(p.Rect(runs[-1]['bbox'])|p.Rect(char['bbox']))
+                    else:
+                        runs.append(dict(style,text=char['c'].replace('\xa0',' '),bbox=char['bbox']))
+                fragments.append(dict(kind='text', text=text, runs=runs, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
                                       positioned=any(area.contains((bounds.tl+bounds.br)/2) for area in positions),
                                       bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ()))))
     body_size=median([item['size'] for item in fragments]) if fragments else 11
@@ -211,6 +248,7 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
                 gap = box.x0 - previous['bbox'][2]
                 separator = '\t' if gap > max(previous['size'], fragment['size']) * 2 else (' ' if gap > fragment['size'] * .2 else '')
                 previous['text'] += separator + fragment['text']
+                previous['runs'] = previous['runs'] + ([dict(text=separator)] if separator else []) + fragment['runs']
                 previous['bbox'] = tuple(p.Rect(previous['bbox']) | box)
                 previous['size'] = max(previous['size'], fragment['size'])
             rows.append(previous)
@@ -222,6 +260,53 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
     return _paragraphs(ordered)
 
 
+def table_text_runs(raw, table, *, include_hidden=False):
+    """Retain mixed styles in native PDF cells without changing table detection."""
+    import pymupdf as p
+    result={}
+    lines=sorted((line for block in raw.get('blocks',()) for line in block.get('lines',())),
+                 key=lambda line:(line['bbox'][1],line['bbox'][0]))
+    for cell in table.cells:
+        if not cell.bbox or not cell.text:
+            continue
+        area=p.Rect(cell.bbox); runs=[]
+        for line in lines:
+            if not area.intersects(p.Rect(line['bbox'])):
+                continue
+            pieces=[]
+            for span in line.get('spans',()):
+                chars=[char for char in span.get('chars',())
+                       if area.contains((p.Rect(char['bbox']).tl+p.Rect(char['bbox']).br)/2)]
+                text=''.join(char['c'] for char in chars)
+                if text:
+                    bounds=p.Rect(chars[0]['bbox'])
+                    for char in chars[1:]:
+                        bounds |= p.Rect(char['bbox'])
+                    pieces.append(dict(text=text,font=span.get('font'),size=span.get('size',11),
+                                       bold=bool(span.get('flags',0)&16),italic=bool(span.get('flags',0)&2),
+                                       colour=f"#{span.get('color',0):06X}",hidden=span.get('alpha',255)==0,bbox=tuple(bounds)))
+                    pieces[-1]['image_text']=span.get('image_text',False)
+            if pieces:
+                if (any(run['text'].strip() and not run.get('image_text') for run in runs)
+                        and not all(piece.get('image_text') for piece in pieces)):
+                    runs.append(dict(text='\n'))
+                runs.extend(pieces)
+        # OCR uses inferred cell foreground/size. Retain its existing fit logic.
+        if include_hidden:
+            from app.pdf2excel.analyzer import text_rows
+            groups=text_rows([run for run in runs if 'bbox' in run])
+            runs=[]
+            for group in groups:
+                if runs:
+                    runs.append(dict(text='\n'))
+                runs.extend(group)
+        if runs and (include_hidden or not any(run.get('hidden') for run in runs)):
+            normalize=lambda text: ''.join(char for char in text if not char.isspace())
+            if Counter(normalize(''.join(run['text'] for run in runs)))==Counter(normalize(cell.text)):
+                result[cell.row,cell.col]=runs
+    return result
+
+
 def order_figures(layout,figures):
     column_items=[item for item in layout if item.get('column_count',1)>1]
     if column_items:
@@ -229,7 +314,7 @@ def order_figures(layout,figures):
         cuts=[(left[1]+right[0])/2 for left,right in zip(bounds,bounds[1:])]
         region=(min(item['bbox'][1] for item in column_items),max(item['bbox'][3] for item in column_items))
         return _reading_order([*layout,*figures],cuts,region)
-    return sorted([*layout,*figures],key=lambda item:(item['bbox'][1],item['bbox'][0]))
+    return _row_order([*layout,*figures])
 
 
 def _remove_page_rotation(page):
@@ -333,6 +418,80 @@ def _raster_colours(page,layout):
                 item['fill_colour']=fill
             if foreground:
                 item['colour']=foreground
+                for run in item.get('runs',()):
+                    if run.get('hidden'):
+                        run['colour']=foreground
+
+
+def table_has_spatial_fields(raw, table):
+    """An outer form frame must not collapse repeated internal fields into one cell."""
+    import pymupdf as p
+    from app.pdf2excel.analyzer import text_rows
+    width=table.bbox[2]-table.bbox[0]
+    candidates=[p.Rect(cell.bbox) for cell in table.cells if cell.bbox
+                and cell.bbox[2]-cell.bbox[0]>=width*.45 and cell.bbox[3]-cell.bbox[1]>=24]
+    if not candidates:
+        return False
+    pieces=layout_from_raw(raw,[],positioned_areas=[table.bbox])
+    for area in candidates:
+        fields=[item for item in pieces if item['kind']=='text'
+                and area.contains((p.Rect(item['bbox']).tl+p.Rect(item['bbox']).br)/2)]
+        if sum(len(row)>=3 for row in text_rows(fields))>=2:
+            return True
+    return False
+
+
+def table_has_column_gutters(raw, table):
+    """A text-only table needs repeated field gaps, not ordinary spaces in prose."""
+    import pymupdf as p
+    from app.pdf2excel.analyzer import text_rows
+    if table.confidence>=.9:
+        return True  # Grid-line evidence was found by the detector.
+    area=p.Rect(table.bbox)
+    chars=[dict(text=char['c'],bbox=char['bbox'],size=span.get('size',11))
+           for block in raw.get('blocks',()) for line in block.get('lines',())
+           for span in line.get('spans',()) for char in span.get('chars',())
+           if not char['c'].isspace() and area.contains((p.Rect(char['bbox']).tl+p.Rect(char['bbox']).br)/2)]
+    rows=text_rows(chars); cut=table.bbox[0]
+    for width in table.col_widths[:-1]:
+        cut+=width; support=0
+        for row in rows:
+            left=[c for c in row if c['bbox'][2]<=cut+.5]
+            right=[c for c in row if c['bbox'][0]>=cut-.5]
+            if left and right:
+                last=max(left,key=lambda c:c['bbox'][2]); first=min(right,key=lambda c:c['bbox'][0])
+                support+=first['bbox'][0]-last['bbox'][2]>=max(last['size'],first['size'])*1.2
+        if support<2:
+            return False
+    return True
+
+
+def table_has_visible_grid(page, table):
+    """Verify long rules in source pixels; inferred text alignments are not borders."""
+    import pymupdf as p
+    from PIL import Image
+    from app.documentimages import export_image_scale
+    area=(p.Rect(table.bbox)+(-4,-4,4,4))&page.rect
+    scale=export_image_scale(area.width,area.height,2)
+    pix=page.get_pixmap(matrix=p.Matrix(scale,scale),clip=area,colorspace=p.csGRAY,alpha=False,annots=False)
+    pixels=Image.frombytes('L',(pix.width,pix.height),pix.samples).load()
+    def sample(x,y):
+        return pixels[min(pix.width-1,max(0,round(x*scale-pix.x))),min(pix.height-1,max(0,round(y*scale-pix.y)))]
+    def supported(axis,coordinate,first,last):
+        evidence=0
+        for index in range(64):
+            along=first+(last-first)*(.03+.94*index/63)
+            value=lambda offset:sample(coordinate+offset,along) if axis=='v' else sample(along,coordinate+offset)
+            center=[value(offset) for offset in (-1,-.5,0,.5,1)]
+            sides=[value(-3),value(3)]
+            evidence+=sum(sides)/2-min(center)>10 or max(center)-max(sides)>10
+        return evidence>=45
+    left,top,right,bottom=table.bbox
+    xs=[left];ys=[top]
+    for width in table.col_widths:xs.append(xs[-1]+width)
+    for height in table.row_heights:ys.append(ys[-1]+height)
+    horizontal=[supported('h',y,left,right) for y in ys]
+    return sum(supported('v',x,top,bottom) for x in xs)>=2 and sum(horizontal)>=2 and any(horizontal[1:-1])
 
 
 def page_layout(page, *, include_images=False, preserve_positions=False, spatial=False):
@@ -343,8 +502,21 @@ def page_layout(page, *, include_images=False, preserve_positions=False, spatial
     lines, fills = extract_drawings(page)
     tables = canonical_tables(page, detect_tables(page, extract_spans(page), lines, fills, warnings))
     raw = page.get_text('rawdict', flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
+    if include_images and preserve_positions:
+        from app.documentimages import native_graphic_text
+        if native_graphic_text(page,raw):
+            warnings.append('图形内同色字样保留原图，识别内容保存在图片说明中，避免混入正文；其余正文和表格仍可编辑。')
     verified=[]; unverified=[]
     for table in tables:
+        pixel_grid=table_has_visible_grid(page,table) if preserve_positions and (page.get_images() or table.confidence<.9) else False
+        if spatial and page.get_images() and not pixel_grid:
+            continue
+        if preserve_positions and not pixel_grid and not table_has_column_gutters(raw,table):
+            continue
+        if preserve_positions and table_has_spatial_fields(raw,table):
+            unverified.append(table.bbox)
+            warnings.append(f'第 {page.number+1} 页包含外框内多列字段，已按原位置保留可编辑文字和原始边框，避免挤入一个单元格。')
+            continue
         area=p.Rect(table.bbox)
         source=''.join(char['c'] for block in raw.get('blocks',()) for line in block.get('lines',())
                        for span in line.get('spans',()) for char in span.get('chars',())
@@ -365,18 +537,23 @@ def page_layout(page, *, include_images=False, preserve_positions=False, spatial
     fixed=spatial or preserve_positions and (bool(tables) or bool(unverified) or hidden and scan_area>=page_area*.65)
     positions=[(0,0,page.cropbox.width,page.cropbox.height)] if fixed else unverified
     layout=layout_from_raw(raw,tables,positioned_areas=positions)
-    _raster_colours(page,layout)
+    if preserve_positions:
+        for item in layout:
+            if item['kind']=='table':
+                item['cell_runs']=table_text_runs(raw,item['table'])
+    if hidden:
+        _raster_colours(page,layout)
     if any(abs(item.get('angle',0))>=3 for item in layout):
         warnings.append('存在倾斜或竖排文字，已保留文字内容，段落方向及图像位置请核对。')
     if include_images:
         from app.documentimages import page_figures
-        figures=page_figures(page,layout,warnings)
+        figures=page_figures(page,layout,warnings,background=preserve_positions)
         if figures:
             layout=order_figures(layout,figures)
     return layout,warnings
 
 
-def document_layout(doc, *, include_images=False, preserve_positions=False, normalize_orientation=False, cancel=None, progress=None):
+def document_layout(doc, *, include_images=False, preserve_positions=False, normalize_orientation=False, spatial=False, cancel=None, progress=None):
     from app.output import check_cancel
     pages=[]; repeats={}
     for page in doc:
@@ -385,9 +562,9 @@ def document_layout(doc, *, include_images=False, preserve_positions=False, norm
             progress(f'正在分析排版 · 第 {len(pages)+1}/{len(doc)} 页')
         if normalize_orientation:
             prepare_export_page(page)
-        items,warnings=page_layout(page,include_images=include_images,preserve_positions=preserve_positions)
+        items,warnings=page_layout(page,include_images=include_images,preserve_positions=preserve_positions,spatial=spatial)
         width,height=page.cropbox.width,page.cropbox.height
-        positioned=preserve_positions and any(item.get('positioned') or item['kind']=='table' for item in items)
+        positioned=spatial or preserve_positions and any(item.get('positioned') or item['kind']=='table' for item in items)
         pages.append(dict(items=items,warnings=warnings,width=width,height=height,positioned=positioned))
         for index,item in enumerate(items):
             if item['kind']!='text' or len(item['text'])>100:
@@ -406,6 +583,12 @@ def document_layout(doc, *, include_images=False, preserve_positions=False, norm
             if len({page for page,index in entries})>=max(2,math.ceil(len(pages)*.5)):
                 for page,index in entries:
                     pages[page]['items'][index]['role']=role
+    sizes=sorted({round(item['size'],1) for record in pages for item in record['items']
+                  if item.get('heading') and not item.get('role')},reverse=True)
+    for record in pages:
+        for item in record['items']:
+            if item.get('heading') and not item.get('role'):
+                item['heading_level']=min(3,sizes.index(round(item['size'],1))+1)
     return pages
 
 

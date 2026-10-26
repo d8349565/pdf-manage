@@ -386,7 +386,7 @@ def test_word_direction_collection_docx_checks_and_preflight(tmp_path, monkeypat
     wordconvert.validate_docx(valid)
     monkeypatch.setattr(wordconvert, "word_available", lambda: True)
     calls = []
-    def convert(source, target, overwrite, progress, cancel, *, direction):
+    def convert(source, target, overwrite, progress, cancel, *, direction, pdf_mode):
         calls.append(direction)
         return "success", "done", "16.0"
     monkeypatch.setattr(wordconvert, "_convert_one", convert)
@@ -537,6 +537,7 @@ def test_word_first_use_decline_does_not_change_settings(qapp, tmp_path, monkeyp
     monkeypatch.setattr(wordui, "allow_pdf_import", lambda: changes.append(True))
     monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No)
     window = wordui.WordConverterWindow(direction="pdf_to_word")
+    window.pdf_mode.setCurrentIndex(window.pdf_mode.findData('word'))
     window.table.setRowCount(1)
     window._set_item(0, 0, str(tmp_path / "source.pdf"))
     window._set_item(0, 1, str(tmp_path / "output.docx"))
@@ -544,6 +545,23 @@ def test_word_first_use_decline_does_not_change_settings(qapp, tmp_path, monkeyp
     window.convert()
     assert not changes
     window.close()
+
+
+def test_word_layout_mode_default_survives_direction_switch(qapp):
+    from app.wordui import WordConverterWindow
+    window=WordConverterWindow(direction='pdf_to_word')
+    try:
+        assert window.pdf_mode.currentData()=='layout'
+        assert '无需安装 Word' in window.intro.text()
+        window.pdf_mode.setCurrentIndex(window.pdf_mode.findData('word'))
+        assert 'Microsoft Word 重排' in window.intro.text()
+        window.switch_direction('word_to_pdf')
+        assert window.pdf_mode_row.isHidden()
+        window.switch_direction('pdf_to_word')
+        assert not window.pdf_mode_row.isHidden()
+        assert window.pdf_mode.currentData()=='word'
+    finally:
+        window.close()
 
 
 def _word_converter_fixture(monkeypatch, wordui, tmp_path, sources, direction="pdf_to_word"):

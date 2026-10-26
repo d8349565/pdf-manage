@@ -40,7 +40,7 @@ def _regions(active, width, height, cell=6):
     return output
 
 
-def page_figures(page, layout, warnings):
+def page_figures(page, layout, warnings, *, background=False):
     import pymupdf as p
     width,height=page.cropbox.width,page.cropbox.height
     area=width*height
@@ -48,6 +48,13 @@ def page_figures(page, layout, warnings):
     boxes=[(p.Rect(item['bbox']),False) for item in images if 100<p.Rect(item['bbox']).get_area()<area*.65]
     editable=[p.Rect(item['bbox']) for item in layout if item['kind'] in ('text','table')]
     has_scan=any(p.Rect(item['bbox']).get_area()>=area*.65 for item in images)
+    if background and has_scan:
+        from app.ocr.scan_layout import restore_scan
+        return restore_scan(page,layout,warnings)
+    if background and not has_scan and any(item.get('positioned') or item['kind']=='table' for item in layout):
+        for item in layout:
+            if item['kind']=='table':item['source_grid']=True
+        return electronic_background(page,layout)
     exclude_editable=has_scan or any(item.get('positioned') or item['kind']=='table' for item in layout)
     if has_scan:
         scale=min(1.2,1000/max(width,height))
@@ -133,3 +140,63 @@ def page_figures(page, layout, warnings):
             if not exclude_editable and any(item['kind']=='text' and p.Rect(item['bbox']).intersects(box) for item in layout):
                 warnings.append('图像与文字区域重叠，已保留图像外观与识别文字，请核对位置。')
     return result
+
+
+def native_graphic_text(page, raw):
+    """Identify same-colour lettering enclosed by compact stroked artwork."""
+    import pymupdf as p
+    graphics=[]
+    for drawing in page.get_drawings():
+        box=p.Rect(drawing['rect']);colour=drawing.get('color')
+        if (colour and max(colour)-min(colour)>.2 and drawing.get('fill') is None
+                and 20<box.width<page.rect.width*.4 and 20<box.height<page.rect.height*.4
+                and .45<box.width/box.height<2.2 and any(item[0] in ('c','re') for item in drawing['items'])):
+            graphics.append((box,colour))
+    protected=[]
+    for block in raw.get('blocks',()):
+        for line in block.get('lines',()):
+            for span in line.get('spans',()):
+                rgb=p.sRGB_to_rgb(span.get('color',0))
+                for box,colour in graphics:
+                    if box.contains(p.Rect(span['bbox'])) and max(abs(v/255-c) for v,c in zip(rgb,colour))<.2:
+                        span['image_text']=True
+                        if (box,colour) not in protected:protected.append((box,colour))
+    return protected
+
+
+def electronic_background(page, layout):
+    """Render only artwork in a private page, preserving fills under editable text."""
+    import pymupdf as p
+    if not page.get_image_info() and not page.get_drawings():
+        return []
+    raw=page.get_text('rawdict',flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
+    protected=native_graphic_text(page,raw)
+    with p.open() as scratch:
+        scratch.insert_pdf(page.parent,from_page=page.number,to_page=page.number,annots=False)
+        clean=scratch[0]
+        clean.add_redact_annot(clean.rect,fill=False,cross_out=False)
+        clean.apply_redactions(images=p.PDF_REDACT_IMAGE_NONE,graphics=p.PDF_REDACT_LINE_ART_NONE,
+                               text=p.PDF_REDACT_TEXT_REMOVE)
+        # Small artwork lettering needs the same sampling quality as a scan;
+        # keep the existing page/pixel allocation limits.
+        scale=export_image_scale(clean.rect.width,clean.rect.height,3)
+        matrix=p.Matrix(scale,scale).prerotate(-clean.rotation)
+        # A full-page background needs no transparency. Word's PDF export
+        # resamples RGB and its soft alpha mask separately, creating grey
+        # fringes on thin coloured artwork when the transparent RGB is black.
+        pix=clean.get_pixmap(matrix=matrix,colorspace=p.csRGB,alpha=False,annots=False)
+        # Keep source rules, fills and overlaid artwork intact. Positioned Word
+        # tables supply editable cells with transparent borders/backgrounds.
+        if protected:
+            original=page.get_pixmap(matrix=matrix,colorspace=p.csRGB,alpha=False,annots=False)
+            for box,colour in protected:
+                bounds=(box*page.rotation_matrix*matrix).irect & original.irect
+                tint=[(c-min(colour))/max(.01,max(colour)-min(colour)) for c in colour]
+                for y in range(bounds.y0,bounds.y1):
+                    for x in range(bounds.x0,bounds.x1):
+                        rgb=original.pixel(x-original.x,y-original.y)
+                        low,high=min(rgb),max(rgb)
+                        if high-low>2 and max(abs((v-low)/(high-low)-c) for v,c in zip(rgb,tint))<.3:
+                            pix.set_pixel(x-pix.x,y-pix.y,rgb)
+        return [dict(kind='image',bbox=(0,0,page.cropbox.width,page.cropbox.height),
+                     data=pix.tobytes('png'),image_role='background')]

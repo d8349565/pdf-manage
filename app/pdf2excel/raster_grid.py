@@ -15,6 +15,7 @@ def _runs(data, minimum):
 def _thin_segments(values):
     groups = []
     for coordinate, start, end in values:
+        original=(coordinate,start,end)
         matching = []
         for group in reversed(groups):
             last = group[-1]
@@ -31,10 +32,33 @@ def _thin_segments(values):
             groups.remove(group)
         # Keep groups ordered by their LAST coordinate. Otherwise a finished
         # short stroke hides a still-active rule behind the early break above.
-        groups.append([*sorted(combined), (coordinate, start, end)])
-    return [(mean(value[0] for value in group), min(value[1] for value in group),
-             max(value[2] for value in group)) for group in groups
-            if group[-1][0] - group[0][0] <= 8]
+        groups.append([*sorted(combined), original])
+    result=[]
+    for group in groups:
+        # Preserve the actual run lengths: a graphic branching off a long
+        # rule must not turn every following short stroke into a full rule.
+        span=max(v[2] for v in group)-min(v[1] for v in group)+1
+        longest=max(v[2]-v[1]+1 for v in group)
+        core=[v for v in group if v[2]-v[1]+1>=longest*.8]
+        if (group[-1][0]-group[0][0]>8 and longest>=span*.8 and len(core)<=8
+                and max(v[0] for v in core)-min(v[0] for v in core)<=8):
+            group=core
+        left=min(value[1] for value in group);right=max(value[2] for value in group)
+        band=group[-1][0]-group[0][0]
+        centers=[(v[1]+v[2])/2 for v in group]
+        along=mean(centers);across=mean(v[0] for v in group)
+        variance=sum((v-along)**2 for v in centers)
+        # Within a thin pixel band, ragged antialiasing endpoints can move the
+        # run centres much more than the rule itself. That is not a diagonal.
+        if band>8 and max(centers)-min(centers)>(right-left)*.25 and variance:
+            slope=sum((center-along)*(value[0]-across) for center,value in zip(centers,group))/variance
+            if abs(slope)>.02:continue  # Rotated artwork is not an almost-axis-aligned rule.
+        # A slightly tilted thin rule spans more rows than a horizontal one.
+        # Its ink area / length stays small; a filled panel does not.
+        thickness=sum(value[2]-value[1]+1 for value in group)/max(1,right-left+1)
+        if thickness<=8 and band<=max(8,min(20,(right-left)*.02)):
+            result.append((mean(value[0] for value in group),left,right))
+    return result
 
 
 def raster_grid_lines(page):
@@ -51,12 +75,24 @@ def raster_grid_lines(page):
 def _grid_lines(pix, scale):
     """Recover rule fragments and supported outer edges from grayscale pixels."""
     width, height = pix.width, pix.height
-    dark = bytes(value < 200 for value in pix.samples)
+    from PIL import Image,ImageChops,ImageFilter
+    image=Image.frombytes('L',(width,height),pix.samples)
+    # Thin pale rules may never reach an absolute grey threshold. Compare
+    # each stroke with its local surroundings, including on coloured paper.
+    contrast=ImageChops.subtract(image.filter(ImageFilter.MaxFilter(5)),image)
+    dark_image=contrast.point(lambda value:1 if value>10 else 0)
+    def ridge(dx,dy):
+        # A bright rule must be brighter than BOTH sides. Bright paper beside
+        # a dark glyph is not evidence of a white grid rule.
+        a=ImageChops.subtract(image,ImageChops.offset(image,dx,dy))
+        b=ImageChops.subtract(image,ImageChops.offset(image,-dx,-dy))
+        return ImageChops.lighter(dark_image,ImageChops.darker(a,b).point(lambda v:1 if v>10 else 0)).tobytes()
+    dark=ridge(0,3);vertical_dark=ridge(3,0)
     minimum = max(20, min(width, height) // 35)
     horizontal = _thin_segments([(y, x0, x1) for y in range(height)
                                 for x0, x1 in _runs(dark[y * width:(y + 1) * width], minimum)])
     vertical = _thin_segments([(x, y0, y1) for x in range(width)
-                              for y0, y1 in _runs(dark[x::width], minimum)])
+                              for y0, y1 in _runs(vertical_dark[x::width], minimum)])
     # Bound work for dense artwork; uncertain pages must not become fake tables.
     if len(horizontal) * len(vertical) > 250000:
         return []

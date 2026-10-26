@@ -179,7 +179,7 @@ a = Analysis(
         # Excel embeds the locally rendered PNG regions through Pillow.
         "PIL.AvifImagePlugin",
         "PIL._avif",
-        "PIL._imagingft",
+        # Scan-to-Word font matching renders candidate glyphs with FreeType.
         "PIL._imagingcms",
         "lxml",
         "IPython",

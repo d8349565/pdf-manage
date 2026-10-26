@@ -173,7 +173,7 @@ def test_plain_pdf_retains_native_word_requirement(tmp_path, monkeypatch):
     assert not pdf_has_ocr_text(source)
     monkeypatch.setattr(wordconvert, 'word_available', lambda: False)
     results, cancelled, version = wordconvert.convert_batch([(str(source), str(tmp_path / 'plain.docx'))],
-                        False, lambda *args: None, lambda: False, direction='pdf_to_word')
+                        False, lambda *args: None, lambda: False, direction='pdf_to_word',pdf_mode='word')
     assert results[0]['state'] == 'failed' and 'Microsoft Word' in results[0]['message']
 
 

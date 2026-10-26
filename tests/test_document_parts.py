@@ -93,7 +93,11 @@ def test_scan_retains_coloured_mark_and_handwritten_like_strokes(tmp_path):
     convert_ocr_pdf_to_docx(source,output,False,None,lambda:False)
     with ZipFile(output) as archive:
         pictures=[name for name in archive.namelist() if name.startswith('word/media/')]
-        assert len(pictures)>=2
+        assert len(pictures)==1
+        background=p.Pixmap(archive.read(pictures[0])); scale=background.width/500
+        red=background.pixel(round(330*scale),round(365*scale))
+        assert red[0]>150 and red[1]<80
+        assert max(background.pixel(round(110*scale),round(450*scale)))<100
         root=ET.fromstring(archive.read('word/document.xml'))
         assert 'Recorded narrative text.' in ''.join(node.text or '' for node in root.iter(f'{{{W}}}t'))
 

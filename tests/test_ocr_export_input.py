@@ -25,6 +25,7 @@ def test_scanned_page_is_prepared_once_and_temp_is_removed(tmp_path,monkeypatch)
     source=tmp_path/'mixed.pdf'; target=tmp_path/'mixed.docx'
     make_mixed(source); original=source.read_bytes(); calls=[]
     def recognize(src,dst,pages,options,progress,cancel):
+        assert options.preserve_line_text
         calls.append((tuple(pages),options.runtime_dir))
         with p.open(src) as doc:
             doc[1].insert_text((50,100),'Recognized second narrative.',render_mode=3)
