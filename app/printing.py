@@ -15,9 +15,11 @@ from PyQt6.QtGui import (
     QPageSize,
     QPainter,
     QPen,
+    QWheelEvent,
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrinterInfo
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
     QDialog,
@@ -36,6 +38,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.icons import toolbar_icon
+from app.pagetoolsui import ClearComboBox, ClearSpinBox
 from app.pdfio import PdfError, PdfStore
 from app.output import OperationCancelled, check_cancel
 from app.progress import run_operation
@@ -91,6 +94,7 @@ class PrintOptions:
     booklet: bool = False
     booklet_binding: str = "left"  # "left" | "right"
     booklet_sides: str = "both"  # "both" | "front" | "back"
+    two_page_layout: str = "horizontal"  # "horizontal" | "vertical"
 
 
 @dataclass(frozen=True)
@@ -170,7 +174,9 @@ def build_sheets(
     valid = [i for i in options.page_indices if 0 <= i < len(pages)]
     if not valid:
         return []
-    if options.pages_per_face not in (1, 2, 4, 6, 9, 16) or options.cell_order not in ("row", "column"):
+    if (options.pages_per_face not in (1, 2, 4, 6, 9, 16)
+            or options.cell_order not in ("row", "column")
+            or options.two_page_layout not in ("horizontal", "vertical")):
         raise ValueError("不支持的多页排版设置。")
     if options.booklet:
         if options.booklet_binding not in ("left", "right") or options.booklet_sides not in ("both", "front", "back"):
@@ -192,7 +198,8 @@ def build_sheets(
     if options.pages_per_face > 1:
         count = options.pages_per_face
         faces = [tuple(valid[i:i + count]) for i in range(0, len(valid), count)]
-        portrait = (options.orientation == "portrait" if options.orientation != "auto" else count not in (2, 6))
+        portrait = (options.orientation == "portrait" if options.orientation != "auto"
+                    else count not in (2, 6) or count == 2 and options.two_page_layout == "vertical")
         stride = 1 if options.duplex == "none" else 2
         sheets = []
         for i in range(0, len(faces), stride):
@@ -226,6 +233,8 @@ def face_cells(outer, indices, options):
     """The same grid and ordering drive preview and printer output."""
     columns, rows = {1: (1, 1), 2: (2, 1), 4: (2, 2), 6: (3, 2),
                      9: (3, 3), 16: (4, 4)}[2 if options.booklet else options.pages_per_face]
+    if not options.booklet and options.pages_per_face == 2 and options.two_page_layout == "vertical":
+        columns, rows = 1, 2
     width, height = outer.width() / columns, outer.height() / rows
     gap = min(width, height) * .02 if options.booklet or options.pages_per_face > 1 else 0
     for position, index in enumerate(indices):
@@ -880,8 +889,10 @@ class PrintDialog(QDialog):
         self._printing = False
 
         self.setWindowTitle("打印")
-        self.resize(1120, 760)
-        self.setMinimumSize(880, 600)
+        available = self.screen().availableGeometry()
+        width, height = min(1120, available.width() - 32), min(760, available.height() - 32)
+        self.setMinimumSize(min(880, width), min(600, height))
+        self.resize(width, height)
         set_theme_style(self,
             """
             QDialog {
@@ -1054,30 +1065,27 @@ class PrintDialog(QDialog):
     def _build_sidebar(self) -> QWidget:
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(346)
+        sidebar.setFixedWidth(356)
         outer = QVBoxLayout(sidebar)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setObjectName("sidebarScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.sidebar_scroll = QScrollArea()
+        self.sidebar_scroll.setObjectName("sidebarScroll")
+        self.sidebar_scroll.setWidgetResizable(True)
+        self.sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         inner = QWidget()
         inner.setObjectName("sidebarInner")
         lay = QVBoxLayout(inner)
-        lay.setContentsMargins(20, 18, 20, 12)
-        lay.setSpacing(9)
-        scroll.setWidget(inner)
-        outer.addWidget(scroll, 1)
-
+        lay.setContentsMargins(16, 12, 16, 12)
+        lay.setSpacing(8)
+        self.sidebar_scroll.setWidget(inner)
+        outer.addWidget(self.sidebar_scroll, 1)
         title = QLabel("打印设置")
-        set_theme_style(title, "font-size: 16px; font-weight: bold; color: #134E4A;")
+        set_theme_style(title, "font-size: 16px; font-weight: 600; color: #134E4A;")
         lay.addWidget(title)
 
-        # 1. 打印机
-        lay.addWidget(self._caption("打印机"))
-        self.combo_printer = QComboBox()
+        self.combo_printer = ClearComboBox()
+        self.combo_printer.setAccessibleName("打印机")
         printers = [name for name in QPrinterInfo.availablePrinterNames()
                     if name.casefold() != "microsoft print to pdf"]
         default_name = QPrinterInfo.defaultPrinterName()
@@ -1089,167 +1097,198 @@ class PrintDialog(QDialog):
             self.combo_printer.setPlaceholderText("未找到可用打印机")
             self.combo_printer.setEnabled(False)
         self.combo_printer.currentIndexChanged.connect(self._on_printer_changed)
-        lay.addWidget(self.combo_printer)
+        lay.addWidget(self._field("打印机", self.combo_printer))
 
-        lay.addWidget(self._caption("颜色模式"))
-        self.combo_color = QComboBox()
-        self.combo_color.setAccessibleName("颜色模式")
-        self.combo_color.addItem("彩色", "color")
-        self.combo_color.addItem("灰度（黑白）", "grayscale")
-        self.combo_color.currentIndexChanged.connect(self._refresh)
-        lay.addWidget(self.combo_color)
-
-        # 2. 打印范围
-        lay.addWidget(self._caption("打印范围"))
         self.btn_range_group = QButtonGroup(self)
-        self.radio_all = QRadioButton(f"全部页面 ({len(self.pages)} 页)")
+        self.radio_all = QRadioButton(f"全部（{len(self.pages)} 页）")
         self.radio_all.setChecked(True)
-        self.btn_range_group.addButton(self.radio_all)
-        lay.addWidget(self.radio_all)
-
         selected_count = len(self.ws.target_indices())
-        self.radio_sel = QRadioButton(f"已选页面 ({selected_count} 页)")
-        self.btn_range_group.addButton(self.radio_sel)
-        if selected_count == 0:
-            self.radio_sel.setEnabled(False)
-        lay.addWidget(self.radio_sel)
-
+        self.radio_sel = QRadioButton(f"已选（{selected_count} 页）")
+        self.radio_sel.setEnabled(selected_count > 0)
+        self.radio_custom = QRadioButton("指定页码")
+        for radio in (self.radio_all, self.radio_sel, self.radio_custom):
+            self.btn_range_group.addButton(radio)
+        scope = QWidget()
+        scope_layout = QVBoxLayout(scope)
+        scope_layout.setContentsMargins(0, 0, 0, 0)
+        scope_layout.setSpacing(6)
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(self.radio_all)
+        scope_row.addWidget(self.radio_sel)
+        scope_row.addStretch()
+        scope_layout.addLayout(scope_row)
         range_row = QHBoxLayout()
         range_row.setSpacing(8)
-        self.radio_custom = QRadioButton("页码范围")
-        self.btn_range_group.addButton(self.radio_custom)
         self.edit_range = QLineEdit()
+        self.edit_range.setAccessibleName("打印页码范围")
         self.edit_range.setPlaceholderText("例如 1-3, 5")
         self.edit_range.setEnabled(False)
         range_row.addWidget(self.radio_custom)
         range_row.addWidget(self.edit_range, 1)
-        lay.addLayout(range_row)
-
+        scope_layout.addLayout(range_row)
+        lay.addWidget(self._field("打印范围", scope))
         self.label_range_error = QLabel("")
         set_theme_style(self.label_range_error, "color: #DC2626; font-size: 11px;")
-        self.label_range_error.setVisible(False)
+        self.label_range_error.hide()
         lay.addWidget(self.label_range_error)
-
         self.btn_range_group.buttonToggled.connect(self._on_range_mode_changed)
         self.edit_range.textChanged.connect(self._on_custom_range_changed)
 
-        # 3. 份数
-        copies_row = QHBoxLayout()
-        copies_row.addWidget(self._caption("打印份数"))
-        copies_row.addStretch(1)
-        self.spin_copies = QSpinBox()
+        self.combo_paper = ClearComboBox()
+        self.combo_paper.setAccessibleName("纸张大小")
+        self.combo_paper.currentIndexChanged.connect(self._on_paper_changed)
+        self.combo_orient = ClearComboBox()
+        self.combo_orient.setAccessibleName("纸张方向")
+        for text, value in (("自动", "auto"), ("纵向", "portrait"), ("横向", "landscape")):
+            self.combo_orient.addItem(text, value)
+        self.combo_orient.setToolTip("自动时，单页跟随原页方向；两页根据上下或左右排布决定纸张方向。")
+        self.combo_orient.currentIndexChanged.connect(self._on_paper_changed)
+        paper_row = QHBoxLayout()
+        paper_row.setSpacing(10)
+        paper_row.addWidget(self._field("纸张大小", self.combo_paper), 1)
+        paper_row.addWidget(self._field("纸张方向", self.combo_orient), 1)
+        lay.addLayout(paper_row)
+
+        self.combo_color = ClearComboBox()
+        self.combo_color.setAccessibleName("颜色模式")
+        self.combo_color.addItem("彩色", "color")
+        self.combo_color.addItem("灰度（黑白）", "grayscale")
+        self.combo_color.currentIndexChanged.connect(self._refresh)
+        self.spin_copies = ClearSpinBox()
+        self.spin_copies.setAccessibleName("打印份数")
         self.spin_copies.setRange(1, 999)
         self.spin_copies.setValue(1)
         self.spin_copies.valueChanged.connect(self._refresh)
-        copies_row.addWidget(self.spin_copies)
-        lay.addLayout(copies_row)
+        count_row = QHBoxLayout()
+        count_row.setSpacing(10)
+        count_row.addWidget(self._field("颜色模式", self.combo_color), 1)
+        count_row.addWidget(self._field("打印份数", self.spin_copies), 1)
+        lay.addLayout(count_row)
 
-        lay.addWidget(self._caption("排版方式"))
-        self.combo_layout = QComboBox()
+        self.combo_layout = ClearComboBox()
         self.combo_layout.setAccessibleName("打印排版方式")
         self.combo_layout.addItem("普通打印", "normal")
-        self.combo_layout.addItem("小册子（对折装订）", "booklet")
+        self.combo_layout.addItem("小册子（对折）", "booklet")
         self.combo_layout.currentIndexChanged.connect(self._refresh)
-        lay.addWidget(self.combo_layout)
+        self.label_nup = self._caption("每面排列")
+        self.combo_nup = ClearComboBox()
+        self.combo_nup.setAccessibleName("每面页数与排列方式")
+        layouts = [("1 页", 1, "horizontal"), ("2 页（左右）", 2, "horizontal"),
+                   ("2 页（上下）", 2, "vertical"), ("4 页", 4, "horizontal"),
+                   ("6 页", 6, "horizontal"), ("9 页", 9, "horizontal"), ("16 页", 16, "horizontal")]
+        for text, count, shape in layouts:
+            self.combo_nup.addItem(text, count)
+            self.combo_nup.setItemData(self.combo_nup.count() - 1, shape, Qt.ItemDataRole.UserRole + 1)
+        self.combo_nup.setToolTip("上下两页适合纵向纸张，左右两页适合横向纸张。")
+        self.combo_nup.currentIndexChanged.connect(self._refresh)
+        self.nup_field = self._field(self.label_nup, self.combo_nup)
+        layout_row = QHBoxLayout()
+        layout_row.setSpacing(10)
+        layout_row.addWidget(self._field("排版方式", self.combo_layout), 1)
+        layout_row.addWidget(self.nup_field, 1)
+        lay.addLayout(layout_row)
+
         self.booklet_controls = QWidget()
         booklet_layout = QVBoxLayout(self.booklet_controls)
         booklet_layout.setContentsMargins(0, 0, 0, 0)
-        booklet_layout.addWidget(QLabel("每面两页，自动编排对折后的页序。"))
-        booklet_layout.addWidget(self._caption("装订方向"))
-        self.combo_booklet_binding = QComboBox()
+        booklet_layout.setSpacing(8)
+        note = QLabel("每面两页，自动编排对折后的页序。")
+        note.setWordWrap(True)
+        booklet_layout.addWidget(note)
+        self.combo_booklet_binding = ClearComboBox()
         self.combo_booklet_binding.setAccessibleName("装订方向")
         self.combo_booklet_binding.addItem("左侧装订", "left")
         self.combo_booklet_binding.addItem("右侧装订", "right")
         self.combo_booklet_binding.currentIndexChanged.connect(self._refresh)
-        booklet_layout.addWidget(self.combo_booklet_binding)
-        booklet_layout.addWidget(self._caption("本次打印"))
-        self.combo_booklet_sides = QComboBox()
+        booklet_layout.addWidget(self._field("装订方向", self.combo_booklet_binding))
+        self.combo_booklet_sides = ClearComboBox()
         self.combo_booklet_sides.setAccessibleName("小册子打印面")
         self.combo_booklet_sides.addItem("双面（自动双面打印机）", "both")
         self.combo_booklet_sides.addItem("仅正面（手动双面第 1 步）", "front")
         self.combo_booklet_sides.addItem("仅反面（手动双面第 2 步）", "back")
         self.combo_booklet_sides.currentIndexChanged.connect(self._refresh)
-        booklet_layout.addWidget(self.combo_booklet_sides)
+        booklet_layout.addWidget(self._field("本次打印", self.combo_booklet_sides))
         self.booklet_controls.hide()
         lay.addWidget(self.booklet_controls)
 
-        self.label_nup = self._caption("每面排列")
-        lay.addWidget(self.label_nup)
-        self.combo_nup = QComboBox()
-        for count in (1, 2, 4, 6, 9, 16):
-            self.combo_nup.addItem(f"{count} 页", count)
-        self.combo_nup.currentIndexChanged.connect(self._refresh)
-        lay.addWidget(self.combo_nup)
-        self.combo_cell_order = QComboBox()
-        self.combo_cell_order.addItem("先横向，再纵向", "row")
-        self.combo_cell_order.addItem("先纵向，再横向", "column")
-        self.combo_cell_order.currentIndexChanged.connect(self._refresh)
-        lay.addWidget(self.combo_cell_order)
-        from PyQt6.QtWidgets import QCheckBox
-        self.check_borders = QCheckBox("显示页面边框")
-        self.check_borders.toggled.connect(self._refresh)
-        lay.addWidget(self.check_borders)
-        self.check_reverse = QCheckBox("按相反页序打印")
-        self.check_reverse.toggled.connect(self._refresh)
-        lay.addWidget(self.check_reverse)
-
-        # 4. 纸张
-        lay.addWidget(self._caption("纸张大小"))
-        self.combo_paper = QComboBox()
-        self.combo_paper.currentIndexChanged.connect(self._on_paper_changed)
-        lay.addWidget(self.combo_paper)
-
-        # 5. 页面方向
-        lay.addWidget(self._caption("页面方向"))
-        self.combo_orient = QComboBox()
-        self.combo_orient.addItem("自动横纵向（推荐）", "auto")
-        self.combo_orient.addItem("纵向", "portrait")
-        self.combo_orient.addItem("横向", "landscape")
-        self.combo_orient.currentIndexChanged.connect(self._on_paper_changed)
-        lay.addWidget(self.combo_orient)
-
-        # 6. 页边距
-        lay.addWidget(self._caption("页边距"))
-        self.combo_margin = QComboBox()
-        for text, value in MARGIN_PRESETS:
-            self.combo_margin.addItem(text, value)
-        self.combo_margin.currentIndexChanged.connect(self._on_paper_changed)
-        lay.addWidget(self.combo_margin)
-
-        # 7. 纸张面数
         self.label_sides = self._caption("纸张面数")
-        lay.addWidget(self.label_sides)
         self.btn_duplex_group = QButtonGroup(self)
         self.radio_single = QRadioButton("单面打印")
         self.radio_single.setChecked(True)
-        self.btn_duplex_group.addButton(self.radio_single)
-        lay.addWidget(self.radio_single)
-
         self.radio_double = QRadioButton("双面打印")
-        self.btn_duplex_group.addButton(self.radio_double)
-        lay.addWidget(self.radio_double)
+        sides = QWidget()
+        sides_layout = QHBoxLayout(sides)
+        sides_layout.setContentsMargins(0, 0, 0, 0)
+        for radio in (self.radio_single, self.radio_double):
+            self.btn_duplex_group.addButton(radio)
+            sides_layout.addWidget(radio)
+        sides_layout.addStretch()
+        self.sides_field = self._field(self.label_sides, sides)
+        lay.addWidget(self.sides_field)
 
-        self.combo_duplex_mode = QComboBox()
-        self.combo_duplex_mode.addItem("沿长边装订（竖版左右翻，横版上下翻）", "long_edge")
-        self.combo_duplex_mode.addItem("沿短边装订（竖版上下翻，横版左右翻）", "short_edge")
+        self.advanced_toggle = QToolButton()
+        self.advanced_toggle.setText("更多设置")
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.advanced_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.advanced_toggle.setAccessibleName("展开更多打印设置")
+        lay.addWidget(self.advanced_toggle)
+        self.advanced = QWidget()
+        advanced_layout = QVBoxLayout(self.advanced)
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_layout.setSpacing(10)
+        self.combo_margin = ClearComboBox()
+        self.combo_margin.setAccessibleName("页边距")
+        for text, value in MARGIN_PRESETS:
+            self.combo_margin.addItem(text, value)
+        self.combo_margin.currentIndexChanged.connect(self._on_paper_changed)
+        advanced_layout.addWidget(self._field("页边距", self.combo_margin))
+        self.combo_cell_order = ClearComboBox()
+        self.combo_cell_order.setAccessibleName("多页填充顺序")
+        self.combo_cell_order.addItem("先横向，再纵向", "row")
+        self.combo_cell_order.addItem("先纵向，再横向", "column")
+        self.combo_cell_order.currentIndexChanged.connect(self._refresh)
+        self.cell_order_field = self._field("填充顺序", self.combo_cell_order)
+        advanced_layout.addWidget(self.cell_order_field)
+        from PyQt6.QtWidgets import QCheckBox
+        self.check_borders = QCheckBox("显示页面边框")
+        self.check_reverse = QCheckBox("按相反页序打印")
+        self.check_borders.toggled.connect(self._refresh)
+        self.check_reverse.toggled.connect(self._refresh)
+        advanced_layout.addWidget(self.check_borders)
+        advanced_layout.addWidget(self.check_reverse)
+        self.combo_duplex_mode = ClearComboBox()
+        self.combo_duplex_mode.setAccessibleName("双面装订边")
+        self.combo_duplex_mode.addItem("沿长边装订", "long_edge")
+        self.combo_duplex_mode.addItem("沿短边装订", "short_edge")
         self.combo_duplex_mode.setEnabled(False)
         self.combo_duplex_mode.currentIndexChanged.connect(self._on_duplex_changed)
-        lay.addWidget(self.combo_duplex_mode)
+        self.duplex_field = self._field("双面装订", self.combo_duplex_mode)
+        advanced_layout.addWidget(self.duplex_field)
+        self.advanced.hide()
+        lay.addWidget(self.advanced)
+        self.advanced_toggle.toggled.connect(self.advanced.setVisible)
+        self.advanced_toggle.toggled.connect(lambda expanded: self.advanced_toggle.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow))
+        self.advanced_toggle.toggled.connect(lambda expanded: self.advanced_toggle.setAccessibleName(
+            "收起更多打印设置" if expanded else "展开更多打印设置"))
 
         self.label_duplex_warn = QLabel("")
         self.label_duplex_warn.setWordWrap(True)
         set_theme_style(self.label_duplex_warn,
             "background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px;"
-            "padding: 7px 9px; color: #92400E; font-size: 11px;"
-        )
-        self.label_duplex_warn.setVisible(False)
+            "padding: 7px 9px; color: #92400E; font-size: 11px;")
+        self.label_duplex_warn.hide()
         lay.addWidget(self.label_duplex_warn)
-
         self.btn_duplex_group.buttonToggled.connect(self._on_duplex_changed)
         lay.addStretch(1)
+        self._wheel_controls = set(inner.findChildren(QComboBox) + inner.findChildren(QSpinBox))
+        for control in self._wheel_controls:
+            control.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            control.installEventFilter(self)
 
         btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(20, 8, 20, 20)
+        btn_row.setContentsMargins(16, 8, 16, 16)
         btn_row.setSpacing(10)
         btn_cancel = QPushButton("取消")
         btn_cancel.setObjectName("secondaryBtn")
@@ -1264,12 +1303,32 @@ class PrintDialog(QDialog):
 
     def _caption(self, text: str) -> QLabel:
         label = QLabel(text)
-        set_theme_style(label, "font-weight: bold; color: #334155; margin-top: 6px;")
+        set_theme_style(label, "font-size: 12px; font-weight: 500; color: #4D6B67;")
         return label
+
+    def _field(self, caption: str | QLabel, control: QWidget) -> QWidget:
+        field = QWidget()
+        layout = QVBoxLayout(field)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(self._caption(caption) if isinstance(caption, str) else caption)
+        layout.addWidget(control)
+        return field
 
     # ---- 交互 ----
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt 回调
+        if event.type() == QEvent.Type.Wheel and obj in getattr(self, "_wheel_controls", ()):
+            if isinstance(obj, QComboBox) and obj.view().isVisible():
+                return super().eventFilter(obj, event)
+            viewport = self.sidebar_scroll.viewport()
+            forwarded = QWheelEvent(
+                QPointF(viewport.mapFromGlobal(event.globalPosition().toPoint())), event.globalPosition(),
+                event.pixelDelta(), event.angleDelta(), event.buttons(), event.modifiers(),
+                event.phase(), event.inverted(), device=event.pointingDevice(),
+            )
+            QApplication.sendEvent(viewport, forwarded)
+            return True
         if (
             hasattr(self, "scroll")
             and obj is self.scroll.viewport()
@@ -1401,9 +1460,9 @@ class PrintDialog(QDialog):
         for pid in ids:
             size = QPageSize(pid)
             mm = size.size(QPageSize.Unit.Millimeter)
-            self.combo_paper.addItem(
-                f"{size.name()}（{mm.width():.0f} × {mm.height():.0f} 毫米）", pid
-            )
+            self.combo_paper.addItem(size.name(), pid)
+            self.combo_paper.setItemData(self.combo_paper.count() - 1,
+                                        f"{mm.width():.0f} × {mm.height():.0f} 毫米", Qt.ItemDataRole.ToolTipRole)
         target = wanted if wanted in ids else default_id
         index = self.combo_paper.findData(target) if target is not None else -1
         self.combo_paper.setCurrentIndex(index if index >= 0 else 0)
@@ -1460,6 +1519,8 @@ class PrintDialog(QDialog):
             booklet=booklet,
             booklet_binding=self.combo_booklet_binding.currentData() or "left",
             booklet_sides=sides,
+            two_page_layout=("horizontal" if booklet else
+                             self.combo_nup.currentData(Qt.ItemDataRole.UserRole + 1) or "horizontal"),
         )
 
     def _geometries(self, options: PrintOptions) -> dict[bool, SheetGeometry]:
@@ -1480,6 +1541,9 @@ class PrintDialog(QDialog):
         is_double = duplex != "none"
         self.label_hint.setVisible(is_double or options.booklet)
         self.booklet_controls.setVisible(options.booklet)
+        self.nup_field.setVisible(not options.booklet)
+        self.sides_field.setVisible(not options.booklet)
+        self.duplex_field.setVisible(is_double and not options.booklet)
         for widget in (self.label_nup, self.combo_nup, self.label_sides, self.radio_single,
                        self.radio_double, self.combo_duplex_mode):
             widget.setVisible(not options.booklet)
@@ -1489,7 +1553,8 @@ class PrintDialog(QDialog):
         sheets = build_sheets(self.pages, options, self.store)
         preview_duplex = ("long_edge" if options.orientation == "portrait" else "short_edge") if options.booklet else duplex
         self.canvas.set_data(self.pages, sheets, geometries, preview_duplex, options)
-        self.combo_cell_order.setVisible(options.pages_per_face > 1 and not options.booklet)
+        self.cell_order_field.setVisible(options.pages_per_face > 2 and not options.booklet)
+        self.combo_cell_order.setVisible(options.pages_per_face > 2 and not options.booklet)
         self.check_borders.setVisible(options.pages_per_face > 1)
         if getattr(self, "_auto_fit", False) and self.isVisible():
             self._fit_window()
@@ -1509,6 +1574,12 @@ class PrintDialog(QDialog):
             if options.copies > 1:
                 text += f" × {options.copies} 份 = {sheets_n * options.copies} 张"
             geometry = geometries[sheets[0].front_portrait]
+            paper = QPageSize(options.paper).name() if options.paper is not None else "当前纸张"
+            direction = ("自动方向" if options.orientation == "auto" and options.pages_per_face == 1
+                         else "纵向" if sheets[0].front_portrait else "横向")
+            text += f" · {direction} {paper}"
+            if options.pages_per_face == 2 and not options.booklet:
+                text += " · 上下两页" if options.two_page_layout == "vertical" else " · 左右两页"
             text += f" · 实际页边距 {geometry.left:.1f} 毫米（内容按可打印区等比缩放）"
         else:
             text = "还没有选定要打印的页面"
