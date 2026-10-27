@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
-from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, __version__
+from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, APP_VERSION_DISPLAY
 from app.icons import brand_icon, toolbar_icon
 from app.updates import UpdateChecker
 from app.updateui import LANZOU_PASSWORD, open_lanzou_download, show_update_dialog
@@ -124,7 +124,7 @@ class AboutDialog(QDialog):
             label = QLabel(caption)
             label.setObjectName("aboutMuted")
             details.addWidget(label, row, 0)
-        version = QLabel(f"v{__version__}")
+        version = QLabel(f"v{APP_VERSION_DISPLAY}")
         version.setObjectName("aboutVersion")
         details.addWidget(version, 0, 1, Qt.AlignmentFlag.AlignRight)
         project = QLabel(

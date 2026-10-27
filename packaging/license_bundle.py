@@ -33,7 +33,7 @@ def collect_license_data(root):
         raise RuntimeError("Python LICENSE.txt 缺失，不能生成发布包。")
     datas = [(str(root / "LICENSE"), "licenses"), (str(python_license), "licenses/python")]
     lines = ["纸序 PDF：许可、构建版本与对应源码", "",
-             f"程序版本：{__version__}", f"正式版源码与附件：{APP_PROJECT_URL}/releases/tag/v{__version__}",
+             f"程序版本：{__version__}", f"对应版本源码与附件：{APP_PROJECT_URL}/releases/tag/v{__version__}",
              "正式版源码下载：在同一发布页选择 Source code (zip) 或 Source code (tar.gz)。",
              "构建脚本与依赖版本见源码中的 docs/DEVELOPMENT.md、pdf-manage.spec 和 packaging/requirements-build.txt。",
              "自有代码的 MIT 许可位于 LICENSE；组合发行说明位于 THIRD-PARTY.txt。", ""]

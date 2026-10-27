@@ -4,6 +4,7 @@
 #endif
 #define MyAppName GetStringFileInfo(MyAppPackageDir + "\" + MyAppExeName, "ProductName")
 #define MyAppVersion GetStringFileInfo(MyAppPackageDir + "\" + MyAppExeName, "ProductVersion")
+#define MyAppNumericVersion GetVersionNumbersString(MyAppPackageDir + "\" + MyAppExeName)
 #define MyAppProgId "PDFManage.Document"
 #dim ImageExtensions[7] {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 #define ImageIndex
@@ -12,8 +13,13 @@
 AppId={{0E4A38D0-8475-4A57-98C2-1AD3F468A0E8}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-VersionInfoVersion={#MyAppVersion}
-VersionInfoProductVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppNumericVersion}
+VersionInfoProductVersion={#MyAppNumericVersion}
+VersionInfoTextVersion={#MyAppVersion}
+VersionInfoProductTextVersion={#MyAppVersion}
+#if Pos("-", MyAppVersion) > 0
+AppVerName={#MyAppName} {#MyAppVersion}（预览版）
+#endif
 DefaultDirName={localappdata}\Programs\PDFManage
 DefaultGroupName={#MyAppName}
 PrivilegesRequired=lowest
@@ -45,8 +51,13 @@ WelcomeFontName=Microsoft YaHei UI
 WelcomeFontSize=17
 
 [Messages]
+#if Pos("-", MyAppVersion) > 0
+WelcomeLabel1=欢迎试用纸序 PDF 预览版
+WelcomeLabel2=这是用于体验新功能的预览版本，实体打印机、Windows 鼠标和触控板操作仍待进一步验收。%n%n安装版会更新现有的纸序 PDF。需要与正式版分开体验时，请使用绿色 ZIP，并解压到独立目录。%n%n继续前请关闭正在运行的纸序 PDF。
+#else
 WelcomeLabel1=欢迎使用纸序 PDF
 WelcomeLabel2=阅读、整理、转换与压缩，在本机轻松处理文档。%n%n安装向导将为您准备好程序和常用快捷工具。
+#endif
 WizardSelectTasks=设置快捷工具
 SelectTasksDesc=选择您常用的打开方式
 SelectTasksLabel2=右键快捷工具统一启用，只会在适用的文件上显示对应操作。

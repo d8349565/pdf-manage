@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from app import APP_EXE_NAME, __version__
+from app import APP_EXE_NAME, APP_IS_PRERELEASE, __version__
 
 README = '''纸序 PDF 绿色版
 
@@ -23,6 +23,10 @@ README = '''纸序 PDF 绿色版
 7. Word 转换依赖本机 Microsoft Word；离线 OCR 增强包仍需另行导入。
 8. 更新时完整解压新版，按需保留自己的 Data；不要覆盖正在运行的程序。
 '''
+if APP_IS_PRERELEASE:
+    README = (f"纸序 PDF v{__version__}（预览版）\n\n"
+              "本版用于体验新功能，实体打印机及 Windows 鼠标、触控板操作仍待验收。\n"
+              "请解压到独立目录，保留原文件并先用副本核对结果。\n\n" + README)
 
 
 def _is_link(path):

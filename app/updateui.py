@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QToolButton, QVBoxLayout, QWidget,
 )
 
-from app import APP_NAME, __version__
+from app import APP_IS_PRERELEASE, APP_NAME, __version__
 from app.icons import brand_icon, toolbar_icon
 from app.runtime import portable_root
 from app.themes import current_theme, set_theme_style, theme_manager
@@ -153,7 +153,7 @@ class UpdateDialog(QDialog):
         layout.addLayout(header)
         layout.addSpacing(17)
         heading = QHBoxLayout()
-        self.title_label = self._label("更新内容", "releaseTitle")
+        self.title_label = self._label("正式版更新" if APP_IS_PRERELEASE else "更新内容", "releaseTitle")
         heading.addWidget(self.title_label, 1)
         self.date_label = self._label("", muted=True)
         heading.addWidget(self.date_label, 0, Qt.AlignmentFlag.AlignBottom)
@@ -362,6 +362,8 @@ class UpdateDialog(QDialog):
             state = "当前显示已保存的更新说明" if has_notes else "更新内容尚未获取"
         elif updates.update_available:
             state = "有新版本可下载"
+        elif APP_IS_PRERELEASE:
+            state = "预览版：仅检查正式版更新"
         elif updates.latest_tag:
             state = "当前已是最新版本" if updates.last_check_succeeded else "已保存的发布说明"
         else:

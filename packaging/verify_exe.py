@@ -18,7 +18,7 @@ from PyInstaller.archive.readers import CArchiveReader
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from app import APP_NAME, APP_EXE_NAME, APP_SLUG, __version__
+from app import APP_IS_PRERELEASE, APP_NAME, APP_EXE_NAME, APP_SLUG, APP_VERSION_PARTS, __version__
 from license_bundle import verify_license_bundle
 
 
@@ -36,7 +36,7 @@ def main() -> None:
             fixed = setup.VS_FIXEDFILEINFO[0]
             version = (fixed.FileVersionMS >> 16, fixed.FileVersionMS & 65535,
                        fixed.FileVersionLS >> 16, fixed.FileVersionLS & 65535)
-            assert version == tuple(map(int, __version__.split('.'))) + (0,), "Installer file version mismatch"
+            assert version == APP_VERSION_PARTS + (0,), "Installer file version mismatch"
             strings = next(info.StringTable[0].entries for block in setup.FileInfo for info in block
                            if info.Key == b"StringFileInfo")
             assert strings[b"ProductName"].decode('utf-8').strip() == APP_NAME
@@ -50,10 +50,11 @@ def main() -> None:
         assert strings[b"OriginalFilename"].decode("utf-8") == APP_EXE_NAME
         assert strings[b"ProductVersion"].decode("utf-8") == __version__
         assert strings[b"FileVersion"].decode("utf-8") == __version__
-        parts = tuple(map(int, __version__.split("."))) + (0,)
+        parts = APP_VERSION_PARTS + (0,)
         fixed = pe.VS_FIXEDFILEINFO[0]
         assert (fixed.FileVersionMS >> 16, fixed.FileVersionMS & 65535,
                 fixed.FileVersionLS >> 16, fixed.FileVersionLS & 65535) == parts
+        assert bool(fixed.FileFlags & 2) == APP_IS_PRERELEASE, "PE prerelease flag mismatch"
         groups = next(e for e in pe.DIRECTORY_ENTRY_RESOURCE.entries if e.id == 14).directory.entries
         assert [g.id for g in groups] == [1, 2], "Application and PDF icons must be embedded"
         for group in groups:
@@ -87,6 +88,7 @@ def main() -> None:
                      "app.pdf2excel.page_builder", "PIL.Image", "PIL.ImageFont", "PIL.PngImagePlugin",
                      "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "app.updates", "markdown",
                      "app.imagecompress", "app.imagequick", "app.runtime", "app.contextmenus", "app.contextmenuui",
+                     "app.themes", "app.updateui",
                      "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
         assert required in python_modules, f"Missing module: {required}"
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"

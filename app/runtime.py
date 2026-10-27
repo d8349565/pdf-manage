@@ -4,7 +4,7 @@ import sys
 
 from PyQt6.QtCore import QSettings
 
-from app import APP_NAME, APP_ORGANIZATION, APP_SLUG
+from app import APP_IS_PRERELEASE, APP_NAME, APP_ORGANIZATION, APP_SLUG
 
 PORTABLE_MARKER = 'portable.ini'
 
@@ -25,7 +25,7 @@ def portable_data():
 
 
 def display_name():
-    return APP_NAME + ('（绿色版）' if portable_root() else '')
+    return APP_NAME + ('（绿色版）' if portable_root() else '') + ('（预览版）' if APP_IS_PRERELEASE else '')
 
 
 def prepare_profile():

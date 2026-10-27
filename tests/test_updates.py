@@ -36,6 +36,31 @@ def test_version_comparison_uses_numbers():
     assert updates.version_parts("1.0.0") > updates.version_parts("v0.99.99")
 
 
+@pytest.mark.parametrize("prerelease,latest,expected", [
+    (True, "v0.10.2", False), (True, "v0.10.3", True), (True, "v0.10.4", True),
+    (False, "v0.10.3", False), (False, "v0.10.4", True),
+])
+def test_preview_can_upgrade_to_the_same_core_stable_version(checker, monkeypatch, prerelease, latest, expected):
+    monkeypatch.setattr(updates, "APP_VERSION_PARTS", (0, 10, 3))
+    monkeypatch.setattr(updates, "APP_IS_PRERELEASE", prerelease)
+    checker.latest_tag = latest
+    assert checker.update_available is expected
+
+
+def test_preview_release_metadata_is_never_offered_as_a_stable_update():
+    with pytest.raises(ValueError, match="正式版本"):
+        updates.release_info(release_payload(tag_name="v0.10.3-preview", prerelease=True))
+
+
+def test_public_and_windows_version_metadata_share_one_source():
+    from app import APP_IS_PRERELEASE, APP_VERSION_CORE, APP_VERSION_DISPLAY, APP_VERSION_PARTS, __version__
+    assert APP_VERSION_CORE == __version__.split("-", 1)[0]
+    assert APP_VERSION_PARTS == tuple(map(int, APP_VERSION_CORE.split(".")))
+    assert len(APP_VERSION_PARTS) == 3 and all(0 <= value <= 65535 for value in APP_VERSION_PARTS)
+    assert APP_IS_PRERELEASE == ("-" in __version__)
+    assert ("预览版" in APP_VERSION_DISPLAY) == APP_IS_PRERELEASE
+
+
 def test_legacy_installer_name_matches_the_release_version():
     for name in (
         f"{APP_SLUG}-Setup v99999.0.0.exe",

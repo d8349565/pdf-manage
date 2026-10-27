@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 
-from app import APP_PROJECT_URL, APP_SLUG, __version__
+from app import APP_IS_PRERELEASE, APP_PROJECT_URL, APP_SLUG, APP_VERSION_PARTS, __version__
 from app.runtime import portable_root
 
 RELEASES_URL = f"{APP_PROJECT_URL}/releases"
@@ -142,7 +142,10 @@ class UpdateChecker(QObject):
 
     @property
     def update_available(self) -> bool:
-        return bool(self.latest_tag) and version_parts(self.latest_tag) > version_parts(__version__)
+        if not self.latest_tag:
+            return False
+        latest = version_parts(self.latest_tag)
+        return latest > APP_VERSION_PARTS or (APP_IS_PRERELEASE and latest == APP_VERSION_PARTS)
 
     @property
     def automatic(self) -> bool:
@@ -283,8 +286,12 @@ class UpdateChecker(QObject):
             self.settings.sync()
             self.error = ""
             self.last_check_succeeded = True
-            self.message = (f"发现新版本 {self.latest_tag}。" if self.update_available
-                            else f"当前已是最新版本（v{__version__}）。")
+            if self.update_available:
+                self.message = f"发现新版本 {self.latest_tag}。"
+            elif APP_IS_PRERELEASE:
+                self.message = f"当前为预览版（v{__version__}），最新正式版为 {self.latest_tag}。"
+            else:
+                self.message = f"当前已是最新版本（v{__version__}）。"
         except ValueError as exc:
             self.message = str(exc)
             self.error = self.message

@@ -12,16 +12,16 @@ from PyInstaller.utils.win32.versioninfo import (
 
 ROOT = Path(SPECPATH).resolve()
 sys.path.insert(0, str(ROOT))
-from app import APP_NAME, APP_SLUG, __version__
+from app import APP_IS_PRERELEASE, APP_NAME, APP_SLUG, APP_VERSION_PARTS, __version__
 sys.path.insert(0, str(ROOT / "packaging"))
 from license_bundle import collect_license_data
 
-VERSION_PARTS = tuple(map(int, __version__.split(".")))
+VERSION_PARTS = APP_VERSION_PARTS
 if len(VERSION_PARTS) != 3 or any(v < 0 or v > 65535 for v in VERSION_PARTS):
     raise ValueError("发布版本必须是三段数字，例如 0.3.0，各段不超过 65535")
 PE_VERSION = VSVersionInfo(
     ffi=FixedFileInfo(filevers=VERSION_PARTS + (0,), prodvers=VERSION_PARTS + (0,),
-                      mask=0x3F, flags=0, OS=0x40004, fileType=1, subtype=0, date=(0, 0)),
+                      mask=0x3F, flags=2 if APP_IS_PRERELEASE else 0, OS=0x40004, fileType=1, subtype=0, date=(0, 0)),
     kids=[StringFileInfo([StringTable("080404B0", [
         StringStruct("FileDescription", APP_NAME),
         StringStruct("FileVersion", __version__),
