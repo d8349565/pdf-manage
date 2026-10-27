@@ -54,7 +54,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
         from PyQt6.QtCore import QCoreApplication, QEvent, QThreadPool
         from PyQt6.QtPrintSupport import QPrinter
         from PyQt6.QtWidgets import QApplication
-        from app import APP_NAME, __version__
+        from app import APP_NAME
         from app.__main__ import _window_icon, startup_pdf_paths
         from app.icons import brand_icon
         from app.pdf2excel.converter import convert_pdf_to_excel
@@ -62,7 +62,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
         from app.printing import PrintOptions, render_pages_to_printer
         from app.ui import MainWindow
         from app.windows_integration import application_identity, association_entries
-        from app.runtime import display_name, portable_data
+        from app.runtime import portable_data
         report['edition'] = 'portable' if portable_data() else 'installed'
         report['portable_data'] = str(portable_data()) if portable_data() else None
 
@@ -151,7 +151,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
             assert startup_pdf_paths([sys.executable, str(source)]) == [str(source)]
             window = MainWindow()
             try:
-                assert window.windowTitle().endswith(f"{display_name()} v{__version__}")
+                assert window.windowTitle() == "未命名"
                 if ocr_runtime is None:
                     from native_window_check import check_native_window
                     report["native_resize"] = check_native_window(window, qapp)
@@ -162,6 +162,7 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 window.ws.open_replace(pages, str(source))
                 window.refresh()
                 qapp.processEvents()
+                assert window.windowTitle() == source.name
                 from app.contextmenus import ContextMenus, registration_plan
                 from app.contextmenuui import ContextMenuDialog
                 class EmptyRegistry:

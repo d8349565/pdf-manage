@@ -51,14 +51,25 @@ class AboutDialog(QDialog):
             QDialog#aboutDialog QToolButton:focus { border: 2px solid #0F766E; }
             QDialog#aboutDialog QPushButton {
                 background: #0F766E; color: white; border: 1px solid #0F766E;
-                border-radius: 8px; padding: 6px 24px; min-height: 28px;
-                font-weight: 600;
+                border-radius: 7px; padding: 4px 16px; min-height: 24px;
+                font-size: 13px; font-weight: 500;
             }
             QDialog#aboutDialog QPushButton:hover { background: #0D9488; }
             QDialog#aboutDialog QPushButton:focus { border: 2px solid #173C36; }
             QDialog#aboutDialog QPushButton:disabled {
                 background: #E3EBE6; color: #65796E; border-color: #D6E3DD;
             }
+            QDialog#aboutDialog QPushButton[aboutUpdateAction="true"] {
+                background: transparent; color: #0F766E; border: 1px solid #C5D5D2;
+                padding: 4px 10px; min-height: 20px; font-size: 12px;
+            }
+            QDialog#aboutDialog QPushButton[aboutUpdateAction="true"]:hover {
+                background: #E6F1EB;
+            }
+            QDialog#aboutDialog QPushButton#aboutViewUpdates {
+                background: #0F766E; color: white; border-color: #0F766E;
+            }
+            QDialog#aboutDialog QPushButton#aboutViewUpdates:hover { background: #0D9488; }
         """)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -153,6 +164,7 @@ class AboutDialog(QDialog):
         self.update_status.setWordWrap(True)
         updates_layout.addWidget(self.update_status)
         update_buttons = QHBoxLayout()
+        update_buttons.setSpacing(8)
         self.view_updates_button = QPushButton("查看更新内容")
         self.view_updates_button.setObjectName("aboutViewUpdates")
         self.view_updates_button.clicked.connect(lambda: show_update_dialog(self, self.updates))
@@ -161,21 +173,21 @@ class AboutDialog(QDialog):
         self.check_update_button.setObjectName("aboutCheckUpdates")
         self.check_update_button.clicked.connect(self.updates.check)
         update_buttons.addWidget(self.check_update_button)
-        update_buttons.addStretch()
-        updates_layout.addLayout(update_buttons)
-        update_buttons = QHBoxLayout()
         self.get_update_button = QPushButton("打开绿色版发布页" if portable_root() else "打开发布页")
         self.get_update_button.setObjectName("aboutGetUpdate")
         self.get_update_button.clicked.connect(self.updates.open_release_page)
         update_buttons.addWidget(self.get_update_button)
         self.lanzou_button = QPushButton("蓝奏云 ↗")
         self.lanzou_button.setObjectName("aboutLanzouDownload")
-        self.lanzou_button.setIcon(toolbar_icon("cloud-download", "#FFFFFF"))
-        self.lanzou_button.setIconSize(QSize(20, 20))
+        self.lanzou_button.setIcon(toolbar_icon("cloud-download", "#0F766E"))
+        self.lanzou_button.setIconSize(QSize(16, 16))
         self.lanzou_button.setToolTip(f"打开蓝奏云下载，自动复制密码 {LANZOU_PASSWORD}")
         self.lanzou_button.setAccessibleName("蓝奏云下载，复制密码并打开网盘")
         self.lanzou_button.clicked.connect(self._open_lanzou_download)
         update_buttons.addWidget(self.lanzou_button)
+        for button in (self.view_updates_button, self.check_update_button,
+                       self.get_update_button, self.lanzou_button):
+            button.setProperty("aboutUpdateAction", True)
         update_buttons.addStretch()
         updates_layout.addLayout(update_buttons)
         self.lanzou_status = QLabel(f"蓝奏云密码：{LANZOU_PASSWORD}（点击“蓝奏云”自动复制）")

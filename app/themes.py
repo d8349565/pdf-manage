@@ -38,12 +38,14 @@ THEMES = (
         selected="#D2E1F3", accent="#315C8A", accent_hover="#25496E",
         accent_pressed="#1D3B5A", shadow="#C1CEDE",
     )),
-    Theme("forest", "松林", "灰绿底色，自然柔和", dict(
-        **_LIGHT, window="#EEF3EE", surface="#FBFDF9", subtle="#E5ECE3",
-        canvas="#DEE7DC", text="#273C30", muted="#596D5E", disabled="#819386",
-        border="#CEDBCD", strong_border="#9DB69F", hover="#E1EBDF",
-        selected="#D2E3D0", accent="#32634D", accent_hover="#264F3C",
-        accent_pressed="#1D3F2F", shadow="#C4D2C2",
+    Theme("forest", "原版绿", "保留原版青绿色与浅色背景", dict(
+        _LIGHT, on_accent="#FFFFFF", window="#F3F6F5", surface="#FFFFFF", subtle="#EEF3F0",
+        canvas="#F4F7F6", text="#134E4A", muted="#4D6B67", disabled="#94A3B8",
+        border="#D7E8E4", strong_border="#99B2AC", hover="#F0FDFA",
+        selected="#CCFBF1", accent="#0F766E", accent_hover="#0D9488",
+        accent_pressed="#115E59", shadow="#E4EAE7", danger="#B91C1C",
+        danger_bg="#FEF2F2", danger_border="#FECACA", warning="#D97706",
+        warning_bg="#FFFBEB", warning_border="#FDE68A", success="#059669",
     )),
     Theme("terracotta", "赤陶", "暖灰底色，陶红点缀", dict(
         **_LIGHT, window="#F6F0EC", surface="#FFFCFA", subtle="#EFE5DE",
@@ -106,9 +108,12 @@ def current_theme() -> Theme:
 
 
 def ui_color(value: str, *, foreground: bool = False, theme: Theme | None = None) -> str:
-    colors = (theme or current_theme()).colors
+    theme = theme or current_theme()
+    colors = theme.colors
     if value in colors:
         return colors[value]
+    if theme.key == "forest":
+        return value  # Preserve each original shade, including context-specific colors.
     value = value.upper()
     if value in ("WHITE", "#FFFFFF", "#F8FAFC"):
         return colors["on_accent" if foreground else "surface"]
@@ -119,6 +124,8 @@ def ui_color(value: str, *, foreground: bool = False, theme: Theme | None = None
 
 def themed_stylesheet(source: str, theme: Theme | None = None) -> str:
     theme = theme or current_theme()
+    if theme.key == "forest":
+        return source
 
     def declaration(match):
         prop, colon, value = match.groups()
@@ -181,7 +188,7 @@ class ThemeManager(QObject):
                 widget.setStyleSheet(themed_stylesheet(source))
             canvas = widget.property("themeCanvas")
             if canvas and isinstance(widget, QGraphicsView):
-                widget.setBackgroundBrush(QColor(colors[canvas]))
+                widget.setBackgroundBrush(QColor(ui_color(canvas)))
                 widget.resetCachedContent()
             if isinstance(widget, QAbstractButton):
                 refresh_theme_icon(widget)

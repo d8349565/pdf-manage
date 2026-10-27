@@ -7,6 +7,7 @@ import threading
 from collections import Counter, OrderedDict
 from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
+from uuid import uuid4
 
 from PyQt6.QtGui import QImage
 
@@ -235,6 +236,8 @@ class PdfStore:
         self._draft_lock = threading.RLock()
         self._draft = None
         self._draft_key = None
+        self._draft_link_targets = {}
+        self._draft_transform = None
         self._text_cache = None
         self._text_cache_bytes = 0
         self._annotation_cache = OrderedDict()
@@ -804,6 +807,7 @@ class PdfStore:
 
     def _cache_annotations(self, ref, page):
         from app.pdfedits import annotation_summary
+        from app.pdfstructure import _destination, page_pdf_matrix
         import pymupdf
         with self._annotation_lock:
             if ref.render_key in self._annotation_cache:
@@ -817,7 +821,24 @@ class PdfStore:
                        for word in self._textpage_for_page(ref, page, pymupdf.TEXTFLAGS_WORDS).extractWORDS()
                       if str(word[4]).strip())
         annotations = annotation_summary(page)
+        links = []
+        for link in page.get_links():
+            destination = self._draft_link_targets.get(link.get('uri')) if page.parent is self._draft else None
+            if destination is None:
+                try:
+                    destination = _destination(page.parent, link)
+                except ValueError:
+                    destination = link
+            item = dict(destination)
+            item['from'] = tuple(pymupdf.Rect(link['from']) * extra)
+            if isinstance(item.get('to'), pymupdf.Point):
+                item['to'] = tuple(item['to'])
+            links.append(item)
+        source_matrix = page_pdf_matrix(page) * extra
+        if page.parent is self._draft:
+            source_matrix = self._draft_transform * source_matrix
         summary = dict(annotations=annotations, text_boxes=boxes, matrix=tuple(matrix),
+                       links=tuple(links), source_pdf_matrix=tuple(source_matrix),
                        note_rects=tuple(tuple(pymupdf.Rect(item['rect']) * matrix)
                            for item in annotations if item['kind'] == 0 and not item['image_settings']))
         with self._annotation_lock:
@@ -865,12 +886,11 @@ class PdfStore:
         return image, background
 
     def remap_annotations(self, mapping):
+        # A saved document has new page numbers and PDF coordinate systems.
+        # Rebuild its metadata instead of carrying over stale link destinations.
         with self._annotation_lock:
-            for before, after in mapping.items():
-                if before in self._annotation_cache:
-                    self._annotation_cache[after] = self._annotation_cache[before]
-            while len(self._annotation_cache) > 128:
-                self._annotation_cache.popitem(last=False)
+            for after in mapping.values():
+                self._annotation_cache.pop(after, None)
 
     def render_region(self, ref: PageRef, region: tuple[float, float, float, float], scale: float):
         """按屏幕像素密度重绘可见区域，坐标为最终旋转后的 PDF 点坐标。"""
@@ -898,6 +918,8 @@ class PdfStore:
             if self._draft is not None:
                 self._draft.close()
             self._draft = self._draft_key = None
+            self._draft_link_targets = {}
+            self._draft_transform = None
             self._text_cache = None
             self._text_cache_bytes = 0
 
@@ -916,26 +938,51 @@ class PdfStore:
             return
         import pymupdf
         from app.pdfedits import apply_edits
+        from app.pdfstructure import _destination
         key = (ref.source_id, ref.source_page, ref.page_id, ref.revision)
         with cancellable_lock(self._draft_lock, cancel):
             if key != self._draft_key:
                 if self._draft is not None:
                     self._draft.close()
                 self._draft = self._draft_key = None
+                self._draft_link_targets = {}
+                self._draft_transform = None
                 draft = pymupdf.open()
                 try:
                     with cancellable_lock(src.lock, cancel):
                         original_page = src.preview_page_locked(ref.source_page)
                         original = original_page.parent
                         draft.insert_pdf(original, from_page=ref.source_page, to_page=ref.source_page)
-                        # A one-page preview omits links to other pages. Keep their
-                        # rectangles as inert links so text correction still rejects them.
+                        internal = []
                         for link in original_page.get_links():
-                            if link.get("kind") == pymupdf.LINK_GOTO:
-                                draft[0].insert_link(dict(kind=pymupdf.LINK_URI, uri="about:blank",
-                                    **{"from": pymupdf.Rect(link["from"]) * original_page.derotation_matrix}))
-                    apply_edits(draft[0], ref.edits)
+                            if link.get('kind') in (pymupdf.LINK_GOTO, pymupdf.LINK_NAMED):
+                                try:
+                                    target = _destination(original, link)
+                                except ValueError:
+                                    target = dict(link)
+                                internal.append((link, target))
+                        # One-page drafts cannot hold cross-page destinations. Keep
+                        # inert rectangles plus their original targets. Use unique URIs:
+                        # get_links omits xrefs when some actions cannot be parsed.
+                        for xref, kind, _ in draft[0].annot_xrefs():
+                            if kind == pymupdf.PDF_ANNOT_LINK and (
+                                    draft.xref_get_key(xref, 'Dest')[0] != 'null'
+                                    or draft.xref_get_key(xref, 'A/S')[1] in ('/GoTo', '/Named')):
+                                draft[0].delete_link({'xref': xref})
+                        targets = {}
+                        nonce = uuid4().hex
+                        for number, (link, target) in enumerate(internal):
+                            uri = f'about:blank#zhixupdf-{nonce}-{number}'
+                            draft[0].insert_link(dict(kind=pymupdf.LINK_URI, uri=uri,
+                                **{'from': pymupdf.Rect(link['from']) * original_page.derotation_matrix}))
+                            targets[uri] = target
+                    transforms = []
+                    apply_edits(draft[0], ref.edits, transforms=transforms)
+                    transform = pymupdf.Matrix(1, 1)
+                    for matrix in transforms:
+                        transform *= matrix
                     self._draft, self._draft_key = draft, key
+                    self._draft_link_targets, self._draft_transform = targets, transform
                 except Exception as exc:
                     draft.close()
                     if isinstance(exc, (ValueError, PdfError)):

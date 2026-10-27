@@ -220,8 +220,8 @@ class CapturePreview(QGraphicsView):
         self.item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self.setSceneRect(self.item.boundingRect().adjusted(-12, -12, 12, 12))
         from app.themes import ui_color
-        self.setProperty('themeCanvas', 'canvas')
-        self.setBackgroundBrush(QColor(ui_color('canvas')))
+        self.setProperty('themeCanvas', '#E9EEEC')
+        self.setBackgroundBrush(QColor(ui_color('#E9EEEC')))
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)

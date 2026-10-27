@@ -91,8 +91,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from app import APP_NAME, APP_EXE_NAME, __version__
-from app.runtime import display_name, portable_root, preferences
+from app import APP_NAME, APP_EXE_NAME
+from app.runtime import portable_root, preferences
 from app.icons import brand_icon, toolbar_icon
 from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
@@ -1297,8 +1297,8 @@ class PreviewView(QGraphicsView):
         self.setScene(self._scene)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setProperty("themeCanvas", "canvas")
-        self.setBackgroundBrush(QColor(ui_color("canvas")))
+        self.setProperty("themeCanvas", "#F4F7F6")
+        self.setBackgroundBrush(QColor(ui_color("#F4F7F6")))
         # 稳态下位图恰好是 1:1 设备像素，此提示只在缩放过渡期间生效，
         # 让等待重渲染的这段时间不再是锯齿块。
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
@@ -2044,7 +2044,7 @@ class TitleBar(QWidget):
         host._menubar.setNativeMenuBar(False)
         host._menubar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         lay.addWidget(host._menubar)
-        host.title_label = ElidedTitleLabel(f"{display_name()} v{__version__}", self)
+        host.title_label = ElidedTitleLabel("未命名", self)
         host.title_label.setObjectName("windowTitle")
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -3877,7 +3877,7 @@ class MainWindow(QMainWindow):
             name = os.path.basename(self.ws.path) if self.ws.path else (
                 os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else "未命名")
             star = " *" if self.ws.dirty else ""
-            self.setWindowTitle(f"{name}{star} — {display_name()} v{__version__}")
+            self.setWindowTitle(f"{name}{star}")
             self.statusBar().showMessage(self._status_line())
         finally:
             self._syncing = False

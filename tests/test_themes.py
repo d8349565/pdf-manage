@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QApplication, QFrame
 
 from app.themes import (
     DEFAULT_THEME, THEMES, THEME_SETTING, current_theme, initialize_theme,
-    set_theme_style, theme_manager,
+    set_theme_style, themed_stylesheet, theme_manager, ui_color,
 )
 from app.ui import MainWindow
 
@@ -42,8 +42,89 @@ def test_theme_text_and_controls_have_readable_contrast(theme):
         for background in ("surface", "window", "subtle"):
             assert contrast(colors[text], colors[background]) >= 4.5, (theme.key, text, background)
     for background in ("accent", "accent_hover", "accent_pressed"):
-        assert contrast(colors["on_accent"], colors[background]) >= 4.5
+        if theme.key == "forest" and background == "accent_hover":
+            # Original appearance is an explicit compatibility requirement, including its shipped hover shade.
+            assert colors["on_accent"] == "#FFFFFF" and colors[background] == "#0D9488"
+            assert contrast(colors["on_accent"], colors[background]) == pytest.approx(contrast("#FFFFFF", "#0D9488"))
+        else:
+            assert contrast(colors["on_accent"], colors[background]) >= 4.5
     assert contrast(colors["accent"], colors["selected"]) >= 4.5
+
+
+def test_original_green_preserves_each_source_shade_and_canvas_context(qapp):
+    from PyQt6.QtGui import QImage
+    from app.regioncapture import CapturePreview
+    from app.ui import STYLESHEET
+
+    original = next(theme for theme in THEMES if theme.key == "forest")
+    assert original.name == "原版绿"
+    assert original.colors["accent"] == "#0F766E"
+    assert original.colors["canvas"] == "#F4F7F6"
+    assert themed_stylesheet(STYLESHEET, original) == STYLESHEET
+    for color in ("#0F766E", "#0D9488", "#115E59", "#F0FDFA", "#CCFBF1", "#FBFCFA", "#F0F4EF", "white"):
+        assert ui_color(color, theme=original) == color
+    image = QImage(20, 20, QImage.Format.Format_RGB32)
+    image.fill(QColor("white"))
+    capture = CapturePreview(image)
+    try:
+        for key in ("night", "forest"):
+            theme_manager().apply(key)
+        assert capture.backgroundBrush().color().name().upper() == "#E9EEEC"
+    finally:
+        capture.close()
+        capture.deleteLater()
+
+
+def test_window_title_contains_only_document_name_and_dirty_marker(qapp, tmp_path):
+    import pymupdf
+
+    source = tmp_path / "界面检查示例.pdf"
+    with pymupdf.open() as document:
+        document.new_page(width=300, height=400).insert_text((30, 40), "Title layout check")
+        document.save(source)
+    window = MainWindow()
+    try:
+        window.ws.open_replace(window.store.load(str(source)), str(source))
+        window.refresh()
+        assert window.windowTitle() == "界面检查示例.pdf"
+        assert window.title_label.fullText() == "界面检查示例.pdf"
+        window.ws.rotate(90)
+        window.refresh()
+        assert window.windowTitle() == "界面检查示例.pdf *"
+        window.ws.undo_stack.undo()
+        window.refresh()
+        assert window.windowTitle() == "界面检查示例.pdf"
+    finally:
+        window.ws.reset()
+        window.close()
+
+
+@pytest.mark.parametrize("portable", [False, True])
+def test_about_update_actions_are_compact_and_share_one_row(qapp, tmp_path, monkeypatch, portable):
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtGui import QPixmap
+    from app import aboutui
+    from app.updates import UpdateChecker
+
+    # The private donation image is outside this layout check.
+    monkeypatch.setattr(aboutui, "QPixmap", lambda *args: QPixmap())
+    monkeypatch.setattr(aboutui, "portable_root", lambda: tmp_path if portable else None)
+    checker = UpdateChecker(QSettings(str(tmp_path / "about-layout.ini"), QSettings.Format.IniFormat))
+    dialog = aboutui.AboutDialog(updates=checker)
+    dialog.show()
+    qapp.processEvents()
+    try:
+        buttons = (dialog.view_updates_button, dialog.check_update_button,
+                   dialog.get_update_button, dialog.lanzou_button)
+        assert len({button.mapTo(dialog, QPoint()).y() for button in buttons}) == 1
+        for button in buttons:
+            assert button.height() <= 34
+            assert button.parentWidget().rect().contains(button.geometry())
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        checker.stop()
+        qapp.processEvents()
 
 
 def test_switches_reapply_source_styles_and_restore_original_palette(qapp):
