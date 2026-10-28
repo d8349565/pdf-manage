@@ -1,7 +1,7 @@
 """Review interactions use generated PDFs, never the user's documents."""
 import pymupdf as p
 import pytest
-from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QThreadPool, Qt
+from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QThread, QThreadPool, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox, QToolButton
 
@@ -1118,3 +1118,215 @@ def test_adding_annotations_keeps_scroll_zoom_and_replaces_image_without_blank(r
     qapp.processEvents()
     assert (view.horizontalScrollBar().value(), view.verticalScrollBar().value(), view.transform().m11()) == before
     assert not resizes
+
+
+def test_annotation_on_visible_neighbour_page_stays_on_that_page(reader, qapp):
+    """连续阅读时上一页露出的部分可以直接落笔，不能被「当前页」抢走。"""
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("rect"))
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    # 把视口挪到两页交界处，让第 1 页下沿与第 2 页上沿同屏
+    view.centerOn(view.page_rects[0].center().x(), view.page_rects[0].bottom())
+    settle(qapp)
+    # 阅读位置会按视口中心自动判定，这里直接把「当前页」钉在第 2 页，模拟
+    # 用户看着第 2 页、顺手在第 1 页露出的下沿上画框的情形。
+    reader.go_to_page(2, reveal=False)
+    qapp.processEvents()
+    assert reader.ws.preview_index() == 1
+    top = view.page_rects[0].topLeft()
+    height = view.page_rects[0].height()
+    start = view.mapFromScene(top + QPointF(60, height - 110))
+    end = view.mapFromScene(top + QPointF(220, height - 50))
+    assert view.viewport().rect().contains(start)
+    assert view.viewport().rect().contains(end)
+    before_scroll = (view.horizontalScrollBar().value(), view.verticalScrollBar().value(),
+                     view.transform().m11())
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    settle(qapp)
+    # 落笔不再切换当前页，也就不会跳视图
+    assert (view.horizontalScrollBar().value(), view.verticalScrollBar().value(),
+            view.transform().m11()) == before_scroll
+    rects = [edit for edit in reader.ws.pages[0].edits if edit.kind == "rect"]
+    assert len(rects) == 1
+    area = p.Rect(rects[0].points)
+    assert 0 <= area.x0 < area.x1 <= 595 and 0 <= area.y0 < area.y1 <= 842
+    # 落在第 1 页的下半部分，而不是被算到第 2 页
+    assert area.y0 > 400
+    assert not reader.ws.pages[1].edits
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    settle(qapp)
+
+
+def test_visible_neighbour_pages_are_prepared_in_background(reader, qapp, monkeypatch):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    view.centerOn(view.page_rects[0].center().x(), view.page_rects[0].bottom())
+    settle(qapp)
+    visible = view.mapToScene(view.viewport().rect()).boundingRect()
+    index = next((i for i, rect in enumerate(view.page_rects)
+                  if i != reader.ws.preview_index() and rect.intersects(visible)), None)
+    assert index is not None
+    ref = reader.ws.pages[index]
+    with reader.store._annotation_lock:
+        reader.store._annotation_cache.pop(ref.render_key, None)
+    assert reader.store.cached_annotations(ref) is None
+    threads = []
+    prepare = reader.store.prepare_annotations
+    def record_thread(page):
+        if page is ref:
+            threads.append(QThread.currentThread() is qapp.thread())
+        return prepare(page)
+    monkeypatch.setattr(reader.store, "prepare_annotations", record_thread)
+    reader._prepare_visible_page()
+    for _ in range(100):
+        if reader.store.cached_annotations(ref) is not None:
+            break
+        QTest.qWait(20)
+    assert reader.store.cached_annotations(ref) is not None
+    assert threads and not any(threads)
+
+
+@pytest.mark.parametrize("kind", ["rect", "ink", "mosaic"])
+def test_drawing_survives_scroll_to_another_page(reader, qapp, monkeypatch, tmp_path, kind):
+    messages, mosaics = [], []
+    monkeypatch.setattr(QMessageBox, "information", lambda _, title, text, *a:
+                        messages.append(text))
+    if kind == "mosaic":
+        from app.mosaicui import MosaicDialog
+        monkeypatch.setattr(MosaicDialog, "exec", lambda dialog:
+            mosaics.append((dialog.index, dialog.ref, dialog.area)) or QDialog.DialogCode.Rejected)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData(kind))
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    view.centerOn(view.page_rects[0].center().x(), view.page_rects[0].bottom() + 60)
+    settle(qapp)
+    reader.go_to_page(2, reveal=False)
+    top, bounds = view.page_rects[0].topLeft(), view.page_rects[0]
+    start = view.mapFromScene(top + QPointF(60, bounds.height() - 110))
+    end = view.mapFromScene(top + QPointF(220, bounds.height() - 50))
+    assert view.viewport().rect().contains(start) and view.viewport().rect().contains(end)
+    owner = reader.ws.pages[0]
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    view.verticalScrollBar().setValue(view.verticalScrollBar().value() + max(300, view.viewport().height()))
+    QTest.qWait(250)
+    assert reader.ws.preview_index() == 1
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    settle(qapp)
+    assert not messages
+    assert not reader.ws.pages[1].edits
+    if kind == "mosaic":
+        assert len(mosaics) == 1 and mosaics[0][0] == 0 and mosaics[0][1] is owner
+        assert not reader.ws.pages[0].edits
+    else:
+        assert reader.ws.pages[0].edits[-1].kind == kind
+        reader.ws.undo_stack.undo()
+        reader.refresh()
+        assert not reader.ws.pages[0].edits
+        reader.ws.undo_stack.redo()
+        reader.refresh()
+        output = tmp_path / "neighbor-edited.pdf"
+        reader.store.write(reader.ws.pages, str(output))
+        with p.open(output) as saved:
+            expected = p.PDF_ANNOT_SQUARE if kind == "rect" else p.PDF_ANNOT_INK
+            assert any(annot.type[0] == expected for annot in saved[0].annots())
+            assert not any(annot.type[0] == expected for annot in saved[1].annots())
+
+
+@pytest.mark.parametrize("layout", ["single", "spread", "four"])
+@pytest.mark.parametrize("kind", ["highlight", "underline"])
+def test_neighbor_text_annotations_keep_their_page(reader, qapp, monkeypatch, layout, kind):
+    messages = []
+    monkeypatch.setattr(QMessageBox, "information", lambda _, title, text, *a:
+                        messages.append(text))
+    reader.resize(1600, 1000)
+    reader.act_pages.setChecked(False)
+    reader.act_tools.setChecked(False)
+    reader._set_reading_layout(layout)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData(kind))
+    assert tools.ensure_snapshot(1)
+    assert tools.ensure_snapshot(0)
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    top = view.page_rects[1].topLeft()
+    view.centerOn(top + QPointF(180, 90))
+    settle(qapp)
+    reader.go_to_page(1, reveal=False)
+    start = view.mapFromScene(top + QPointF(45, 65))
+    end = view.mapFromScene(top + QPointF(285, 100))
+    assert view.viewport().rect().contains(start) and view.viewport().rect().contains(end)
+    before = (view.horizontalScrollBar().value(), view.verticalScrollBar().value(), view.transform().m11())
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    settle(qapp)
+    assert not messages and not reader.ws.pages[0].edits
+    assert reader.ws.pages[1].edits[-1].kind == kind
+    assert before == (view.horizontalScrollBar().value(), view.verticalScrollBar().value(), view.transform().m11())
+
+
+def test_neighbor_inline_replace_stays_open_and_can_save(reader, qapp, tmp_path, monkeypatch):
+    messages = []
+    monkeypatch.setattr(QMessageBox, "information", lambda _, title, text, *a: messages.append(text))
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("replace"))
+    assert tools.ensure_snapshot(0)
+    reader._set_zoom(.5)
+    settle(qapp)
+    view = reader.preview_view
+    view.centerOn(view.page_rects[0].topLeft() + QPointF(160, 90))
+    settle(qapp)
+    reader.go_to_page(2, reveal=False)
+    pos = view.mapFromScene(view.page_rects[0].topLeft() + QPointF(60, 84))
+    assert view.viewport().rect().contains(pos)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    state = tools._inline_replace
+    assert state is not None and state["index"] == 0 and state["widget"].isVisible()
+    state["input"].setText("附件一：更新技术规格")
+    assert tools._inline_replace is state
+    QTest.keyClick(state["input"], Qt.Key.Key_Return)
+    assert not messages
+    assert tools._inline_replace is None
+    assert reader.ws.pages[0].edits[-1].kind == "replace" and not reader.ws.pages[1].edits
+    output = tmp_path / "neighbor-text.pdf"
+    reader.store.write(reader.ws.pages, str(output))
+    with p.open(output) as saved:
+        assert "更新技术规格" in saved[0].get_text()
+        assert "系统技术规格" in saved[1].get_text()
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    assert not reader.ws.pages[0].edits
+
+
+def test_drawing_is_cancelled_when_its_page_is_replaced(reader, qapp):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("rect"))
+    view = reader.preview_view
+    top = view.page_rects[0].topLeft()
+    start = view.mapFromScene(top + QPointF(80, 220))
+    end = view.mapFromScene(top + QPointF(150, 250))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    assert tools.stroke
+    reader.ws.edit_page(0, PageEdit("note", ((340, 300),), text="other edit", annotation_id="other-edit"))
+    reader.refresh()
+    assert not tools.stroke and tools.overlay is None
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert [edit.kind for edit in reader.ws.pages[0].edits] == ["note"]
