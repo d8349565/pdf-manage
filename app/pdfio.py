@@ -537,6 +537,25 @@ class PdfStore:
         if reason:
             raise PdfError(reason)
 
+    def protection_reports(self, pages, progress=None, cancel=None):
+        from pathlib import Path
+        from app.signatureinfo import collect_signature_info
+        reports = []
+        for ref in {page.source_id: page for page in pages}.values():
+            check_cancel(cancel)
+            while not self.prepare_safety_step(ref):
+                check_cancel(cancel)
+                if progress:
+                    progress(0, 0, '正在完成原件保护检查')
+            source = self._source(ref.source_id)
+            with cancellable_lock(self._native_lock, cancel), cancellable_lock(source.lock, cancel):
+                rows, issues = collect_signature_info(source.doc_locked(), progress, cancel)
+                reports.append(dict(source_id=ref.source_id, name=Path(source.path).name,
+                                    safety=source.safety, signatures=rows, issues=issues,
+                                    ofd=any(page.source_id == ref.source_id and page.source_path.lower().endswith('.ofd')
+                                            for page in pages)))
+        return reports
+
     def is_source_destination(self, dest: str) -> bool:
         for source in self._sources.values():
             if _path_key(source.path) == _path_key(dest):

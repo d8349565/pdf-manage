@@ -2553,6 +2553,9 @@ class MainWindow(QMainWindow):
         self.act_tools.toggled.connect(self._set_tools_visible)
 
     def _set_pages_visible(self, on: bool) -> None:
+        if hasattr(self, 'immersive'):
+            self.immersive.sync()
+            return
         panel = getattr(self, "left_panel", None)
         if panel is not None:
             panel.setVisible(on and bool(self.ws.pages))
@@ -2562,7 +2565,8 @@ class MainWindow(QMainWindow):
         if panel is not None:
             if on and self.ws.pages and self._readable_painted:
                 self._ensure_tools()
-            panel.setVisible(on and bool(self.ws.pages))
+            panel.setVisible(on and bool(self.ws.pages) and not (
+                hasattr(self, 'immersive') and self.immersive.fullscreen))
 
     @property
     def export_tools(self):
@@ -2780,6 +2784,9 @@ class MainWindow(QMainWindow):
         rotation.addActions(self.page_rotate_actions)
         tools.addAction(self.delete_action)
         document = self._menubar.addMenu('文档')
+        self.signature_info_action = self._act('签名与保护信息…', self.show_signature_info)
+        document.addAction(self.signature_info_action)
+        document.addSeparator()
         self.page_numbers_action=self._act('页码处理…',self.open_page_numbers)
         self.watermark_action = self._act("水印…", self.open_watermarks)
         self.seam_stamp_action = self._act('骑缝章…', self.open_seam_stamps)
@@ -2815,7 +2822,8 @@ class MainWindow(QMainWindow):
         view = self._menubar.addMenu("视图")
         view.addAction(self._act("阅读", lambda: self.stack.setCurrentIndex(0)))
         view.addAction(self._act("整理页面", lambda: self.stack.setCurrentIndex(1)))
-        view.addAction(self._act("大纲书签", self.open_outline))
+        self.outline_action = self._act("大纲书签", self.open_outline, QKeySequence('Ctrl+Shift+B'))
+        view.addAction(self.outline_action)
         view.addSeparator()
         view.addMenu(self.reading_settings_menu)
         self.theme_menu = view.addMenu("界面主题")
@@ -2858,12 +2866,23 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(root)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._workbench_bar())
+        self.workbench_bar = self._workbench_bar()
+        layout.addWidget(self.workbench_bar)
         self.tab_bar = DocumentTabBar(self)
         layout.addWidget(self.tab_bar)
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(root)
         self.stack.currentChanged.connect(self._sync_mode)
+        from app.immersivereading import ImmersiveReading
+        self.immersive = ImmersiveReading(self)
+        view.addSeparator()
+        view.addAction(self.immersive.fullscreen_action)
+        view.addAction(self.immersive.auto_action)
+        self.reading_settings_menu.addSeparator()
+        self.reading_settings_menu.addAction(self.immersive.fullscreen_action)
+        self.reading_settings_menu.addAction(self.immersive.auto_action)
+        self.addAction(self.act_pages)
+        self.addAction(self.outline_action)
 
     def show_about(self) -> None:
         from app.aboutui import AboutDialog
@@ -3030,6 +3049,9 @@ class MainWindow(QMainWindow):
         self.export_tools.setCurrentIndex(index)
 
     def _sync_mode(self, index: int) -> None:
+        if index == 1 and hasattr(self, 'immersive') and self.immersive.fullscreen:
+            self.stack.setCurrentIndex(0)
+            return
         if index == 1:
             self._ensure_arrange()
         self.mode_buttons[index].setChecked(True)
@@ -3066,6 +3088,7 @@ class MainWindow(QMainWindow):
             protection = 'OFD 工作副本 · 原文件保留 · 保存时另存为 PDF'
         self.protection_label.setText(protection)
         self.protection_label.setVisible(bool(protection))
+        self.signature_info_action.setEnabled(bool(count))
         unknown_signature = any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages)
         raster_reason = self.store.operation_reason(self.ws.pages, 'raster_copy')
         self.protection_copy_button.setVisible(unknown_signature)
@@ -3193,6 +3216,8 @@ class MainWindow(QMainWindow):
             button.setToolTip(name + (" (Alt+Left)" if button is self.previous_page else " (Alt+Right)"))
         self.page_number.setToolTip("输入任意页码，按 Enter 跳转到所在页面组" if self.preview_view.spread
                                     else "输入页码，按 Enter 跳转")
+        if hasattr(self, 'outline_panel'):
+            self.outline_panel.sync_position()
 
     def go_to_page(self, number: int, *, reveal=True) -> None:
         if not 1 <= number <= len(self.ws.pages):
@@ -3289,6 +3314,7 @@ class MainWindow(QMainWindow):
 
     def _main_view(self) -> QWidget:
         split = QSplitter()
+        self.reader_split = split
         split.setHandleWidth(8)
         split.setChildrenCollapsible(True)
         self.left_panel = QFrame()
@@ -4101,6 +4127,20 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._elide_title()
 
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape and not (
+                QApplication.activePopupWidget() or QApplication.activeModalWidget()):
+            if self.immersive.expanded:
+                self.immersive.collapse()
+                self.preview_view.setFocus()
+                event.accept()
+                return
+            if self.immersive.fullscreen:
+                self.immersive.fullscreen_action.setChecked(False)
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
     def _enable_native_frame(self) -> None:
         if sys.platform != "win32" or QGuiApplication.platformName() != "windows":
             return
@@ -4552,6 +4592,8 @@ class MainWindow(QMainWindow):
             finally:
                 self._scroll_navigation = False
         candidates = list(view.visible_pages(visible))
+        if hasattr(self, 'outline_panel'):
+            self.outline_panel.sync_position()
         # 只保留可见页和相邻页，避免长文档的位图占满内存。
         wanted = set(candidates)
         if not self._scrolling:
@@ -5098,6 +5140,8 @@ class MainWindow(QMainWindow):
         tab = self._active_tab()
         if tab is not None and hasattr(self, "tab_bar"):
             self.tab_bar.sync_tabs(self._tabs, self._active_tab_id)
+            if hasattr(self, 'immersive') and self.immersive.fullscreen:
+                self.tab_bar.hide()
 
     def _save_current_tab_state(self) -> None:
         cur = self._active_tab()
@@ -5214,7 +5258,7 @@ class MainWindow(QMainWindow):
             tab.scroll_y = None
             self.refresh()
             self.stack.setCurrentIndex(0)
-            run_operation(self, "关闭文档", lambda progress: self.store.close_all())
+            self._release_unused_docs()
             self.welcome_open.setFocus()
             self.statusBar().showMessage("已关闭当前文件，返回首页", 5000)
             return True
@@ -5908,6 +5952,10 @@ class MainWindow(QMainWindow):
         except PdfError as exc:
             QMessageBox.warning(self, "解密未完成", str(exc))
 
+    def show_signature_info(self):
+        from app.signatureui import open_signature_info
+        open_signature_info(self)
+
     def editable_copy(self):
         if any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages):
             self.rasterize_document(recovery=True)
@@ -5984,12 +6032,15 @@ class MainWindow(QMainWindow):
                 self.sidebar_stack.addWidget(self.outline_panel)
             self.outline_panel.refresh()
         self.sidebar_stack.setCurrentIndex(index)
+        if index == 1:
+            self.outline_panel.sync_position(force=True)
 
     def open_outline(self):
         self.stack.setCurrentIndex(0)
         self.act_pages.setChecked(True)
         self.sidebar_mode.setCurrentIndex(1)
         self.show_outline(1)
+        self.immersive.reveal(keyboard=True)
 
     def _ensure_annotation_tools(self):
         if not hasattr(self, "annotation_tools"):
@@ -6466,6 +6517,7 @@ class MainWindow(QMainWindow):
                 QGuiApplication.instance().removeEventFilter(self.arrange_preview)
             self.updates.stop()
             self.reading_orb.shutdown()
+            self.immersive.shutdown()
             self._save_ui_preferences()
             self.search_bar.cancel()
             self._undo_refresh_timer.stop()
@@ -6497,7 +6549,8 @@ class MainWindow(QMainWindow):
                 self.annotation_tools.remove_view_filters()
             QThreadPool.globalInstance().waitForDone(1000)
             run_operation(self, "关闭文档", lambda progress: self.store.close_all())
-            self._window_settings.setValue("mainWindow/geometry", self.saveGeometry())
+            self._window_settings.setValue("mainWindow/geometry", self.immersive._geometry
+                if self.immersive.fullscreen else self.saveGeometry())
             self._window_settings.sync()
             event.accept()
         else:

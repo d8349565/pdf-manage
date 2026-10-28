@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.themes import set_theme_style, ui_color
 
 from dataclasses import replace
+from bisect import bisect_right
 import math
 import uuid
 from time import perf_counter
@@ -92,6 +93,10 @@ class OutlinePanel(QWidget):
         self.host = host
         self._key = None
         self.entries = ()
+        self._items = []
+        self._chapter_pages = []
+        self._chapters = {}
+        self._following_item = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -121,6 +126,13 @@ class OutlinePanel(QWidget):
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(lambda pos: self.menu(self.tree.viewport().mapToGlobal(pos)))
         self.tree.itemClicked.connect(self.jump)
+        self.tree.viewport().installEventFilter(self)
+        self.tree.installEventFilter(self)
+        self.tree.verticalScrollBar().installEventFilter(self)
+        self._follow_timer = QTimer(self)
+        self._follow_timer.setSingleShot(True)
+        self._follow_timer.setInterval(1600)
+        self._follow_timer.timeout.connect(self.sync_position)
         layout.addWidget(self.tree, 1)
 
         self.feedback = QLabel("在当前阅读页添加书签。")
@@ -132,6 +144,7 @@ class OutlinePanel(QWidget):
     def refresh(self):
         key = (id(self.host.ws.pages), id(self.host.ws.outline))
         if key == self._key:
+            self.sync_position()
             return
         self._key = key
         self.entries = self.host.ws.outline
@@ -143,6 +156,9 @@ class OutlinePanel(QWidget):
                 self.entries = ()
         targets = {ref.page_id: i + 1 for i, ref in enumerate(self.host.ws.pages)}
         self.tree.clear()
+        self._items = []
+        self._chapters = {}
+        self._following_item = None
         parents = []
         for index, entry in enumerate(self.entries):
             while len(parents) >= entry.level:
@@ -151,6 +167,9 @@ class OutlinePanel(QWidget):
             item = QTreeWidgetItem([entry.title, str(target) if target else "—"])
             item.setToolTip(0, entry.title)
             item.setData(0, Qt.ItemDataRole.UserRole, index)
+            self._items.append(item)
+            if target:
+                self._chapters.setdefault(target - 1, []).append(index)
             if entry.target_id is not None and target is None:
                 item.setToolTip(0, "目标页已删除；撤销删除可恢复跳转。")
                 item.setForeground(0, QColor(ui_color("warning")))
@@ -160,7 +179,68 @@ class OutlinePanel(QWidget):
                 self.tree.addTopLevelItem(item)
             parents.append(item)
         self.tree.expandToDepth(1)
+        self._chapter_pages = sorted(self._chapters)
         self.feedback.setText("在当前阅读页添加书签。" if self.entries else "暂无大纲，可为关键页面添加书签。")
+        self.sync_position()
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Wheel, QEvent.Type.MouseButtonPress,
+                            QEvent.Type.MouseButtonRelease, QEvent.Type.KeyPress):
+            self._follow_timer.start()
+        return super().eventFilter(watched, event)
+
+    def sync_position(self, *, force=False):
+        if not self.isVisible() or self._key != (id(self.host.ws.pages), id(self.host.ws.outline)):
+            return
+        if not force and (self._follow_timer.isActive() or QApplication.mouseButtons()
+                          or QApplication.activePopupWidget() or QApplication.activeModalWidget()):
+            if not self._follow_timer.isActive():
+                self._follow_timer.start()
+            return
+        current = self.host.ws.preview_index()
+        slot = bisect_right(self._chapter_pages, current) - 1 if current is not None else -1
+        target = None
+        if slot >= 0:
+            page = self._chapter_pages[slot]
+            candidates = self._chapters[page]
+            # 没有可靠的页内坐标时，稳定选中该页第一个条目。
+            target = candidates[0]
+            view = self.host.preview_view
+            summary = self.host.store.cached_annotations(self.host.ws.pages[page])
+            if summary and page < len(view.page_rects):
+                import pymupdf as p
+                matrix = p.Matrix(summary['source_pdf_matrix'])
+                positions = []
+                for index in candidates:
+                    point = dict(self.entries[index].destination).get('to')
+                    if (isinstance(point, (tuple, list)) and len(point) == 2
+                            and all(isinstance(v, (int, float)) and math.isfinite(v) for v in point)):
+                        positions.append(((p.Point(point) * matrix).y, index))
+                if len(positions) == len(candidates):
+                    visible = view.mapToScene(view.viewport().rect()).boundingRect()
+                    y = (visible.top() + min(visible.height() / 4, 100)
+                         - view.page_rects[page].top())
+                    eligible = [(offset, index) for offset, index in positions
+                                if page < current or offset <= y]
+                    target = max(eligible)[1] if eligible else (
+                        self._chapters[self._chapter_pages[slot - 1]][-1] if slot > 0 else None)
+        item = self._items[target] if target is not None else None
+        if not force and item is self._following_item and item is self.tree.currentItem():
+            return
+        self._following_item = item
+        self.tree.setCurrentItem(item)
+        if item is None:
+            self.tree.clearSelection()
+            return
+        ancestor = item.parent()
+        while ancestor is not None:
+            ancestor.setExpanded(True)
+            ancestor = ancestor.parent()
+        self.tree.scrollToItem(item)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.sync_position(force=True)
 
     def selected(self):
         item = self.tree.currentItem()

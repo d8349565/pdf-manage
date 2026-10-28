@@ -92,6 +92,7 @@ class InstanceRouter(QObject):
             self.lock.unlock()
             raise RuntimeError('无法准备本机文件打开入口，请重新启动纸序 PDF。')
         self.window = window
+        window.destroyed.connect(self.close)
         if self.pending:
             self.timer.start()
 
@@ -117,7 +118,7 @@ class InstanceRouter(QObject):
                     valid = (request.get('version') == 1 and isinstance(identifier, str)
                              and len(identifier) == 32 and isinstance(paths, list)
                              and len(paths) <= 512 and all(isinstance(path, str) for path in paths)
-                             and not getattr(self.window, '_closing', False))
+                             and self.window is not None and not getattr(self.window, '_closing', False))
                 except (ValueError, UnicodeError, KeyError, TypeError):
                     valid, identifier = False, ''
                 if valid and identifier not in self.seen:
@@ -162,6 +163,8 @@ class InstanceRouter(QObject):
 
     def close(self):
         self.timer.stop()
+        self.window = None
+        self.pending.clear()
         if self.server is not None:
             self.server.close()
         if self.lock.isLocked():

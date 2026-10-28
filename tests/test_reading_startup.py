@@ -168,3 +168,51 @@ assert not router.start_or_forward([sys.argv[3]])
             process.kill()
             process.wait()
     assert not lock.exists()
+
+
+def test_closing_reader_releases_handoff_while_converter_stays_open(tmp_path, qapp, monkeypatch):
+    from PyQt6 import sip
+    from app import instance
+    endpoint = 'ZhiXuPDF-test-close-' + tmp_path.name
+    lock = tmp_path / 'reader-close.lock'
+    monkeypatch.setattr(instance, 'instance_scope', lambda: (endpoint, lock))
+    router = instance.InstanceRouter(qapp)
+    replacement = instance.InstanceRouter(qapp)
+    window = MainWindow()
+    next_window = None
+    converter = None
+    try:
+        assert router.start_or_forward([])
+        router.attach(window)
+        window.show()
+        window.open_word_converter()
+        converter = window._word_windows[-1]
+        qapp.processEvents()
+        monkeypatch.setattr(window, '_confirm_leave_all_tabs', lambda: False)
+        assert not window.close()
+        assert router.lock.isLocked() and router.server.isListening()
+        monkeypatch.setattr(window, '_confirm_leave_all_tabs', lambda: True)
+        assert window.close()
+        qapp.processEvents()
+        assert converter.isVisible()
+        assert not router.lock.isLocked()
+        assert not router.server.isListening()
+        assert replacement.start_or_forward([])
+        next_window = MainWindow()
+        replacement.attach(next_window)
+        next_window.show()
+        assert next_window.open_files_in_tabs([str(pdf(tmp_path / 'reopened.pdf'))])
+        assert len(next_window.ws.pages) == 1 and converter.isVisible()
+        router.close()  # Later application shutdown must not release the new reader's lock.
+        assert replacement.lock.isLocked() and replacement.server.isListening()
+    finally:
+        router.close()
+        replacement.close()
+        if next_window is not None:
+            next_window.ws.reset()
+            next_window.close()
+        if converter is not None:
+            converter.close()
+        if not sip.isdeleted(window):
+            window.close()
+        qapp.processEvents()

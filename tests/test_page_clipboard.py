@@ -329,6 +329,38 @@ def test_copied_clipboard_bitmap_remains_available_after_its_tab_closes(host,tmp
     assert cached.is_file()
 
 
+@pytest.mark.parametrize('source_kind', ['pdf', 'bitmap'])
+def test_copied_pages_survive_closing_the_last_document(host, tmp_path, source_kind):
+    window, state, warnings = host
+    if source_kind == 'pdf':
+        source = tmp_path / 'generated-last-tab.pdf'
+        pdf(source, 2)
+        assert window.open_files_in_tabs([str(source)])
+        window.ws.set_selection([0, 1], current=1)
+    else:
+        mime = QMimeData()
+        mime.setImageData(bitmap())
+        state['mime'] = mime
+        assert window.paste_pages()
+        window.ws.mark_saved()
+    assert window.copy_pages()
+    copied = window._page_copy.pages
+    assert window.close_tab(window._active_tab_id)
+    assert not window.ws.pages and len(window._tabs) == 1
+    assert window.paste_pages(), window.statusBar().currentMessage()
+    assert [ref.source_page for ref in window.ws.pages] == [ref.source_page for ref in copied]
+    assert all(Path(ref.source_path).is_file() for ref in copied)
+    window.ws.undo_stack.undo()
+    assert not window.ws.pages
+    window.ws.undo_stack.redo()
+    assert len(window.ws.pages) == len(copied)
+    window.ws.reset()
+    window._page_copy = None
+    window._release_unused_docs()
+    assert not window.store._sources and not window.store._owned_workspaces
+    assert not warnings
+
+
 @pytest.mark.parametrize('arrange',[False,True])
 def test_ctrl_drop_copies_selection_once_and_preserves_original_order(host,tmp_path,qapp,arrange):
     window,state,_=host

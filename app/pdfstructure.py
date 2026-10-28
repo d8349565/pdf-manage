@@ -66,7 +66,16 @@ def signature_steps(doc):
     blank_fields = False
     started = perf_counter()
     try:
+        pdf = pymupdf._as_pdf_document(doc)
         for xref in range(1, doc.xref_length()):
+            if xref % 256 == 0 or perf_counter() - started >= .01:
+                yield
+                started = perf_counter()
+            # 稀疏交叉引用表可有未分配的编号。加载这些槽位会抛异常，
+            # 但槽位本身不是签名；有效对象读取失败仍由下方按 unknown 保护。
+            entry = pymupdf.mupdf.ll_pdf_get_xref_entry_no_change(pdf.m_internal, xref)
+            if entry is None or entry.type in ('\x00', 'f'):
+                continue
             field_type = doc.xref_get_key(xref, "FT")[1]
             object_type = doc.xref_get_key(xref, "Type")[1]
             has_byte_range = _present(doc, xref, "ByteRange")
@@ -80,9 +89,6 @@ def signature_steps(doc):
                     uncertain = True
                 else:
                     blank_fields = True
-            if xref % 256 == 0 or perf_counter() - started >= .01:
-                yield
-                started = perf_counter()
         # 模板可能预设 SigFlags=3，但只有空白字段时不能据此判定已签名。
         uncertain |= doc.get_sigflags() == 3 and not blank_fields
         uncertain |= _present(doc, doc.pdf_catalog(), "Perms/DocMDP")
@@ -255,8 +261,10 @@ def copy_document_properties(out, documents, warnings, *, source_paths=None):
 
 def restore_navigation(out, pages, snapshots, warnings, merged):
     mappings = {}
+    group_mappings = {}
     for index, ref in enumerate(pages):
         mappings.setdefault(ref.source_id, {}).setdefault(ref.source_page, index)
+        group_mappings.setdefault((ref.source_id, ref.copy_group), {}).setdefault(ref.source_page, index)
     toc = []
     toc_targets = []
     removed_links = 0
@@ -308,7 +316,9 @@ def restore_navigation(out, pages, snapshots, warnings, merged):
             link = dict(original)
             link["from"] = link["from"] * page.transformation_matrix
             if link.get("kind") == pymupdf.LINK_GOTO:
-                target = mappings[ref.source_id].get(link.get("page", -1))
+                old_target = link.get("page", -1)
+                target = group_mappings[(ref.source_id, ref.copy_group)].get(
+                    old_target, mappings[ref.source_id].get(old_target))
                 if target is None:
                     removed_links += 1
                     continue

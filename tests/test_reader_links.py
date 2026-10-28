@@ -162,6 +162,32 @@ def test_internal_link_prefers_its_own_copy_group(link_window):
     assert window.ws.preview_index() == 5
 
 
+@pytest.mark.parametrize('copies_first', [False, True])
+def test_saved_links_keep_copy_groups_and_fall_back_for_uncopied_targets(tmp_path, copies_first):
+    from app.workspace import Workspace
+    source = generated_pdf(tmp_path / 'generated-copy-links.pdf')
+    original_bytes = source.read_bytes()
+    store = PdfStore()
+    try:
+        originals = store.load(str(source))
+        copies = Workspace._unique_pages(originals, originals)
+        partial = Workspace._unique_pages(originals[:1], originals)
+        pages = [*copies, *originals, *partial] if copies_first else [*originals, *copies, *partial]
+        target = tmp_path / 'saved-copy-links.pdf'
+        store.write(pages, str(target))
+        with p.open(target) as doc:
+            for row, target_page in ((0, 2), (3, 5), (6, 2)):
+                links = doc[row].get_links()
+                for area in (GOTO, NAMED):
+                    link = next(link for link in links if link['from'] == area)
+                    assert link['page'] == target_page, (row, area, link)
+                self_link = next(link for link in links if link['from'] == SELF)
+                assert self_link['page'] == row
+        assert source.read_bytes() == original_bytes
+    finally:
+        store.close_all()
+
+
 def test_removed_target_has_feedback_without_wrong_page_jump(link_window):
     window = link_window
     window.ws.select_index(2)
