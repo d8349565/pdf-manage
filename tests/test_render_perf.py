@@ -6,13 +6,14 @@ from dataclasses import replace
 
 import pymupdf
 import pytest
-from PyQt6.QtCore import QThreadPool, Qt, QRectF
-from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtCore import QThreadPool, Qt, QRectF, QEvent
+from PyQt6.QtGui import QPixmap, QImage, QKeyEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
 from app.pdfio import PdfStore
-from app.ui import ARRANGE_ZOOM_MAX, THUMB_CACHE_BYTES, READING_CACHE_BYTES, MainWindow, PreviewView
+from app.ui import (ARRANGE_ZOOM_MAX, THUMB_CACHE_BYTES, READING_CACHE_BYTES,
+                    READING_PRELOAD_PAGES, READING_DRAFT_W, MainWindow, PreviewView)
 
 
 @pytest.fixture(scope="session")
@@ -185,7 +186,8 @@ def test_zoom_out_reuses_the_rendered_image(window, tmp_path, qapp):
     window._update_preview()
     _settle(qapp)
     assert counter["n"] == 0, "缩小应当复用已有高分辨率图，不该重新渲染"
-    assert window._preview_image.width() > base
+    assert window._preview_image.width() == base
+    assert window._page_images[window.ws.pages[0].render_key].width() == base
 
 
 @pytest.mark.parametrize("dpr", [1.0, 1.5, 2.0])
@@ -198,6 +200,7 @@ def test_settled_reading_uses_native_pixels_after_cached_image_scaling(window, t
     window.refresh()
     window._set_zoom(.5)
     _settle(qapp)
+    window._reading_cache.retain(set())
     view = window.preview_view
     monkeypatch.setattr(view, "devicePixelRatioF", lambda: dpr)
     scale = view.transform().m11() * dpr
@@ -472,8 +475,131 @@ def test_long_document_only_keeps_visible_and_neighbor_images(window, tmp_path, 
         _settle(qapp)
         assert window.ws.preview_index() == page - 1
         assert len(window.preview_view.neighbors) <= 3
-        assert len(window._neighbor_pending) <= 3
+        assert len(window._neighbor_pending) <= 2 * READING_PRELOAD_PAGES
     assert len(window.preview_view.page_rects) == 80
+
+
+def _record_preloads(window, tmp_path, monkeypatch, *, page=8, layout='single'):
+    source = tmp_path / 'preload.pdf'
+    _make_pdf(source, 15)
+    requests = []
+    monkeypatch.setattr(window.rendering, 'request',
+                        lambda *args, **kwargs: requests.append((args, kwargs)))
+    window.resize(1400, 900)
+    window.act_pages.setChecked(False)
+    window.act_tools.setChecked(False)
+    window.show()
+    assert window._load_one(str(source))
+    window.refresh()
+    window._set_reading_layout(layout)
+    window.go_to_page(page)
+    window._reading_settled()
+    requests.clear()
+    window._reading_scrolled()
+    return requests
+
+
+@pytest.mark.parametrize('page', [1, 8, 15])
+def test_preload_covers_three_pages_in_each_direction_at_reading_resolution(
+        window, tmp_path, monkeypatch, page):
+    requests = _record_preloads(window, tmp_path, monkeypatch, page=page)
+    neighbors = [args for args, _ in requests if args[3] is window._neighbor_signals]
+    index = page - 1
+    expected = set(range(max(0, index - 3), min(15, index + 4))) - {index}
+    assert {args[2][1] for args in neighbors} == expected
+    assert all(args[1] == window._preview_render_width(args[2][1]) for args in neighbors)
+    assert all(args[5] < 0 for args in neighbors if args[2][1] != index)
+    if page == 8:
+        assert [args[2][1] for args in neighbors] == [8, 6, 9, 5, 10, 4]
+
+
+@pytest.mark.parametrize('layout', ['spread', 'four'])
+def test_preload_surrounds_the_current_page_group(window, tmp_path, monkeypatch, layout):
+    requests = _record_preloads(window, tmp_path, monkeypatch, layout=layout)
+    group = window.preview_view.pages_in_spread(window.ws.preview_index())
+    expected = {index for page in range(max(0, group.start - 3), min(15, group.stop + 3))
+                for index in window.preview_view.pages_in_spread(page)}
+    expected.discard(window.ws.preview_index())
+    neighbors = [args for args, _ in requests if args[3] is window._neighbor_signals]
+    assert {args[2][1] for args in neighbors} == expected
+    visible = set(window.preview_view.visible_pages(window.preview_view.mapToScene(
+        window.preview_view.viewport().rect()).boundingRect()))
+    assert all(args[5] < 0 for args in neighbors if args[2][1] not in visible)
+
+
+def test_preloaded_image_stays_in_cache_and_is_reused_when_opening_that_page(
+        window, tmp_path, monkeypatch):
+    requests = _record_preloads(window, tmp_path, monkeypatch)
+    args = next(args for args, _ in requests if args[3] is window._neighbor_signals and args[5] == -1)
+    ref, width, key = args[:3]
+    image = window.store.render_preview(ref, width)
+    window._on_neighbor(key, image)
+    assert ref.render_key in window._page_images
+    assert key[1] not in window.preview_view.neighbors
+    requests.clear()
+    window.go_to_page(key[1] + 1)
+    assert window._preview_image.width() >= width
+    assert not window.preview_view.photo().isNull()
+    assert not any(args[0] is ref and args[3] is window.preview_signals for args, _ in requests)
+
+
+def test_scroll_and_zoom_discard_outdated_preloads(window, tmp_path, monkeypatch):
+    requests = _record_preloads(window, tmp_path, monkeypatch)
+    previous = [args for args, _ in requests if args[3] is window._neighbor_signals and args[5] < 0]
+    requests.clear()
+    window._scrolling = window.rendering.scrolling = True
+    window._reading_scrolled()
+    assert all(args[4]() for args in previous)
+    assert all(args[1] <= READING_DRAFT_W for args, _ in requests if args[3] is window._neighbor_signals)
+    window._scrolling = window.rendering.scrolling = False
+    window._reading_scrolled()
+    previous = [args for args, _ in requests if args[3] is window._neighbor_signals and args[5] < 0]
+    window._zoom_mode = 'custom'
+    window._zoom *= 2
+    window._reading_scrolled()
+    assert all(args[4]() for args in previous)
+
+
+def test_large_preloads_fit_the_existing_cache_budget(window, tmp_path, monkeypatch):
+    requests = _record_preloads(window, tmp_path, monkeypatch)
+    window._zoom_mode = 'custom'
+    window._zoom = 8
+    requests.clear()
+    window._reading_scrolled()
+    index = window.ws.preview_index()
+    widths = {index: window._preview_render_width(index)}
+    widths.update({args[2][1]: args[1] for args, _ in requests if args[3] is window._neighbor_signals})
+    cost = sum(width * (int(width * 400 / 300) + 2) * 4 for width in widths.values())
+    assert cost <= READING_CACHE_BYTES
+    assert len(widths) < 7
+
+
+def test_toolbar_input_also_defers_preloading(window):
+    window.rendering._background_after = 0
+    QApplication.sendEvent(window.zoom_label, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Shift,
+                                                       Qt.KeyboardModifier.ShiftModifier))
+    assert window.rendering._background_after > 0
+    assert window.rendering._background_timer.isActive()
+
+
+def test_preloading_yields_until_foreground_reading_and_search_are_ready(window, tmp_path, monkeypatch):
+    _record_preloads(window, tmp_path, monkeypatch)
+    for timer in (window._detail_timer, window._view_zoom_timer,
+                  window._preview_timer, window._reading_settle_timer):
+        timer.stop()
+    window._preview_busy = False
+    assert window._reading_preload_ready()
+    for name in ('_preview_busy', '_detail_busy', '_saving'):
+        setattr(window, name, True)
+        assert not window._reading_preload_ready()
+        setattr(window, name, False)
+    window.search_bar.busy = True
+    assert not window._reading_preload_ready()
+    window.search_bar.busy = False
+    window._task_dialog = object()
+    assert not window._reading_preload_ready()
+    window._task_dialog = None
+    assert window._reading_preload_ready()
 
 
 def test_high_zoom_detail_on_later_page_uses_local_pdf_coordinates(window, tmp_path, qapp):

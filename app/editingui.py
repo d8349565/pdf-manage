@@ -97,6 +97,11 @@ class OutlinePanel(QWidget):
         self._chapter_pages = []
         self._chapters = {}
         self._following_item = None
+        self._expansion_mode = None
+        self.expand_all_action = QAction("展开全部", self)
+        self.expand_all_action.triggered.connect(lambda: self.set_all_expanded(True))
+        self.collapse_all_action = QAction("折叠全部", self)
+        self.collapse_all_action.triggered.connect(lambda: self.set_all_expanded(False))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -147,6 +152,7 @@ class OutlinePanel(QWidget):
             self.sync_position()
             return
         self._key = key
+        self._expansion_mode = None
         self.entries = self.host.ws.outline
         if self.entries is None:
             try:
@@ -179,6 +185,9 @@ class OutlinePanel(QWidget):
                 self.tree.addTopLevelItem(item)
             parents.append(item)
         self.tree.expandToDepth(1)
+        has_children = any(item.childCount() for item in self._items)
+        self.expand_all_action.setEnabled(has_children)
+        self.collapse_all_action.setEnabled(has_children)
         self._chapter_pages = sorted(self._chapters)
         self.feedback.setText("在当前阅读页添加书签。" if self.entries else "暂无大纲，可为关键页面添加书签。")
         self.sync_position()
@@ -225,6 +234,12 @@ class OutlinePanel(QWidget):
                     target = max(eligible)[1] if eligible else (
                         self._chapters[self._chapter_pages[slot - 1]][-1] if slot > 0 else None)
         item = self._items[target] if target is not None else None
+        if item is not None and self._expansion_mode is False:
+            ancestor = item.parent()
+            while ancestor is not None:
+                if not ancestor.isExpanded():
+                    item = ancestor
+                ancestor = ancestor.parent()
         if not force and item is self._following_item and item is self.tree.currentItem():
             return
         self._following_item = item
@@ -232,11 +247,30 @@ class OutlinePanel(QWidget):
         if item is None:
             self.tree.clearSelection()
             return
-        ancestor = item.parent()
-        while ancestor is not None:
-            ancestor.setExpanded(True)
-            ancestor = ancestor.parent()
+        if self._expansion_mode is not False:
+            ancestor = item.parent()
+            while ancestor is not None:
+                ancestor.setExpanded(True)
+                ancestor = ancestor.parent()
         self.tree.scrollToItem(item)
+
+    def set_all_expanded(self, expanded):
+        current = self.tree.currentItem()
+        following = current is self._following_item
+        self._expansion_mode = expanded
+        self._follow_timer.stop()
+        if expanded:
+            self.tree.expandAll()
+        else:
+            self.tree.collapseAll()
+        if following:
+            self.sync_position(force=True)
+        else:
+            if not expanded and current is not None:
+                while current.parent() is not None:
+                    current = current.parent()
+                self.tree.setCurrentItem(current)
+            self._follow_timer.start()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -307,6 +341,9 @@ class OutlinePanel(QWidget):
 
     def menu(self, position):
         menu = QMenu(self)
+        menu.addAction(self.expand_all_action)
+        menu.addAction(self.collapse_all_action)
+        menu.addSeparator()
         for title, callback in (("在当前页添加书签", self.add), ("重命名", self.rename),
                                 ("删除（含子项）", self.delete), ("设为子项", lambda: self.shift(1)),
                                 ("提升层级", lambda: self.shift(-1))):
@@ -314,6 +351,7 @@ class OutlinePanel(QWidget):
             action.triggered.connect(callback)
             action.setEnabled(bool(self.host.ws.pages) and not self.host.store.operation_reason(self.host.ws.pages, "outline"))
         menu.exec(position)
+        menu.deleteLater()
 
 
 class MoveHandleButton(QToolButton):

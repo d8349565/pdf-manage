@@ -123,6 +123,11 @@ class RenderScheduler(QObject):
         self.closed = False
         self.scrolling = False
         self.delivering = False
+        self.background_ready = lambda: True
+        self._background_after = 0
+        self._background_timer = QTimer(self)
+        self._background_timer.setSingleShot(True)
+        self._background_timer.timeout.connect(self._dispatch)
         self.diagnostics = ReadingDiagnostics(self)
         self.signals = RenderSignals()
         self.signals.done.connect(self._completed, Qt.ConnectionType.QueuedConnection)
@@ -181,6 +186,13 @@ class RenderScheduler(QObject):
             signal is signals and listener_key == key and not stale()
             for signal, listener_key, stale in request.listeners) for request in requests)
 
+    def defer_background(self, milliseconds=120):
+        """Yield between native renders; an already running render must finish."""
+        if self.closed:
+            return
+        self._background_after = perf_counter() + milliseconds / 1000
+        self._background_timer.start(milliseconds)
+
     def _dispatch(self):
         if self.closed or self.active is not None or self.delivering:
             return
@@ -188,7 +200,15 @@ class RenderScheduler(QObject):
         if not self.pending:
             return
         candidates = [request for request in self.pending.values()
-                      if not self.scrolling or request.priority >= 20]
+                      if (not self.scrolling or request.priority >= 20)
+                      and request.priority >= 0]
+        background = [request for request in self.pending.values() if request.priority < 0]
+        if not self.scrolling and background:
+            if perf_counter() >= self._background_after and self.background_ready():
+                candidates.extend(background)
+            else:
+                self._background_timer.start(max(120, int(
+                    (self._background_after - perf_counter()) * 1000)))
         if not candidates:
             return
         request = max(candidates, key=lambda item: (item.priority, -item.submitted))
@@ -217,6 +237,7 @@ class RenderScheduler(QObject):
 
     def close(self):
         self.closed = True
+        self._background_timer.stop()
         self.pending.clear()
         if self.active is not None:
             self.active.cancelled.set()

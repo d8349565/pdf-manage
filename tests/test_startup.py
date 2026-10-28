@@ -117,17 +117,21 @@ def test_status_widgets_are_registered_once_while_hidden(qapp, monkeypatch):
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QStatusBar
     from app.ui import MainWindow
-    hidden = []
+    hidden, registered = [], []
     original = QStatusBar.addPermanentWidget
     def add(status, widget, *args):
+        registered.append(widget)
         layout = widget.layout()
         children = [layout.itemAt(i).widget() for i in range(layout.count())] if layout else []
-        hidden.append([child.isHidden() and child.testAttribute(
-            Qt.WidgetAttribute.WA_WState_ExplicitShowHide) for child in children])
+        if layout:
+            hidden.append([child.isHidden() and child.testAttribute(
+                Qt.WidgetAttribute.WA_WState_ExplicitShowHide) for child in children])
         return original(status, widget, *args)
     monkeypatch.setattr(QStatusBar, "addPermanentWidget", add)
     win = MainWindow()
     assert hidden == [[True, True, True, True]], "empty startup repeatedly lays out unused status widgets"
+    assert registered == [win.render_label.parentWidget(), win.update_notice_button]
+    assert win.update_notice_button.isHidden()
     from PyQt6.QtTest import QTest
     from app.ui import RENDER_SHOW_DELAY_MS, RENDER_HIDE_DELAY_MS
     win._opening_paths = ('opening.pdf',)

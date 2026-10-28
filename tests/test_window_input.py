@@ -447,7 +447,8 @@ def test_reading_toolbar_fits_the_reader_and_top_actions_stay_compact(loaded_win
     window = loaded_window
     window.resize(980, 680)
     QApplication.processEvents()
-    assert window.left_panel.isHidden()
+    # Auto-hide uses a hidden overlay parent; the panel itself stays laid out.
+    assert not window.left_panel.isVisible()
     assert window.tools_panel.isHidden()
     assert window.banner.isHidden() and window.details.isHidden()
     toolbar = window.findChild(QFrame, 'workbench')
@@ -606,6 +607,7 @@ def test_sidebar_resize_defers_zoom_until_qt_finishes_layout(loaded_window, monk
     from app.ui import PDF_LOGICAL_SCALE
 
     window = loaded_window
+    window.immersive.auto_action.setChecked(False)
     window.act_pages.setChecked(True)
     window._set_zoom(1)
     window._set_zoom_mode(mode)

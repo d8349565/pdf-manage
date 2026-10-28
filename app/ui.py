@@ -102,6 +102,7 @@ from app.workspace import Workspace, parse_page_range, parse_range_segments
 from app.startup import mark
 from app.storage import TemporaryWorkspace, export_path, output_directory
 from app.rendering import RenderResult, RenderScheduler, RenderSignals
+from app.readingcache import ReadingCache, native_width_matches
 
 THUMB_W = 96
 THUMB_MIN_W = 64
@@ -122,6 +123,7 @@ PREVIEW_REUSE_RATIO = 2.0
 PREVIEW_UPSCALE_SLACK = 1.1
 READING_SETTLE_MS = 120
 READING_DRAFT_W = 640
+READING_PRELOAD_PAGES = 3
 RENDER_SHOW_DELAY_MS = 200
 RENDER_HIDE_DELAY_MS = 120
 ZOOM_MIN = 0.1
@@ -2437,6 +2439,8 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(brand_icon())
         set_theme_style(self, STYLESHEET)
         self.rendering = RenderScheduler(self.store, self)
+        self._reading_cache = ReadingCache(self)
+        self.rendering.background_ready = self._reading_preload_ready
         self.model = PageListModel(self.ws, self.store, rendering=self.rendering)
         self.model.live_keys = self._live_render_keys
         self.model.reordered.connect(self.refresh)
@@ -2595,6 +2599,8 @@ class MainWindow(QMainWindow):
 
     def _save_ui_preferences(self, *_):
         if not hasattr(self, '_window_settings'):
+            return
+        if hasattr(self, 'immersive') and self.immersive._syncing_visibility:
             return
         for key, value in (('pagesVisible', self.act_pages.isChecked()),
                            ('toolsVisible', self.act_tools.isChecked()),
@@ -2885,6 +2891,7 @@ class MainWindow(QMainWindow):
         self.reading_settings_menu.addAction(self.immersive.auto_action)
         self.addAction(self.act_pages)
         self.addAction(self.outline_action)
+        QApplication.instance().installEventFilter(self)
 
     def show_about(self) -> None:
         from app.aboutui import AboutDialog
@@ -4043,7 +4050,18 @@ class MainWindow(QMainWindow):
         self._update_preview()
 
     def eventFilter(self, obj, event) -> bool:
+        kind = event.type()
+        if (kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+                     QEvent.Type.MouseButtonDblClick, QEvent.Type.Wheel,
+                     QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride,
+                     QEvent.Type.TouchBegin, QEvent.Type.TouchUpdate, QEvent.Type.TouchEnd,
+                     QEvent.Type.TabletPress, QEvent.Type.TabletMove, QEvent.Type.TabletRelease)
+                or (kind == QEvent.Type.MouseMove and event.buttons())):
+            if isinstance(obj, QWidget) and (obj is self or self.isAncestorOf(obj)):
+                self.rendering.defer_background(READING_SETTLE_MS)
         view = getattr(self, 'preview_view', None)
+        if view is not None and obj is view.viewport() and kind == QEvent.Type.Paint:
+            self._show_cached_visible_pages()
         if (view is not None and obj is view.viewport()
                 and event.type() == QEvent.Type.Paint and self._preview_image is not None
                 and not self._readable_paint_pending):
@@ -4053,8 +4071,8 @@ class MainWindow(QMainWindow):
                 self._readable_paint_pending = True
                 QTimer.singleShot(0, lambda k=key: self._first_readable_painted(k))
         left_vp = getattr(self, "left_view", None)
-        if left_vp is not None and obj is left_vp.viewport() and event.type() == QEvent.Type.Resize:
-            self._thumb_timer.start()
+        if left_vp is not None and obj is left_vp.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self._thumb_timer.start(0 if event.type() == QEvent.Type.Show else 120)
         preview = getattr(self, "preview_view", None)
         if (
             preview is not None
@@ -4122,6 +4140,7 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self.rendering.defer_background(READING_SETTLE_MS)
         self._enable_native_frame()
         self._sync_chrome()
         self._elide_title()
@@ -4362,18 +4381,30 @@ class MainWindow(QMainWindow):
             return 640
         return max(view.viewport().width() - 24, 200)
 
+    def _reading_scale(self, index) -> float:
+        view = self.preview_view
+        if index is None or not view.page_rects or self._zoom_mode not in ('width', 'page'):
+            return self._zoom * PDF_LOGICAL_SCALE
+        rect = view._scene.sceneRect() if view.spread and self._zoom_mode == 'width' else view.spread_rect(index)
+        available_width = view.viewport().width() - 24
+        if self._zoom_mode == 'width' and len(view.page_rects) == 1 and not view.verticalScrollBar().isVisible():
+            available_width -= view.verticalScrollBar().sizeHint().width()
+        factor = max(1, available_width) / max(1, rect.width())
+        if self._zoom_mode == 'page':
+            factor = min(factor, max(1, view.viewport().height() - 24) / max(1, rect.height()))
+        return factor
+
     def _preview_render_width(self, index=None) -> int:
         dpr = max(self.devicePixelRatioF(), 1.0)
         if index is None:
             index = self.ws.preview_index()
         page_width = self.store.page_size(self.ws.pages[index])[0] if index is not None else 480
-        raw = math.ceil(page_width * self._zoom * PDF_LOGICAL_SCALE * dpr)
-        snapped = max(64, ((raw + 63) // 64) * 64)
+        raw = math.ceil(page_width * self._reading_scale(index) * dpr)
         limit = PREVIEW_MAX_W
         if index is not None:
             width, height = self.store.page_size(self.ws.pages[index])
             limit = min(limit, int(math.sqrt(8_000_000 * width / max(height, 1))))
-        return max(1, min(max(200, snapped), limit))
+        return max(1, min(raw, limit))
 
     def _update_preview(self, *, lightweight=False) -> None:
         updating = self._reader_updating
@@ -4448,6 +4479,7 @@ class MainWindow(QMainWindow):
                 if hasattr(self, 'image_tools') and self.image_tools.engaged:
                     self.image_tools.update_overlay()
             live = self._live_render_keys()
+            self._reading_cache.retain(live)
             for index in list(self.preview_view.neighbors):
                 if index >= len(self.ws.pages) or self._neighbor_keys.get(index) != self.ws.pages[index].render_key:
                     self.preview_view._scene.removeItem(self.preview_view.neighbors.pop(index))
@@ -4537,6 +4569,7 @@ class MainWindow(QMainWindow):
             self._reading_timer.start()
 
     def _reading_view_changed(self) -> None:
+        self.rendering.defer_background(READING_SETTLE_MS)
         if not self._reader_updating and self.ws.pages and not self._in_arrange():
             if not self._scrolling:
                 self._neighbor_pending.clear()
@@ -4554,11 +4587,59 @@ class MainWindow(QMainWindow):
             self._detail_timer.start()
         self.rendering._dispatch()
 
+    def _reading_preload_ready(self) -> bool:
+        return (bool(self.ws.pages) and self.preview_view.isVisible() and not self.isMinimized()
+                and not self._in_arrange() and not self._scrolling
+                and not self._preview_busy and not self._detail_busy and not self._other_detail_pending
+                and not self._detail_timer.isActive() and not self._view_zoom_timer.isActive()
+                and not self._preview_timer.isActive() and not self._reading_settle_timer.isActive()
+                and not self._saving and not self._confirming_leave
+                and not self.search_bar.busy
+                and not getattr(self, '_task_dialog', None) and not self._opening_paths
+                and not getattr(self, '_conv_thread', None) and not getattr(self, '_closing', False)
+                and not QApplication.activeModalWidget() and not QApplication.activePopupWidget()
+                and not self.reader_interaction.busy_gesture())
+
     def _thumb_visible(self, key) -> bool:
         view = self.arrange_view if self._in_arrange() else self.left_view
         return view.isVisible() and any(
             view.visualRect(self.model.index(row)).intersects(view.viewport().rect())
             for row in self.model._rows_by_key.get(key, ()))
+
+    def _show_cached_visible_pages(self) -> None:
+        # 绘制不能等待 16ms 的页码更新：缓存命中的页面在第一帧就放入场景。
+        if self._closing or self._layout_pages is not self.ws.pages or self._in_arrange():
+            return
+        view = self.preview_view
+        visible = view.mapToScene(view.viewport().rect()).boundingRect()
+        for index in view.visible_pages(visible):
+            if index == view.active_page and not view.photo().isNull():
+                continue
+            page = self.ws.pages[index]
+            image = self._page_images.get(page.render_key)
+            width = self._preview_render_width(index)
+            entry = self._reading_cache.page(page.render_key, width)
+            ready = self._reading_cache.value(entry)
+            if ready is not None:
+                image = ready
+            elif entry is not None and image is not None and not native_width_matches(image.width(), width):
+                continue
+            item = view.neighbors.get(index)
+            if image is None or (item is not None and (
+                    native_width_matches(item.pixmap().width(), width) if entry is not None
+                    else item.pixmap().width() >= image.width())):
+                continue
+            view.set_neighbor(index, image)
+            view.set_note_markers(index, self.store.cached_annotations(page))
+            self._neighbor_keys[index] = page.render_key
+        for index in view.visible_pages(visible):
+            if not self._reading_cache.regions.get(self.ws.pages[index].render_key):
+                continue
+            item = view.detail_item(index)
+            if (item is None or item.pixmap().isNull()
+                    or not item.sceneBoundingRect().contains(visible.intersected(view.page_rects[index]))):
+                self._request_detail(cached_only=True)
+                break
 
     def _prune_visible_thumbs(self):
         for key in list(self.model.shown):
@@ -4597,60 +4678,104 @@ class MainWindow(QMainWindow):
         candidates = list(view.visible_pages(visible))
         if hasattr(self, 'outline_panel'):
             self.outline_panel.sync_position()
-        # 只保留可见页和相邻页，避免长文档的位图占满内存。
+        # 按当前显示清晰度预备上下各三页；高倍率下优先留住最近的页面。
         wanted = set(candidates)
-        if not self._scrolling:
-            for step in (-1, 1, 2):
-                wanted.update(view.pages_in_spread(index + step * self._scroll_direction))
+        widths = {i: self._preview_render_width(i) for i in wanted | {index}}
+        group = view.pages_in_spread(index)
+        def distance(i):
+            pages = max(group.start - i, i - group.stop + 1, 0)
+            return (pages + view.page_columns - 1) // view.page_columns
+        def order(i):
+            return (i not in candidates, distance(i), (i - index) * self._scroll_direction < 0, abs(i - index))
+        def image_cost(i):
+            rect = view.page_rects[i]
+            cached = self._page_images.get(self.ws.pages[i].render_key)
+            estimate = widths[i] * (math.ceil(widths[i] * rect.height() / rect.width()) + 1) * 4
+            return max(estimate, cached.sizeInBytes() if cached is not None else 0)
+        used = sum(image_cost(i) for i in wanted | {index})
+        nearby = {i for page_index in range(max(0, group.start - READING_PRELOAD_PAGES),
+                                            min(len(self.ws.pages), group.stop + READING_PRELOAD_PAGES))
+                  for i in view.pages_in_spread(page_index)}
+        for i in sorted(nearby - wanted - {index}, key=order):
+            widths[i] = self._preview_render_width(i)
+            if self._scrolling and self._reading_cache.page(self.ws.pages[i].render_key, widths[i]) is None:
+                continue
+            cost = image_cost(i)
+            if used + cost <= READING_CACHE_BYTES:
+                wanted.add(i)
+                used += cost
+        for i in set(candidates) | {index}:
+            page_key = self.ws.pages[i].render_key
+            if page_key in self._page_images:
+                self._page_images.move_to_end(page_key)
         wanted = {i for i in wanted if 0 <= i < len(self.ws.pages)}
         wanted.discard(index)
         for i in list(view.neighbors):
-            if i not in wanted:
+            # 预备页只存入有字节上限的缓存，不额外持有屏幕外的大位图。
+            if i not in candidates or i == index:
                 view._scene.removeItem(view.neighbors.pop(i))
                 view.note_markers.pop(i, None)
                 self._neighbor_keys.pop(i, None)
         self._neighbor_pending.intersection_update({key for key in self._neighbor_pending
-            if key[0] == view.layout_generation and key[1] in wanted})
-        for i in wanted:
+            if key[0] == view.layout_generation and key[1] in wanted
+            and key[2] in (widths[key[1]], min(widths[key[1]], READING_DRAFT_W))})
+        for i in sorted(wanted, key=order):
             page = self.ws.pages[i]
-            w, h = self.store.page_size(page)
-            width = max(1, min(1200, max(64, int(w * view.transform().m11() * view.devicePixelRatioF())),
-                               int(math.sqrt(1_500_000 * w / max(h, 1)))))
-            if view.spread and i in candidates:
-                width = self._preview_render_width(i)
-            if self._scrolling:
+            if i not in candidates and distance(i) == 1 and (i - index) * self._scroll_direction > 0:
+                self._reading_cache.warm_detail(page.render_key,
+                    self._reading_scale(i) * max(view.devicePixelRatioF(), 1), i < index,
+                    lambda i=i, g=view.layout_generation: (g != view.layout_generation or self._in_arrange()
+                        or abs(i - (self.ws.preview_index() or 0)) > READING_PRELOAD_PAGES + view.page_columns))
+            width = widths[i]
+            entry = self._reading_cache.page(page.render_key, width)
+            if self._scrolling and entry is None:
                 width = min(width, READING_DRAFT_W)
             key = (view.layout_generation, i, width)
             page_key = page.render_key
             existing = view.neighbors.get(i)
-            if existing is not None and existing.pixmap().width() >= width:
+            if existing is not None and (native_width_matches(existing.pixmap().width(), width)
+                                         if entry is not None else existing.pixmap().width() >= width):
                 self._neighbor_pending.discard(key)
                 continue
             cached = self._page_images.get(page_key)
-            if cached is None:
+            restored = self._reading_cache.value(entry)
+            if restored is not None:
+                cached = restored
+            elif entry is not None and cached is not None and not native_width_matches(cached.width(), width):
+                cached = None
+            if cached is None and entry is None:
                 thumb = self.model.thumbs.get(page_key)
                 if thumb is not None:
                     cached = thumb[0].toImage()
-            if cached is not None and existing is None:
+            if cached is not None and existing is None and i in candidates:
                 view.set_neighbor(i, cached)
                 view.set_note_markers(i, self.store.cached_annotations(page))
                 self._neighbor_keys[i] = page_key
-            if cached is not None and cached.width() >= width:
+            if cached is not None and (native_width_matches(cached.width(), width)
+                                       if entry is not None else cached.width() >= width):
                 if page_key in self._page_images:
                     self._page_images.move_to_end(page_key)
-                view.set_neighbor(i, cached)
-                view.set_note_markers(i, self.store.cached_annotations(page))
-                self._neighbor_keys[i] = page_key
+                if i in candidates:
+                    view.set_neighbor(i, cached)
+                    view.set_note_markers(i, self.store.cached_annotations(page))
+                    self._neighbor_keys[i] = page_key
                 self._neighbor_pending.discard(key)
                 continue
             self._neighbor_pending.add(key)
-            self.rendering.request(page, width, key, self._neighbor_signals,
-                lambda k=key: k not in self._neighbor_pending,
-                20 if i in candidates else (-1 if i == index + self._scroll_direction else -2))
+            stale = lambda k=key: k not in self._neighbor_pending or self._in_arrange()
+            if entry is not None:
+                self._reading_cache.request(entry, key, self._neighbor_signals, stale,
+                                            self.rendering.generation, 40 if i in candidates else 20)
+            else:
+                self.rendering.request(page, width, key, self._neighbor_signals, stale,
+                    20 if i in candidates else -2 * max(1, distance(i)) + (
+                        1 if (i - index) * self._scroll_direction > 0 else 0))
         self._prune_visible_thumbs()
+        self._request_detail(cached_only=True)
         self._update_render_progress()
 
     def _on_neighbor(self, key, image) -> None:
+        cache_miss = isinstance(image, RenderResult) and image.error == 'cache_miss'
         if isinstance(image, RenderResult):
             if image.generation != self.rendering.generation:
                 return
@@ -4660,23 +4785,31 @@ class MainWindow(QMainWindow):
         if key not in self._neighbor_pending:
             return
         self._neighbor_pending.discard(key)
+        if cache_miss:
+            self._schedule_reading_update()
         if self._layout_pages is not self.ws.pages:
             return
         if image is not None and not image.isNull() and key[0] == self.preview_view.layout_generation:
             page = self.ws.pages[key[1]]
-            self._cache_page_image(page.render_key, image)
-            self._neighbor_keys[key[1]] = page.render_key
-            best = self._page_images.get(page.render_key, image)
-            self.preview_view.set_neighbor(key[1], best)
-            self.preview_view.set_note_markers(key[1], self.store.cached_annotations(page))
-            self._preparation_timer.start()
-            if not self._scrolling and key[1] in self.preview_view.pages_in_spread(self.ws.preview_index() or 0):
-                self._detail_timer.start()
+            self._cache_page_image(page.render_key, image, preferred_width=self._preview_render_width(key[1]))
+            view = self.preview_view
+            visible = view.mapToScene(view.viewport().rect()).boundingRect()
+            if key[1] in view.visible_pages(visible) and key[1] != view.active_page:
+                self._neighbor_keys[key[1]] = page.render_key
+                best = self._page_images.get(page.render_key, image)
+                view.set_neighbor(key[1], best)
+                view.set_note_markers(key[1], self.store.cached_annotations(page))
+                self._preparation_timer.start()
+                if not self._scrolling:
+                    self._detail_timer.start()
         self._update_render_progress()
 
-    def _cache_page_image(self, key, image) -> None:
+    def _cache_page_image(self, key, image, *, preferred_width=None) -> None:
+        self._reading_cache.put_page(key, image)
         old = self._page_images.get(key)
-        if old is not None and old.width() >= image.width():
+        if old is not None and old.width() >= image.width() and (
+                preferred_width is None or native_width_matches(old.width(), preferred_width)
+                or not native_width_matches(image.width(), preferred_width)):
             self._page_images.move_to_end(key)
             return
         if old is not None:
@@ -4695,11 +4828,17 @@ class MainWindow(QMainWindow):
             self._preview_busy = False
             return
         width = self._preview_render_width()
-        if self._scrolling:
+        entry = self._reading_cache.page(page.render_key, width)
+        if self._scrolling and entry is None:
             width = min(width, READING_DRAFT_W)
         key = (*page.render_key, width)
         cached = self._page_images.get(key[:3])
-        if cached is None:
+        restored = self._reading_cache.value(entry)
+        if restored is not None:
+            cached = restored
+        if entry is not None and cached is not None and not native_width_matches(cached.width(), width):
+            cached = None
+        if cached is None and entry is None:
             thumb = self.model.thumbs.get(key[:3])
             if thumb is not None:
                 cached = thumb[0].toImage()
@@ -4710,7 +4849,8 @@ class MainWindow(QMainWindow):
             neighbor = self.preview_view.neighbors.get(self.preview_view.active_page)
             if neighbor is not None and not neighbor.pixmap().isNull():
                 candidate = neighbor.pixmap().toImage()
-                if cached is None or candidate.width() > cached.width():
+                if (entry is None or native_width_matches(candidate.width(), width)) and (
+                        cached is None or candidate.width() > cached.width()):
                     cached = candidate
             if cached is None and self._shown_page != (page.page_id, page.rotation):
                 self.preview_view.clear_photo()
@@ -4732,6 +4872,8 @@ class MainWindow(QMainWindow):
                 # 上界是为了不让一张超大图被反复重采样，超过就重渲染一张小图（小图很快）。
                 enough = self._scrolling or rendered <= width * PREVIEW_REUSE_RATIO
             if enough:
+                enough = entry is None or native_width_matches(rendered, width)
+            if enough:
                 self._preview_key = (*key[:3], rendered)
                 self._preview_busy = False
                 self._apply_view_zoom()
@@ -4741,12 +4883,19 @@ class MainWindow(QMainWindow):
             return
         self._preview_key = key
         self._preview_busy = True
+        self.rendering.defer_background(READING_SETTLE_MS)
         self._update_render_progress()
-        self.rendering.diagnostics.record("cache", hit=False, draft=self._scrolling)
-        self.rendering.request(page, width, key, self.preview_signals,
-            lambda k=key: (self._preview_key != k or self._in_arrange()
-                          or (self._scrolling and k[3] > READING_DRAFT_W)),
-            20 if self._scrolling or self._preview_image is None else 10)
+        self.rendering.diagnostics.record("cache", hit=entry is not None,
+            draft=self._scrolling and entry is None, disk=entry is not None)
+        if entry is not None:
+            self._request_detail(cached_only=True)
+            self._reading_cache.request(entry, key, self.preview_signals,
+                lambda k=key: self._preview_key != k or self._in_arrange(), self.rendering.generation, 60)
+        else:
+            self.rendering.request(page, width, key, self.preview_signals,
+                lambda k=key: (self._preview_key != k or self._in_arrange()
+                              or (self._scrolling and k[3] > READING_DRAFT_W)),
+                20 if self._scrolling or self._preview_image is None else 10)
 
     def _on_preview(self, key: tuple, image: QImage | None) -> None:
         error = ""
@@ -4760,13 +4909,20 @@ class MainWindow(QMainWindow):
             return
         self._preview_busy = False
         self._update_render_progress()
+        if error == 'cache_miss':
+            self._preview_key = None
+            index = self.ws.preview_index()
+            if index is not None:
+                self._request_preview(self.ws.pages[index])
+            return
         if image is None or image.isNull():
             if error:
                 self.statusBar().showMessage("页面暂时无法加载，请重新选择该页重试。", 5000)
             return
         self._preview_image = image
-        self._cache_page_image(key[:3], image)
+        self._cache_page_image(key[:3], image, preferred_width=self._preview_render_width())
         self._show_preview_image()
+        self._request_detail(cached_only=True)
 
     def _invalidate_detail_requests(self) -> None:
         self._detail_key = None
@@ -4777,9 +4933,10 @@ class MainWindow(QMainWindow):
     def _page_detail_key(self, index):
         return self._detail_key if index == self.preview_view.active_page else self._other_detail_keys.get(index)
 
-    def _request_detail(self) -> None:
+    def _request_detail(self, *, cached_only=False) -> None:
         index = self.ws.preview_index()
-        if index is None or self._preview_image is None or self._preview_busy or self._in_arrange() or self._scrolling:
+        if (index is None or self._in_arrange()
+                or (not cached_only and (self._preview_image is None or self._preview_busy or self._scrolling))):
             return
         if self._preview_key is None or self._preview_key[:3] != self.ws.pages[index].render_key:
             return
@@ -4800,12 +4957,13 @@ class MainWindow(QMainWindow):
             page_key = self.ws.pages[page_index].render_key
             primary = page_index == index
             neighbor = view.neighbors.get(page_index)
-            width = self._preview_image.width() if primary else (neighbor.pixmap().width() if neighbor else 0)
-            if not width:
+            width = (self._preview_image.width() if self._preview_image is not None else 0) if primary else (
+                neighbor.pixmap().width() if neighbor else 0)
+            if not width and not cached_only:
                 continue
             # A larger cached image also needs resampling. Only native-density
             # images can skip the final sharp region after scrolling settles.
-            if math.isclose(page_rect.width() * scale, width, rel_tol=.01, abs_tol=1):
+            if native_width_matches(width, page_rect.width() * scale):
                 view.clear_detail(page_index)
                 if primary:
                     self._detail_key, self._detail_busy = None, False
@@ -4825,6 +4983,10 @@ class MainWindow(QMainWindow):
             region.translate(-page_rect.topLeft())
             if region.isEmpty():
                 continue
+            area = visible.intersected(page_rect).translated(-page_rect.topLeft())
+            entry = self._reading_cache.detail(page_key, (area.left(), area.top(), area.right(), area.bottom()), scale)
+            if cached_only and entry is None:
+                continue
             key = (*page_key, (region.left(), region.top(), region.right(), region.bottom()), scale)
             if key == previous:
                 continue
@@ -4834,13 +4996,18 @@ class MainWindow(QMainWindow):
                 self._other_detail_keys[page_index] = key
                 self._other_detail_pending.add(page_index)
             generation = view.layout_generation
-            self.rendering.request(self.ws.pages[page_index], None, (generation, page_index, key), self.detail_signals,
-                lambda i=page_index, k=key, g=generation: (self._page_detail_key(i) != k
-                    or view.layout_generation != g or self._scrolling or self._in_arrange()),
-                10, region=(key[3], key[4]))
+            stale = lambda i=page_index, k=key, g=generation: (self._page_detail_key(i) != k
+                    or view.layout_generation != g or self._in_arrange())
+            if entry is not None:
+                self._reading_cache.request(entry, (generation, page_index, key), self.detail_signals,
+                                            stale, self.rendering.generation, 60)
+            else:
+                self.rendering.request(self.ws.pages[page_index], None, (generation, page_index, key), self.detail_signals,
+                    lambda s=stale: s() or self._scrolling, 10, region=(key[3], key[4]))
         self._update_render_progress()
 
     def _on_detail_preview(self, key: tuple, result) -> None:
+        cache_miss = isinstance(result, RenderResult) and result.error == 'cache_miss'
         if isinstance(result, RenderResult):
             if result.generation != self.rendering.generation:
                 return
@@ -4858,12 +5025,24 @@ class MainWindow(QMainWindow):
             self._other_detail_pending.discard(index)
         if result is not None:
             image, position, scale = result
+            area = (position[0], position[1], position[0] + image.width() / scale,
+                    position[1] + image.height() / scale)
+            width, height = self.store.page_size(self.ws.pages[index])
+            tolerance = 1 / scale
+            if (area[0] <= tolerance and area[1] <= tolerance
+                    and area[2] >= width - tolerance and area[3] >= height - tolerance
+                    and native_width_matches(image.width(), self._preview_render_width(index))):
+                self._cache_page_image(page_key[:3], image, preferred_width=self._preview_render_width(index))
+            else:
+                self._reading_cache.put_detail(page_key[:3], area, page_key[4], result)
             self.preview_view.set_detail(image, position, scale, index)
         else:
             if primary:
                 self._detail_key = None
             else:
                 self._other_detail_keys.pop(index, None)
+            if cache_miss and not self._scrolling:
+                self._detail_timer.start()
         self._update_render_progress()
 
     def _note_render_busy(self) -> None:
@@ -5017,15 +5196,8 @@ class MainWindow(QMainWindow):
                 else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
                 if one_page_fit else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-            factor = self._zoom * PDF_LOGICAL_SCALE
+            factor = self._reading_scale(index)
             if mode in ('width', 'page'):
-                available_width = view.viewport().width() - 24
-                if one_page_width and not view.verticalScrollBar().isVisible():
-                    # 先预留可能出现的竖条宽度，避免适宽后竖条显隐反过来改变缩放。
-                    available_width -= view.verticalScrollBar().sizeHint().width()
-                factor = max(1, available_width) / max(1, rect.width())
-                if mode == 'page':
-                    factor = min(factor, max(1, view.viewport().height() - 24) / max(1, rect.height()))
                 self._zoom = factor / PDF_LOGICAL_SCALE
             view.fit_page = mode == 'page'
             view.update_page_visibility()
@@ -5706,6 +5878,7 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "不能合并只读文档", message)
 
     def _release_unused_docs(self) -> None:
+        self._reading_cache.retain(self._live_render_keys())
         keep = set(self.ws.live_sources())
         copied=getattr(self,'_page_copy',None)
         if copied is not None:
@@ -6037,6 +6210,8 @@ class MainWindow(QMainWindow):
         self.sidebar_stack.setCurrentIndex(index)
         if index == 1:
             self.outline_panel.sync_position(force=True)
+        else:
+            self._thumb_timer.start(0)
 
     def open_outline(self):
         self.stack.setCurrentIndex(0)
@@ -6518,6 +6693,7 @@ class MainWindow(QMainWindow):
             return
         if self._confirm_leave_all_tabs():
             self._closing = True
+            QApplication.instance().removeEventFilter(self)
             self._preparation_timer.stop()
             if self.arrange_preview is not None:
                 self.arrange_preview.hide()
@@ -6543,6 +6719,7 @@ class MainWindow(QMainWindow):
             self._preview_key = None
             self._invalidate_detail_requests()
             self.rendering.close()
+            self._reading_cache.close()
             self.region_capture.cancel()
             self.text_selection.clear()
             for handler in (self.text_selection, self.search_bar):

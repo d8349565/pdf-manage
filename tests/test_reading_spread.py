@@ -19,7 +19,8 @@ def settle(qapp, reader):
         qapp.processEvents()
         timers = (reader._reading_timer, reader._reading_settle_timer,
                   reader._preview_timer, reader._detail_timer)
-        if not reader.rendering.active and not reader.rendering.pending and not any(t.isActive() for t in timers):
+        if (not reader.rendering.active and not reader.rendering.pending and not reader._reading_cache.busy
+                and not any(t.isActive() for t in timers)):
             return
         QTest.qWait(10)
     pytest.fail('The generated reader did not settle')

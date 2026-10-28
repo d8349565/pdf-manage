@@ -111,6 +111,56 @@ def test_same_page_after_document_generation_change_rejects_old_result(queue, qa
     assert len(results) == 1 and results[0].generation == scheduler.generation
 
 
+def test_input_defers_preloading_without_delaying_foreground_work(queue, qapp):
+    scheduler, jobs, calls = queue
+    ref = SimpleNamespace(render_key=("source", 0, 0))
+    signals = RenderSignals()
+    scheduler.defer_background(60000)
+    scheduler.request(ref, 1280, ("neighbor",), signals, lambda: False, -1)
+    assert not jobs and scheduler._background_timer.isActive()
+    scheduler.request(ref, 640, ("visible",), signals, lambda: False, 20)
+    complete(jobs.pop(0), qapp)
+    assert calls == [640] and not jobs
+    scheduler._background_after = 0
+    scheduler._background_timer.timeout.emit()
+    complete(jobs.pop(0), qapp)
+    assert calls == [640, 1280]
+
+
+def test_preloading_waits_for_idle_then_resumes_nearest_page_first(queue, qapp):
+    scheduler, jobs, calls = queue
+    signals = RenderSignals()
+    ready = False
+    scheduler.background_ready = lambda: ready
+    for index, priority in ((3, -5), (2, -3), (1, -1)):
+        ref = SimpleNamespace(render_key=("source", index, 0))
+        scheduler.request(ref, index * 640, ("neighbor", index), signals, lambda: False, priority)
+    assert not jobs
+    ready = True
+    scheduler._background_timer.timeout.emit()
+    complete(jobs.pop(0), qapp)
+    complete(jobs.pop(0), qapp)
+    complete(jobs.pop(0), qapp)
+    assert calls == [640, 1280, 1920]
+
+
+def test_foreground_overtakes_pending_preloads_after_one_running_render(queue, qapp):
+    scheduler, jobs, calls = queue
+    ref = SimpleNamespace(render_key=("source", 0, 0))
+    signals = RenderSignals()
+    scheduler.request(ref, 1280, ("running_neighbor",), signals, lambda: False, -1)
+    scheduler.request(ref, 1920, ("pending_neighbor",), signals, lambda: False, -2)
+    scheduler.defer_background(60000)
+    scheduler.request(ref, 640, ("user_action",), signals, lambda: False, 60)
+    complete(jobs.pop(0), qapp)
+    complete(jobs.pop(0), qapp)
+    assert calls == [1280, 640] and not jobs
+    scheduler.close()
+    assert not scheduler._background_timer.isActive()
+    scheduler._background_timer.timeout.emit()
+    assert not jobs
+
+
 def test_diagnostics_are_disabled_by_default_and_log_only_numeric_timings(qapp, monkeypatch, tmp_path):
     monkeypatch.delenv("PAGEARK_READING_LOG", raising=False)
     diagnostics = ReadingDiagnostics()
