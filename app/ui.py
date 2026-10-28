@@ -2790,7 +2790,9 @@ class MainWindow(QMainWindow):
         self.page_numbers_action=self._act('页码处理…',self.open_page_numbers)
         self.watermark_action = self._act("水印…", self.open_watermarks)
         self.seam_stamp_action = self._act('骑缝章…', self.open_seam_stamps)
-        document.addActions([self.page_numbers_action,self.watermark_action,self.seam_stamp_action])
+        self.annot_crop_action = self._act('区域摘录…', self.open_annotation_crop)
+        document.addActions([self.page_numbers_action,self.watermark_action,
+                             self.seam_stamp_action,self.annot_crop_action])
         document.addSeparator()
         compression=document.addMenu('压缩')
         self.compress_action = self._act("压缩 PDF…", lambda: self.open_export_tool(3))
@@ -3107,6 +3109,7 @@ class MainWindow(QMainWindow):
         self.watermark_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "annotate"))
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.capture_action.setEnabled(bool(count) and not copy_reason)
+        self.annot_crop_action.setEnabled(bool(count) and not copy_reason)
         self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
         sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
@@ -6278,6 +6281,10 @@ class MainWindow(QMainWindow):
     def open_seam_stamps(self):
         from app.seamstampui import open_seam_stamps
         open_seam_stamps(self)
+
+    def open_annotation_crop(self):
+        from app.annotcropui import open_annotation_crop
+        open_annotation_crop(self)
 
     def open_deskew(self):
         from app.deskewui import open_deskew
