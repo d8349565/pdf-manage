@@ -850,6 +850,7 @@ def test_image_import_dialog_folder_drop(qapp, tmp_path):
 
 def test_word_converter_status_colors_and_mixed_output_hint(qapp, tmp_path, monkeypatch):
     import app.wordui as wordui
+    from app.themes import ui_color
     from PyQt6.QtWidgets import QFileDialog
 
     pdf1 = tmp_path / "doc1.pdf"
@@ -861,8 +862,8 @@ def test_word_converter_status_colors_and_mixed_output_hint(qapp, tmp_path, monk
     # Status column colors
     window._set_item(0, 2, "成功 · 已保存")
     window._set_item(1, 2, "失败 · 无法写入")
-    assert window.table.item(0, 2).foreground().color().name() == "#059669"
-    assert window.table.item(1, 2).foreground().color().name() == "#dc2626"
+    assert window.table.item(0, 2).foreground().color().name() == ui_color("success").lower()
+    assert window.table.item(1, 2).foreground().color().name() == ui_color("danger").lower()
 
     # Mixed output hint
     out_dir = tmp_path / "out"
