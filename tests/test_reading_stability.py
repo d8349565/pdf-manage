@@ -253,3 +253,33 @@ def test_available_final_region_is_present_in_the_first_returning_frame(reader, 
     first = reader.preview_view.viewport().grab().toImage()
     assert not reader.preview_view._detail.pixmap().isNull()
     check_frame(reader, first, tmp_path, qapp)
+
+
+@pytest.mark.parametrize('reader', [[(300, 400)] * 2, [(300, 400)] * 9], indirect=True)
+@pytest.mark.parametrize('zoom_mode', ['page', 'width', 'custom'])
+def test_fullscreen_forward_and_returning_pages_have_stable_first_frames(reader, qapp, tmp_path, zoom_mode):
+    reader.immersive.fullscreen_action.setChecked(True)
+    reader.resize(1920, 1080)
+    if zoom_mode == 'custom':
+        reader._set_zoom(1.19)
+    else:
+        reader._set_zoom_mode(zoom_mode)
+    settle(reader, qapp)
+    turns = (2, 3, 2, 1) if len(reader.ws.pages) > 2 else (2, 1, 2, 1)
+    for step, number in enumerate(turns):
+        reader.go_to_page(number)
+        first = reader.preview_view.viewport().grab().toImage()
+        assert native_width_matches(reader._preview_image.width(), reader._preview_render_width())
+        output = tmp_path / f'fullscreen-turn-{step}-{number}'
+        output.mkdir()
+        check_frame(reader, first, output, qapp)
+    reader.immersive.fullscreen_action.setChecked(False)
+    reader.resize(1100, 740)
+    settle(reader, qapp)
+    for step, number in enumerate((2, 1)):
+        reader.go_to_page(number)
+        first = reader.preview_view.viewport().grab().toImage()
+        assert native_width_matches(reader._preview_image.width(), reader._preview_render_width())
+        output = tmp_path / f'window-return-{step}-{number}'
+        output.mkdir()
+        check_frame(reader, first, output, qapp)

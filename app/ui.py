@@ -2401,6 +2401,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._window_settings = preferences(QSettings)
         initialize_theme(self._window_settings)
+        from app.readinghistory import ReadingHistory
+        self.reading_history = ReadingHistory(self._window_settings, self)
+        self._reading_tool = self._window_settings.value('reading/tool', 'select')
+        if self._reading_tool not in ('select', 'hand'):
+            self._reading_tool = 'select'
+        self._history_timer = QTimer(self)
+        self._history_timer.setSingleShot(True)
+        self._history_timer.setInterval(1500)
+        self._history_timer.timeout.connect(self._remember_reading_state)
         self._painted = False
         self._readable_painted = False
         self._readable_sources = set()
@@ -2527,6 +2536,100 @@ class MainWindow(QMainWindow):
             signal.connect(self._save_ui_preferences)
         self.refresh()
         mark("window_ready")
+        QTimer.singleShot(0, self._continue_last_reading)
+        QTimer.singleShot(200, self.reading_history.check_missing)
+
+    def _continue_last_reading(self):
+        if (not self._closing and not self._opening_paths and not self.ws.pages
+                and self._window_settings.value('reading/resumeLast', False, type=bool)
+                and self.reading_history.entries):
+            self.open_recent_file(self.reading_history.entries[0]['path'])
+
+    def open_recent_file(self, path):
+        if self._saving or self._confirming_leave or getattr(self, '_task_dialog', None):
+            return False
+        opened = self.open_files_in_tabs([path])
+        if not opened:
+            self.reading_history.check_missing()
+        return opened
+
+    def manage_reading_history(self):
+        from app.recentui import ReadingHistoryDialog
+        dialog = ReadingHistoryDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _remember_reading_state(self):
+        if not self.ws.path or not self.ws.pages:
+            return
+        index = self.ws.preview_index()
+        if index is None:
+            return
+        ref = self.ws.pages[index]
+        page, offset = index, 0.
+        if self.ws.dirty:
+            if os.path.normcase(ref.source_path) != os.path.normcase(self.ws.path):
+                return
+            page = ref.source_page
+        elif self._zoom_mode != 'page' and index < len(self.preview_view.page_rects):
+            rect = self.preview_view.page_rects[index]
+            visible = self.preview_view.mapToScene(self.preview_view.viewport().rect()).boundingRect()
+            offset = (visible.top() - rect.top()) / max(1., rect.height())
+        self.reading_history.remember(self.ws.path, page, offset)
+
+    def _restore_reading_position(self, path, state):
+        if not self.ws.pages:
+            return
+        index = min(state['page'], len(self.ws.pages) - 1)
+        self.go_to_page(index + 1)
+
+        def restore_offset():
+            if (self._closing or self.ws.path != path or self.ws.preview_index() != index
+                    or self._zoom_mode == 'page' or index >= len(self.preview_view.page_rects)):
+                return
+            rect = self.preview_view.page_rects[index]
+            point = QPointF(rect.center().x(), rect.top() + rect.height() * state['offset'])
+            bar = self.preview_view.verticalScrollBar()
+            bar.setValue(bar.value() + self.preview_view.mapFromScene(point).y())
+
+        QTimer.singleShot(0, restore_offset)
+
+    def configure_reading_shortcuts(self):
+        from app.readershortcuts import ReadingShortcutsDialog
+        dialog = ReadingShortcutsDialog(self.reading_shortcuts)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def toggle_reading_mode(self):
+        self.set_work_mode(0 if self._in_arrange() else 1)
+
+    def set_work_mode(self, index):
+        if self._saving or self._confirming_leave or getattr(self, '_task_dialog', None):
+            return
+        if index == 1:
+            if not self.ws.pages:
+                return
+            if self.immersive.fullscreen:
+                self.immersive.fullscreen_action.setChecked(False)
+        self.stack.setCurrentIndex(index)
+        (self.arrange_view if self._in_arrange() else self.preview_view).setFocus()
+
+    def set_reading_tool(self, mode):
+        tools = getattr(self, 'annotation_tools', None)
+        if tools is not None and tools.deactivate() is False:
+            self.reader_tool_actions[self._reading_tool].setChecked(True)
+            return
+        if hasattr(self, 'image_tools'):
+            self.image_tools.clear()
+        self.region_capture.cancel()
+        self.text_selection.clear()
+        self.reader_interaction.reset()
+        self._reading_tool = mode
+        self._window_settings.setValue('reading/tool', mode)
+        self.reader_tool_actions[mode].setChecked(True)
+        self.preview_view.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.preview_view.viewport().setCursor(Qt.CursorShape.OpenHandCursor if mode == 'hand' else Qt.CursorShape.ArrowCursor)
+        self.preview_view.setFocus()
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -2723,6 +2826,7 @@ class MainWindow(QMainWindow):
         file_menu = self._menubar.addMenu("文件")
         self.open_action = self._act("打开 PDF / OFD / 图片", self.open_files, QKeySequence.StandardKey.Open)
         file_menu.addAction(self.open_action)
+        file_menu.addAction(self._act('最近阅读记录…', self.manage_reading_history))
         file_menu.addSeparator()
         self.save_action = self._act("保存", self.save, QKeySequence.StandardKey.Save)
         self.save_as_action = self._act("另存为", lambda: self.save(True), QKeySequence.StandardKey.SaveAs)
@@ -2738,6 +2842,7 @@ class MainWindow(QMainWindow):
         self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
         settings_menu=file_menu.addMenu("应用设置")
         settings_menu.addAction(self.storage_action)
+        settings_menu.addAction(self._act('阅读快捷键…', self.configure_reading_shortcuts))
         if sys.platform == "win32":
             if portable_root() is not None:
                 settings_menu.addAction(self._act('右键快捷工具…', self.manage_context_menus))
@@ -2828,8 +2933,13 @@ class MainWindow(QMainWindow):
         convert.addAction(self.image_export_action)
         convert.addAction(self.raster_action)
         view = self._menubar.addMenu("视图")
-        view.addAction(self._act("阅读", lambda: self.stack.setCurrentIndex(0)))
-        view.addAction(self._act("整理页面", lambda: self.stack.setCurrentIndex(1)))
+        self.reading_mode_action = self._act("阅读", lambda: self.set_work_mode(0))
+        self.arrange_mode_action = self._act("整理页面", lambda: self.set_work_mode(1))
+        view.addActions([self.reading_mode_action, self.arrange_mode_action])
+        self.addActions([self.reading_mode_action, self.arrange_mode_action])
+        self.toggle_mode_action = self._act('切换阅读／整理页面', self.toggle_reading_mode)
+        view.addAction(self.toggle_mode_action)
+        self.addAction(self.toggle_mode_action)
         self.outline_action = self._act("大纲书签", self.open_outline, QKeySequence('Ctrl+Shift+B'))
         view.addAction(self.outline_action)
         view.addSeparator()
@@ -3182,6 +3292,10 @@ class MainWindow(QMainWindow):
         self.navigation_bar.setVisible(bool(count) and not self._in_arrange())
         self.reading_orb.sync()
         self.mode_buttons[1].setEnabled(bool(count) or self._in_arrange())
+        for action in self.reader_tool_actions.values():
+            action.setEnabled(bool(count))
+        self.toggle_mode_action.setEnabled(bool(count))
+        self.arrange_mode_action.setEnabled(bool(count))
         self.review_button.setEnabled(bool(count))
         self._update_export_controls()
         name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else
@@ -3223,7 +3337,9 @@ class MainWindow(QMainWindow):
         for button, label in ((self.previous_page, "上一"), (self.next_page, "下一")):
             name = label + ("组页面" if self.preview_view.spread else "页")
             button.setAccessibleName(name)
-            button.setToolTip(name + (" (Alt+Left)" if button is self.previous_page else " (Alt+Right)"))
+            key = 'previous' if button is self.previous_page else 'next'
+            binding = self.reading_shortcuts.actions[key].shortcut().toString() if hasattr(self, 'reading_shortcuts') else ''
+            button.setToolTip(f'{name} ({binding})' if binding else name)
         self.page_number.setToolTip("输入任意页码，按 Enter 跳转到所在页面组" if self.preview_view.spread
                                     else "输入页码，按 Enter 跳转")
         if hasattr(self, 'outline_panel'):
@@ -3396,24 +3512,10 @@ class MainWindow(QMainWindow):
         zoom_bar.addWidget(zoom_in_button)
         zoom_fit_button = self._icon_btn("fit-width", "适合宽度", self.zoom_fit, shortcut="Ctrl+0")
         zoom_bar.addWidget(zoom_fit_button)
-        self.preview_empty = QWidget()
-        welcome = QVBoxLayout(self.preview_empty)
-        welcome.addStretch()
-        title = QLabel("从一份 PDF 或 OFD 开始")
-        title.setObjectName("welcomeTitle")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        welcome.addWidget(title)
-        hint = QLabel("阅读、整理页面、提取和打印\n文件在本机处理，无需上传")
-        hint.setObjectName("hint")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        welcome.addWidget(hint)
-        self.welcome_open = self._btn("打开 PDF / OFD / 图片", self.open_files, primary=True, icon="folder-open")
-        welcome.addWidget(self.welcome_open, 0, Qt.AlignmentFlag.AlignHCenter)
-        drop_hint = QLabel("也可以把文件拖到这里 · Ctrl+O")
-        drop_hint.setObjectName("hint")
-        drop_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        welcome.addWidget(drop_hint)
-        welcome.addStretch()
+        from app.recentui import ReadingHome
+        self.preview_empty = ReadingHome(self)
+        self.welcome_open = self.preview_empty.open_button
+        self.recent_files = self.preview_empty.recent
         self.preview_view = PreviewView()
         self.preview_view.zoom_steps.connect(self._on_zoom_steps)
         self.preview_view.page_step.connect(self.step_page)
@@ -3445,6 +3547,15 @@ class MainWindow(QMainWindow):
         navigation.setContentsMargins(0, 0, 0, 0)
         navigation.setSpacing(8)
         navigation.addWidget(page_controls)
+        self.reader_tool_group = QActionGroup(self)
+        self.reader_tool_actions = {}
+        for mode, label, icon in (('select', '选择文字', 'mouse-pointer'), ('hand', '手形拖动', 'hand')):
+            action = QAction(toolbar_icon(icon, '#526B63', 16), label, self)
+            action.setCheckable(True)
+            action.setChecked(self._reading_tool == mode)
+            action.triggered.connect(lambda checked=False, value=mode: self.set_reading_tool(value))
+            self.reader_tool_group.addAction(action)
+            self.reader_tool_actions[mode] = action
         navigation.addWidget(self._reader_zoom_controls)
         self.navigation_bar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.reading_settings_menu = layout_menu = QMenu('阅读设置', self)
@@ -3465,6 +3576,9 @@ class MainWindow(QMainWindow):
         self.reading_fallback_notice.setEnabled(False)
         self.reading_fallback_notice.setVisible(False)
         layout_menu.addAction(self.reading_fallback_notice)
+        layout_menu.addSection('阅读工具')
+        layout_menu.addActions(list(self.reader_tool_actions.values()))
+        layout_menu.addAction(self._act('阅读快捷键…', self.configure_reading_shortcuts))
         layout_menu.addSection('页面布局')
         self.reading_layout_group = QActionGroup(self)
         self.reading_layout_actions = {}
@@ -3880,14 +3994,28 @@ class MainWindow(QMainWindow):
         for view in (self.left_view, self.arrange_view):
             shortcut = QShortcut(QKeySequence.StandardKey.Delete, view, self.delete_pages)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        QShortcut(QKeySequence("Alt+Left"), self, lambda: self.step_page(-1))
-        QShortcut(QKeySequence("Alt+Right"), self, lambda: self.step_page(1))
         QShortcut(QKeySequence("Ctrl+L"), self, self.focus_page_number)
         QShortcut(QKeySequence("Ctrl+="), self, self.zoom_in)
         QShortcut(QKeySequence("F3"), self, lambda: self.search_bar.step(1))
         QShortcut(QKeySequence("Shift+F3"), self, lambda: self.search_bar.step(-1))
         QShortcut(QKeySequence("Ctrl+Tab"), self, lambda: self.step_tab(1))
         QShortcut(QKeySequence("Ctrl+Shift+Tab"), self, lambda: self.step_tab(-1))
+        from app.readershortcuts import ReadingShortcuts
+        previous = self._act('上一页／上一组', lambda: self.step_page(-1))
+        following = self._act('下一页／下一组', lambda: self.step_page(1))
+        self.addActions([previous, following])
+        for action in self.reader_tool_actions.values():
+            action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            self.preview_view.addAction(action)
+        self.reading_shortcuts = ReadingShortcuts(self, [
+            ('mode', '切换阅读／整理页面', 'F6', self.toggle_mode_action),
+            ('read', '进入阅读', '', self.reading_mode_action),
+            ('arrange', '进入整理页面', '', self.arrange_mode_action),
+            ('select', '选择文字', 'V', self.reader_tool_actions['select']),
+            ('hand', '手形拖动', 'H', self.reader_tool_actions['hand']),
+            ('previous', '上一页／上一组', 'Alt+Left', previous),
+            ('next', '下一页／下一组', 'Alt+Right', following),
+        ])
 
     def focus_page_number(self) -> None:
         if self.ws.pages:
@@ -4586,6 +4714,7 @@ class MainWindow(QMainWindow):
             self._reading_scrolled()
             self._detail_timer.start()
         self.rendering._dispatch()
+        self._history_timer.start()
 
     def _reading_preload_ready(self) -> bool:
         return (bool(self.ws.pages) and self.preview_view.isVisible() and not self.isMinimized()
@@ -4651,6 +4780,8 @@ class MainWindow(QMainWindow):
         view = self.preview_view
         if not self.ws.pages or not view.isVisible() or self._in_arrange() or not view.page_rects:
             return
+        if len(view.page_rects) != len(self.ws.pages):
+            return  # A tab switch or page edit can briefly leave the previous layout visible.
         visible = view.mapToScene(view.viewport().rect()).boundingRect()
         if not self._preparation_timer.isActive():
             self._preparation_timer.start()
@@ -4734,7 +4865,7 @@ class MainWindow(QMainWindow):
             page_key = page.render_key
             existing = view.neighbors.get(i)
             if existing is not None and (native_width_matches(existing.pixmap().width(), width)
-                                         if entry is not None else existing.pixmap().width() >= width):
+                                         if entry is not None or not self._scrolling else existing.pixmap().width() >= width):
                 self._neighbor_pending.discard(key)
                 continue
             cached = self._page_images.get(page_key)
@@ -4752,7 +4883,7 @@ class MainWindow(QMainWindow):
                 view.set_note_markers(i, self.store.cached_annotations(page))
                 self._neighbor_keys[i] = page_key
             if cached is not None and (native_width_matches(cached.width(), width)
-                                       if entry is not None else cached.width() >= width):
+                                       if entry is not None or not self._scrolling else cached.width() >= width):
                 if page_key in self._page_images:
                     self._page_images.move_to_end(page_key)
                 if i in candidates:
@@ -4868,11 +4999,11 @@ class MainWindow(QMainWindow):
                 # 放大：只容忍极小的拉伸，否则画面会越来越糊。
                 enough = rendered * PREVIEW_UPSCALE_SLACK >= width
             else:
-                # 缩小：已有更高分辨率的图，直接缩着看即可——缩放在这一步是完全免费的。
-                # 上界是为了不让一张超大图被反复重采样，超过就重渲染一张小图（小图很快）。
+                # 滚动期间可先复用旧图；停稳后仍须匹配实际显示密度，
+                # 像素更多的旧图缩放后不一定比原生尺寸清晰。
                 enough = self._scrolling or rendered <= width * PREVIEW_REUSE_RATIO
             if enough:
-                enough = entry is None or native_width_matches(rendered, width)
+                enough = native_width_matches(rendered, width) or (self._scrolling and entry is None)
             if enough:
                 self._preview_key = (*key[:3], rendered)
                 self._preview_busy = False
@@ -5329,6 +5460,7 @@ class MainWindow(QMainWindow):
         cur.mode_index = self.stack.currentIndex()
         if hasattr(self, "preview_view"):
             cur.scroll_y = self.preview_view.verticalScrollBar().value()
+        self._remember_reading_state()
 
     def activate_tab(self, tab_id: int) -> bool:
         target = self._get_tab(tab_id)
@@ -5375,6 +5507,7 @@ class MainWindow(QMainWindow):
             self.preview_view.verticalScrollBar().setValue(target.scroll_y)
         elif target.ws.preview_index() is not None:
             self.preview_view.jump_to_page(target.ws.preview_index())
+        self.reading_history.touch(target.ws.path)
         return True
 
     def step_tab(self, delta: int) -> None:
@@ -5413,6 +5546,8 @@ class MainWindow(QMainWindow):
                 return False
             if not self.confirm_leave():
                 return False
+        if tab_id == self._active_tab_id:
+            self._save_current_tab_state()
         if len(self._tabs) <= 1:
             self.search_bar.cancel()
             self._reading_timer.stop()
@@ -5478,8 +5613,10 @@ class MainWindow(QMainWindow):
             )
             if existing is not None:
                 self.activate_tab(existing.tab_id)
+                self.reading_history.touch(path)
                 opened_any = True
                 continue
+            state = self.reading_history.find(path)
             pages = self._try_load(path, index, len(valid_paths), defer_safety=True)
             if pages is None:
                 self._release_unused_docs()
@@ -5499,6 +5636,9 @@ class MainWindow(QMainWindow):
                 self._tabs.append(new_tab)
                 self.activate_tab(new_tab.tab_id)
                 opened_any = True
+            self.reading_history.touch(path)
+            if state is not None:
+                self._restore_reading_position(path, state)
         self._release_unused_docs()
         self._sync_tab_bar()
         return opened_any
@@ -6330,6 +6470,8 @@ class MainWindow(QMainWindow):
         try:
             after = list(result.pages)
             self.ws.rebase_to_saved_file(result.path, after)
+            self.reading_history.touch(result.path)
+            self._remember_reading_state()
             mapping = self.model.remap(before, after)
             self.store.remap_annotations(mapping)
             if self._preview_key is not None and self._preview_key[:3] in mapping:
@@ -6691,7 +6833,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("正在取消转换，结束后可关闭窗口")
             event.ignore()
             return
+        reading_tab = self._active_tab()
+        self._save_current_tab_state()
         if self._confirm_leave_all_tabs():
+            if reading_tab is not None and reading_tab.ws.path and self.reading_history.find(reading_tab.ws.path):
+                self.reading_history.touch(reading_tab.ws.path)
+            self._history_timer.stop()
             self._closing = True
             QApplication.instance().removeEventFilter(self)
             self._preparation_timer.stop()

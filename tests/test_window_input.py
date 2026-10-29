@@ -667,6 +667,7 @@ def test_double_click_arranged_page_opens_it_for_reading(loaded_window):
     position = window.arrange_view.visualRect(index).center()
     QTest.mouseClick(window.arrange_view.viewport(), Qt.MouseButton.LeftButton, pos=position)
     QTest.mouseDClick(window.arrange_view.viewport(), Qt.MouseButton.LeftButton, pos=position)
+    QTest.mouseRelease(window.arrange_view.viewport(), Qt.MouseButton.LeftButton, pos=position)
     QApplication.processEvents()
     assert window.stack.currentIndex() == 0
     assert window.page_number.value() == 3

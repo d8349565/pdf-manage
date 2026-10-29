@@ -56,6 +56,7 @@ class TextSelection(QObject):
     def active(self):
         tools = getattr(self.host, 'annotation_tools', None)
         return (getattr(self.host, '_task_dialog', None) is None
+                and getattr(self.host, '_reading_tool', 'select') == 'select'
                 and not (tools and tools.isVisible() and tools.tool.currentData() != 'browse'))
 
     def eventFilter(self, watched, event):

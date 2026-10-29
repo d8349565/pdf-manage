@@ -15,6 +15,7 @@ class ReaderInteraction(QObject):
         self.space = False
         self.origin = None
         self.previous_cursor = None
+        self.hand_press = None
         self.link_press = self.link_jump = None
         self._link_serial = 0
         self.signals = RenderSignals(self)
@@ -29,12 +30,18 @@ class ReaderInteraction(QObject):
     def reset(self):
         self.space = False
         self.origin = None
+        self.hand_press = None
         self.link_press = self.link_jump = None
         if self.view.viewport().toolTip():
             self.view.viewport().setToolTip('')
-        if self.previous_cursor is not None:
-            self.view.viewport().setCursor(self.previous_cursor)
+        previous = self.previous_cursor
         self.previous_cursor = None
+        if previous is not None and self.view.viewport().cursor() != previous:
+            self.view.viewport().setCursor(previous)
+        if (self.host.ws.pages and self.view.isVisible()
+                and getattr(self.host, '_reading_tool', 'select') == 'hand' and self.links_enabled()
+                and self.view.viewport().cursor().shape() != Qt.CursorShape.OpenHandCursor):
+            self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
 
     def busy_gesture(self, *, buttons=True):
         tools = getattr(self.host, 'annotation_tools', None)
@@ -109,6 +116,21 @@ class ReaderInteraction(QObject):
         self._follow_link(pending['ref'], hit[1])
         return True
 
+    def _begin_link(self, position, *, released=False, end=None):
+        index = self.view.page_at_point(self.view.mapToScene(position))
+        if not 0 <= index < len(self.host.ws.pages):
+            return
+        ref = self.host.ws.pages[index]
+        if self.host.store.cached_annotations(ref) is None or self.link_at(position):
+            pending = dict(index=index, ref=ref, pages=self.host.ws.pages,
+                           generation=self.view.layout_generation, position=position,
+                           end=position if end is None else end, released=released, dragged=False)
+            self.link_press = pending
+            if self.host.store.cached_annotations(ref) is None:
+                self._request_metadata(pending)
+            elif released:
+                self._finish_click(pending)
+
     def _follow_link(self, ref, link):
         import pymupdf as p
         if link.get('kind') == p.LINK_URI:
@@ -164,14 +186,15 @@ class ReaderInteraction(QObject):
             return
         point = self.view.mapToScene(position)
         index = self.view.page_at_point(point)
-        cursor = Qt.CursorShape.ArrowCursor
+        hand = getattr(self.host, '_reading_tool', 'select') == 'hand'
+        cursor = Qt.CursorShape.OpenHandCursor if hand else Qt.CursorShape.ArrowCursor
         hit = self.link_at(position) if self.links_enabled() else None
         self.view.viewport().setToolTip('' if hit is None else
             hit[1].get('uri') or ('跳转到文档内页面' if 'page' in hit[1] else '此链接类型暂不支持打开'))
         if hit is not None:
             self.view.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             return
-        if 0 <= index < len(self.host.ws.pages) and index < len(self.view.page_rects):
+        if not hand and 0 <= index < len(self.host.ws.pages) and index < len(self.view.page_rects):
             bounds = self.view.page_rects[index]
             ref = self.host.ws.pages[index]
             summary = self.host.store.cached_annotations(ref)
@@ -199,6 +222,9 @@ class ReaderInteraction(QObject):
                 self.link_press = self.link_jump = None
             if event.key() != Qt.Key.Key_Space:
                 return False
+            shortcuts = getattr(self.host, 'reading_shortcuts', None)
+            if shortcuts and shortcuts.uses_space(event):
+                return False
             # Only the canvas owns this shortcut; editors keep their normal spaces.
             if QApplication.focusWidget() not in (self.view, self.view.viewport()):
                 return False
@@ -220,27 +246,39 @@ class ReaderInteraction(QObject):
         if watched is not self.view.viewport():
             return False
         if (kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
-                and (self.space or event.modifiers() & Qt.KeyboardModifier.AltModifier)
+                and (self.space or event.modifiers() & Qt.KeyboardModifier.AltModifier
+                     or (getattr(self.host, '_reading_tool', 'select') == 'hand' and self.links_enabled()))
                 and not self.busy_gesture(buttons=False)):
             if self.previous_cursor is None:
                 self.previous_cursor = self.view.viewport().cursor()
             self.origin = (event.globalPosition(), self.view.horizontalScrollBar().value(),
                            self.view.verticalScrollBar().value())
+            if not self.space and not event.modifiers() & Qt.KeyboardModifier.AltModifier:
+                self.hand_press = dict(position=event.position().toPoint(), dragged=False)
             self.view.setFocus(Qt.FocusReason.MouseFocusReason)
             self.view.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
             return True
         if self.origin is not None:
             if kind == QEvent.Type.MouseMove:
+                if self.hand_press is not None:
+                    self.hand_press['dragged'] |= ((event.position().toPoint() - self.hand_press['position']).manhattanLength()
+                                                    >= QApplication.startDragDistance())
+                    if not self.hand_press['dragged']:
+                        return True
                 delta = event.globalPosition() - self.origin[0]
                 self.view.horizontalScrollBar().setValue(self.origin[1] - round(delta.x()))
                 self.view.verticalScrollBar().setValue(self.origin[2] - round(delta.y()))
                 return True
             if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                hand_press = self.hand_press
                 self.origin = None
                 if self.space:
                     self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
                 else:
                     self.reset()
+                if (hand_press is not None and not hand_press['dragged'] and self.links_enabled()
+                        and (event.position().toPoint() - hand_press['position']).manhattanLength() < QApplication.startDragDistance()):
+                    self._begin_link(hand_press['position'], released=True, end=event.position().toPoint())
                 return True
         if kind == QEvent.Type.MouseMove and self.space:
             self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
@@ -251,17 +289,7 @@ class ReaderInteraction(QObject):
             self.link_press = self.link_jump = None
             if (event.button() == Qt.MouseButton.LeftButton and not event.modifiers()
                     and self.links_enabled()):
-                position = event.position().toPoint()
-                index = self.view.page_at_point(self.view.mapToScene(position))
-                if 0 <= index < len(self.host.ws.pages):
-                    ref = self.host.ws.pages[index]
-                    if self.host.store.cached_annotations(ref) is None or self.link_at(position):
-                        pending = dict(index=index, ref=ref, pages=self.host.ws.pages,
-                                       generation=self.view.layout_generation, position=position,
-                                       end=position, released=False, dragged=False)
-                        self.link_press = pending
-                        if self.host.store.cached_annotations(ref) is None:
-                            self._request_metadata(pending)
+                self._begin_link(event.position().toPoint())
         pending = self.link_press
         if (pending is not None and not pending['released']
                 and kind in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease)):
