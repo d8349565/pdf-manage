@@ -912,8 +912,8 @@ def test_inline_text_replace_in_place_mouse_flow(qapp, tmp_path):
         assert getattr(tools, "_inline_replace", None) is not None
         container = tools._inline_replace["widget"]
         assert container.isVisible()
-        from PyQt6.QtWidgets import QLineEdit
-        edit = container.findChild(QLineEdit)
+        from PyQt6.QtWidgets import QTextEdit
+        edit = container.findChild(QTextEdit)
         assert edit is not None and "纸序测试文本" in edit.text()
         edit.setText("纸序更新成功")
         edit.returnPressed.emit()

@@ -1,6 +1,7 @@
 """Replay small immutable edits on private pages; never mutate input documents."""
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import groupby
 import math
@@ -70,6 +71,49 @@ def selected_lines(raw, rectangle):
     return result
 
 
+def selection_range(raw, start, end):
+    """Keep characters between two carets, including complete intermediate lines."""
+    import pymupdf as p
+    entries = [(line, [(char, span) for span in line.get('spans', ()) for char in span.get('chars', ())])
+               for block in raw.get('blocks', ()) for line in block.get('lines', ())]
+    entries = sorted((item for item in entries if item[1]),
+                     key=lambda item: (item[0]['bbox'][1], item[0]['bbox'][0]))
+    if not entries:
+        return dict(raw, blocks=[]), p.Rect()
+
+    def caret(point):
+        point = p.Point(point)
+        def distance(item):
+            box = p.Rect(item[0]['bbox'])
+            return (max(box.y0 - point.y, 0, point.y - box.y1),
+                    max(box.x0 - point.x, 0, point.x - box.x1))
+        index = min(range(len(entries)), key=lambda slot: distance(entries[slot]))
+        line, chars = entries[index]
+        dx, dy = line.get('dir', (1, 0))
+        offset = 0
+        for char, _ in chars:
+            box = p.Rect(char['bbox'])
+            center = (box.tl + box.br) / 2
+            offset += (center.x - point.x) * dx + (center.y - point.y) * dy < 0
+        return index, offset
+
+    first, last = sorted((caret(start), caret(end)))
+    lines, area = [], p.Rect()
+    for index in range(first[0], last[0] + 1):
+        line, chars = entries[index]
+        chars = chars[first[1] if index == first[0] else 0:last[1] if index == last[0] else len(chars)]
+        if not chars:
+            continue
+        spans = []
+        for _, pairs in groupby(chars, key=lambda item: id(item[1])):
+            group = list(pairs)
+            spans.append(dict(group[0][1], chars=[char for char, _ in group]))
+        lines.append(dict(line, spans=spans))
+        for char, _ in chars:
+            area |= p.Rect(char['bbox'])
+    return dict(raw, blocks=[dict(type=0, lines=lines)]), area
+
+
 def selection_quads(raw, rectangle):
     import pymupdf as p
     quads = []
@@ -122,6 +166,8 @@ def update_arrow_appearance(page, annot):
 
 def replacement_font(page, text, preferred="", flags=0):
     import pymupdf as p
+    from app.systemfonts import installed_font_buffer, font_face
+    _, wanted_bold, wanted_italic = font_face(preferred, flags)
     # insert_font reuses an existing resource name even when its font buffer
     # differs. A saved subset may contain none of the replacement's glyphs.
     resources = {item[4] for item in page.get_fonts()}
@@ -142,13 +188,18 @@ def replacement_font(page, text, preferred="", flags=0):
         if buffer:
             try:
                 font = p.Font(fontbuffer=buffer)
-                if all(font.has_glyph(ord(c)) for c in text):
+                if (bool(font.is_bold) == wanted_bold and bool(font.is_italic) == wanted_italic
+                        and all(font.has_glyph(ord(c)) for c in text)):
                     return font, unused_name(f"ZhiXuReplace{xref}"), buffer
             except Exception:
                 pass  # An unsupported source font may still use the built-in fallback.
+    alias = p.Base14_fontdict.get(preferred.lower(), preferred) if preferred else "Helvetica"
+    if alias in p.Base14_fontdict.values():
+        font = p.Font(fontname=alias)
+        if all(font.has_glyph(ord(c)) for c in text):
+            return font, alias, None
     # Saved subsets often omit the new characters. Prefer the same full installed
     # face before falling back to the built-in Chinese font.
-    from app.systemfonts import installed_font_buffer, font_face
     buffer = installed_font_buffer(preferred, flags)
     if buffer:
         try:
@@ -159,11 +210,6 @@ def replacement_font(page, text, preferred="", flags=0):
                 return font, unused_name("ZhiXuSystem"), buffer
         except Exception:
             pass  # Unreadable or unsupported installed faces still use the safe fallback.
-    alias = p.Base14_fontdict.get(preferred.lower(), preferred) if preferred else "Helvetica"
-    if alias in p.Base14_fontdict.values():
-        font = p.Font(fontname=alias)
-        if all(font.has_glyph(ord(c)) for c in text):
-            return font, alias, None
     font = p.Font("cjk")
     if not all(font.has_glyph(ord(c)) for c in text):
         raise ValueError("内置字体缺少所需字形，请改用 Word 编辑。")
@@ -217,18 +263,69 @@ def available_right_boundary(page, raw, area, selected):
     return max(area.x1, max_right)
 
 
-def prepare_replacement(page, rectangle, text, raw=None):
+def _replacement_runs(chars, text):
+    """Match unchanged characters; new characters inherit a nearby source style."""
+    original = ''.join(char['c'] for char, _ in chars)
+    indices = []
+    for tag, i, j, start, end in SequenceMatcher(None, original, text, autojunk=False).get_opcodes():
+        if tag == 'equal':
+            indices.extend(range(i, j))
+        elif tag == 'insert':
+            indices.extend([max(0, i - 1)] * (end - start))
+        elif tag == 'replace':
+            indices.extend(i + offset * (j - i) // (end - start) for offset in range(end - start))
+    previous = None
+    for _, group in groupby(zip(text, indices), key=lambda item: (
+            id(chars[item[1]][1]), chars[item[1]][0]['origin'][1])):
+        items = list(group)
+        first, last = items[0][1], items[-1][1]
+        char, span = chars[first]
+        gap = 0
+        if previous is not None and first == previous + 1:
+            gap = max(0, char['origin'][0] - chars[previous][0]['bbox'][2])
+        yield ''.join(item[0] for item in items), span, char['origin'][1], gap
+        previous = last
+
+
+def _styled_replacement_span(span, style):
+    from app.systemfonts import font_face
+    result = dict(span)
+    if any(key in style for key in ('font', 'bold', 'italic')):
+        family, bold, italic = font_face(span['font'], span.get('flags', 0))
+        family = style.get('font', family)
+        bold, italic = style.get('bold', bold), style.get('italic', italic)
+        # PDF's standard families have their own italic face names.
+        family = 'Times' if family == 'Times-Roman' else family
+        suffix = ('Bold' if bold else '') + (('Oblique' if family in ('Helvetica', 'Courier') else 'Italic') if italic else '')
+        result['font'] = family + ('-' + suffix if suffix else '-Roman' if family == 'Times' else '')
+        result['flags'] = (span.get('flags', 0) & ~18) | (16 if bold else 0) | (2 if italic else 0)
+    result['size'] = style.get('fontsize', span['size'])
+    return result
+
+
+def prepare_replacement(page, rectangle, text, raw=None, *, style=None):
     import pymupdf as p
     if not text.strip() or "\n" in text or "\r" in text:
         raise ValueError("请输入一行非空文字。")
+    style = dict(style or {})
+    if (set(style) - {'font', 'fontsize', 'bold', 'italic', 'color'}
+            or 'font' in style and (not isinstance(style['font'], str) or not style['font'].strip() or len(style['font']) > 128)
+            or 'fontsize' in style and (not isinstance(style['fontsize'], (int, float)) or not 6 <= style['fontsize'] <= 144)
+            or any(key in style and not isinstance(style[key], bool) for key in ('bold', 'italic'))
+            or 'color' in style and (not isinstance(style['color'], (tuple, list)) or len(style['color']) != 3
+                or not all(isinstance(c, (int, float)) and 0 <= c <= 1 for c in style['color']))):
+        raise ValueError('文字样式无效：请选择字体，字号须为 6～144 pt。')
+    if 'color' in style:
+        style['color'] = tuple(style['color'])
     raw = raw or snapshot_page(page)["raw"]
     lines = selected_lines(raw, rectangle)
     if len(lines) != 1 or tuple(lines[0][0]["dir"]) != (1.0, 0.0):
         raise ValueError("仅支持一行横排可见文字，请缩小选择范围；复杂内容可转 Word 编辑。")
     chars = lines[0][1]
     first = chars[0][1]
-    if any((span["font"], span["size"], span["color"]) != (first["font"], first["size"], first["color"]) for _, span in chars):
-        raise ValueError("这段文字包含不同样式，请分段修改。")
+    mixed = any((span['font'], span['size'], span['color'], span.get('flags', 0), char['origin'][1]) !=
+                (first['font'], first['size'], first['color'], first.get('flags', 0), chars[0][0]['origin'][1])
+                for char, span in chars)
     area = p.Rect(chars[0][0]["bbox"])
     for char, _ in chars[1:]:
         area |= p.Rect(char["bbox"])
@@ -252,58 +349,102 @@ def prepare_replacement(page, rectangle, text, raw=None):
         if span.get("type") == 3 or span.get("opacity", 1) == 0:
             if any(area.intersects(p.Rect(char[3])) for char in span.get("chars", ())):
                 raise ValueError("选区含隐藏文字层，不能作为原文修正。")
-    flags = first.get("flags", 0)
-    font, font_name, _ = replacement_font(page, text, first["font"], flags)
     from app.systemfonts import font_face
-    original_family = font_face(first["font"])[0].replace(" ", "").casefold()
-    replacement_family = font_face(font.name)[0].replace(" ", "").casefold()
-    fallback = font_name.startswith("ZhiXuCJK") and original_family != replacement_family
-    target_size = first["size"]
     max_right = available_right_boundary(page, raw, area, selected)
     available_width = max(area.width, max_right - area.x0)
-
-    needed_width = font.text_length(text, fontsize=target_size)
+    segments = list(_replacement_runs(chars, text)) if mixed else [(text, first, chars[0][0]['origin'][1], 0)]
+    if style:
+        segments = [(value, _styled_replacement_span(span, style), baseline, gap)
+                    for value, span, baseline, gap in segments]
+    fonts = [replacement_font(page, value, span['font'], span.get('flags', 0)) for value, span, _, _ in segments]
+    needed_width = sum(gap + font.text_length(value, fontsize=span['size'])
+                       for (value, span, _, gap), (font, _, _) in zip(segments, fonts))
+    scale = 1
     if needed_width > available_width + 0.5:
-        # 支持字号自适应微调适配（至多按可用空间缩小至 85%）
         scale = available_width / needed_width
-        if scale >= 0.85:
-            target_size = first["size"] * scale
-            needed_width = font.text_length(text, fontsize=target_size)
-        else:
+        if style or scale < 0.85:
             raise ValueError(f"新文字超出可用空间宽度（可用约 {int(available_width)} pt，需要约 {int(needed_width)} pt），请缩短文字或转 Word 编辑。")
-    origin = tuple(chars[0][0]["origin"])
-    if origin[1] - font.ascender * target_size < area.y0 - 2 or origin[1] - font.descender * target_size > area.y1 + 2:
-        # 替换字体（如原字体缺字形时回退的内置字体）的升降沿盒与原文字不一致，按可用高度微调字号
-        fit_size = min(
-            (origin[1] - area.y0 + 2) / font.ascender if font.ascender > 0 else target_size,
-            (area.y1 + 2 - origin[1]) / -font.descender if font.descender < 0 else target_size,
-            target_size,
+    runs, fallback = [], False
+    x = chars[0][0]['origin'][0]
+    for (value, span, baseline, gap), (font, font_name, _) in zip(segments, fonts):
+        original_family = font_face(span['font'])[0].replace(' ', '').casefold()
+        replacement_family = font_face(font.name)[0].replace(' ', '').casefold()
+        fallback |= font_name.startswith('ZhiXuCJK') and original_family != replacement_family
+        band = p.Rect(span['bbox']) if mixed else area
+        target_size = span['size'] if style else min(
+            span['size'] * scale,
+            (baseline - band.y0 + 2) / font.ascender if font.ascender > 0 else span['size'],
+            (band.y1 + 2 - baseline) / -font.descender if font.descender < 0 else span['size'],
         )
-        if fit_size < first["size"] * 0.85:
+        if target_size < span['size'] * 0.85:
             raise ValueError("替换字体超出原文字高度，请转 Word 编辑。")
-        target_size = fit_size
-    color = first["color"]
-    rgb = tuple(((color >> shift) & 255) / 255 for shift in (16, 8, 0))
-    return PageEdit("replace", tuple(area), text=text, color=rgb, details=(
-        ("font", first["font"]), ("font_size", target_size), ("origin", origin),
+        x += gap * scale
+        rgb = tuple(((span['color'] >> shift) & 255) / 255 for shift in (16, 8, 0))
+        rgb = style.get('color', rgb)
+        runs.append(tuple(dict(text=value, font=span['font'], font_size=target_size,
+                               font_flags=span.get('flags', 0), origin=(x, baseline), color=rgb).items()))
+        x += font.text_length(value, fontsize=target_size)
+    head = dict(runs[0])
+    details = (
+        ('font', head['font']), ('font_size', head['font_size']), ('origin', head['origin']),
         ("old_text", "".join(c["c"] for c, _ in chars)),
-        ("font_flags", flags), ("font_fallback", fallback),
-    ))
+        ('font_flags', head['font_flags']), ('font_fallback', fallback),
+    )
+    if style:
+        # A user-selected larger face may extend beyond the old line's band.
+        # Check its actual bounds before removing the old text.
+        bounds = page.rect * page.derotation_matrix
+        for run, (font, _, _) in zip(runs, fonts):
+            run = dict(run)
+            x, y = run['origin']
+            box = p.Rect(x, y - font.ascender * run['font_size'],
+                         x + font.text_length(run['text'], fontsize=run['font_size']),
+                         y - font.descender * run['font_size'])
+            if not bounds.contains(box):
+                raise ValueError('所选字体或字号超出页面范围，请缩小字号。')
+            for block in raw.get('blocks', ()):
+                for line in block.get('lines', ()):
+                    for span in line.get('spans', ()):
+                        for char in span.get('chars', ()):
+                            if ((tuple(char['origin']), char['c']) not in selected
+                                    and (box & p.Rect(char['bbox'])).get_area() > .01):
+                                raise ValueError('所选字体或字号与其他文字重叠，请缩小字号。')
+            obstacles = [p.Rect(info['bbox']) for info in page.get_image_info()]
+            obstacles += [widget.rect for widget in (page.widgets() or ())]
+            obstacles += [p.Rect(link['from']) * page.derotation_matrix for link in page.get_links()]
+            if any(box.intersects(obstacle) for obstacle in obstacles):
+                raise ValueError('所选字体或字号与图片、表单或链接重叠，请缩小字号。')
+        details += (('style', tuple(style.items())),)
+    if mixed or style:
+        details += (('runs', tuple(runs)),)
+    return PageEdit('replace', tuple(area), text=text, color=head['color'], details=details)
 
 
-def _write_replacement(page, edit, details, name, buffer):
+def _write_replacement(page, edit, details):
     """Remove the old text and write the replacement; raise unless the write verifies."""
     import pymupdf as p
+    runs = [dict(run) for run in details['runs']] if 'runs' in details else [dict(details, text=edit.text, color=edit.color)]
+    resources, subset = [], False
+    for run in runs:
+        _, name, buffer = replacement_font(page, run['text'], run['font'], run.get('font_flags', 0))
+        page.insert_font(fontname=name, fontbuffer=buffer)
+        resources.append((name, buffer))
+        subset |= buffer is not None
     page.add_redact_annot(p.Rect(edit.points), fill=False, cross_out=False)
     page.apply_redactions(images=p.PDF_REDACT_IMAGE_NONE, graphics=p.PDF_REDACT_LINE_ART_NONE, text=p.PDF_REDACT_TEXT_REMOVE)
-    page.insert_font(fontname=name, fontbuffer=buffer)
-    written = page.insert_text(details["origin"], edit.text, fontname=name,
-                               fontsize=details["font_size"], color=edit.color)
-    traces = page.get_texttrace()
-    if (written != 1 or not traces or traces[-1]["type"] != 0
-            or traces[-1]["opacity"] <= 0
-            or "".join(chr(char[0]) for char in traces[-1]["chars"]) != edit.text):
-        raise ValueError("新文字未完整写入，本次修改未应用，原文已保留。请重新输入或转 Word 编辑。")
+    for run, (name, buffer) in zip(runs, resources):
+        # Redaction drops unused font resources, including those reserved above.
+        page.insert_font(fontname=name, fontbuffer=buffer)
+        written = page.insert_text(run['origin'], run['text'], fontname=name,
+                                   fontsize=run['font_size'], color=run['color'])
+        traces = page.get_texttrace()
+        # Some embedded fonts map the shared space glyph to U+00A0 on extraction.
+        actual = ''.join(chr(char[0]) for char in traces[-1]['chars']) if traces else ''
+        if (written != 1 or not traces or traces[-1]['type'] != 0
+                or traces[-1]['opacity'] <= 0
+                or actual.replace('\u00a0', ' ') != run['text'].replace('\u00a0', ' ')):
+            raise ValueError("新文字未完整写入，本次修改未应用，原文已保留。请重新输入或转 Word 编辑。")
+    return subset
 
 
 def apply_edits(page, edits, *, transforms=None):
@@ -319,6 +460,10 @@ def apply_edits(page, edits, *, transforms=None):
         if token != identifier:
             page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
     for edit in edits:
+        if edit.kind == 'color_cleanup':
+            from app.colorcleanup import apply_cleanup
+            apply_cleanup(page, edit)
+            continue
         if edit.kind in ('seam_stamp', 'seam_remove'):
             from app.seamstamp import apply_seam
             apply_seam(page, edit)
@@ -354,19 +499,17 @@ def apply_edits(page, edits, *, transforms=None):
         if edit.kind == "replace":
             details = dict(edit.details)
             # Recheck the private output before removing any text.
-            prepared = prepare_replacement(page, edit.points, edit.text)
+            prepared = prepare_replacement(page, edit.points, edit.text, style=dict(details.get('style', ())))
             if dict(prepared.details)["old_text"] != details["old_text"]:
                 raise ValueError("选区文字已发生变化，未应用修正。")
-            font, name, buffer = replacement_font(page, edit.text, details["font"], details.get("font_flags", 0))
-            subset |= buffer is not None
             # 先在草稿页完整演练一遍：写入校验失败绝不能以原文被删为代价。
             rehearsal = p.open()
             try:
                 rehearsal.insert_pdf(page.parent, from_page=page.number, to_page=page.number)
-                _write_replacement(rehearsal[0], edit, details, name, buffer)
+                _write_replacement(rehearsal[0], edit, details)
             finally:
                 rehearsal.close()
-            _write_replacement(page, edit, details, name, buffer)
+            subset |= _write_replacement(page, edit, details)
             continue
         if edit.kind in ("delete", "style", "note_text", "move"):
             annot = next((a for a in iter_annotations(page) if a.info.get("id") == edit.annotation_id), None)

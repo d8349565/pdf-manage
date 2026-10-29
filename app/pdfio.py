@@ -1091,11 +1091,11 @@ class PdfStore:
                 matches.append(tuple((point.x, point.y) for point in points))
             return matches, bool(text.extractText().strip())
 
-    def prepare_replacement(self, ref, rectangle, text):
+    def prepare_replacement(self, ref, rectangle, text, *, style=None):
         from app.pdfedits import prepare_replacement
         self.require_operation([ref], "content_edit")
         with self._render_page(ref) as page:
-            return prepare_replacement(page, rectangle, text)
+            return prepare_replacement(page, rectangle, text, style=style)
 
     def number_preview(self, pages, index, options, width):
         import pymupdf
@@ -1185,9 +1185,9 @@ class PdfStore:
         sources = {sid: self._source(sid) for sid in dict.fromkeys(p.source_id for p in pages)}
         if any(source.requires_copy for source in sources.values()) and self.is_source_destination(dest):
             raise PdfError('图片导入或扫描件增强后请另存副本，不能覆盖来源文件。')
-        if (any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove') for ref in pages for edit in ref.edits)
+        if (any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup') for ref in pages for edit in ref.edits)
                 and self.is_source_destination(dest)):
-            raise PdfError('调整页面、骑缝章或纠偏后请另存副本，不能覆盖来源文件。')
+            raise PdfError('页面工具处理后请另存副本，不能覆盖来源文件。')
         if not options.editable_copy:
             for source in sources.values():
                 if source.safety.signature != "none":

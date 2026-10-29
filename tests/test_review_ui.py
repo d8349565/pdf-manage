@@ -1,7 +1,7 @@
 """Review interactions use generated PDFs, never the user's documents."""
 import pymupdf as p
 import pytest
-from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QThread, QThreadPool, Qt
+from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QThread, QThreadPool, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox, QToolButton
 
@@ -682,7 +682,17 @@ def test_note_hover_has_only_edit_move_delete_and_shape_keeps_style(reader):
 
 @pytest.fixture(scope="session")
 def qapp():
-    return QApplication.instance() or QApplication([])
+    from PyQt6.QtGui import QFontDatabase
+    from app.systemfonts import installed_font_buffer
+    application = QApplication.instance() or QApplication([])
+    # The offscreen Qt platform cannot enumerate Windows fonts. Load the real
+    # UI/CJK faces into this process so screenshots exercise legible labels.
+    for name, flags in (('Microsoft YaHei', 0), ('Arial', 0), ('Arial', 16), ('Arial', 2)):
+        buffer = installed_font_buffer(name, flags)
+        if buffer:
+            QFontDatabase.addApplicationFontFromData(buffer)
+    QFontDatabase.addApplicationFontFromData(cjk_font_buffer())
+    return application
 
 
 def settle(qapp):
@@ -731,13 +741,393 @@ def start_edit(win, qapp, y=90):
     return tools, tools._inline_replace
 
 
+def test_original_font_menu_is_searchable_and_bounded(reader, qapp, tmp_path):
+    from PyQt6.QtWidgets import QComboBox
+    tools, state = start_edit(reader, qapp)
+    family = state['actions'].findChild(QComboBox, 'replacementFont')
+    assert family.isEditable(), 'Font selection should allow searching instead of scrolling a screen of previews'
+    family.addItems([f'Example Font {index:03}' for index in range(100)])
+    family.showPopup()
+    qapp.processEvents()
+    assert family.maxVisibleItems() <= 8
+    assert family.view().window().height() <= 280
+    assert family.view().window().width() <= 360
+    reader.grab().save(str(tmp_path / 'font-menu.png'))
+    family.view().window().grab().save(str(tmp_path / 'font-popup.png'))
+    family.hidePopup()
+    assert tools._inline_replace is state and not state['style']
+
+
+def test_original_font_search_chooses_a_real_family_and_rejects_unknown_text(reader, qapp):
+    from PyQt6.QtWidgets import QComboBox
+    tools, state = start_edit(reader, qapp)
+    family = state['actions'].findChild(QComboBox, 'replacementFont')
+    field = family.lineEdit()
+    QTest.mouseClick(field, Qt.MouseButton.LeftButton)
+    QTest.keyClick(field, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClicks(field, 'ari')
+    QTest.qWait(100)
+    popup = family.completer().popup()
+    assert popup.isVisible() and popup.height() <= 260
+    QTest.keyClick(popup, Qt.Key.Key_Down)
+    QTest.keyClick(popup, Qt.Key.Key_Return)
+    assert state['style'].get('font') == 'Arial'
+    QTest.mouseClick(field, Qt.MouseButton.LeftButton)
+    QTest.keyClick(field, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClicks(field, 'ZhiXu nonexistent font')
+    QTest.mouseClick(state['input'].viewport(), Qt.MouseButton.LeftButton)
+    assert family.currentText() == 'Arial' and state['style']['font'] == 'Arial'
+    QTest.keyClick(state['input'], Qt.Key.Key_Escape)
+    assert tools._inline_replace is None and not reader.ws.pages[0].edits
+
+
+def test_original_editor_does_not_apply_or_add_newline_during_ime_composition(reader, qapp):
+    from PyQt6.QtGui import QInputMethodEvent
+    tools, state = start_edit(reader, qapp)
+    editor = state['input']
+    original = editor.text()
+    QTest.keyClick(editor, Qt.Key.Key_End)
+    QApplication.sendEvent(editor, QInputMethodEvent('正在输入', []))
+    QTest.keyClick(editor, Qt.Key.Key_Return)
+    assert tools._inline_replace is state and not reader.ws.pages[0].edits
+    assert editor.text() == original
+    QTest.keyClick(editor, Qt.Key.Key_Escape)
+
+
+@pytest.mark.parametrize('viewport_width', [None, 280, 220])
+def test_original_style_toolbar_is_compact_and_stays_in_view(reader, qapp, tmp_path, viewport_width):
+    from PyQt6.QtWidgets import QWidget
+    tools, state = start_edit(reader, qapp)
+    view = reader.preview_view
+    if viewport_width:
+        view.setFixedWidth(viewport_width)
+        reader._set_zoom(.5)
+        view.centerOn(view.page_rects[0].topLeft() + QPointF(*state['area'].tl))
+    qapp.processEvents()
+    panel = state['actions']
+    assert view.viewport().rect().contains(panel.geometry())
+    assert not panel.geometry().intersects(state['widget'].geometry())
+    assert panel.height() <= (84 if viewport_width else 48)
+    aligned = min(max(8, state['widget'].x()), view.viewport().width() - panel.width() - 8)
+    assert (abs(panel.x() - aligned) <= 1 or abs(panel.geometry().left() - state['widget'].geometry().right() - 9) <= 1
+            or abs(panel.geometry().right() - state['widget'].x() + 9) <= 1)
+    for name in ('replacementFont', 'replacementSize', 'replacementBold', 'replacementItalic',
+                 'replacementColor', 'replacementReset', 'apply', 'cancel'):
+        control = panel.findChild(QWidget, name)
+        assert control is not None and control.isVisible()
+        assert panel.rect().contains(control.mapTo(panel, control.rect().topLeft()))
+        assert panel.rect().contains(control.mapTo(panel, control.rect().bottomRight()))
+    reader.grab().save(str(tmp_path / 'compact-editor.png'))
+
+
+def test_original_editor_stays_usable_at_a_clipped_selection_edge(reader, qapp):
+    tools, state = start_edit(reader, qapp)
+    view = reader.preview_view
+    view.setFixedWidth(280)
+    reader._set_zoom(1.5)
+    view.centerOn(view.page_rects[0].topLeft() + QPointF(*state['area'].br))
+    qapp.processEvents()
+    assert view.viewport().rect().contains(state['widget'].geometry())
+    assert view.viewport().rect().contains(state['actions'].geometry())
+    QTest.keyClick(state['input'], Qt.Key.Key_Home)
+    assert state['input'].viewport().rect().contains(state['input'].cursorRect().center())
+    QTest.keyClick(state['input'], Qt.Key.Key_Escape)
+    assert tools._inline_replace is None
+
+
+def test_original_editor_previews_mixed_colors_and_keeps_typing_undo(reader, qapp, tmp_path):
+    from PyQt6.QtGui import QFontDatabase
+    from app.systemfonts import installed_font_buffer
+    for flags in (0, 16, 2):
+        buffer = installed_font_buffer('Arial', flags)
+        assert buffer is not None and QFontDatabase.addApplicationFontFromData(buffer) >= 0
+    source = tmp_path / 'mixed-preview.pdf'
+    with p.open() as doc:
+        page = doc.new_page(width=595, height=400)
+        x = 50
+        for text, font, size, color in [('Due ', 'helv', 18, (0, 0, 0)),
+                                      ('2020', 'hebo', 24, (1, 0, 0)),
+                                      (' now', 'heit', 15, (0, 0, 1))]:
+            page.insert_text((x, 100), text, fontname=font, fontsize=size, color=color)
+            x += p.Font(font).text_length(text, fontsize=size)
+        doc.save(source)
+    reader.ws.reset()
+    assert reader._load_one(str(source))
+    reader.refresh()
+    tools, state = start_edit(reader, qapp, y=100)
+    from PyQt6.QtWidgets import QComboBox
+    assert '混合' in state['actions'].findChild(QComboBox, 'replacementFont').lineEdit().placeholderText()
+    editor = state['input']
+    QTest.keyClick(editor, Qt.Key.Key_End)
+    image = editor.grab().toImage()
+    colors = [image.pixelColor(x, y) for y in range(image.height()) for x in range(image.width())]
+    assert any(c.red() > 170 and c.green() < 80 and c.blue() < 80 for c in colors), 'The red bold run should remain visible while editing'
+    assert any(c.blue() > 170 and c.red() < 80 and c.green() < 80 for c in colors), 'The blue italic run should remain visible while editing'
+    QTest.keyClicks(editor, '!')
+    assert editor.text() == 'Due 2020 now!'
+    QTest.keyClick(editor, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert editor.text() == 'Due 2020 now'
+    reader.grab().save(str(tmp_path / 'mixed-preview.png'))
+
+
+def test_typing_the_first_size_explicitly_unifies_mixed_text_sizes(reader, qapp, tmp_path):
+    from PyQt6.QtWidgets import QDoubleSpinBox
+    source = tmp_path / 'mixed-sizes.pdf'
+    with p.open() as doc:
+        page = doc.new_page(width=595, height=400)
+        page.insert_text((50, 100), 'A', fontname='helv', fontsize=18)
+        page.insert_text((62.006, 100), 'B', fontname='hebo', fontsize=24)
+        doc.save(source)
+    reader.ws.reset()
+    assert reader._load_one(str(source))
+    reader.refresh()
+    tools, state = start_edit(reader, qapp, y=100)
+    size = state['actions'].findChild(QDoubleSpinBox, 'replacementSize')
+    assert size.value() == 18
+    QTest.mouseClick(size.lineEdit(), Qt.MouseButton.LeftButton)
+    QTest.keyClick(size.lineEdit(), Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClicks(size.lineEdit(), '18')
+    QTest.keyClick(size.lineEdit(), Qt.Key.Key_Return)
+    QTest.mouseClick(state['actions'].findChild(QToolButton, 'apply'), Qt.MouseButton.LeftButton)
+    assert tools._inline_replace is None and reader.ws.pages[0].edits
+    output = tmp_path / 'uniform-size.pdf'
+    reader.store.write(reader.ws.pages, str(output))
+    with p.open(output) as doc:
+        assert [(t['font'], t['size']) for t in doc[0].get_texttrace()] == [('Helvetica', 18), ('Helvetica-Bold', 18)]
+
+
+@pytest.mark.parametrize('theme,zoom', [('forest', 1.72), ('graphite', 1.0), ('night', 1.72)])
+def test_original_editor_is_legible_at_large_zoom_in_supported_themes(reader, qapp, tmp_path, theme, zoom):
+    from app.themes import current_theme, theme_manager
+    from PyQt6.QtWidgets import QComboBox
+    source = tmp_path / 'mixed-style.pdf'
+    with p.open() as doc:
+        page = doc.new_page(width=600, height=280)
+        page.insert_font(fontname='DemoCJK', fontbuffer=cjk_font_buffer())
+        for baseline, segments in [(100, [('项目 ', 'DemoCJK', 18, (0, 0, 0)),
+                                         ('2020', 'hebo', 24, (1, 0, 0)),
+                                         (' 合计', 'DemoCJK', 16, (0, 0, 1))]),
+                                   (170, [('Due ', 'helv', 18, (0, 0, 0)),
+                                          ('2020', 'hebo', 24, (1, 0, 0)),
+                                          (' now', 'heit', 15, (0, 0, 1))])]:
+            x = 60
+            for text, font, size, color in segments:
+                page.insert_text((x, baseline), text, fontname=font, fontsize=size, color=color)
+                face = p.Font('cjk') if font == 'DemoCJK' else p.Font(font)
+                x += face.text_length(text, fontsize=size)
+        page.insert_text((60, 225), 'KEEP: unchanged text', fontsize=12)
+        doc.save(source)
+    previous_theme = current_theme().key
+    try:
+        theme_manager().apply(theme)
+        reader.ws.reset()
+        assert reader._load_one(str(source))
+        reader.refresh()
+        tools, state = start_edit(reader, qapp, y=100)
+        reader._set_zoom(zoom)
+        area = p.Rect(state['area']) * p.Matrix(state['matrix'])
+        top = reader.preview_view.page_rects[0].topLeft()
+        reader.preview_view.ensureVisible(QRectF(top.x() + area.x0, top.y() + area.y0, area.width, area.height), 80, 80)
+        QTest.keyClick(state['input'], Qt.Key.Key_End)
+        settle(qapp)
+        panel = state['actions']
+        assert panel.height() <= 48
+        assert reader.preview_view.viewport().rect().contains(panel.geometry())
+        assert not panel.geometry().intersects(state['widget'].geometry())
+        reader.grab().save(str(tmp_path / f'editor-{theme}.png'))
+        reader.preview_view.viewport().grab().save(str(tmp_path / f'paper-{theme}.png'))
+        focus = panel.geometry().united(state['widget'].geometry())
+        for box in state['text_bounds'][:2]:
+            box = p.Rect(box) * p.Matrix(state['matrix'])
+            scene = QRectF(top.x() + box.x0, top.y() + box.y0, box.width, box.height)
+            focus = focus.united(reader.preview_view.mapFromScene(scene).boundingRect())
+        focus = focus.adjusted(-16, -16, 16, 16).intersected(reader.preview_view.viewport().rect())
+        reader.preview_view.viewport().grab(focus).save(str(tmp_path / f'focus-{theme}.png'))
+        family = panel.findChild(QComboBox, 'replacementFont')
+        family.showPopup()
+        qapp.processEvents()
+        assert family.view().window().height() <= 280
+        assert family.view().window().width() <= 360
+        reader.grab().save(str(tmp_path / f'menu-{theme}.png'))
+        family.view().window().grab().save(str(tmp_path / f'popup-{theme}.png'))
+        family.hidePopup()
+    finally:
+        theme_manager().apply(previous_theme)
+
+
+def test_inline_original_text_style_controls_preview_and_save(reader, qapp, tmp_path, monkeypatch):
+    from PyQt6.QtGui import QColor, QFont, QFontDatabase
+    from PyQt6.QtWidgets import QColorDialog, QDoubleSpinBox, QComboBox
+    from app.systemfonts import font_face, installed_font_buffer
+    # Qt's offscreen platform has no system font list. Register the actual
+    # installed face and fixture face in this process for real selector input.
+    buffer = installed_font_buffer('Arial')
+    assert buffer is not None
+    assert QFontDatabase.addApplicationFontFromData(buffer) >= 0
+    assert QFontDatabase.addApplicationFontFromData(cjk_font_buffer()) >= 0
+    tools, state = start_edit(reader, qapp)
+    panel = state['actions']
+    family = panel.findChild(QComboBox, 'replacementFont')
+    assert family is not None, 'Original text editing needs a system font selector'
+    family.setCurrentText('Arial')
+    family.showPopup()
+    QTest.keyClick(family.view(), Qt.Key.Key_Return)
+    panel.findChild(QDoubleSpinBox, 'replacementSize').setValue(20)
+    QTest.mouseClick(panel.findChild(QToolButton, 'replacementBold'), Qt.MouseButton.LeftButton)
+    QTest.mouseClick(panel.findChild(QToolButton, 'replacementItalic'), Qt.MouseButton.LeftButton)
+    monkeypatch.setattr(QColorDialog, 'getColor', lambda *args, **kwargs: QColor('#008000'))
+    QTest.mouseClick(panel.findChild(QToolButton, 'replacementColor'), Qt.MouseButton.LeftButton)
+    state['input'].setText('Updated 2026')
+    assert state['input'].font().bold() and state['input'].font().italic()
+    assert state['input'].font().family() == 'Arial'
+    assert '#008000' in state['input'].styleSheet()
+    reader.grab().save(str(tmp_path / 'original-text-style-controls.png'))
+    QTest.mouseClick(panel.findChild(QToolButton, 'apply'), Qt.MouseButton.LeftButton)
+    assert tools._inline_replace is None
+    output = tmp_path / 'styled-original.pdf'
+    reader.store.write(reader.ws.pages, str(output))
+    with p.open(output) as doc:
+        written = doc[0].get_texttrace()[-1]
+        assert ''.join(chr(c[0]) for c in written['chars']).replace('\u00a0', ' ') == 'Updated 2026'
+        assert font_face(written['font']) == ('Arial', True, True)
+        assert written['size'] == pytest.approx(20)
+        assert written['color'] == pytest.approx((0, 128 / 255, 0))
+
+
+def test_box_selected_existing_text_can_change_style_without_retyping(reader, qapp, tmp_path, monkeypatch):
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QColorDialog, QDoubleSpinBox
+    source, output = tmp_path / 'selection.pdf', tmp_path / 'styled.pdf'
+    with p.open() as doc:
+        page = doc.new_page(width=595, height=400)
+        page.insert_text((50, 90), 'LEFT STYLE RIGHT', fontname='cour', fontsize=24)
+        doc.save(source)
+        area = p.Rect(next(word[:4] for word in page.get_text('words') if word[4] == 'STYLE'))
+        original_neighbors = [(c[0], tuple(c[2])) for t in page.get_texttrace() for c in t['chars']
+                              if not area.x0 <= c[2][0] < area.x1 - .1]
+    original = source.read_bytes()
+    reader.ws.reset()
+    assert reader._load_one(str(source))
+    reader.refresh()
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('replace'))
+    settle(qapp)
+    view = reader.preview_view
+    top = view.page_rects[0].topLeft()
+    start = view.mapFromScene(top + QPointF(area.x0 - 1, area.y0 - 1))
+    end = view.mapFromScene(top + QPointF(area.x1 + 1, area.y1 + 1))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    state = tools._inline_replace
+    assert state is not None and state['input'].text() == 'STYLE'
+    panel = state['actions']
+    panel.findChild(QDoubleSpinBox, 'replacementSize').setValue(20)
+    QTest.mouseClick(panel.findChild(QToolButton, 'replacementBold'), Qt.MouseButton.LeftButton)
+    monkeypatch.setattr(QColorDialog, 'getColor', lambda *a, **k: QColor('blue'))
+    QTest.mouseClick(panel.findChild(QToolButton, 'replacementColor'), Qt.MouseButton.LeftButton)
+    QTest.mouseClick(panel.findChild(QToolButton, 'apply'), Qt.MouseButton.LeftButton)
+    assert tools._inline_replace is None and len(reader.ws.pages[0].edits) == 1
+    reader.store.write(reader.ws.pages, str(output))
+    with p.open(output) as doc:
+        traces = doc[0].get_texttrace()
+        styled = traces[-1]
+        assert ''.join(chr(c[0]) for c in styled['chars']) == 'STYLE'
+        assert (styled['font'], styled['size'], styled['color']) == ('Courier-Bold', 20, (0, 0, 1))
+        neighbors = [(c[0], tuple(c[2])) for t in traces[:-1] for c in t['chars']]
+        assert [c for c, _ in neighbors] == [c for c, _ in original_neighbors]
+        assert all(pos == pytest.approx(old_pos, abs=.001)
+                   for (_, pos), (_, old_pos) in zip(neighbors, original_neighbors))
+    assert source.read_bytes() == original
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    assert not reader.ws.pages[0].edits
+    reader.ws.undo_stack.redo()
+    reader.refresh()
+    reader.store.write(reader.ws.pages, str(tmp_path / 'redone.pdf'))
+    with p.open(tmp_path / 'redone.pdf') as doc:
+        assert doc[0].get_texttrace()[-1]['font'] == 'Courier-Bold'
+
+
+def test_inline_style_reset_cancel_and_escape_from_controls(reader, qapp):
+    from PyQt6.QtWidgets import QDoubleSpinBox
+    tools, state = start_edit(reader, qapp)
+    panel = state['actions']
+    size = panel.findChild(QDoubleSpinBox, 'replacementSize')
+    size.setValue(18)
+    QTest.mouseClick(panel.findChild(QToolButton, 'replacementReset'), Qt.MouseButton.LeftButton)
+    assert size.value() == pytest.approx(state['span']['size'])
+    QTest.mouseClick(panel.findChild(QToolButton, 'apply'), Qt.MouseButton.LeftButton)
+    assert tools._inline_replace is None and not reader.ws.pages[0].edits
+    tools, state = start_edit(reader, qapp)
+    size = state['actions'].findChild(QDoubleSpinBox, 'replacementSize')
+    size.setValue(18)
+    QTest.keyClick(size, Qt.Key.Key_Escape)
+    assert tools._inline_replace is None and not reader.ws.pages[0].edits
+
+
+def test_black_text_color_indicator_is_visible_in_night_theme(reader, qapp, monkeypatch):
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QColorDialog
+    from app.themes import current_theme, theme_manager
+    previous = current_theme().key
+    try:
+        theme_manager().apply('night')
+        tools, state = start_edit(reader, qapp)
+        button = state['actions'].findChild(QToolButton, 'replacementColor')
+        monkeypatch.setattr(QColorDialog, 'getColor', lambda *a, **k: QColor('black'))
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        image = button.grab().toImage()
+        colors = [image.pixelColor(x, y) for y in range(image.height() - 9, image.height() - 3)
+                  for x in range(6, image.width() - 6)]
+        assert any(min(c.red(), c.green(), c.blue()) > 110 for c in colors), 'Dark swatches need a contrasting boundary'
+        assert any(max(c.red(), c.green(), c.blue()) < 30 for c in colors), 'The chosen black color must still be shown'
+        assert state['style']['color'] == (0, 0, 0)
+    finally:
+        theme_manager().apply(previous)
+
+
+@pytest.mark.parametrize('theme', ['forest', 'night'])
+def test_original_font_placeholder_has_readable_contrast(reader, qapp, theme):
+    from PyQt6.QtGui import QPalette
+    from PyQt6.QtWidgets import QComboBox
+    from app.themes import current_theme, theme_manager
+    previous = current_theme().key
+    try:
+        theme_manager().apply(theme)
+        _, state = start_edit(reader, qapp)
+        field = state['actions'].findChild(QComboBox, 'replacementFont').lineEdit()
+        palette = field.palette()
+        ink = palette.color(QPalette.ColorRole.PlaceholderText)
+        # The edit background is transparent; measure the composed toolbar,
+        # rather than treating a transparent palette entry as black.
+        image = state['actions'].grab().toImage()
+        point = field.mapTo(state['actions'], QPoint(0, 0))
+        paper = image.pixelColor(round(point.x() * image.devicePixelRatio()), round(point.y() * image.devicePixelRatio()))
+        alpha = ink.alphaF()
+        def luminance(channels):
+            values = [value / 12.92 if value <= .04045 else ((value + .055) / 1.055) ** 2.4 for value in channels]
+            return sum(value * weight for value, weight in zip(values, (.2126, .7152, .0722)))
+        background = (paper.redF(), paper.greenF(), paper.blueF())
+        foreground = tuple(value * alpha + base * (1 - alpha) for value, base in
+                           zip((ink.redF(), ink.greenF(), ink.blueF()), background))
+        light, dark = sorted((luminance(background), luminance(foreground)), reverse=True)
+        assert (light + .05) / (dark + .05) >= 4.5
+    finally:
+        theme_manager().apply(previous)
+
+
 def assert_anchored(win, state):
     area = p.Rect(state["area"]) * p.Matrix(state["matrix"])
     top = win.preview_view.page_rects[state["index"]].topLeft()
     center = win.preview_view.mapFromScene(top + QPointF(*area.tl))
-    assert abs(state["widget"].x() - (center.x() - 5)) <= 1
+    viewport = win.preview_view.viewport()
+    assert abs(state['widget'].x() - max(4, min(center.x() - 5, viewport.width() - 36))) <= 1
     end = win.preview_view.mapFromScene(top + QPointF(*area.br))
-    assert abs(state["widget"].geometry().center().y() - (center.y() + end.y()) / 2) <= 2
+    target_y = max(4 + state['widget'].height() / 2,
+                   min((center.y() + end.y()) / 2, viewport.height() - 4 - state['widget'].height() / 2))
+    assert abs(state['widget'].geometry().center().y() - target_y) <= 2
 
 
 @pytest.mark.parametrize("y", [90, 160])
@@ -749,7 +1139,7 @@ def test_inline_font_and_anchor_follow_zoom_scroll_resize(reader, qapp, y):
     assert state["widget"].height() >= state["input"].fontMetrics().height() + 2
     assert state["widget"].height() <= state["input"].font().pixelSize() * 2 + 12
     assert state["actions"].parentWidget() is reader.preview_view.viewport()
-    assert state["actions"].geometry().top() > state["widget"].geometry().bottom()
+    assert not state['actions'].geometry().intersects(state['widget'].geometry())
 
     reader._set_zoom(2)
     top = reader.preview_view.page_rects[0].topLeft()

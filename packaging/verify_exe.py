@@ -90,6 +90,7 @@ def main() -> None:
                      "app.imagecompress", "app.imagequick", "app.runtime", "app.contextmenus", "app.contextmenuui",
                      "app.themes", "app.updateui", "app.immersivereading", "app.signatureinfo", "app.signatureui",
                      "app.readingcache", "app.annotcrop", "app.annotcropui",
+                     "app.colorcleanup", "app.colorcleanupui", "app.replacementui",
                      "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
         assert required in python_modules, f"Missing module: {required}"
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"

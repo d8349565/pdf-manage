@@ -179,6 +179,10 @@ class ReadingSettingsOrb(QToolButton):
 
     def sync(self):
         available = bool(self.host.ws.pages)
+        self.host.default_reading_view_action.setEnabled(available and self.host._zoom_mode in ('page', 'width'))
+        self.host.default_reading_view_action.setToolTip(
+            '保存当前页面布局和适配方式，新打开的文档使用此设置'
+            if self.host._zoom_mode in ('page', 'width') else '先选择“适合页面”或“适合宽度”，再设为默认')
         self.restore_action.setEnabled(available)
         self.hide_action.setEnabled(available and not self.temporarily_hidden)
         layout = self.host.reading_layout_actions[self.host._reading_layout].text()

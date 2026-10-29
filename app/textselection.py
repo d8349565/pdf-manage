@@ -1,7 +1,7 @@
-"""Read-only rectangle selection for visible and invisible PDF text layers."""
+"""Read-only text-flow selection for visible and invisible PDF text layers."""
 from time import perf_counter
 
-from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt
+from PyQt6.QtCore import QEvent, QObject, QPointF, Qt
 from PyQt6.QtGui import QColor, QKeySequence, QPainterPath, QPen, QShortcut
 from PyQt6.QtWidgets import QApplication, QGraphicsPathItem, QMenu
 
@@ -19,6 +19,7 @@ class TextSelection(QObject):
         self.start = None
         self.text = ''
         self.area = None
+        self.endpoints = None
         self.overlay = None
         self._pending = None
         self._selection_serial = 0
@@ -32,7 +33,7 @@ class TextSelection(QObject):
         self.view.installEventFilter(self)
         self.view.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.viewport().customContextMenuRequested.connect(self.menu)
-        self.view.setAccessibleDescription('点击链接跳转；拖动框选文字；Ctrl+C 复制；按住空格拖动页面（也可 Alt+拖动）')
+        self.view.setAccessibleDescription('点击链接跳转；拖动选择文字；Ctrl+C 复制；按住空格拖动页面（也可 Alt+拖动）')
 
     def clear(self):
         self._pending = None
@@ -40,7 +41,7 @@ class TextSelection(QObject):
         if self.overlay is not None:
             self.view.scene().removeItem(self.overlay)
         self.overlay = None
-        self.text, self.start, self.area = '', None, None
+        self.text, self.start, self.area, self.endpoints = '', None, None, None
         self.snapshot, self.page_index, self.key = None, None, None
         self.shortcut.setEnabled(False)
 
@@ -144,7 +145,7 @@ class TextSelection(QObject):
             self.host.statusBar().showMessage('当前页文字暂时无法读取，请重试。', 5000)
             return
         if not self._begin(result.value, pending['ref'], pending['index'], pending['start'], pending['generation']):
-            self.host.statusBar().showMessage('当前页没有可框选的文字层。', 5000)
+            self.host.statusBar().showMessage('当前页没有可选择的文字层。', 5000)
             return
         self.select(pending['end'])
         if pending['released']:
@@ -159,18 +160,20 @@ class TextSelection(QObject):
 
     def select(self, point):
         import pymupdf as p
-        from app.pdfedits import selected_lines, selection_quads
+        from app.pdfedits import selection_range, selection_quads
         bounds = self.view.page_rects[self.page_index]
         point = QPointF(max(bounds.left(), min(bounds.right(), point.x())),
                         max(bounds.top(), min(bounds.bottom(), point.y())))
-        rectangle = QRectF(self.start, point).normalized().translated(-bounds.topLeft())
         matrix = p.Matrix(self.snapshot['matrix'])
-        canonical = p.Rect(rectangle.left(), rectangle.top(), rectangle.right(), rectangle.bottom()) * ~matrix
-        self.area = canonical
+        self.endpoints = tuple(p.Point(local.x(), local.y()) * ~matrix
+                               for local in (self.start - bounds.topLeft(), point - bounds.topLeft()))
+        raw, self.area = selection_range(self.snapshot['raw'], *self.endpoints)
         from app.documentlayout import selection_text
-        self.text = selection_text(self.snapshot['raw'], canonical, self.snapshot.get('tables', ()))
+        # Partial overlap with an inferred table must not reorder surrounding prose.
+        tables = [table for table in self.snapshot.get('tables', ()) if p.Rect(table.bbox).contains(self.area)]
+        self.text = selection_text(raw, self.area, tables)
         path = QPainterPath()
-        for quad in selection_quads(self.snapshot['raw'], canonical):
+        for quad in selection_quads(raw, self.area):
             points = [p.Point(quad[i]) * matrix for i in (0, 1, 3, 2)]
             path.moveTo(bounds.topLeft() + QPointF(*points[0]))
             for mapped in points[1:]:
@@ -205,8 +208,12 @@ class TextSelection(QObject):
                 if not self.text or self.page_index is None:
                     return
                 from app.documentlayout import selection_text
+                from app.pdfedits import selection_range
+                import pymupdf as p
                 self.snapshot = snapshot
-                self.text = selection_text(snapshot['raw'], self.area, snapshot.get('tables', ()))
+                raw, self.area = selection_range(snapshot['raw'], *self.endpoints)
+                tables = [table for table in snapshot.get('tables', ()) if p.Rect(table.bbox).contains(self.area)]
+                self.text = selection_text(raw, self.area, tables)
         self.sync()
         if not self.text or self.page_index is None:
             return

@@ -8,10 +8,10 @@ import math
 import uuid
 from time import perf_counter
 
-from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, QTimer, Qt
+from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSignalBlocker, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QActionGroup, QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QApplication, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QApplication, QBoxLayout, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QMenu, QMessageBox, QProxyStyle, QPushButton, QSizePolicy, QStyle, QTextEdit, QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -1199,7 +1199,7 @@ class AnnotationTools(QWidget):
         if watched is self.view and event.type() == QEvent.Type.Hide and self._move_state:
             self.cancel_move_annot()
         state = getattr(self, "_inline_replace", None)
-        if state and watched is state["input"]:
+        if state and (watched is state["input"] or state['actions'].isAncestorOf(watched)):
             if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
                 self._close_inline_replace()
                 self.view.setFocus()
@@ -1266,7 +1266,7 @@ class AnnotationTools(QWidget):
             w = inline_rep.get("widget")
             if w and w.isVisible() and hasattr(event, "position"):
                 pos = event.position().toPoint()
-                if w.geometry().contains(pos):
+                if w.geometry().contains(pos) or inline_rep['actions'].geometry().contains(pos):
                     return False
                 if event.type() == QEvent.Type.MouseButtonPress:
                     self._close_inline_replace()
@@ -1474,38 +1474,101 @@ class AnnotationTools(QWidget):
             return
 
         span = state["span"]
-        pixels = max(8, round(span.get("size", 12) * math.hypot(matrix.a, matrix.b) * self.view.transform().m11()))
-        font = QFont(self.view.font())
+        from app.systemfonts import font_face
+        family, bold, italic = font_face(span.get('font', ''), span.get('flags', 0))
+        style = state['style']
+        pixels = max(8, round(style.get('fontsize', span.get("size", 12)) * math.hypot(matrix.a, matrix.b) * self.view.transform().m11()))
+        font = QFont(style.get('font', family) or self.view.font().family())
         font.setPixelSize(pixels)
-        font.setBold(bool(span.get("flags", 0) & 16))
-        font.setItalic(bool(span.get("flags", 0) & 2))
+        font.setBold(style.get('bold', bold))
+        font.setItalic(style.get('italic', italic))
         edit_input = state["input"]
         edit_input.setFont(font)
-        color = QColor.fromRgb(span.get("color", 0)).name()
+        color = (QColor.fromRgbF(*style['color']) if 'color' in style else QColor.fromRgb(span.get('color', 0))).name()
+        display_family = font.family().replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', ' ')
+        input_blocker = QSignalBlocker(edit_input)
         edit_input.setStyleSheet(
-            f"QLineEdit {{ min-height: 0; padding: 0; border: none; border-radius: 0; background: #FFFFFF; "
-            f"font-size: {pixels}px; font-weight: {700 if font.bold() else 400}; "
+            f"QTextEdit {{ min-height: 0; padding: 0; border: none; border-radius: 0; background: #FFFFFF; "
+            f'font-family: "{display_family}"; font-size: {pixels}px; font-weight: {700 if font.bold() else 400}; '
             f"font-style: {'italic' if font.italic() else 'normal'}; color: {color}; "
             "selection-background-color: #CCFBF1; selection-color: #134E4A; }"
         )
-        metrics = QFontMetrics(font)
-        text_width = metrics.horizontalAdvance(edit_input.text()) + 14
+        from app.pdfedits import _replacement_runs, _styled_replacement_span
+        segments = list(_replacement_runs(state['chars'], edit_input.text())) if state['chars'] and edit_input.text() else [(edit_input.text(), span, 0, 0)]
+        preview = []
+        for value, source, _, _ in segments:
+            source = _styled_replacement_span(source, style) if style else source
+            run_family, run_bold, run_italic = font_face(source.get('font', ''), source.get('flags', 0))
+            run_font = QFont(run_family or self.view.font().family())
+            run_font.setPixelSize(max(8, round(source.get('size', 12) * math.hypot(matrix.a, matrix.b) * self.view.transform().m11())))
+            run_font.setBold(run_bold)
+            run_font.setItalic(run_italic)
+            run_color = QColor.fromRgbF(*style['color']) if 'color' in style else QColor.fromRgb(source.get('color', 0))
+            preview.append((value, run_font, run_color))
+        edit_input.preview(preview)
+        text_width = sum(QFontMetrics(face).horizontalAdvance(value) for value, face, _ in preview) + 14
         page_right = self.view.mapFromScene(self.view.page_rects[index].topRight()).x()
         width = max(rect.width() + 10, min(text_width, max(72, page_right - rect.left())))
-        height = max(28, metrics.height() + 6)
+        height = max(28, max(QFontMetrics(face).height() for _, face, _ in preview) + 6)
         widget, actions = state["widget"], state["actions"]
-        widget.setGeometry(rect.left() - 5, round(rect.center().y() - height / 2), width, height)
-        action_x = max(4, min(widget.geometry().right() - actions.width(), viewport.width() - actions.width() - 4))
-        action_y = widget.geometry().bottom() + 4
-        if action_y + actions.height() > viewport.height() - 4:
-            action_y = widget.geometry().top() - actions.height() - 4
-        actions.move(action_x, max(4, action_y))
+        left = max(4, min(rect.left() - 5, viewport.width() - 36))
+        width = max(24, min(width, min(page_right + 5, viewport.width() - 4) - left))
+        height = min(height, viewport.height() - 8)
+        top = max(4, min(round(rect.center().y() - height / 2), viewport.height() - height - 4))
+        widget.setGeometry(left, top, width, height)
+        available = viewport.rect().adjusted(8, 8, -8, -8)
+        top_row, bottom_row, bottom_layout, font_choice, format_group, command_group = state['toolbar_layout']
+        narrow = available.width() < 434
+        if state.get('narrow') != narrow:
+            row = bottom_layout if narrow else top_row
+            row.insertWidget(0 if narrow else 1, format_group)
+            row.addWidget(command_group)
+            bottom_row.setVisible(narrow)
+            format_group.show()
+            command_group.show()
+            state['narrow'] = narrow
+        bottom_layout.setDirection(QBoxLayout.Direction.TopToBottom if available.width() < 172 else QBoxLayout.Direction.LeftToRight)
+        panel_width = min(280 if narrow else 434, available.width())
+        font_choice.setFixedWidth(max(40, panel_width - 82) if narrow else 136)
+        for button in actions.findChildren(QToolButton):
+            edge = 32 if not narrow else 28 if available.width() >= 196 else 24
+            button.setFixedSize(edge, edge)
+        actions.setFixedWidth(panel_width)
+        actions.layout().activate()
+        actions.adjustSize()
+        anchor = widget.geometry()
+        text_boxes = []
+        for box in state['text_bounds']:
+            box = p.Rect(box) * matrix
+            scene = QRectF(page_top.x() + box.x0, page_top.y() + box.y0, box.width, box.height)
+            text_boxes.append(self.view.mapFromScene(scene).boundingRect())
+        positions = [(anchor.left(), anchor.top() - actions.height() - 8),
+                     (anchor.left(), anchor.bottom() + 9),
+                     (anchor.right() + 9, anchor.top()),
+                     (anchor.left() - actions.width() - 8, anchor.top())]
+        # At high zoom or in dense text, use the nearest clear gap rather than
+        # laying the toolbar over the neighbouring line.
+        for box in text_boxes:
+            if abs(box.center().y() - anchor.center().y()) < actions.height() * 2:
+                positions.extend(((anchor.left(), box.top() - actions.height() - 8),
+                                  (anchor.left(), box.bottom() + 9)))
+        candidates = [QRect(max(available.left(), min(x, available.right() - actions.width() + 1)),
+                            max(available.top(), min(y, available.bottom() - actions.height() + 1)),
+                            actions.width(), actions.height()) for x, y in positions]
+        def score(candidate):
+            def overlap(box):
+                intersection = candidate.intersected(box)
+                return intersection.width() * intersection.height() if not intersection.isEmpty() else 0
+            distance = max(anchor.left() - candidate.right(), candidate.left() - anchor.right(), 0)
+            distance += max(anchor.top() - candidate.bottom(), candidate.top() - anchor.bottom(), 0)
+            return overlap(anchor), sum(overlap(box) for box in text_boxes), distance
+        actions.move(min(candidates, key=score).topLeft())
         widget.show()
         actions.show()
         widget.raise_()
         actions.raise_()
 
-    def _start_inline_replace(self, ref, area, original, span=None, index=None, matrix=None):
+    def _start_inline_replace(self, ref, area, original, span=None, index=None, matrix=None, raw=None):
         self._close_inline_replace()
         self.hover_bar.hide()
         if index is None:
@@ -1523,7 +1586,8 @@ class AnnotationTools(QWidget):
         layout.setContentsMargins(5, 1, 5, 1)
         layout.setSpacing(0)
 
-        edit_input = QLineEdit(original, container)
+        from app.replacementui import ReplacementInput
+        edit_input = ReplacementInput(original, container)
         edit_input.setAccessibleName("原处文字修改")
         edit_input.setToolTip("Enter 应用修改 · Esc 取消")
         edit_input.installEventFilter(self)
@@ -1532,32 +1596,137 @@ class AnnotationTools(QWidget):
         actions = QFrame(self.view.viewport())
         actions.setObjectName("inlineReplaceActions")
         set_theme_style(actions,
-            "QFrame#inlineReplaceActions { background: #FFFFFF; border: 1px solid #D7E8E4; border-radius: 6px; } "
-            "QToolButton { min-width: 24px; min-height: 24px; padding: 0; border-radius: 4px; } "
+            "QFrame#inlineReplaceActions { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; } "
+            "QWidget#replacementFontGroup, QWidget#replacementFormatGroup, QWidget#replacementCommandGroup, QWidget#replacementBottomRow { background: transparent; border: none; }"
+            "QToolButton { min-width: 0; min-height: 0; padding: 0; border: 1px solid transparent; border-radius: 4px; color: #1F2937; } "
+            "QToolButton:hover { background: #F0FDFA; } QToolButton:pressed { background: #CCFBF1; } "
             "QToolButton#apply { background: #0F766E; border: none; } "
             "QToolButton#apply:hover { background: #0D9488; }"
+            "QToolButton:checked { background: #CCFBF1; color: #134E4A; }"
+            "QToolButton:disabled { color: #94A3B8; }"
+            "QComboBox, QDoubleSpinBox { min-height: 0; max-height: 30px; padding: 0 6px; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 13px; color: #1F2937; background: #FFFFFF; }"
+            "QComboBox::drop-down { width: 20px; }"
+            "QComboBox:hover, QDoubleSpinBox:hover { border-color: #99B2AC; }"
+            "QComboBox:focus, QDoubleSpinBox:focus, QToolButton:focus { border: 1px solid #0F766E; }"
         )
-        actions.setFixedSize(60, 32)
-        action_layout = QHBoxLayout(actions)
-        action_layout.setContentsMargins(3, 3, 3, 3)
+        actions.setToolTip('样式设置作用于当前框选的已有文字；可直接应用，无需重新输入')
+        controls = QVBoxLayout(actions)
+        controls.setContentsMargins(6, 6, 6, 6)
+        controls.setSpacing(4)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
+        controls.addLayout(top_row)
+        bottom_row = QWidget(actions)
+        bottom_row.setObjectName('replacementBottomRow')
+        bottom_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, bottom_row)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(8)
+        bottom_layout.addStretch(1)
+        controls.addWidget(bottom_row)
+        bottom_row.hide()
+        font_group = QWidget(actions)
+        font_group.setObjectName('replacementFontGroup')
+        font_row = QHBoxLayout(font_group)
+        font_row.setContentsMargins(0, 0, 0, 0)
+        font_row.setSpacing(6)
+        top_row.addWidget(font_group, 1)
+        span = span or {}
+        from app.systemfonts import font_face
+        family, bold, italic = font_face(span.get('font', ''), span.get('flags', 0))
+        from app.replacementui import FontChoice, FontSize, TextColorButton
+        font_choice = FontChoice(actions)
+        font_choice.setObjectName('replacementFont')
+        font_choice.setMinimumWidth(40)
+        font_choice.setFixedHeight(30)
+        font_choice.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        font_choice.setCurrentIndex(font_choice.findText(family))
+        source_font_available = font_choice.findText(family) >= 0
+        if not source_font_available:
+            font_choice.setPlaceholderText('沿用原字体')
+            font_choice.setCurrentIndex(-1)
+            font_choice.lineEdit().setPlaceholderText('沿用原字体')
+        font_choice.setAccessibleName('原文字体')
+        font_choice.setToolTip('从本机字体中选择，应用于当前框选的文字')
+        font_row.addWidget(font_choice, 1)
+        size_choice = FontSize(actions)
+        size_choice.setObjectName('replacementSize')
+        size_choice.setRange(6, 144)
+        size_choice.setDecimals(1)
+        size_choice.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        size_choice.setSuffix(' pt')
+        size_choice.setValue(span.get('size', 12))
+        size_choice.setFixedSize(64, 30)
+        size_choice.setToolTip('字号（pt）')
+        size_choice.setAccessibleName('原文字号')
+        font_row.addWidget(size_choice)
+        format_group = QWidget(actions)
+        format_group.setObjectName('replacementFormatGroup')
+        action_layout = QHBoxLayout(format_group)
+        action_layout.setContentsMargins(0, 0, 0, 0)
         action_layout.setSpacing(2)
+        bold_choice = QToolButton(actions)
+        italic_choice = QToolButton(actions)
+        for button, name, label, checked in (
+                (bold_choice, 'replacementBold', '加粗', bold),
+                (italic_choice, 'replacementItalic', '斜体', italic)):
+            button.setObjectName(name)
+            button.setText('B' if label == '加粗' else 'I')
+            button.setCheckable(True)
+            button.setChecked(checked)
+            button.setToolTip(label)
+            button.setAccessibleName(label)
+            face = QFont(button.font())
+            face.setBold(label == '加粗')
+            face.setItalic(label == '斜体')
+            button.setFont(face)
+            action_layout.addWidget(button)
+        color_choice = TextColorButton(actions)
+        color_choice.setObjectName('replacementColor')
+        color_choice.setText('A')
+        color_choice.setToolTip('文字颜色')
+        def show_color(color):
+            color_choice.setColor(color)
+        show_color(QColor.fromRgb(span.get('color', 0)).name())
+        color_choice.setAccessibleName('原文颜色')
+        action_layout.addWidget(color_choice)
+        command_group = QWidget(actions)
+        command_group.setObjectName('replacementCommandGroup')
+        command_layout = QHBoxLayout(command_group)
+        command_layout.setContentsMargins(0, 0, 0, 0)
+        command_layout.setSpacing(2)
+        reset_choice = QToolButton(actions)
+        reset_choice.setObjectName('replacementReset')
+        reset_choice.setIcon(toolbar_icon('rotate-ccw', '#4D6B67', 16))
+        reset_choice.setToolTip('恢复原样式')
+        reset_choice.setAccessibleName('恢复原样式')
+        reset_choice.setEnabled(False)
+        command_layout.addWidget(reset_choice)
         apply_btn = QToolButton(actions)
         apply_btn.setObjectName("apply")
-        apply_btn.setFixedSize(26, 26)
         apply_btn.setIcon(toolbar_icon("check", "#FFFFFF", 16))
         apply_btn.setIconSize(QSize(16, 16))
         apply_btn.setAccessibleName("应用文字修改")
         apply_btn.setToolTip("应用修改 (Enter)")
-        action_layout.addWidget(apply_btn)
+        command_layout.addWidget(apply_btn)
 
         cancel_btn = QToolButton(actions)
         cancel_btn.setObjectName("cancel")
-        cancel_btn.setFixedSize(26, 26)
         cancel_btn.setIcon(toolbar_icon("x", "#4D6B67", 16))
         cancel_btn.setIconSize(QSize(16, 16))
         cancel_btn.setAccessibleName("取消文字修改")
         cancel_btn.setToolTip("取消 (Esc)")
-        action_layout.addWidget(cancel_btn)
+        command_layout.addWidget(cancel_btn)
+        raw = raw or (self.snapshot or {}).get('raw', {})
+        from app.pdfedits import selected_lines
+        selected = selected_lines(raw, area)
+        chars = selected[0][1] if len(selected) == 1 else []
+        if len({(source['font'], source['size'], source['color'], source.get('flags', 0)) for _, source in chars}) > 1:
+            font_choice.setCurrentIndex(-1)
+            font_choice.clearEditText()
+            font_choice.lineEdit().setPlaceholderText('保留混合样式')
+            font_choice.setToolTip('选区含不同样式；只调整需要改变的属性，其余保留')
+            size_choice.setToolTip('当前选区包含不同样式；调整字号将统一当前选区的字号（pt）')
+        original_font_index = font_choice.currentIndex()
 
         self._inline_replace = {
             "widget": container,
@@ -1570,7 +1739,64 @@ class AnnotationTools(QWidget):
             "span": span or {},
             "area": area,
             "original": original,
+            'style': {},
+            'toolbar_layout': (top_row, bottom_row, bottom_layout, font_choice, format_group, command_group),
+            'text_bounds': [line['bbox'] for block in raw.get('blocks', ()) for line in block.get('lines', ())],
+            'chars': chars,
         }
+        state = self._inline_replace
+
+        def update_style(key, value):
+            if key in state['style'] and state['style'][key] == value:
+                return
+            state['style'][key] = value
+            reset_choice.setEnabled(True)
+            self._position_inline_replace()
+
+        def choose_text_color():
+            current = state['style'].get('color')
+            color = QColorDialog.getColor(QColor.fromRgbF(*current) if current else QColor.fromRgb(span.get('color', 0)), self, '选择文字颜色')
+            if color.isValid():
+                update_style('color', (color.redF(), color.greenF(), color.blueF()))
+                show_color(color.name())
+
+        def reset_style():
+            blockers = [QSignalBlocker(control) for control in (font_choice, size_choice, bold_choice, italic_choice)]
+            font_choice.setCurrentIndex(original_font_index)
+            if original_font_index < 0:
+                font_choice.clearEditText()
+            size_choice.setValue(span.get('size', 12))
+            bold_choice.setChecked(bold)
+            italic_choice.setChecked(italic)
+            state['style'].clear()
+            reset_choice.setEnabled(False)
+            show_color(QColor.fromRgb(span.get('color', 0)).name())
+            self._position_inline_replace()
+
+        font_choice.textActivated.connect(lambda name: update_style('font', name))
+        font_choice.currentIndexChanged.connect(lambda index: update_style('font', font_choice.itemText(index)) if index >= 0 else None)
+        font_choice.completer().activated[str].connect(lambda name: update_style('font', name))
+
+        def finish_font_search():
+            if font_choice.lineEdit().isModified():
+                index = font_choice.findText(font_choice.currentText().strip(), Qt.MatchFlag.MatchFixedString)
+                if index >= 0:
+                    update_style('font', font_choice.itemText(index))
+                else:
+                    blocker = QSignalBlocker(font_choice)
+                    font_choice.setCurrentIndex(font_choice.findText(state['style']['font']) if 'font' in state['style'] else original_font_index)
+                    if font_choice.currentIndex() < 0:
+                        font_choice.clearEditText()
+                font_choice.lineEdit().setModified(False)
+
+        font_choice.lineEdit().editingFinished.connect(finish_font_search)
+        size_choice.valueChanged.connect(lambda value: update_style('fontsize', value))
+        bold_choice.toggled.connect(lambda value: update_style('bold', value))
+        italic_choice.toggled.connect(lambda value: update_style('italic', value))
+        color_choice.clicked.connect(choose_text_color)
+        reset_choice.clicked.connect(reset_style)
+        for control in (font_choice, font_choice.lineEdit(), size_choice, size_choice.lineEdit(), bold_choice, italic_choice, color_choice, reset_choice, apply_btn, cancel_btn):
+            control.installEventFilter(self)
         self._position_inline_replace()
         edit_input.setFocus()
         edit_input.selectAll()
@@ -1578,7 +1804,7 @@ class AnnotationTools(QWidget):
 
         def commit():
             text = edit_input.text()
-            if text == original:
+            if text == original and not state['style']:
                 self._close_inline_replace()
                 return
             if not text.strip():
@@ -1592,12 +1818,12 @@ class AnnotationTools(QWidget):
             try:
                 replacement_edit = run_operation(
                     self.host, "检查文字修正",
-                    lambda progress: self.host.store.prepare_replacement(ref, area, text)
+                    lambda progress: self.host.store.prepare_replacement(ref, area, text, style=state['style'])
                 )
                 if self.commit(replacement_edit, page_index=index, expected_ref=ref):
                     self._close_inline_replace()
                     if dict(replacement_edit.details).get("font_fallback"):
-                        self._set_feedback("文字已修改；未找到可用的完整原字体，已使用内置替代字体。Ctrl+Z 撤销，Ctrl+S 保存。")
+                        self._set_feedback("文字已修改；所选或原字体缺少所需字形，已使用替代字体。Ctrl+Z 撤销，Ctrl+S 保存。")
                     else:
                         self._set_feedback("文字修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             except (ValueError, PdfError) as exc:
@@ -1688,7 +1914,7 @@ class AnnotationTools(QWidget):
             line_area = p.Rect(chars[0][0]["bbox"])
             for char_item, _ in chars[1:]:
                 line_area |= p.Rect(char_item["bbox"])
-            self._start_inline_replace(ref, line_area, original, chars[0][1], index=index, matrix=matrix)
+            self._start_inline_replace(ref, line_area, original, chars[0][1], index=index, matrix=matrix, raw=raw_data)
             return
         elif kind in ("highlight", "underline"):
             quads = selection_quads(snapshot["raw"], area)

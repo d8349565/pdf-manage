@@ -2497,8 +2497,7 @@ class MainWindow(QMainWindow):
         self._neighbor_signals = RenderSignals()
         self._neighbor_signals.done.connect(self._on_neighbor)
         self._zoom = 1.0
-        self._zoom_mode = 'page'
-        self._reading_layout = 'single'
+        self._reading_layout, self._zoom_mode = self._default_reading_view()
         self._arrange_zoom = 1.0
         self._sidebar_w = THUMB_W
         self._last_vp_w = 0
@@ -2725,6 +2724,22 @@ class MainWindow(QMainWindow):
                 index = 0
             widget.setCurrentIndex(index if 0 <= index < widget.count() else 0)
 
+    def _default_reading_view(self):
+        layout = self._window_settings.value('reading/defaultLayout', 'single')
+        zoom = self._window_settings.value('reading/defaultZoomMode', 'page')
+        return (layout if layout in ('single', 'spread', 'four') else 'single',
+                zoom if zoom in ('page', 'width') else 'page')
+
+    def save_default_reading_view(self):
+        if not self.ws.pages or self._zoom_mode not in ('page', 'width'):
+            return
+        self._window_settings.setValue('reading/defaultLayout', self._reading_layout)
+        self._window_settings.setValue('reading/defaultZoomMode', self._zoom_mode)
+        self._window_settings.sync()
+        layout = self.reading_layout_actions[self._reading_layout].text()
+        zoom = self.reading_zoom_actions[self._zoom_mode].text()
+        self.statusBar().showMessage(f'默认视图已设为：{layout} · {zoom}；新打开的文档将使用此设置。', 6000)
+
     def reset_ui_preferences(self):
         self.act_pages.setChecked(False)
         self.act_tools.setChecked(False)
@@ -2732,7 +2747,10 @@ class MainWindow(QMainWindow):
         self._tool_index = 0
         if self._tools_ready:
             self._export_tools.setCurrentIndex(0)
+        self._window_settings.remove('reading/defaultLayout')
+        self._window_settings.remove('reading/defaultZoomMode')
         self._set_reading_layout('single')
+        self._set_zoom_mode('page')
         self.reading_orb.restore()
         self._save_ui_preferences()
         self.statusBar().showMessage('界面已恢复默认，文档与存储设置保留。', 5000)
@@ -2917,8 +2935,9 @@ class MainWindow(QMainWindow):
         scans=self._menubar.addMenu('扫描')
         self.whiten_action = self._act('扫描件增强…', self.open_whitening)
         self.deskew_action = self._act('扫描纠偏…', self.open_deskew)
+        self.color_cleanup_action = self._act('去除彩色笔迹…', self.open_color_cleanup)
         self.ocr_action = self._act("文字识别（OCR）…", self.open_ocr)
-        scans.addActions([self.whiten_action,self.deskew_action,self.ocr_action])
+        scans.addActions([self.color_cleanup_action,self.whiten_action,self.deskew_action,self.ocr_action])
         convert = self._menubar.addMenu("转换")
         convert.addAction(self._act("Word 转 PDF…", self.open_word_converter))
         convert.addAction(self._act("图片转 PDF…", self.images_to_pdf))
@@ -3198,6 +3217,10 @@ class MainWindow(QMainWindow):
 
     def _sync_controls(self) -> None:
         count = len(self.ws.pages)
+        for mode, action in self.reading_layout_actions.items():
+            action.setChecked(mode == self._reading_layout)
+        for mode, action in self.reading_zoom_actions.items():
+            action.setChecked(mode == self._zoom_mode)
         read_only = self.store.operation_reason(self.ws.pages, "modify")
         self._controls_read_only = bool(read_only)
         copy_reason = self.store.operation_reason(self.ws.pages, "copy")
@@ -3279,6 +3302,8 @@ class MainWindow(QMainWindow):
         self.seam_stamp_action.setEnabled(self.page_size_action.isEnabled())
         self.deskew_action.setEnabled(self.page_size_action.isEnabled())
         self.whiten_action.setEnabled(self.page_size_action.isEnabled() and not copy_reason)
+        self.color_cleanup_action.setEnabled(bool(count) and not copy_reason and
+            (not self.store.operation_reason(self.ws.pages, 'annotate') or self.page_size_action.isEnabled()))
         if self._arrange_ready:
             self.arrange_size_button.setEnabled(self.page_size_action.isEnabled())
         if self._arrange_ready:
@@ -3607,6 +3632,10 @@ class MainWindow(QMainWindow):
             self.reading_zoom_group.addAction(action)
             self.reading_zoom_actions[mode] = action
             layout_menu.addAction(action)
+        layout_menu.addSeparator()
+        self.default_reading_view_action = self._act('将当前视图设为默认', self.save_default_reading_view)
+        self.default_reading_view_action.setToolTip('保存当前页面布局和适配方式，新打开的文档使用此设置')
+        layout_menu.addAction(self.default_reading_view_action)
         from app.readingsettings import ReadingSettingsOrb
         self.reading_orb = ReadingSettingsOrb(self, layout_menu)
         self.page_number.setFixedHeight(28)
@@ -5624,7 +5653,7 @@ class MainWindow(QMainWindow):
             cur_tab = self._active_tab()
             if cur_tab is not None and not self.ws.pages and not self.ws.dirty and not self.ws.path:
                 self.ws.reset()
-                self._zoom_mode = "page"
+                self._reading_layout, self._zoom_mode = self._default_reading_view()
                 self.ws.open_replace(pages, path)
                 self.refresh()
                 opened_any = True
@@ -5632,7 +5661,8 @@ class MainWindow(QMainWindow):
                 ws = Workspace()
                 self._register_workspace(ws)
                 ws.open_replace(pages, path)
-                new_tab = _DocumentTab(ws=ws)
+                layout, zoom = self._default_reading_view()
+                new_tab = _DocumentTab(ws=ws, reading_layout=layout, zoom_mode=zoom)
                 self._tabs.append(new_tab)
                 self.activate_tab(new_tab.tab_id)
                 opened_any = True
@@ -5659,10 +5689,11 @@ class MainWindow(QMainWindow):
         if self.ws.pages or self.ws.dirty or self.ws.path:
             ws = Workspace()
             self._register_workspace(ws)
-            tab = _DocumentTab(ws=ws)
+            layout, zoom = self._default_reading_view()
+            tab = _DocumentTab(ws=ws, reading_layout=layout, zoom_mode=zoom)
             self._tabs.append(tab)
             self.activate_tab(tab.tab_id)
-        self._zoom_mode = 'page'
+        self._reading_layout, self._zoom_mode = self._default_reading_view()
         self.ws.insert_pages(incoming, at_index=0)
         self.ws.select_index(0)
         self.refresh()
@@ -5932,7 +5963,7 @@ class MainWindow(QMainWindow):
                         self._release_unused_docs()
                         return False
             self.ws.reset()
-            self._zoom_mode = 'page'
+            self._reading_layout, self._zoom_mode = self._default_reading_view()
             for path, pages in batches:
                 self.ws.load_first_or_merge(pages, path)
             self.refresh()
@@ -6000,7 +6031,7 @@ class MainWindow(QMainWindow):
             return None
         incoming_outline = self.store.outline_entries(pages, group_sources=True) if self.ws.outline is not None else None
         if not self.ws.pages:
-            self._zoom_mode = 'page'
+            self._reading_layout, self._zoom_mode = self._default_reading_view()
             if _is_image_path(path):
                 self.ws.insert_pages(pages, at_index=0)
             else:
@@ -6424,7 +6455,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
             return False
         merged_output = self.ws.path is None and bool(self.ws.protected_paths)
-        page_tool_copy = any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove')
+        page_tool_copy = any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup')
                              for ref in self.ws.pages for edit in ref.edits)
         while True:
             path = self.ws.path
@@ -6610,6 +6641,10 @@ class MainWindow(QMainWindow):
     def open_whitening(self):
         from app.scanwhiteui import open_whitening
         open_whitening(self)
+
+    def open_color_cleanup(self):
+        from app.colorcleanupui import open_color_cleanup
+        open_color_cleanup(self)
 
     def split(self) -> None:
         if not self._allow_operation("modify") or not self._allow_operation("copy"):

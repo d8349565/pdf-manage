@@ -21,6 +21,8 @@ class PageEdit:
 
     @property
     def operation(self):
+        if self.kind == 'color_cleanup':
+            return 'annotate' if dict(self.details).get('mode') == 'annotations' else 'content_edit'
         return 'content_edit' if self.kind in ('replace', 'mosaic', 'page_geometry') or self.kind.startswith(('image', 'seam_')) else 'annotate'
 
 

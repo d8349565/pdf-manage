@@ -30,8 +30,17 @@ def add_text_layer(page, lines, pixmap, dpi=200, *, protect_existing=True):
             tl, tr, br, bl = tr, br, bl, tl
         area = p.Quad(tl, tr, bl, br).rect
         bounds = page.rect * page.derotation_matrix
-        if area.is_empty or not bounds.contains(area):
+        # Raster bounds round outward to whole pixels; PDF page sizes do not.
+        tolerance = 72 / dpi + 1e-4
+        if area.is_empty or not (bounds + (-tolerance, -tolerance, tolerance, tolerance)).contains(area):
             raise OCRError('识别框超出页面，该页未写入。')
+        if not bounds.contains(area):
+            tl, tr, br, bl = (p.Point(min(bounds.x1, max(bounds.x0, point.x)),
+                                      min(bounds.y1, max(bounds.y0, point.y)))
+                              for point in (tl, tr, br, bl))
+            area = p.Quad(tl, tr, bl, br).rect
+            if area.is_empty:
+                raise OCRError('识别框超出页面，该页未写入。')
         if protect_existing and any((area & word).get_area() >= min(area.get_area(), word.get_area()) * .6
                                     for word in existing):
             continue

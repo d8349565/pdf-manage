@@ -7,19 +7,20 @@ from app.ocr.pdf_export import add_text_layer
 from app.ocr.page_detector import has_effective_text
 
 
+@pytest.mark.parametrize('at_edge', [False, True])
 @pytest.mark.parametrize('rotation', [0, 90, 180, 270])
 @pytest.mark.parametrize('dpi', [150, 200, 300])
-def test_invisible_chinese_search_geometry(tmp_path, rotation, dpi):
+def test_invisible_chinese_search_geometry(tmp_path, rotation, dpi, at_edge):
     with p.open() as doc:
         page = doc.new_page(width=420, height=600)
         page.draw_rect((60, 80, 250, 140), color=(.3, .5, .7), fill=(.9, .9, .9))
         page.set_cropbox(p.Rect(20, 30, 400, 570))
         page.set_rotation(rotation)
         before = page.get_pixmap(dpi=dpi)
-        box = p.Rect(50, 90, 240, 115)
+        box = p.Rect(50, 90, 240, 115) if not at_edge else p.Rect(50, 510, 380, 540)
         rotated = [point * page.rotation_matrix * p.Matrix(dpi / 72, dpi / 72)
                    for point in (box.tl, box.tr, box.br, box.bl)]
-        polygon = tuple(v for point in rotated for v in point)
+        polygon = tuple(round(v) if at_edge else v for point in rotated for v in point)
         line = OCRLine('纸序预算 ABC 123.45', (0, 0, 0, 0), polygon, .99, 0)
         written = add_text_layer(page, [line], before, dpi)
         assert written
@@ -36,15 +37,38 @@ def test_invisible_chinese_search_geometry(tmp_path, rotation, dpi):
         assert page.get_pixmap(dpi=dpi).samples == before.samples
 
 
-def test_bad_line_cannot_leave_partial_text():
+@pytest.mark.parametrize('bad_polygon', [(float('nan'),) * 8,
+                                       (-10, 80, 250, 80, 250, 110, -10, 110),
+                                       (1800, 80, 1900, 80, 1900, 110, 1800, 110)])
+def test_bad_line_cannot_leave_partial_text(bad_polygon):
     with p.open() as doc:
         page = doc.new_page()
         pix = page.get_pixmap(dpi=200)
         lines = [OCRLine('正常中文', (0, 0, 0, 0), (80, 80, 250, 80, 250, 110, 80, 110), .99, 0),
-                 OCRLine('无效', (0, 0, 0, 0), (float('nan'),) * 8, .99, 0)]
+                 OCRLine('无效', (0, 0, 0, 0), bad_polygon, .99, 0)]
         with pytest.raises(OCRError):
             add_text_layer(page, lines, pix)
         assert not page.get_text().strip()
+
+
+@pytest.mark.parametrize('skewed', [False, True])
+def test_ocr_box_at_raster_edge_stays_searchable_on_fractional_page(tmp_path, skewed):
+    path = tmp_path / 'edge-ocr.pdf'
+    with p.open() as doc:
+        page = doc.new_page(width=200.1, height=300.1)
+        before = page.get_pixmap(dpi=200)
+        # The raster includes its rounded-up last pixel, even on a fractional page.
+        polygon = ((528, 100, before.width - 2, 100, before.width, 140, 530, 140) if skewed else
+                   (520, 100, before.width, 100, before.width, 140, 520, 140))
+        line = OCRLine('EDGE', (520, 100, before.width, 140), polygon, .99, 0)
+        add_text_layer(page, [line], before)
+        doc.save(path)
+    with p.open(path) as result:
+        page = result[0]
+        hits = page.search_for('EDGE')
+        assert hits and all(page.rect.contains(hit) for hit in hits)
+        assert abs(hits[0].x1 - 200.1) < .1
+        assert page.get_pixmap(dpi=200).samples == before.samples
 
 
 def test_rotated_raster_keyword_starts_at_top():

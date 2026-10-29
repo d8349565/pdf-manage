@@ -53,11 +53,12 @@ def test_preview_release_metadata_is_never_offered_as_a_stable_update():
 
 
 def test_public_and_windows_version_metadata_share_one_source():
-    from app import APP_IS_PRERELEASE, APP_VERSION_CORE, APP_VERSION_DISPLAY, APP_VERSION_PARTS, __version__
+    from app import APP_IS_PRERELEASE, APP_RELEASE_CHANNEL, APP_VERSION_CORE, APP_VERSION_DISPLAY, APP_VERSION_PARTS, __version__
     assert APP_VERSION_CORE == __version__.split("-", 1)[0]
     assert APP_VERSION_PARTS == tuple(map(int, APP_VERSION_CORE.split(".")))
     assert len(APP_VERSION_PARTS) == 3 and all(0 <= value <= 65535 for value in APP_VERSION_PARTS)
-    assert APP_IS_PRERELEASE == ("-" in __version__)
+    assert APP_RELEASE_CHANNEL in ('stable', 'preview')
+    assert APP_IS_PRERELEASE == (APP_RELEASE_CHANNEL == 'preview' or '-' in __version__)
     assert ("预览版" in APP_VERSION_DISPLAY) == APP_IS_PRERELEASE
 
 

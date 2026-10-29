@@ -5,8 +5,9 @@ APP_SLUG = "ZhiXuPDF"
 APP_EXE_NAME = f"{APP_SLUG}.exe"
 APP_PROJECT_URL = "https://github.com/d8349565/pdf-manage"
 APP_ORGANIZATION = "PDFManage"
-__version__ = "0.10.5"
+__version__ = "0.10.6"
 APP_VERSION_CORE = __version__.split("-", 1)[0]
 APP_VERSION_PARTS = tuple(map(int, APP_VERSION_CORE.split(".")))
-APP_IS_PRERELEASE = "-" in __version__
+APP_RELEASE_CHANNEL = "preview"
+APP_IS_PRERELEASE = APP_RELEASE_CHANNEL == "preview" or "-" in __version__
 APP_VERSION_DISPLAY = __version__ + ("（预览版）" if APP_IS_PRERELEASE else "")

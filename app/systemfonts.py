@@ -22,7 +22,7 @@ def font_face(preferred, flags=0):
     name = preferred.split('+')[-1]
     bold = bool(flags & 16) or 'bold' in name.casefold()
     italic = bool(flags & 2) or any(s in name.casefold() for s in ('italic', 'oblique'))
-    name = re.sub(r'[-, ]?(?:BoldItalic|BoldOblique|Bold|Italic|Oblique|Regular)(?:MT)?$',
+    name = re.sub(r'[-, ]?(?:Bold\s*Italic|Bold\s*Oblique|Bold|Italic|Oblique|Regular)(?:MT)?$',
                   '', name, flags=re.IGNORECASE)
     if name == 'TimesNewRomanPS':
         name = 'Times New Roman'

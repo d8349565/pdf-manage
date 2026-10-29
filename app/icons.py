@@ -136,6 +136,8 @@ _PATHS: dict[str, str] = {
         '<path d="M12 20h9"/>'
         '<path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'
     ),
+    "eraser": '<path d="m9 20-6-6a2 2 0 0 1 0-3l9-9a2 2 0 0 1 3 0l6 6a2 2 0 0 1 0 3l-9 9zM7 7l10 10M9 20h12"/>',
+    "eyedropper": '<path d="m16 3 5 5M15 4l-3 3 5 5 3-3M13 9l-9 9-1 4 4-1 9-9M6 16l3 3"/>',
     "sticky-note": (
         '<path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
         '<path d="M15 3v5h5"/>'

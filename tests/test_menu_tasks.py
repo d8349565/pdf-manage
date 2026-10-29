@@ -27,18 +27,18 @@ def all_commands(window):
 # Complete user-facing command contract, including nested reading options. This
 # list was checked against the pre-migration runtime menu, not just toolbar IDs.
 EXPECTED={
-    ('文件',):['打开 PDF / OFD / 图片','保存','另存为','关闭当前文件','打印','退出'],
-    ('文件','应用设置'):['存储管理'],
+    ('文件',):['打开 PDF / OFD / 图片','保存','另存为','关闭当前文件','打印','最近阅读记录','退出'],
+    ('文件','应用设置'):['存储管理','阅读快捷键'],
     ('编辑',):['撤销','重做','复制页面','粘贴为页面','全选','全文搜索','审阅与文字修正','框选导出图片'],
     ('页面',):['插入页面','合并文件','提取页面','拆分文件','分割单页','调整页面大小','删除页面'],
     ('页面','旋转页面'):['向左旋转 90°','向右旋转 90°'],
     ('文档',):['页码处理','水印','骑缝章','区域摘录','签名与保护信息'],
     ('文档','压缩'):['压缩 PDF','压缩图片'],
     ('文档','安全与副本'):['加密另存','解密另存','制作可编辑副本'],
-    ('扫描',):['扫描件增强','扫描纠偏','文字识别（OCR）'],
+    ('扫描',):['去除彩色笔迹','扫描件增强','扫描纠偏','文字识别（OCR）'],
     ('转换',):['Word 转 PDF','图片转 PDF','Markdown 转 PDF','PDF 转 Word','PDF 转 Excel','PDF 转 TXT','PDF 转图片','PDF 转图片版'],
-    ('视图',):['阅读','整理页面','全屏阅读','侧栏自动隐藏','大纲书签','页面栏','工具面板'],
-    ('视图','阅读设置'):['单页连续','双页对开','四页预览（2×2）','适合页面','适合宽度','手动缩放','全屏阅读','侧栏自动隐藏','本次运行隐藏悬浮球'],
+    ('视图',):['阅读','整理页面','切换阅读／整理页面','全屏阅读','侧栏自动隐藏','大纲书签','页面栏','工具面板'],
+    ('视图','阅读设置'):['单页连续','双页对开','四页预览（2×2）','适合页面','适合宽度','手动缩放','将当前视图设为默认','全屏阅读','侧栏自动隐藏','本次运行隐藏悬浮球','手形拖动','选择文字','阅读快捷键'],
     ('视图','界面主题'):['石墨（默认）','原版绿','远山','赤陶','夜航（深色）'],
     ('视图','缩放'):['放大','缩小','适合宽度'],
     ('视图','界面恢复'):['显示阅读悬浮球','恢复界面布局'],
@@ -149,7 +149,7 @@ def test_top_level_task_menus_share_actions_with_existing_tools(qapp):
         assert window.delete_action in menus['页面'].actions()
         assert window.page_numbers_action in menus['文档'].actions()
         assert window.whiten_action.text()=='扫描件增强'
-        assert menus['扫描'].actions()==[window.whiten_action,window.deskew_action,window.ocr_action]
+        assert menus['扫描'].actions()==[window.color_cleanup_action,window.whiten_action,window.deskew_action,window.ocr_action]
         compression=next(action.menu() for action in menus['文档'].actions() if action.text()=='压缩')
         assert compression.actions()==[window.compress_action,window.image_compress_action]
         assert window.image_compress_action.isEnabled() and not window.compress_action.isEnabled()
