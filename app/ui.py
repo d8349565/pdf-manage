@@ -2991,6 +2991,7 @@ class MainWindow(QMainWindow):
         rotation.addActions(self.page_rotate_actions)
         tools.addAction(self.delete_action)
         document = self._menubar.addMenu('文档')
+        document.addAction(self._act('两份 PDF 对比（实验）…', self.open_pdf_compare))
         self.signature_info_action = self._act('签名与保护信息…', self.show_signature_info)
         document.addAction(self.signature_info_action)
         document.addSeparator()
@@ -3848,6 +3849,14 @@ class MainWindow(QMainWindow):
         self._update_preview()
         self.preview_view.jump_to_page(index.row())
         self.preview_view.setFocus()
+
+    def open_pdf_compare(self):
+        from app.pdfcompareui import PdfCompareDialog
+        dialog = PdfCompareDialog(self)
+        try:
+            dialog.exec()
+        finally:
+            dialog.deleteLater()
 
     def _tools(self) -> QWidget:
         from app.pagetoolsui import ClearComboBox, ClearSpinBox
