@@ -62,7 +62,7 @@ def test_progress_cancel_keeps_previous_complete_result(qapp, tmp_path):
 
 
 def test_main_window_import_does_not_load_comparison_engine():
-    code = "import sys; import app.ui; assert 'app.pdfcompare' not in sys.modules; assert 'app.pdfcompareui' not in sys.modules; assert 'app.pdfcontentcompare' not in sys.modules"
+    code = "import sys; import app.ui; assert 'app.pdfcompare' not in sys.modules; assert 'app.pdfcompareui' not in sys.modules; assert 'app.pdfcontentcompare' not in sys.modules; assert 'app.pdfcontentcompareui' not in sys.modules"
     result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
 

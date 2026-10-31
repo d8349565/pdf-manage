@@ -1,8 +1,9 @@
 """Opt-in version comparison tool. No work or imports on the ordinary reading path."""
 from pathlib import Path
 from collections import OrderedDict
+import os
 
-from PyQt6.QtCore import QRectF, QSize, Qt
+from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QImage, QPen, QPixmap
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFrame, QGridLayout,
     QGraphicsScene, QGraphicsView, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
@@ -35,6 +36,8 @@ QDialog#pdfCompare QComboBox { min-height: 26px; padding: 4px 28px 4px 10px; bor
 QDialog#pdfCompare QLineEdit { min-height: 28px; padding: 4px 10px; border-radius: 7px; }
 QDialog#pdfCompare QCheckBox { background: transparent; }
 QWidget#compareOptions { background: transparent; }
+QWidget#pdfDropTarget { background: transparent; }
+QDialog#pdfCompare QLineEdit[pdfDropActive="true"] { border: 1px solid #0D9488; background: #F0FDFA; }
 QGraphicsView#compareCanvas { border: none; }
 QTableWidget#pairTable { background: #FFFFFF; border: 1px solid #D7E8E4; border-radius: 7px; }
 QTableWidget#pairTable QHeaderView::section { background: #EEF3F0; border: none; padding: 10px; font-weight: 600; }
@@ -45,6 +48,103 @@ QTableWidget#pairTable QSpinBox::up-button, QTableWidget#pairTable QSpinBox::dow
 
 STATUS = {'equal': '当前设置下未检出差异', 'changed': '有差异', 'inserted': '新版未配对（可能新增）',
           'deleted': '旧版未配对（可能删除）'}
+
+
+class PdfFileDrop(QObject):
+    """File-reference drops shared by content and visual comparison; never move files."""
+    def __init__(self, owner):
+        super().__init__(owner)
+        self.owner = owner
+        for widget in [owner, *owner.paths, *owner.file_targets]:
+            widget.setAcceptDrops(True)
+            widget.installEventFilter(self)
+
+    @staticmethod
+    def paths_from(mime):
+        if not mime.hasUrls():
+            return []
+        urls = mime.urls()
+        if not 1 <= len(urls) <= 2 or any(not url.isLocalFile() for url in urls):
+            return []
+        paths = [url.toLocalFile() for url in urls]
+        if any(Path(path).suffix.lower() != '.pdf' for path in paths):
+            return []
+        if len({PdfFileDrop.key(path) for path in paths}) != len(paths):
+            return []
+        return paths
+
+    @staticmethod
+    def key(path):
+        return os.path.normcase(os.path.abspath(path))
+
+    def highlight(self, target, active):
+        if target is None:
+            if not active:
+                for index in range(2):
+                    self.highlight(index, False)
+            return
+        field = self.owner.paths[target]
+        if bool(field.property('pdfDropActive')) != active:
+            field.setProperty('pdfDropActive', active)
+            field.style().unpolish(field); field.style().polish(field); field.update()
+
+    def eventFilter(self, widget, event):
+        kind = event.type()
+        if kind not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.DragLeave, QEvent.Type.Drop):
+            return False
+        target = next((i for i in range(2) if widget in (self.owner.paths[i], self.owner.file_targets[i])), None)
+        if kind == QEvent.Type.DragLeave:
+            self.highlight(target, False)
+            return False
+        if not event.mimeData().hasUrls():
+            return False  # Keep ordinary text editing in the path fields.
+        paths = self.paths_from(event.mimeData())
+        allowed = (not self.owner.busy and widget.isEnabled() and paths
+                   and event.possibleActions() & Qt.DropAction.CopyAction)
+        if not allowed:
+            self.highlight(target, False); event.ignore(); return True
+        if kind == QEvent.Type.Drop:
+            self.highlight(target, False)
+            if not self.assign(paths, target):
+                event.ignore(); return True
+        else:
+            self.highlight(target, True)
+        event.setDropAction(Qt.DropAction.CopyAction); event.accept()
+        return True
+
+    def assign(self, paths, target):
+        owner = self.owner
+        if owner.busy:
+            return False
+        try:
+            available = all(Path(path).is_file() for path in paths)
+        except (OSError, ValueError):
+            available = False
+        if not available:
+            owner.status.setText('拖入的 PDF 不存在或不是文件，请重新选择。')
+            return False
+        if len(paths) == 1 and target is None:
+            if any(field.text().strip() and self.key(field.text().strip()) == self.key(paths[0]) for field in owner.paths):
+                owner.status.setText('这份文件已填入。请拖入另一份 PDF；也可拖到指定版本框替换。')
+                return False
+            target = next((i for i, field in enumerate(owner.paths) if not field.text().strip()), None)
+            if target is None:
+                owner.status.setText('两份文件已选齐，请拖到旧版或新版文件框替换对应文件。')
+                return False
+        assignments = list(enumerate(paths)) if len(paths) == 2 else [(target, paths[0])]
+        for index, path in assignments:
+            if self.key(owner.paths[index].text()) != self.key(path):
+                owner.password_inputs[index].clear()
+            owner.paths[index].setText(path)
+        names = [('旧版' if i == 0 else '新版') + '：' + Path(field.text()).name
+                 for i, field in enumerate(owner.paths) if field.text().strip()]
+        message = '；'.join(names) + '。确认顺序后点击“开始比较”。'
+        if getattr(owner, 'stale', False):
+            message += '来源已变化，请重新比较。'
+        elif owner.summary is not None:
+            message += '下方仍显示上次完成的结果。'
+        owner.status.setText(message)
+        return True
 
 
 class PairingDialog(QDialog):
@@ -183,13 +283,15 @@ class PdfCompareDialog(QDialog):
         sources = QFrame(); sources.setObjectName('workbench')
         source_layout = QVBoxLayout(sources); source_layout.setContentsMargins(14, 12, 14, 12); source_layout.setSpacing(10)
         files = QHBoxLayout(); files.setSpacing(20)
-        self.paths, self.password_inputs, self.file_buttons = [], [], []
+        self.paths, self.password_inputs, self.file_buttons, self.file_targets = [], [], [], []
         for title in ('旧版', '新版'):
-            group = QVBoxLayout(); group.setSpacing(6)
+            target = QWidget(); target.setObjectName('pdfDropTarget')
+            group = QVBoxLayout(target); group.setContentsMargins(0, 0, 0, 0); group.setSpacing(6)
+            self.file_targets.append(target)
             label = QLabel(title + ' PDF'); label.setObjectName('compareSection'); group.addWidget(label)
             row = QHBoxLayout(); row.setSpacing(8)
-            path = QLineEdit(); path.setPlaceholderText('选择' + title + '文件')
-            path.setToolTip('比较磁盘上的文件，不包含标签页未保存的修改。')
+            path = QLineEdit(); path.setPlaceholderText('选择或拖入' + title + ' PDF')
+            path.setToolTip('可拖入 PDF；一次拖两份时按旧版、新版顺序填入。只比较已保存文件。')
             path.setAccessibleName(title + ' PDF 路径'); self.paths.append(path)
             choose = QPushButton('选择文件'); choose.clicked.connect(lambda _, p=path: self.choose(p))
             choose.setAccessibleName('选择' + title + ' PDF')
@@ -197,7 +299,7 @@ class PdfCompareDialog(QDialog):
             password = QLineEdit(); password.setEchoMode(QLineEdit.EchoMode.Password)
             password.setPlaceholderText(title + '密码（如有）')
             password.setAccessibleName(title + '密码'); self.password_inputs.append(password)
-            row.addWidget(path, 1); row.addWidget(choose); group.addLayout(row); files.addLayout(group, 1)
+            row.addWidget(path, 1); row.addWidget(choose); group.addLayout(row); files.addWidget(target, 1)
         source_layout.addLayout(files)
         settings = QHBoxLayout()
         self.advanced = QPushButton('更多设置'); self.advanced.setCheckable(True); self.advanced.setObjectName('compareMore')
@@ -268,6 +370,7 @@ class PdfCompareDialog(QDialog):
         splitter.setSizes([250, 850])
         self.status = QLabel('未检出差异不代表内容完全相同，请核对重要细节。')
         self.status.setObjectName('compareHint'); self.status.setWordWrap(True); layout.addWidget(self.status)
+        self.file_drop = PdfFileDrop(self)
         for path in self.paths:
             path.textChanged.connect(self._refresh_start)
         self._refresh_start()
@@ -277,7 +380,8 @@ class PdfCompareDialog(QDialog):
 
     def show_help(self):
         QMessageBox.information(self, 'PDF 对比说明',
-            '选择磁盘上的旧版与新版 PDF，点击“开始比较”。原文件只读，不包含标签页未保存的修改。\n\n'
+            '选择或拖入磁盘上的旧版与新版 PDF，点击“开始比较”。一次拖入两份时请核对版本顺序。'
+            '原文件只读，不包含标签页未保存的修改。\n\n'
             '每份最多 200 页、512 MiB。红色表示旧版独有像素，青色表示新版独有像素，橙色表示其他变化；'
             '颜色不是文字增删或业务含义的判断。未配对页只表示可能新增或删除。\n\n'
             '页面对应不正确时，可在“调整页面配对”中指定有序页对。使用“上一处／下一处差异”逐项核对，'
@@ -482,11 +586,15 @@ class PdfCompareDialog(QDialog):
 def main():
     import sys
     from app.ui import STYLESHEET
+    from app.pdfcontentcompareui import PdfContentCompareDialog, CONTENT_STYLE
+    from app.runtime import preferences
+    from app.themes import initialize_theme
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle('Fusion')
-    dialog = PdfCompareDialog()
+    initialize_theme(preferences())
+    dialog = PdfContentCompareDialog()
     # Standalone preview uses the same inherited styles as the actual document menu.
-    set_theme_style(dialog, STYLESHEET + COMPARE_STYLE)
+    set_theme_style(dialog, STYLESHEET + CONTENT_STYLE)
     for widget, path in zip(dialog.paths, sys.argv[1:3]):
         widget.setText(path)
     dialog.show()

@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import hashlib
+import uuid
 
 from app.output import OperationCancelled, check_cancel, commit_file, stamp, cancellable_lock
 from app.pdfio import PdfError, WriteNeedsConfirmation, WriteOptions, WriteResult
@@ -22,13 +23,33 @@ from app.wordconvert import _read_json, _write_json
 def _worker(folder, request, progress, cancel, *, on_prepared=None):
     check_cancel(cancel)
     root = Path(folder)
-    _write_json(root / "request.json", request)
+    job = None
+    if request.get('operation') == 'content_compare' and os.name == 'nt':
+        # Reuse the Windows job policy already used by Word conversion. OCR children
+        # must also exit if a comparison is force-cancelled or the application exits.
+        import win32job
+        name = 'ZhiXuCompare-' + uuid.uuid4().hex
+        job = win32job.CreateJobObject(None, name)
+        try:
+            info = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
+            info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            win32job.SetInformationJobObject(job, win32job.JobObjectExtendedLimitInformation, info)
+        except Exception:
+            job.Close()
+            raise
+        request = dict(request, process_job=name)
     command = ([sys.executable] if getattr(sys, "frozen", False)
                else [sys.executable, "-m", "app"])
-    process = subprocess.Popen([*command, "--pdf-worker", str(root)],
-        cwd=str(Path(__file__).resolve().parent.parent), stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    try:
+        _write_json(root / 'request.json', request)
+        process = subprocess.Popen([*command, "--pdf-worker", str(root)],
+            cwd=str(Path(__file__).resolve().parent.parent), stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    except Exception:
+        if job is not None:
+            job.Close()
+        raise
     started = time.monotonic()
     previous = None
     acknowledged = -1
@@ -62,7 +83,7 @@ def _worker(folder, request, progress, cancel, *, on_prepared=None):
             raise PdfError(result["error"])
         return result
     except OperationCancelled:
-        if request.get('operation') == 'print' and process.poll() is None:
+        if request.get('operation') in ('print', 'content_compare') and process.poll() is None:
             # 让打印机有机会 abort；驱动无响应时仍由 finally 回收进程。
             _write_json(root / 'cancel.json', dict(cancelled=True))
             try:
@@ -71,13 +92,17 @@ def _worker(folder, request, progress, cancel, *, on_prepared=None):
                 pass
         raise
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-        process.wait()
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+            process.wait()
+        finally:
+            if job is not None:
+                job.Close()
 
 
 def _snapshot_sources(store, pages, dests, folder, progress, cancel):
@@ -326,6 +351,36 @@ def compare_pdf_versions(old_path, new_path, options, progress=None, cancel=None
         return result['row'], images
 
 
+def compare_pdf_contents(old_path, new_path, progress=None, cancel=None, *, passwords=('', ''), use_ocr=True):
+    runtime = None
+    if use_ocr:
+        from app.ocr.model_manager import default_runtime_dir
+        candidate = default_runtime_dir()
+        if (candidate / 'manifest.json').is_file():
+            runtime = str(candidate)
+    with TemporaryWorkspace('pdfcontentcompare') as folder:
+        result = _worker(folder, dict(operation='content_compare', old_path=str(old_path), new_path=str(new_path),
+            passwords=list(passwords), ocr_runtime=runtime), progress, cancel)
+        check_cancel(cancel)
+        result['summary']['ocr_enabled'] = bool(use_ocr)
+        result['summary']['ocr_available'] = bool(runtime)
+        return result['summary']
+
+
+def render_content_change(summary, change, pages=None, progress=None, cancel=None, *, passwords=('', '')):
+    from PIL import Image
+    with TemporaryWorkspace('contentpreview') as folder:
+        result = _worker(folder, dict(operation='content_preview', summary=summary, change=change,
+            pages=pages, passwords=list(passwords)), progress, cancel)
+        check_cancel(cancel)
+        images = {}
+        for side in ('old', 'new'):
+            if result['metadata'][side]['available']:
+                with Image.open(Path(folder) / f'{side}.png') as image:
+                    images[side] = image.convert('RGB')
+        return result['metadata'], images
+
+
 def worker_main(folder):
     from app.pdfio import EncryptionOptions, PdfStore
     from app.workspace import OutlineEntry, PageEdit, PageRef
@@ -341,7 +396,33 @@ def worker_main(folder):
         last_report = now
         _write_json(root / "event.json", dict(current=current, total=total, message=message))
     try:
-        if request.get("operation") == "compare":
+        if request.get('process_job') and os.name == 'nt':
+            import win32api
+            import win32con
+            import win32job
+            child_job = win32job.OpenJobObject(win32job.JOB_OBJECT_ALL_ACCESS, False, request['process_job'])
+            handle = win32api.OpenProcess(win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE, False, os.getpid())
+            try:
+                win32job.AssignProcessToJobObject(child_job, handle)
+            finally:
+                handle.Close()
+                child_job.Close()
+        if request.get('operation') == 'content_compare':
+            from app.pdfcontentcompare import compare_content_files
+            passwords = request['passwords']
+            summary = compare_content_files(request['old_path'], request['new_path'],
+                ocr_runtime=request.get('ocr_runtime'), cache_dir=root / 'ocr', progress=report,
+                cancel=lambda: (root / 'cancel.json').exists(),
+                old_password=passwords[0], new_password=passwords[1])
+            result = dict(summary=summary)
+        elif request.get('operation') == 'content_preview':
+            from app.pdfcontentcompare import preview_content_change
+            metadata, images = preview_content_change(request['summary'], request.get('change'),
+                request.get('pages'), passwords=request['passwords'])
+            for side, image in images.items():
+                image.save(root / f'{side}.png')
+            result = dict(metadata=metadata)
+        elif request.get("operation") == "compare":
             from app.pdfcompare import CompareOptions, compare_files, preview_pair
             passwords = request.get('passwords', ['', ''])
             if request.get('summary') is None:

@@ -3851,8 +3851,8 @@ class MainWindow(QMainWindow):
         self.preview_view.setFocus()
 
     def open_pdf_compare(self):
-        from app.pdfcompareui import PdfCompareDialog
-        dialog = PdfCompareDialog(self)
+        from app.pdfcontentcompareui import PdfContentCompareDialog
+        dialog = PdfContentCompareDialog(self)
         try:
             dialog.exec()
         finally:
