@@ -147,7 +147,7 @@ def test_common_controls_and_vertical_layout_remain_discoverable(printing_case, 
         viewport = dialog.sidebar_scroll.viewport()
         assert not dialog.advanced.isVisible()
         for control in (dialog.combo_printer, dialog.edit_range, dialog.spin_copies,
-                        dialog.combo_paper, dialog.combo_orient, dialog.combo_nup):
+                        dialog.combo_paper, dialog.combo_orient, dialog.combo_scale, dialog.combo_nup):
             top = control.mapTo(viewport, QPoint(0, 0))
             bottom = top.y() + control.height()
             assert 0 <= top.y() and bottom <= viewport.height(), control.accessibleName()

@@ -102,6 +102,27 @@ def test_quick_task_never_flashes_a_dialog(qapp):
         parent.deleteLater()
 
 
+def test_immediate_progress_is_painted_before_native_work_starts(qapp, monkeypatch):
+    from app import progress
+    painted = threading.Event()
+
+    class PaintedDialog(TaskProgressDialog):
+        def paintEvent(self, event):
+            super().paintEvent(event)
+            painted.set()
+
+    monkeypatch.setattr(progress, 'TaskProgressDialog', PaintedDialog)
+    parent = QWidget()
+    def work(report):
+        assert painted.is_set(), '进度窗口应在耗时原生调用前完成首次绘制'
+        return 'done'
+    try:
+        assert run_operation(parent, '发送打印任务', work, show_delay_ms=0) == 'done'
+        assert not any(dialog.isVisible() for dialog in parent.findChildren(TaskProgressDialog))
+    finally:
+        parent.deleteLater()
+
+
 def test_pdf_operations_report_page_and_file_progress(tmp_path, qapp):
     source = tmp_path / 'source.pdf'
     with pymupdf.open() as doc:

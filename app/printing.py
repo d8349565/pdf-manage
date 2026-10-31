@@ -95,6 +95,7 @@ class PrintOptions:
     booklet_binding: str = "left"  # "left" | "right"
     booklet_sides: str = "both"  # "both" | "front" | "back"
     two_page_layout: str = "horizontal"  # "horizontal" | "vertical"
+    scale_mode: str = "shrink"  # "shrink" | "fit" | "actual"
 
 
 @dataclass(frozen=True)
@@ -137,16 +138,20 @@ class Sheet:
         return self.back is not None and self.front_portrait != self.back_portrait
 
 
-def fit_rect(outer: QRectF, aspect: float) -> QRectF:
-    """把宽高比为 aspect 的内容等比放进 outer 并居中。"""
-    if aspect <= 0 or outer.width() <= 0 or outer.height() <= 0:
+def print_content_rect(outer: QRectF, page_size: tuple[float, float],
+                       units_per_mm: float, scale_mode: str) -> QRectF:
+    """按 PDF 的物理尺寸计算内容区域；预览与打印只需提供各自的毫米比例。"""
+    if scale_mode not in ("shrink", "fit", "actual"):
+        raise ValueError("不支持的打印缩放方式。")
+    width, height = (value * 25.4 / 72 * units_per_mm for value in page_size)
+    if min(width, height, outer.width(), outer.height()) <= 0:
         return QRectF(outer)
-    if outer.width() / outer.height() > aspect:
-        height = outer.height()
-        width = height * aspect
-    else:
-        width = outer.width()
-        height = width / aspect
+    factor = min(outer.width() / width, outer.height() / height)
+    if scale_mode == "shrink":
+        factor = min(factor, 1.0)
+    elif scale_mode == "actual":
+        factor = 1.0
+    width, height = width * factor, height * factor
     return QRectF(
         outer.x() + (outer.width() - width) / 2,
         outer.y() + (outer.height() - height) / 2,
@@ -346,6 +351,9 @@ def render_pages_to_printer(
     cancel_check=None,
 ) -> None:
     """按物理纸张的面序把页面画到打印机上。"""
+    check_cancel(cancel_check)
+    if progress_callback:
+        progress_callback(0, 0, "正在准备打印排版")
     sheets = build_sheets(pages, options, store)
     if not sheets:
         return
@@ -386,6 +394,8 @@ def render_pages_to_printer(
         applied_portrait = faces[0][1]
         for position, (indices, portrait) in enumerate(faces):
             check_cancel(cancel_check)
+            if progress_callback:
+                progress_callback(position, len(faces), f"正在发送第 {position + 1} / {len(faces)} 面")
             if position > 0:
                 # 朝向变了才回写打印机：每次回写都是一趟驱动往返，长文档上很费时间。
                 if portrait != applied_portrait:
@@ -407,11 +417,17 @@ def render_pages_to_printer(
 
             for page_index, cell in face_cells(draw_rect, indices, options):
                 check_cancel(cancel_check)
-                wanted = int(geometry.content_width / 25.4 * PRINT_DPI * cell.width() / draw_rect.width())
-                render_w = max(1, min(wanted, int(cell.width()), MAX_PRINT_PX))
                 width_pt, height_pt = store.page_size(pages[page_index])
+                target = print_content_rect(cell, (width_pt, height_pt),
+                                            draw_rect.width() / geometry.content_width,
+                                            "fit" if options.booklet else options.scale_mode)
+                wanted = int(geometry.content_width / 25.4 * PRINT_DPI * target.width() / draw_rect.width())
+                render_w = max(1, min(wanted, int(target.width()), MAX_PRINT_PX))
                 render_w = min(render_w, max(1, int(math.sqrt(MAX_PRINT_PIXELS * width_pt / max(height_pt, 1)))))
                 try:
+                    if progress_callback:
+                        progress_callback(position, len(faces),
+                                          f"正在渲染第 {position + 1} / {len(faces)} 面（工作区第 {page_index + 1} 页）")
                     image = store.render_qimage(pages[page_index], render_w)
                     image = _image_for_color_mode(image, options.color_mode)
                 except Exception as exc:
@@ -419,17 +435,24 @@ def render_pages_to_printer(
                 if image.isNull():
                     raise PdfError(f"工作区第 {page_index + 1} 页无法渲染，打印已停止。")
                 check_cancel(cancel_check)
-                painter.drawImage(fit_rect(cell, image.width() / image.height()), image)
+                painter.save()
+                painter.setClipRect(cell, Qt.ClipOperation.IntersectClip)
+                painter.drawImage(target, image)
+                painter.restore()
                 if options.borders:
                     color = QColor("#737373" if options.color_mode == "grayscale" else "#64748B")
                     painter.setPen(QPen(color, max(1, draw_rect.width() * .0007)))
                     painter.drawRect(cell)
                 del image
-            if progress_callback:
-                progress_callback(position + 1, len(faces), f"已发送 {position + 1} / {len(faces)} 页")
+            if progress_callback and position + 1 < len(faces):
+                progress_callback(position + 1, len(faces), f"已发送 {position + 1} / {len(faces)} 面")
         check_cancel(cancel_check)
+        if progress_callback and should_end:
+            progress_callback(0, 0, "正在提交打印队列，请稍候")
         if should_end and not painter.end():
             raise PdfError("结束打印任务失败，请检查打印机队列。")
+        if progress_callback:
+            progress_callback(len(faces), len(faces), f"已发送 {len(faces)} / {len(faces)} 面")
     except Exception:
         printer.abort()
         raise
@@ -765,15 +788,20 @@ class SheetPreview(QWidget):
         self, painter: QPainter, content: QRectF, page_index: int
     ) -> None:
         dpr = max(self.devicePixelRatioF(), 1.0)
-        image = self._image(page_index, int(content.width() * dpr))
+        target = print_content_rect(content, self.store.page_size(self.pages[page_index]), self.scale,
+                                    "fit" if self.options.booklet else self.options.scale_mode)
+        image = self._image(page_index, int(target.width() * dpr))
         if image is None:
             painter.setPen(QColor("#CBD5E1"))
             painter.setFont(self._font(9))
-            key = self._image_key(page_index, int(content.width() * dpr))
+            key = self._image_key(page_index, int(target.width() * dpr))
             message = "无法预览此页" if key in self._errors else "正在生成预览…"
             painter.drawText(content, Qt.AlignmentFlag.AlignCenter, message)
             return
-        painter.drawImage(fit_rect(content, image.width() / image.height()), image)
+        painter.save()
+        painter.setClipRect(content, Qt.ClipOperation.IntersectClip)
+        painter.drawImage(target, image)
+        painter.restore()
 
     def _paint_binding_edge(self, painter: QPainter, rect: QRectF, edge: str) -> None:
         painter.setPen(QPen(QColor("#0F766E"), 3, Qt.PenStyle.DashLine))
@@ -1149,6 +1177,21 @@ class PrintDialog(QDialog):
         paper_row.addWidget(self._field("纸张方向", self.combo_orient), 1)
         lay.addLayout(paper_row)
 
+        self.combo_scale = ClearComboBox()
+        self.combo_scale.setAccessibleName("页面缩放")
+        self.combo_scale.addItem("缩小过大页面", "shrink")
+        self.combo_scale.addItem("适合纸张", "fit")
+        self.combo_scale.addItem("实际大小（100%）", "actual")
+        self.combo_scale.setToolTip("默认不放大小页面，只有超出打印区域时才缩小。多页排列时按每个格子的大小计算。")
+        self.combo_scale.currentIndexChanged.connect(self._refresh)
+        self.scale_field = self._field("页面缩放", self.combo_scale)
+        lay.addWidget(self.scale_field)
+        self.label_scale_hint = QLabel("保持原始尺寸；超出可打印区域的部分不会打印，请核对预览。")
+        self.label_scale_hint.setWordWrap(True)
+        set_theme_style(self.label_scale_hint, "color: #92400E; font-size: 11px;")
+        self.label_scale_hint.hide()
+        lay.addWidget(self.label_scale_hint)
+
         self.combo_color = ClearComboBox()
         self.combo_color.setAccessibleName("颜色模式")
         self.combo_color.addItem("彩色", "color")
@@ -1521,6 +1564,7 @@ class PrintDialog(QDialog):
             booklet_sides=sides,
             two_page_layout=("horizontal" if booklet else
                              self.combo_nup.currentData(Qt.ItemDataRole.UserRole + 1) or "horizontal"),
+            scale_mode="fit" if booklet else self.combo_scale.currentData() or "shrink",
         )
 
     def _geometries(self, options: PrintOptions) -> dict[bool, SheetGeometry]:
@@ -1542,6 +1586,8 @@ class PrintDialog(QDialog):
         self.label_hint.setVisible(is_double or options.booklet)
         self.booklet_controls.setVisible(options.booklet)
         self.nup_field.setVisible(not options.booklet)
+        self.scale_field.setVisible(not options.booklet)
+        self.label_scale_hint.setVisible(not options.booklet and options.scale_mode == "actual")
         self.sides_field.setVisible(not options.booklet)
         self.duplex_field.setVisible(is_double and not options.booklet)
         for widget in (self.label_nup, self.combo_nup, self.label_sides, self.radio_single,
@@ -1580,7 +1626,8 @@ class PrintDialog(QDialog):
             text += f" · {direction} {paper}"
             if options.pages_per_face == 2 and not options.booklet:
                 text += " · 上下两页" if options.two_page_layout == "vertical" else " · 左右两页"
-            text += f" · 实际页边距 {geometry.left:.1f} 毫米（内容按可打印区等比缩放）"
+            scaling = {"shrink": "小页面不放大，过大页面缩小", "fit": "适合纸张", "actual": "实际大小（100%）"}
+            text += f" · 实际页边距 {geometry.left:.1f} 毫米 · {scaling[options.scale_mode]}"
         else:
             text = "还没有选定要打印的页面"
         self.label_summary.setText(text)
@@ -1655,15 +1702,11 @@ class PrintDialog(QDialog):
         pages = list(self.pages)
 
         def work(progress, cancelled):
-            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-            printer.setPrinterName(options.printer_name)
-            if not printer.isValid() or printer.printerName() != options.printer_name:
-                raise PdfError("没有可用的打印机，请先连接或安装打印机。")
-            render_pages_to_printer(printer, self.store, pages, options,
-                                    progress_callback=progress, cancel_check=cancelled)
+            from app.pdfworker import print_pdf
+            print_pdf(self.store, pages, options, progress_callback=progress, cancel=cancelled)
 
         try:
-            run_operation(self, "发送打印任务", work, cancellable=True)
+            run_operation(self, "发送打印任务", work, cancellable=True, show_delay_ms=0)
             self.accept()
         except OperationCancelled:
             QMessageBox.information(self, "已取消打印", "已请求停止发送。已经交给打印机的页面可能仍会打印，可在系统打印队列中取消。")

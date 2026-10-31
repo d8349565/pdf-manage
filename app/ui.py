@@ -103,6 +103,8 @@ from app.startup import mark
 from app.storage import TemporaryWorkspace, export_path, output_directory
 from app.rendering import RenderResult, RenderScheduler, RenderSignals
 from app.readingcache import ReadingCache, native_width_matches
+from app.readingcolors import ReadingColorJob, ReadingColors, ReadingPixmapItem
+from app.mergeopenui import is_pdf_workspace
 
 THUMB_W = 96
 THUMB_MIN_W = 64
@@ -225,7 +227,7 @@ QMainWindow {
     color: #134E4A;
     border: 1px solid #C5D5D2;
 }
-QMainWindow[maximized="true"] { border: none; }
+QMainWindow[maximized="true"], QMainWindow[borderlessReader="true"] { border: none; border-radius: 0; }
 QMainWindow, QWidget {
     background: #F3F6F5;
     color: #134E4A;
@@ -237,6 +239,7 @@ QFrame#card, QFrame#exportSidebar {
     border: 1px solid #E2EEEC;
     border-radius: 12px;
 }
+QFrame#card[borderlessReader="true"] { border: none; border-radius: 0; }
 QLabel#hint {
     color: #4D6B67;
     font-size: 14px;
@@ -1274,6 +1277,7 @@ class PreviewView(QGraphicsView):
         self._acc = 0
         self._scene = QGraphicsScene(self)
         self.page_rects = []
+        self.fit_page_size = (0, 0)
         self._page_tops = []
         self._page_bottoms = []
         self._rows = []
@@ -1290,9 +1294,15 @@ class PreviewView(QGraphicsView):
         self.search_areas = {}
         self.note_markers = {}
         self.current_search = -1
-        self._item = QGraphicsPixmapItem()
+        self.reading_colors = ReadingColors()
+        self.borderless = False
+        self._reading_color_cache = OrderedDict()
+        self._reading_color_pending = None
+        self._reading_color_signals = RenderSignals(self)
+        self._reading_color_signals.done.connect(self._on_reading_color, Qt.ConnectionType.QueuedConnection)
+        self._item = ReadingPixmapItem(self)
         self._scene.addItem(self._item)
-        self._detail = QGraphicsPixmapItem()
+        self._detail = ReadingPixmapItem(self)
         self._detail.setZValue(1)
         self._scene.addItem(self._detail)
         self._other_details = {}
@@ -1318,6 +1328,50 @@ class PreviewView(QGraphicsView):
     def photo(self) -> QPixmap:
         return self._item.pixmap()
 
+    def set_reading_colors(self, colors):
+        if colors != self.reading_colors:
+            self.reading_colors = colors
+            self._reading_color_cache.clear()
+        background = ((colors.paper if colors.enabled else '#FFFFFF') if self.borderless else
+                      colors.canvas if colors.enabled else ui_color('#F4F7F6'))
+        self.setBackgroundBrush(QColor(background))
+        self.resetCachedContent()
+        self.viewport().update()
+
+    def set_borderless(self, enabled):
+        if enabled == self.borderless:
+            return
+        if enabled:
+            self._saved_scroll_policies = (self.horizontalScrollBarPolicy(), self.verticalScrollBarPolicy())
+        self.borderless = enabled
+        horizontal, vertical = ((Qt.ScrollBarPolicy.ScrollBarAlwaysOff,) * 2 if enabled else self._saved_scroll_policies)
+        self.setHorizontalScrollBarPolicy(horizontal)
+        self.setVerticalScrollBarPolicy(vertical)
+        self.set_reading_colors(self.reading_colors)
+
+    def reading_image(self, pixmap):
+        key = pixmap.cacheKey()
+        cached = self._reading_color_cache.get(key)
+        if cached is not None:
+            self._reading_color_cache.move_to_end(key)
+            return cached
+        image = pixmap.toImage()
+        if self._reading_color_pending is None and not image.isNull():
+            self._reading_color_pending = (key, self.reading_colors)
+            QThreadPool.globalInstance().start(ReadingColorJob(
+                self.reading_colors, image, self._reading_color_pending, self._reading_color_signals))
+        return image
+
+    def _on_reading_color(self, key, image):
+        self._reading_color_pending = None
+        # Keep the indexed image: Qt draws it directly without a full-page QPixmap conversion.
+        if key[1] == self.reading_colors and self.reading_colors.enabled and image.sizeInBytes() <= READING_CACHE_BYTES:
+            self._reading_color_cache[key[0]] = image
+            while (len(self._reading_color_cache) > 32 or sum(
+                    item.sizeInBytes() for item in self._reading_color_cache.values()) > READING_CACHE_BYTES):
+                self._reading_color_cache.popitem(last=False)
+        self.viewport().update()
+
     def set_pages(self, signature, sizes, *, spread=False, columns=None) -> bool:
         # A size edit keeps the source and rotation but invalidates every layer's geometry.
         signature = (signature, tuple(sizes))
@@ -1338,9 +1392,10 @@ class PreviewView(QGraphicsView):
         self._row_rects = []
         self._page_rows = []
         width = max((w for w, h in sizes), default=0)
+        self.fit_page_size = (width, max((h for w, h in sizes), default=0))
         if columns == 4:
             cell_width = width
-            cell_height = max((h for w, h in sizes), default=0)
+            cell_height = self.fit_page_size[1]
             width = cell_width * 2 + 12 if sizes else 0
             height = cell_height * 2 + 16
             y = 0
@@ -1457,8 +1512,11 @@ class PreviewView(QGraphicsView):
         for index in self.visible_pages(rect):
             page = self.page_rects[index]
             if page.intersects(rect):
+                if self.borderless:
+                    painter.fillRect(page, QColor(self.reading_colors.paper) if self.reading_colors.enabled else Qt.GlobalColor.white)
+                    continue
                 painter.fillRect(page.translated(2 / scale, 3 / scale), QColor(ui_color("#E4EAE7")))
-                painter.fillRect(page, Qt.GlobalColor.white)
+                painter.fillRect(page, QColor(self.reading_colors.paper) if self.reading_colors.enabled else Qt.GlobalColor.white)
                 pen = QPen(QColor(ui_color("#D7E3DF")))
                 pen.setCosmetic(True)
                 painter.setPen(pen)
@@ -1477,7 +1535,7 @@ class PreviewView(QGraphicsView):
     def set_neighbor(self, index, image) -> None:
         item = self.neighbors.get(index)
         if item is None:
-            item = QGraphicsPixmapItem()
+            item = ReadingPixmapItem(self)
             self._scene.addItem(item)
             self.neighbors[index] = item
         rect = self.page_rects[index]
@@ -1552,7 +1610,7 @@ class PreviewView(QGraphicsView):
             index = self.active_page
         item = self.detail_item(index)
         if item is None:
-            item = QGraphicsPixmapItem()
+            item = ReadingPixmapItem(self)
             item.setZValue(1)
             self._scene.addItem(item)
             self._other_details[index] = item
@@ -2283,6 +2341,15 @@ class DocumentTabBar(QFrame):
         self.new_tab_button.clicked.connect(self._host.open_files)
         row.addWidget(self.new_tab_button)
         row.addStretch(1)
+        self.merge_button = QToolButton(self)
+        self.merge_button.setText('合并')
+        self.merge_button.setIcon(toolbar_icon('merge', '#526B63', 16))
+        self.merge_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.merge_button.setAccessibleName('合并已打开的文件')
+        self.merge_button.setToolTip('勾选已打开的 PDF，合并另存为新文件')
+        self.merge_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.merge_button.clicked.connect(self._host.merge_open_files)
+        row.addWidget(self.merge_button)
 
     @property
     def pills(self) -> list[_TabPill]:
@@ -2306,6 +2373,10 @@ class DocumentTabBar(QFrame):
                 self._pills[tab.tab_id] = pill
                 self._pills_layout.insertWidget(idx, pill)
             pill.update_content(tab.ws, tab.tab_id == active_tab_id)
+        can_merge = sum(is_pdf_workspace(tab.ws) for tab in tabs) >= 2
+        self.merge_button.setVisible(can_merge)
+        if hasattr(self._host, 'merge_open_action'):
+            self._host.merge_open_action.setEnabled(can_merge)
         self.setVisible(len(tabs) > 1)
 
     def dragEnterEvent(self, event) -> None:
@@ -2401,6 +2472,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._window_settings = preferences(QSettings)
         initialize_theme(self._window_settings)
+        self._reading_colors = ReadingColors.load(self._window_settings)
         from app.readinghistory import ReadingHistory
         self.reading_history = ReadingHistory(self._window_settings, self)
         self._reading_tool = self._window_settings.value('reading/tool', 'select')
@@ -2608,6 +2680,8 @@ class MainWindow(QMainWindow):
         if index == 1:
             if not self.ws.pages:
                 return
+            if self.immersive.borderless:
+                self.immersive.borderless_action.setChecked(False)
             if self.immersive.fullscreen:
                 self.immersive.fullscreen_action.setChecked(False)
         self.stack.setCurrentIndex(index)
@@ -2672,7 +2746,7 @@ class MainWindow(QMainWindow):
             if on and self.ws.pages and self._readable_painted:
                 self._ensure_tools()
             panel.setVisible(on and bool(self.ws.pages) and not (
-                hasattr(self, 'immersive') and self.immersive.fullscreen))
+                hasattr(self, 'immersive') and (self.immersive.fullscreen or self.immersive.borderless)))
 
     @property
     def export_tools(self):
@@ -2700,6 +2774,8 @@ class MainWindow(QMainWindow):
             self._sync_controls()
 
     def _save_ui_preferences(self, *_):
+        if hasattr(self, 'immersive') and self.immersive.borderless:
+            return
         if not hasattr(self, '_window_settings'):
             return
         if hasattr(self, 'immersive') and self.immersive._syncing_visibility:
@@ -2896,9 +2972,11 @@ class MainWindow(QMainWindow):
         edit.addSeparator()
         self.insert_action = self._act("插入页面…", self.insert_files)
         self.append_action = self._act("合并文件…", self.append_files)
+        self.merge_open_action = self._act('合并已打开文件', self.merge_open_files)
+        self.merge_open_action.setEnabled(False)
         self.delete_action = self._act("删除页面", self.delete_pages)
         tools = self._menubar.addMenu("页面")
-        tools.addActions([self.insert_action,self.append_action])
+        tools.addActions([self.insert_action,self.append_action,self.merge_open_action])
         tools.addSeparator()
         self.extract_action = self._act("提取页面…", lambda: self.open_export_tool(0))
         self.split_action = self._act("拆分文件…", lambda: self.open_export_tool(1))
@@ -3014,9 +3092,11 @@ class MainWindow(QMainWindow):
         self.immersive = ImmersiveReading(self)
         view.addSeparator()
         view.addAction(self.immersive.fullscreen_action)
+        view.addAction(self.immersive.borderless_action)
         view.addAction(self.immersive.auto_action)
         self.reading_settings_menu.addSeparator()
         self.reading_settings_menu.addAction(self.immersive.fullscreen_action)
+        self.reading_settings_menu.addAction(self.immersive.borderless_action)
         self.reading_settings_menu.addAction(self.immersive.auto_action)
         self.addAction(self.act_pages)
         self.addAction(self.outline_action)
@@ -3041,6 +3121,26 @@ class MainWindow(QMainWindow):
         self.theme_button.setIcon(theme_swatch(theme))
         self.theme_button.setToolTip(f"界面主题：{theme.name}，点击切换")
         self.theme_button.setAccessibleName(f"界面主题，当前为{theme.name}")
+        self.preview_view.set_reading_colors(self._reading_colors)
+
+    def configure_reading_colors(self):
+        from app.readingcolors import ReadingColorsDialog
+        dialog = ReadingColorsDialog(self, self._reading_colors, self.preview_view.set_reading_colors)
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._reading_colors = dialog.colors
+                self._reading_colors.save(self._window_settings)
+        finally:
+            self.preview_view.set_reading_colors(self._reading_colors)
+            self.restore_reading_colors_action.setEnabled(self._reading_colors.enabled)
+            dialog.deleteLater()
+
+    def restore_reading_colors(self):
+        self._reading_colors = replace(self._reading_colors, enabled=False)
+        self._reading_colors.save(self._window_settings)
+        self.preview_view.set_reading_colors(self._reading_colors)
+        self.restore_reading_colors_action.setEnabled(False)
+        self.statusBar().showMessage('已恢复文档原色。', 4000)
 
     def show_updates(self) -> None:
         from app.updateui import show_update_dialog
@@ -3193,7 +3293,8 @@ class MainWindow(QMainWindow):
         if index == 1:
             self._ensure_arrange()
         self.mode_buttons[index].setChecked(True)
-        self.navigation_bar.setVisible(bool(self.ws.pages) and index == 0)
+        self.navigation_bar.setVisible(bool(self.ws.pages) and index == 0 and not (
+            hasattr(self, 'immersive') and self.immersive.borderless))
         if index == 1 and hasattr(self, "annotation_tools"):
             if self.annotation_tools.deactivate() is False:
                 self.stack.setCurrentIndex(0)
@@ -3314,7 +3415,7 @@ class MainWindow(QMainWindow):
         self.convert_tool_button.setEnabled(bool(count) and not copy_reason)
         self._set_pages_visible(self.act_pages.isChecked())
         self._set_tools_visible(self.act_tools.isChecked())
-        self.navigation_bar.setVisible(bool(count) and not self._in_arrange())
+        self.navigation_bar.setVisible(bool(count) and not self._in_arrange() and not self.immersive.borderless)
         self.reading_orb.sync()
         self.mode_buttons[1].setEnabled(bool(count) or self._in_arrange())
         for action in self.reader_tool_actions.values():
@@ -3340,6 +3441,8 @@ class MainWindow(QMainWindow):
         self.save_action.setText('另存为 PDF' if is_ofd else '保存')
         self.save_state.setToolTip('当前显示为转换后的 PDF，不提供 OFD 原件签名验证。' if ofd_copy
                                   else read_only or self.ws.path or "文件仅在本机处理")
+        if self.immersive.borderless:
+            self.immersive.sync()
 
     def _sync_page_navigation(self):
         count = len(self.ws.pages)
@@ -3413,6 +3516,8 @@ class MainWindow(QMainWindow):
         self.reading_orb.sync()
 
     def open_search(self) -> None:
+        if self.immersive.borderless:
+            self.immersive.borderless_action.setChecked(False)
         self.search_bar.open_search()
 
     def _update_export_controls(self) -> None:
@@ -3486,6 +3591,7 @@ class MainWindow(QMainWindow):
         self.sidebar_mode.currentIndexChanged.connect(self.show_outline)
         split.addWidget(self.left_panel)
         center = QFrame()
+        self.reader_frame = center
         center.setObjectName("card")
         c_l = QVBoxLayout(center)
         self._reader_layout = c_l
@@ -3636,6 +3742,12 @@ class MainWindow(QMainWindow):
         self.default_reading_view_action = self._act('将当前视图设为默认', self.save_default_reading_view)
         self.default_reading_view_action.setToolTip('保存当前页面布局和适配方式，新打开的文档使用此设置')
         layout_menu.addAction(self.default_reading_view_action)
+        layout_menu.addSeparator()
+        self.reading_colors_action = self._act('阅读配色', self.configure_reading_colors)
+        self.restore_reading_colors_action = self._act('恢复文档原色', self.restore_reading_colors)
+        self.restore_reading_colors_action.setEnabled(self._reading_colors.enabled)
+        layout_menu.addActions([self.reading_colors_action, self.restore_reading_colors_action])
+        self.preview_view.set_reading_colors(self._reading_colors)
         from app.readingsettings import ReadingSettingsOrb
         self.reading_orb = ReadingSettingsOrb(self, layout_menu)
         self.page_number.setFixedHeight(28)
@@ -4208,6 +4320,13 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event) -> bool:
         kind = event.type()
+        if (kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape
+                and hasattr(self, 'immersive') and self.immersive.borderless
+                and isinstance(obj, QWidget) and (obj is self or self.isAncestorOf(obj))
+                and not QApplication.activePopupWidget() and not QApplication.activeModalWidget()):
+            self.immersive.borderless_action.setChecked(False)
+            event.accept()
+            return True
         if (kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
                      QEvent.Type.MouseButtonDblClick, QEvent.Type.Wheel,
                      QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride,
@@ -4309,6 +4428,10 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape and not (
                 QApplication.activePopupWidget() or QApplication.activeModalWidget()):
+            if self.immersive.borderless:
+                self.immersive.borderless_action.setChecked(False)
+                event.accept()
+                return
             if self.immersive.expanded:
                 self.immersive.collapse()
                 self.preview_view.setFocus()
@@ -4405,7 +4528,7 @@ class MainWindow(QMainWindow):
     def _over_max_button(self, x: int, y: int) -> bool:
         """x/y 为客户区物理像素，与 WM_NCHITTEST 的坐标系一致。"""
         btn = getattr(self, "btn_max", None)
-        if btn is None:
+        if btn is None or not btn.isVisible():
             return False
         dpr = self.devicePixelRatioF()
         origin = btn.mapTo(self, QPoint(0, 0))
@@ -4543,12 +4666,14 @@ class MainWindow(QMainWindow):
         if index is None or not view.page_rects or self._zoom_mode not in ('width', 'page'):
             return self._zoom * PDF_LOGICAL_SCALE
         rect = view._scene.sceneRect() if view.spread and self._zoom_mode == 'width' else view.spread_rect(index)
+        # Continuous pages share a scale; changing the current page must not zoom the viewport.
+        width, height = (rect.width(), rect.height()) if view.spread else view.fit_page_size
         available_width = view.viewport().width() - 24
         if self._zoom_mode == 'width' and len(view.page_rects) == 1 and not view.verticalScrollBar().isVisible():
             available_width -= view.verticalScrollBar().sizeHint().width()
-        factor = max(1, available_width) / max(1, rect.width())
+        factor = max(1, available_width) / max(1, width)
         if self._zoom_mode == 'page':
-            factor = min(factor, max(1, view.viewport().height() - 24) / max(1, rect.height()))
+            factor = min(factor, max(1, view.viewport().height() - 24) / max(1, height))
         return factor
 
     def _preview_render_width(self, index=None) -> int:
@@ -5352,10 +5477,10 @@ class MainWindow(QMainWindow):
             # 连续双页按整份布局适宽，跨组刷新预览时不改变缩放与横向范围。
             rect = view._scene.sceneRect() if view.spread and mode == 'width' else view.spread_rect(index)
             view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-                if one_page_fit or one_page_width or (view.spread and mode in ('page', 'width'))
+                if view.borderless or one_page_fit or one_page_width or (view.spread and mode in ('page', 'width'))
                 else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-                if one_page_fit else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                if view.borderless or one_page_fit else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             factor = self._reading_scale(index)
             if mode in ('width', 'page'):
                 self._zoom = factor / PDF_LOGICAL_SCALE
@@ -5373,7 +5498,8 @@ class MainWindow(QMainWindow):
             # 单页完整显示由视图居中；按视口高度反算留白会让场景始终比视口高 4 像素。
             vertical_padding = 10 if one_page_fit else 12
             if mode == 'page' and not one_page_fit:
-                vertical_padding = max(vertical_padding, (view.viewport().height() - rect.height() * factor) / 2 + 2)
+                fit_height = rect.height() if view.spread else view.fit_page_size[1]
+                vertical_padding = max(vertical_padding, (view.viewport().height() - fit_height * factor) / 2 + 2)
             vertical_padding /= max(factor, .001)
             bounds = bounds.adjusted(-horizontal_padding, -vertical_padding,
                                      horizontal_padding, vertical_padding)
@@ -5475,7 +5601,7 @@ class MainWindow(QMainWindow):
         tab = self._active_tab()
         if tab is not None and hasattr(self, "tab_bar"):
             self.tab_bar.sync_tabs(self._tabs, self._active_tab_id)
-            if hasattr(self, 'immersive') and self.immersive.fullscreen:
+            if hasattr(self, 'immersive') and (self.immersive.fullscreen or self.immersive.borderless):
                 self.tab_bar.hide()
 
     def _save_current_tab_state(self) -> None:
@@ -5881,6 +6007,10 @@ class MainWindow(QMainWindow):
                 self.insert_dropped_files(paths)
             else:
                 self._ingest(paths, replace=False)
+
+    def merge_open_files(self):
+        from app.mergeopenui import merge_open_files
+        return merge_open_files(self)
 
     def open_startup_files(self, paths: list[str], mode: str = "") -> None:
         try:

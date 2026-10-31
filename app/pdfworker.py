@@ -53,12 +53,23 @@ def _worker(folder, request, progress, cancel, *, on_prepared=None):
         check_cancel(cancel)
         result = _read_json(root / "result.json")
         if not result:
+            if request.get('operation') == 'print':
+                raise PdfError('打印工作进程意外退出，请检查系统打印队列后再重试。')
             raise PdfError("PDF 工作进程意外退出，未提交输出，原文件保留。")
         if result.get("confirmation"):
             raise WriteNeedsConfirmation(result["error"], result["confirmation"])
         if result.get("error"):
             raise PdfError(result["error"])
         return result
+    except OperationCancelled:
+        if request.get('operation') == 'print' and process.poll() is None:
+            # 让打印机有机会 abort；驱动无响应时仍由 finally 回收进程。
+            _write_json(root / 'cancel.json', dict(cancelled=True))
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        raise
     finally:
         if process.poll() is None:
             process.terminate()
@@ -255,6 +266,22 @@ def write_pdf_groups(store, pages, groups, dests, *, options=None, progress_call
         raise PdfError(f"已完整写出 {len(results)} 个文件。\n{exc}") from exc
 
 
+def print_pdf(store, pages, options, *, progress_callback=None, cancel=None, output_path=None):
+    """Keep native PDF rendering and printer-driver calls outside the GUI process.
+
+    output_path uses Qt's PDF print engine for verification without a physical printer.
+    """
+    check_cancel(cancel)
+    store.require_operation(pages, 'print')
+    with TemporaryWorkspace('pdfprint') as folder:
+        sources = _snapshot_sources(store, pages, [], folder, progress_callback, cancel)
+        payload, assets = _encode_pages(pages, cancel)
+        settings = asdict(options)
+        settings['paper'] = options.paper.value if options.paper is not None else None
+        _worker(folder, dict(operation='print', sources=sources, pages=payload, assets=assets,
+                             options=settings, output_path=output_path), progress_callback, cancel)
+
+
 def render_preview(refs, passwords, progress, cancel=None, *, width=1100):
     from PyQt6.QtGui import QImage
     with TemporaryWorkspace("pdfpreview") as folder:
@@ -325,10 +352,15 @@ def worker_main(folder):
                     matrix = pymupdf.Matrix(scale, scale).prerotate(item["rotation"])
                     page.get_pixmap(matrix=matrix, alpha=False).save(root / f"preview-{index}.png")
             result = dict(success=True)
-        elif request.get("operation") in ("write", "write_groups"):
+        elif request.get("operation") in ("write", "write_groups", "print"):
+            printing = request['operation'] == 'print'
+            cancelled = (lambda: (root / 'cancel.json').exists()) if printing else None
+            load_progress = (lambda current, total, message:
+                             report(0, 0, f'正在准备打印来源 · {message}')) if printing else report
             loaded = {}
             for sid, record in request["sources"].items():
-                refs = store.load(record["snapshot"], record["password"], progress_callback=report)
+                refs = store.load(record["snapshot"], record["password"],
+                                  progress_callback=load_progress, cancel=cancelled)
                 source = store._sources.pop(refs[0].source_id)
                 source.path, source.disk_stamp = record["path"], tuple(record["stamp"])
                 source.needs_encryption_choice = record.get("needs_encryption_choice", False)
@@ -336,7 +368,7 @@ def worker_main(folder):
                 source.requires_copy = record.get("requires_copy", False)
                 loaded[sid] = source
             store._sources = loaded
-            store._written_stamps = {key: tuple(value) for key, value in request["written_stamps"].items()}
+            store._written_stamps = {key: tuple(value) for key, value in request.get("written_stamps", {}).items()}
             pages = []
             for item in request["pages"]:
                 for edit in item["edits"]:
@@ -349,6 +381,33 @@ def worker_main(folder):
                               for edit in item.pop("edits"))
                 pages.append(PageRef(**item, edits=edits))
             settings = request["options"]
+            if printing:
+                from app import APP_NAME
+                from PyQt6.QtGui import QPageSize
+                from PyQt6.QtPrintSupport import QPrinter
+                from PyQt6.QtWidgets import QApplication
+                from app.printing import PrintOptions, render_pages_to_printer
+                def print_progress(current, total, message):
+                    # 每个耗时原生调用之前都留下最新阶段，由主进程按固定间隔读取。
+                    _write_json(root / 'event.json', dict(current=current, total=total, message=message))
+                print_progress(0, 0, '正在连接打印机')
+                check_cancel(cancelled)
+                application = QApplication.instance() or QApplication([])
+                application.setApplicationName(APP_NAME)
+                printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+                if request.get('output_path'):
+                    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                    printer.setOutputFileName(request['output_path'])
+                else:
+                    printer.setPrinterName(settings['printer_name'])
+                    if not printer.isValid() or printer.printerName() != settings['printer_name']:
+                        raise PdfError('没有可用的打印机，请先连接或安装打印机。')
+                if settings['paper'] is not None:
+                    settings['paper'] = QPageSize.PageSizeId(settings['paper'])
+                render_pages_to_printer(printer, store, pages, PrintOptions(**settings),
+                                        progress_callback=print_progress, cancel_check=cancelled)
+                _write_json(root / 'result.json', dict(success=True))
+                return
             if settings["encryption"]:
                 settings["encryption"] = EncryptionOptions(**settings["encryption"])
             if settings["page_numbers"]:

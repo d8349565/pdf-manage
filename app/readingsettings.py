@@ -189,7 +189,8 @@ class ReadingSettingsOrb(QToolButton):
         zoom = self.host.reading_zoom_actions[self.host._zoom_mode].text()
         hint = '\n阅读区较窄，当前暂用单页。' if self.host.reading_fallback_notice.isVisible() else ''
         self.setToolTip(f'阅读设置\n{layout} · {zoom}{hint}\nCtrl+1 单页 · Ctrl+2 双页 · Ctrl+4 四页')
-        visible = available and self.parentWidget().isVisible() and not self.temporarily_hidden
+        visible = (available and self.parentWidget().isVisible() and not self.temporarily_hidden
+                   and not (hasattr(self.host, 'immersive') and self.host.immersive.borderless))
         if not visible:
             self.animation.stop()
             self.hide_timer.stop()

@@ -16,6 +16,8 @@ class ImmersiveReading(QObject):
         self.surface = host.preview_stack
         self.expanded = False
         self.fullscreen = False
+        self.borderless = False
+        self._borderless_chrome = []
         self._keyboard_reveal = False
         self._syncing_visibility = False
         self._document = None
@@ -79,6 +81,12 @@ class ImmersiveReading(QObject):
         self.fullscreen_action.setShortcut(QKeySequence('F11'))
         self.fullscreen_action.toggled.connect(self.set_fullscreen)
         host.addAction(self.fullscreen_action)
+        self.borderless_action = QAction('无边框模式', host)
+        self.borderless_action.setCheckable(True)
+        self.borderless_action.setShortcut(QKeySequence('Ctrl+F11'))
+        self.borderless_action.setToolTip('只显示页面，页面外背景跟随纸面颜色；按 Esc 退出')
+        self.borderless_action.toggled.connect(self.set_borderless)
+        host.addAction(self.borderless_action)
         self.exit_button = QToolButton(self.surface)
         self.exit_button.setText('退出全屏 (F11)')
         self.exit_button.setAccessibleName('退出全屏阅读')
@@ -138,6 +146,18 @@ class ImmersiveReading(QObject):
         if not self._active or self._syncing_visibility:
             return
         available = self._available()
+        self.borderless_action.setEnabled(bool(self.host.ws.pages))
+        if self.borderless:
+            if not self.host.ws.pages:
+                self.set_borderless(False)
+                return
+            self.overlay.hide()
+            self.panel.hide()
+            self.edge.hide()
+            self.exit_button.hide()
+            for widget, _ in self._borderless_chrome:
+                widget.hide()
+            return
         document = (id(self.host.ws.pages), self.host.ws.path)
         if document != self._document or not available:
             self.collapse(animate=False)
@@ -154,7 +174,7 @@ class ImmersiveReading(QObject):
         self._edge_icon()
 
     def request_visible(self, on):
-        if self._syncing_visibility:
+        if self._syncing_visibility or self.borderless:
             return
         if self.auto_action.isChecked():
             self.reveal(keyboard=True) if on else self.collapse()
@@ -236,7 +256,7 @@ class ImmersiveReading(QObject):
             self._finished()
 
     def reveal(self, *, keyboard=False):
-        if not self._active or not self._available():
+        if not self._active or not self._available() or self.borderless:
             return
         if not self.auto_action.isChecked():
             self.host.act_pages.setChecked(True)
@@ -301,9 +321,57 @@ class ImmersiveReading(QObject):
         else:
             self.collapse()
 
+    def set_borderless(self, enabled, *, fit_width=True):
+        if enabled == self.borderless:
+            self.borderless_action.setChecked(enabled)
+            return
+        host = self.host
+        if enabled and (not host.ws.pages or host._saving or getattr(host, '_task_dialog', None)):
+            self.borderless_action.setChecked(False)
+            return
+        if enabled:
+            tools = getattr(host, 'annotation_tools', None)
+            if tools is not None and tools.deactivate() is False:
+                self.borderless_action.setChecked(False)
+                return
+            self._borderless_mode = host.stack.currentIndex()
+            self._borderless_pages = host.act_pages.isChecked()
+            self._borderless_split = host.reader_split.sizes()
+            widgets = (host.menuWidget(), host.workbench_bar, host.tab_bar, host.statusBar(),
+                       host.tools_panel, host.navigation_bar, host.banner, host.search_bar)
+            self._borderless_chrome = [(widget, not widget.isHidden()) for widget in widgets]
+        self.borderless = enabled
+        if enabled:
+            self.collapse(animate=False)
+        host.preview_view.set_borderless(enabled)
+        host.setProperty('borderlessReader', enabled)
+        frame = host.reader_frame
+        frame.setProperty('borderlessReader', enabled)
+        # Reapply inherited QSS so the reader frame also drops its cached border margins.
+        host.setStyleSheet(host.styleSheet())
+        if enabled:
+            host.stack.setCurrentIndex(0)
+        else:
+            for widget, visible in self._borderless_chrome:
+                widget.setVisible(visible)
+            self._borderless_chrome = []
+            host.act_pages.setChecked(self._borderless_pages)
+            host.stack.setCurrentIndex(self._borderless_mode)
+            host.reader_split.setSizes(self._borderless_split)
+            host._sync_tab_bar()
+        self.borderless_action.setChecked(enabled)
+        self.sync()
+        if enabled and fit_width:
+            host._set_zoom_mode('width')
+        host.reading_orb.sync()
+        (host.arrange_view if host._in_arrange() else host.preview_view).setFocus()
+
     def set_fullscreen(self, enabled):
         if enabled == self.fullscreen:
             return
+        borderless = self.borderless
+        if borderless:
+            self.set_borderless(False)
         host = self.host
         self.fullscreen = enabled
         self.collapse(animate=False)
@@ -335,6 +403,11 @@ class ImmersiveReading(QObject):
             self._saved_chrome = []
         self.fullscreen_action.setChecked(enabled)
         self.sync()
+        if enabled:
+            host._set_zoom_mode('width')
+        if borderless:
+            # Returning from F11 restores the existing borderless session, including manual zoom.
+            self.set_borderless(True, fit_width=False)
 
     def eventFilter(self, watched, event):
         if not self._active:

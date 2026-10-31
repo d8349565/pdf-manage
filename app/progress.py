@@ -157,7 +157,7 @@ class OperationThread(QThread):
 SHOW_DELAY_MS = 200
 
 
-def run_operation(parent, title, work, *, cancellable=False):
+def run_operation(parent, title, work, *, cancellable=False, show_delay_ms=SHOW_DELAY_MS):
     """Keep existing synchronous call contracts while Qt runs a responsive modal event loop."""
     dialog = TaskProgressDialog(title, parent, cancellable=cancellable)
     thread = OperationThread(work, dialog, cancellable=cancellable)
@@ -179,7 +179,12 @@ def run_operation(parent, title, work, *, cancellable=False):
     thread.finished.connect(finish, Qt.ConnectionType.QueuedConnection)
     parent._task_dialog = dialog
     try:
-        opener.start(SHOW_DELAY_MS)
+        if show_delay_ms <= 0:
+            # 打印等原生调用可能长时间占用解释器，先绘制反馈再启动工作线程。
+            dialog.show()
+            dialog.repaint()
+        else:
+            opener.start(show_delay_ms)
         # 延迟到事件循环内再启动，避免线程先结束、循环后启动导致 quit 落空。
         QTimer.singleShot(0, thread.start)
         loop.exec()
