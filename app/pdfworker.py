@@ -308,6 +308,23 @@ def render_watermark_asset(text, color, image="", cancel=None):
         return asset, result["width"], result["height"]
 
 
+def compare_pdf_versions(old_path, new_path, options, progress=None, cancel=None, *,
+                         passwords=('', ''), summary=None, row=0):
+    """Each process owns its documents. Only metadata/current previews reach the UI."""
+    with TemporaryWorkspace('pdfcompare') as folder:
+        result = _worker(folder, dict(operation='compare', old_path=old_path, new_path=new_path,
+            options=asdict(options), passwords=list(passwords), summary=summary, row=row), progress, cancel)
+        check_cancel(cancel)
+        if summary is None:
+            return result['summary']
+        from PIL import Image
+        images = {}
+        for name in ('old', 'new', 'old_marked', 'new_marked', 'overlay'):
+            with Image.open(Path(folder) / f'{name}.png') as image:
+                images[name] = image.convert('RGB')
+        return result['row'], images
+
+
 def worker_main(folder):
     from app.pdfio import EncryptionOptions, PdfStore
     from app.workspace import OutlineEntry, PageEdit, PageRef
@@ -323,7 +340,21 @@ def worker_main(folder):
         last_report = now
         _write_json(root / "event.json", dict(current=current, total=total, message=message))
     try:
-        if request.get("operation") == "import_ofd":
+        if request.get("operation") == "compare":
+            from app.pdfcompare import CompareOptions, compare_files, preview_pair
+            passwords = request.get('passwords', ['', ''])
+            if request.get('summary') is None:
+                summary = compare_files(request['old_path'], request['new_path'],
+                    CompareOptions(**request['options']), old_password=passwords[0],
+                    new_password=passwords[1], progress=report)
+                result = dict(summary=summary)
+            else:
+                row, images = preview_pair(request['summary'], request['row'],
+                    old_password=passwords[0], new_password=passwords[1])
+                for name, image in images.items():
+                    image.save(root / f'{name}.png')
+                result = dict(row=row)
+        elif request.get("operation") == "import_ofd":
             from app.ofd import convert_ofd
             data, warnings = convert_ofd(request['path'], report)
             (root / 'imported.pdf').write_bytes(data)
