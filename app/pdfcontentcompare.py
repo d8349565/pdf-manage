@@ -129,13 +129,16 @@ def append_text(unit, line):
         unit['refs'].extend([ref] * len(normalized))
 
 
-def extract(doc, ocr, progress, cancel, budget=None):
+def extract(doc, ocr, progress, cancel, budget=None, label='文档'):
     from app.ocr.page_detector import has_effective_text
     pages, unread, ocr_pages = [], [], []
     budget = budget if budget is not None else [MAX_CHARS]
     for index, page in enumerate(doc):
         check_cancel(cancel)
         effective = has_effective_text(page)
+        if progress:
+            action = '识别扫描文字' if not effective and page.get_images() and ocr else '读取正文'
+            progress(index, len(doc), f'{label}：{action}，第 {index + 1} / {len(doc)} 页')
         if effective or not page.get_images():
             text_size = len(page.get_text('text'))
             if text_size > 40_000 or text_size > budget[0]:
@@ -158,7 +161,7 @@ def extract(doc, ocr, progress, cancel, budget=None):
             lines = native_lines(page, index)
         pages.append(dict(lines=lines, height=page.rect.height, effective=effective))
         if progress:
-            progress(index + 1, len(doc), '正在提取文字与原文位置')
+            progress(index + 1, len(doc), f'{label}：已读取第 {index + 1} / {len(doc)} 页')
 
     edge_counts = Counter()
     sizes = defaultdict(list)
@@ -392,28 +395,31 @@ def edits(a, b, cancel=None):
         nleft = max(b['text'].rfind(c, 0, bj) for c in '。！？') + 1
         ends = [b['text'].find(c, be) for c in '。！？']
         nright = min([v + 1 for v in ends if v >= 0] or [min(len(b['text']), be + 45)])
+        old_start, new_start = max(left, ai-45), max(nleft, bj-45)
         output.append(dict(kind='review' if uncertain else 'modified', heading=a['heading'] or b['heading'] or '正文',
             before=a['text'][ai:ae], after=b['text'][bj:be],
             old=locations(old_refs or a['refs'][max(0, ai-1):ai+1]),
             new=locations(new_refs or b['refs'][max(0, bj-1):bj+1]),
             old_context_only=not old_refs, new_context_only=not new_refs,
-            old_context=a['text'][max(left, ai-45):right], new_context=b['text'][max(nleft, bj-45):nright],
+            old_context=a['text'][old_start:right], new_context=b['text'][new_start:nright],
+            old_context_range=[ai-old_start, ae-old_start], new_context_range=[bj-new_start, be-new_start],
             reason='OCR 文字或标点需要人工核对' if uncertain else '', confidence=confidence))
     return output
 
 
-def compare_content_files(old_path, new_path, *, ocr_runtime=None, cache_dir=None, progress=None, cancel=None):
+def compare_content_files(old_path, new_path, *, ocr_runtime=None, cache_dir=None, progress=None, cancel=None,
+                          old_password='', new_password=''):
     start = time.perf_counter()
     paths = [str(Path(p).resolve(strict=True)) for p in (old_path, new_path)]
     stamps = [stamp(p) for p in paths]
     reader = OCRReader(ocr_runtime, cache_dir, cancel) if ocr_runtime and cache_dir else None
     try:
-        with _open_pdf(paths[0]) as old_doc, _open_pdf(paths[1]) as new_doc:
+        with _open_pdf(paths[0], old_password) as old_doc, _open_pdf(paths[1], new_password) as new_doc:
             if max(len(old_doc), len(new_doc)) > 200 or any(s[2] > 512 * 1024**2 for s in stamps):
                 raise ValueError('内容比较原型每份限 200 页、512 MiB')
             budget = [MAX_CHARS]
-            old, old_info = extract(old_doc, reader, progress, cancel, budget)
-            new, new_info = extract(new_doc, reader, progress, cancel, budget)
+            old, old_info = extract(old_doc, reader, progress, cancel, budget, '旧版')
+            new, new_info = extract(new_doc, reader, progress, cancel, budget, '新版')
             dimensions = [[list(page.rect) for page in doc] for doc in (old_doc, new_doc)]
         common_edges = set(old_info.pop('edge_texts')) & set(new_info.pop('edge_texts'))
         # OCR box height and native font size differ. A common peripheral preamble
@@ -479,3 +485,48 @@ def compare_content_files(old_path, new_path, *, ocr_runtime=None, cache_dir=Non
     finally:
         if reader:
             reader.close()
+
+
+def preview_content_change(summary, change=None, pages=None, *, passwords=('', ''), cancel=None):
+    """Render evidence from checked sources; native and OCR boxes use their own coordinates."""
+    from PIL import Image
+    from app.pdfcompare import check_sources
+    check_cancel(cancel)
+    paths, stamps = check_sources(summary)
+    metadata, images = {}, {}
+    for index, side in enumerate(('old', 'new')):
+        check_cancel(cancel)
+        refs = change.get(side, []) if change is not None else []
+        candidates = sorted({ref['page'] for ref in refs})
+        if change is not None and not candidates:
+            metadata[side] = dict(available=False, pages=[], page=None, boxes=[])
+            continue
+        chosen = (pages or {}).get(side) or (candidates[0] if candidates else 1)
+        if candidates and chosen not in candidates:
+            raise ValueError('所选页不属于当前内容的原文位置')
+        with _open_pdf(paths[index], passwords[index]) as doc:
+            if type(chosen) is not int or not 1 <= chosen <= len(doc):
+                raise ValueError('原文页码超出文件范围')
+            page = doc[chosen - 1]
+            scale = min(2., math.sqrt(2_000_000 / page.rect.get_area()),
+                        4096 / page.rect.width, 4096 / page.rect.height)
+            while math.ceil(page.rect.width * scale) * math.ceil(page.rect.height * scale) > 2_000_000:
+                scale *= .999
+            pix = page.get_pixmap(matrix=pdf.Matrix(scale, scale), colorspace=pdf.csRGB, alpha=False)
+            images[side] = Image.frombytes('RGB', (pix.width, pix.height), pix.samples)
+            sx, sy = pix.width / page.rect.width, pix.height / page.rect.height
+            boxes = []
+            for ref in refs:
+                if ref['page'] != chosen:
+                    continue
+                box = pdf.Rect(ref['bbox'])
+                if ref['source'] == 'native':
+                    box = box * page.rotation_matrix
+                boxes.append([box.x0 * sx, box.y0 * sy, box.x1 * sx, box.y1 * sy])
+            metadata[side] = dict(available=True, pages=candidates or [1], page=chosen, boxes=boxes,
+                                  context_only=bool(change and change.get(side + '_context_only')),
+                                  width=pix.width, height=pix.height)
+    check_cancel(cancel)
+    if stamps != [stamp(path) for path in paths]:
+        raise ValueError('来源文件在加载原文期间发生变化，请重新比较')
+    return metadata, images
