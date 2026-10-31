@@ -1,4 +1,4 @@
-"""An edge-docked, session-only shortcut to the reader's shared settings menu."""
+"""A draggable, session-only shortcut to the reader's shared settings menu."""
 from app.themes import set_theme_style, theme_manager, ui_color
 from PyQt6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QColor, QCursor, QIcon, QPainter, QPen, QRegion
@@ -21,6 +21,10 @@ class ReadingSettingsOrb(QToolButton):
         self.view = host.preview_view
         self.temporarily_hidden = False
         self.expanded = False
+        self._custom_position = None
+        self._press_position = None
+        self._drag_offset = QPoint()
+        self._dragging = False
         self.setObjectName('readingSettingsOrb')
         self.setFixedSize(self.SIZE, self.SIZE)
         self._reading_icon = toolbar_icon('reading-settings', '#0F766E', 24)
@@ -77,6 +81,11 @@ class ReadingSettingsOrb(QToolButton):
 
     def _target(self, expanded=None):
         viewport = self.view.viewport()
+        if self._custom_position is not None:
+            point = self._custom_position
+            return viewport.pos() + QPoint(
+                max(0, min(point.x(), viewport.width() - self.SIZE)),
+                max(0, min(point.y(), viewport.height() - self.SIZE)))
         expanded = self.expanded if expanded is None else expanded
         x = viewport.width() - (self.SIZE + 12 if expanded else self.PEEK)
         return viewport.pos() + QPoint(max(4, x), max(8, viewport.height() - self.SIZE - 20))
@@ -114,11 +123,14 @@ class ReadingSettingsOrb(QToolButton):
 
     def _near_edge(self, point):
         viewport = self.view.viewport()
+        if self._custom_position is not None:
+            return self.geometry().translated(-viewport.pos()).adjusted(-16, -16, 16, 16).contains(point)
         return (viewport.rect().contains(point) and point.x() >= viewport.width() - 108
                 and point.y() >= viewport.height() - 132)
 
     def _hide_if_away(self):
-        if self.settings_menu.isVisible() or not self.isVisible():
+        if (self._press_position is not None or self._custom_position is not None
+                or self.settings_menu.isVisible() or not self.isVisible()):
             return
         point = self.view.viewport().mapFromGlobal(QCursor.pos())
         if self._near_edge(point):
@@ -146,11 +158,12 @@ class ReadingSettingsOrb(QToolButton):
         bounds = QRect(viewport.mapToGlobal(QPoint()), viewport.size()).adjusted(8, 8, -12, -12)
         bottom = min(self.view.mapToGlobal(self._target(True)).y() - 12, bounds.bottom() + 1)
         size = menu.sizeHint()
-        menu.popup(QPoint(max(bounds.left(), bounds.right() + 1 - size.width()),
+        right = self.mapToGlobal(self.rect().topRight()).x() + 1
+        menu.popup(QPoint(max(bounds.left(), min(right, bounds.right() + 1) - size.width()),
                           max(bounds.top(), bottom - size.height())))
         # 原生菜单显示后的尺寸可能与预估不同，按实际外框再次贴齐按钮上方。
         size = menu.frameGeometry().size()
-        menu.move(max(bounds.left(), bounds.right() + 1 - size.width()),
+        menu.move(max(bounds.left(), min(right, bounds.right() + 1) - size.width()),
                   max(bounds.top(), bottom - size.height()))
 
     def hide_temporarily(self):
@@ -188,7 +201,7 @@ class ReadingSettingsOrb(QToolButton):
         layout = self.host.reading_layout_actions[self.host._reading_layout].text()
         zoom = self.host.reading_zoom_actions[self.host._zoom_mode].text()
         hint = '\n阅读区较窄，当前暂用单页。' if self.host.reading_fallback_notice.isVisible() else ''
-        self.setToolTip(f'阅读设置\n{layout} · {zoom}{hint}\nCtrl+1 单页 · Ctrl+2 双页 · Ctrl+4 四页')
+        self.setToolTip(f'阅读设置\n{layout} · {zoom}{hint}\n按住拖动可调整位置（本次运行有效）\nCtrl+1 单页 · Ctrl+2 双页 · Ctrl+4 四页')
         visible = (available and self.parentWidget().isVisible() and not self.temporarily_hidden
                    and not (hasattr(self.host, 'immersive') and self.host.immersive.borderless))
         if not visible:
@@ -206,9 +219,53 @@ class ReadingSettingsOrb(QToolButton):
         self.reveal()
         super().enterEvent(event)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.reveal()
+            self._move(False)
+            self.hide_timer.stop()
+            self._press_position = event.globalPosition().toPoint()
+            self._drag_offset = self.mapFromGlobal(self._press_position)
+            self._dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._press_position is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            point = event.globalPosition().toPoint()
+            if not self._dragging and (point - self._press_position).manhattanLength() < QApplication.startDragDistance():
+                return
+            self._dragging = True
+            self.setDown(False)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self._custom_position = self.view.viewport().mapFromGlobal(point) - self._drag_offset
+            self._move(False)
+            self._custom_position = self.pos() - self.view.viewport().pos()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            dragged = self._dragging
+            self._press_position = None
+            self._dragging = False
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            if dragged:
+                self.setDown(False)
+                event.accept()
+                return
+        super().mouseReleaseEvent(event)
+
     def leaveEvent(self, event):
         self.hide_timer.start(self.HIDE_DELAY)
         super().leaveEvent(event)
+
+    def hideEvent(self, event):
+        self._press_position = None
+        self._dragging = False
+        self.setDown(False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        super().hideEvent(event)
 
     def moveEvent(self, event):
         # 保留贴边裁切，同时让滚动条仍能接收点击与拖动。
@@ -225,7 +282,8 @@ class ReadingSettingsOrb(QToolButton):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # 图标跟随实际位置变化，收起途中再次靠近也能连续衔接。
         closed, opened = self._target(False), self._target(True)
-        progress = (closed.x() - self.x()) / max(1, closed.x() - opened.x())
+        progress = (1.0 if self._custom_position is not None else
+                    (closed.x() - self.x()) / max(1, closed.x() - opened.x()))
         opacity = max(0.0, min(1.0, progress))
         if opacity < 1:
             painter.setOpacity(1 - opacity)

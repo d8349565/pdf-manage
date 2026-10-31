@@ -1154,6 +1154,13 @@ class PrintDialog(QDialog):
         range_row.addWidget(self.radio_custom)
         range_row.addWidget(self.edit_range, 1)
         scope_layout.addLayout(range_row)
+        self.combo_page_subset = ClearComboBox()
+        self.combo_page_subset.setAccessibleName("奇偶页筛选")
+        for text, value in (("全部页", "all"), ("仅奇数页", "odd"), ("仅偶数页", "even")):
+            self.combo_page_subset.addItem(text, value)
+        self.combo_page_subset.setToolTip("在所选范围内，按当前文档从 1 开始的页码筛选，不按纸张正反面筛选。")
+        scope_layout.addWidget(self.combo_page_subset)
+        self.combo_page_subset.currentIndexChanged.connect(self._refresh)
         lay.addWidget(self._field("打印范围", scope))
         self.label_range_error = QLabel("")
         set_theme_style(self.label_range_error, "color: #DC2626; font-size: 11px;")
@@ -1514,26 +1521,29 @@ class PrintDialog(QDialog):
     # ---- 选项与刷新 ----
 
     def _collect_indices(self) -> list[int]:
+        self.label_range_error.setVisible(False)
         if self.radio_all.isChecked():
-            self.label_range_error.setVisible(False)
-            return list(range(len(self.pages)))
-        if self.radio_sel.isChecked():
-            self.label_range_error.setVisible(False)
+            indices = list(range(len(self.pages)))
+        elif self.radio_sel.isChecked():
             indices = self.ws.target_indices()
-            return sorted(indices) if indices else list(range(len(self.pages)))
-        text = self.edit_range.text().strip()
-        if not text:
-            self.label_range_error.setText("请输入页码范围")
+            indices = sorted(indices) if indices else list(range(len(self.pages)))
+        else:
+            text = self.edit_range.text().strip()
+            try:
+                if not text:
+                    raise ValueError("请输入页码范围")
+                indices = parse_page_range(text, len(self.pages))
+            except ValueError as exc:
+                self.label_range_error.setText(str(exc))
+                self.label_range_error.setVisible(True)
+                return []
+        subset = self.combo_page_subset.currentData()
+        if subset in ("odd", "even"):
+            indices = [index for index in indices if (index + 1) % 2 == (1 if subset == "odd" else 0)]
+        if not indices and subset != "all":
+            self.label_range_error.setText("所选范围内没有" + ("奇数页" if subset == "odd" else "偶数页"))
             self.label_range_error.setVisible(True)
-            return []
-        try:
-            indices = parse_page_range(text, len(self.pages))
-            self.label_range_error.setVisible(False)
-            return indices
-        except ValueError as exc:
-            self.label_range_error.setText(str(exc))
-            self.label_range_error.setVisible(True)
-            return []
+        return indices
 
     def _collect_options(self) -> PrintOptions:
         printer_name = self.combo_printer.currentText()

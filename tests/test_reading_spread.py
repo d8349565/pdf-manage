@@ -1,9 +1,9 @@
 """Paired pages and reader interactions; all documents are generated here."""
 import pytest
 import pymupdf
-from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtGui import QWheelEvent
+from PyQt6.QtGui import QMouseEvent, QWheelEvent
 from PyQt6.QtWidgets import QApplication
 
 from app.ui import MainWindow, PreviewView
@@ -480,6 +480,38 @@ def test_reading_orb_peeks_reveals_and_opens_the_shared_menu(reader, qapp):
     settle(qapp, reader)
     assert view.page_columns == 4
     assert not reader.ws.dirty
+
+
+def test_reading_orb_drag_stays_put_without_opening_menu(reader, qapp):
+    orb, viewport = reader.reading_orb, reader.preview_view.viewport()
+    orb.reveal()
+    orb._move(False)
+    offset = orb.rect().center()
+    QTest.mousePress(orb, Qt.MouseButton.LeftButton, pos=offset)
+    destination = QPoint(40, 60)
+    global_point = viewport.mapToGlobal(destination + offset)
+    move = QMouseEvent(QEvent.Type.MouseMove, QPointF(orb.mapFromGlobal(global_point)),
+                       QPointF(global_point), Qt.MouseButton.NoButton,
+                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(orb, move)
+    QTest.mouseRelease(orb, Qt.MouseButton.LeftButton, pos=offset)
+    assert orb.pos() == viewport.pos() + destination
+    assert not reader.reading_settings_menu.isVisible()
+    orb._hide_if_away()
+    assert orb.expanded and not orb.icon().isNull()
+    assert orb.pos() == viewport.pos() + destination
+    orb.hide_temporarily()
+    orb.restore()
+    assert orb.pos() == viewport.pos() + destination
+    QTest.mouseClick(orb, Qt.MouseButton.LeftButton, pos=offset)
+    assert reader.reading_settings_menu.isVisible()
+    reader.reading_settings_menu.hide()
+    # 缩小阅读区时将自定义位置限制在可见范围内。
+    orb._custom_position = QPoint(viewport.width() + 100, viewport.height() + 100)
+    reader.resize(980, 720)
+    qapp.processEvents()
+    orb._move(False)
+    assert viewport.geometry().contains(orb.geometry())
 
 
 def test_temporarily_hidden_orb_keeps_menu_and_shortcuts_usable(reader, qapp):

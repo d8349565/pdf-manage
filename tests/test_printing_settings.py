@@ -53,6 +53,49 @@ def send_wheel(widget, delta):
     QApplication.sendEvent(widget, event)
 
 
+@pytest.mark.parametrize("scope, subset, expected", [
+    ("all", "odd", [0, 2]), ("all", "even", [1]),
+    ("selected", "odd", [2]), ("selected", "even", [1]),
+    ("custom", "odd", [2]), ("custom", "even", [1]),
+])
+def test_print_page_subset_uses_document_numbers(printing_case, scope, subset, expected):
+    workspace, store, *_ = printing_case
+    workspace.set_selection({1, 2}, 1)
+    dialog = PrintDialog(None, workspace, store)
+    try:
+        if scope == "selected":
+            dialog.radio_sel.setChecked(True)
+        elif scope == "custom":
+            dialog.radio_custom.setChecked(True)
+            dialog.edit_range.setText("2-3")
+        dialog.combo_page_subset.setCurrentIndex(dialog.combo_page_subset.findData(subset))
+        assert dialog._collect_options().page_indices == expected
+        assert [sheet.front for sheet in dialog.canvas.sheets] == expected
+        dialog.check_reverse.setChecked(True)
+        assert [sheet.front for sheet in dialog.canvas.sheets] == expected[::-1]
+        dialog.combo_page_subset.setCurrentIndex(0)
+        assert dialog._collect_indices() == ([0, 1, 2] if scope == "all" else [1, 2])
+    finally:
+        dialog.close()
+
+
+def test_print_page_subset_empty_range_and_invalid_input(printing_case):
+    workspace, store, *_ = printing_case
+    dialog = PrintDialog(None, workspace, store)
+    try:
+        dialog.radio_custom.setChecked(True)
+        dialog.edit_range.setText("1")
+        dialog.combo_page_subset.setCurrentIndex(dialog.combo_page_subset.findData("even"))
+        assert dialog._collect_options().page_indices == []
+        assert not dialog.canvas.sheets and not dialog.btn_print.isEnabled()
+        assert dialog.label_range_error.text() == "所选范围内没有偶数页"
+        dialog.edit_range.clear()
+        assert dialog._collect_indices() == []
+        assert dialog.label_range_error.text() == "请输入页码范围"
+    finally:
+        dialog.close()
+
+
 @pytest.mark.parametrize("orientation", ["auto", "portrait", "landscape"])
 @pytest.mark.parametrize("order", ["row", "column"])
 @pytest.mark.parametrize("reverse", [False, True])
