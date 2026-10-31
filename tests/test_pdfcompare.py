@@ -11,7 +11,7 @@ import pymupdf
 import pytest
 
 from app.output import OperationCancelled
-from app.pdfcompare import CompareOptions, compare_files, compare_images, preview_pair
+from app.pdfcompare import CompareOptions, compare_files, compare_images, pair_pages, preview_pair
 from app.pdfcompare_demo import generate_cases, vector_pdf
 
 
@@ -152,7 +152,7 @@ def test_cli_writes_only_new_result_directory(cases, tmp_path):
     args = [sys.executable, '-m', 'app.pdfcompare', c['old'], c['new'], '--output', str(output), '--preview', '1']
     completed = subprocess.run(args, capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0, completed.stderr
-    assert json.loads((output / 'summary.json').read_text())['rows'][0]['status'] == 'changed'
+    assert json.loads((output / 'summary.json').read_text(encoding='utf-8'))['rows'][0]['status'] == 'changed'
     assert (output / 'overlay.png').is_file()
     assert subprocess.run(args, capture_output=True, timeout=30).returncode != 0
 
@@ -169,3 +169,32 @@ def test_worker_preview_and_cancellation(cases):
     event = threading.Event()
     with pytest.raises(OperationCancelled):
         compare_pdf_versions(c['old'], c['new'], CompareOptions(), lambda *args: event.set(), event.is_set)
+
+
+def test_index_pairing_skips_fingerprints_and_manual_anchors_keep_all_pages(cases, monkeypatch):
+    def unexpected_signature(*args):
+        pytest.fail('按页号比较不应生成指纹')
+    monkeypatch.setattr('app.pdfcompare._signature', unexpected_signature)
+    c = cases['mixed_insert']
+    result = compare_files(c['old'], c['new'], CompareOptions(pairing='index'), manual_pairs=[[2, 3]])
+    assert [(r['old_page'], r['new_page']) for r in result['rows']] == [(1, 1), (None, 2), (2, 3), (3, 4)]
+    assert [r['status'] for r in result['rows']] == c['expected']
+    assert result['manual_pairs'] == [[2, 3]]
+
+
+def test_manual_pairing_crosses_worker_boundary_and_resolves_repeated_pages(tmp_path):
+    from app.pdfworker import compare_pdf_versions
+    old, new = tmp_path / 'old.pdf', tmp_path / 'new.pdf'
+    vector_pdf(old, [dict(blank=True)] * 3); vector_pdf(new, [dict(blank=True)] * 5)
+    result = compare_pdf_versions(str(old), str(new), CompareOptions(), manual_pairs=[[3, 5], [1, 2]])
+    assert [(r['old_page'], r['new_page']) for r in result['rows'] if r['old_page'] in (1, 3)] == [(1, 2), (3, 5)]
+    assert sorted(r['old_page'] for r in result['rows'] if r['old_page']) == [1, 2, 3]
+    assert sorted(r['new_page'] for r in result['rows'] if r['new_page']) == [1, 2, 3, 4, 5]
+    assert result['manual_pairs'] == [[1, 2], [3, 5]]
+
+
+@pytest.mark.parametrize('pairs', [[[0, 1]], [[1, 4]], [[1, 1], [1, 2]],
+                                  [[1, 1], [2, 1]], [[1, 3], [2, 2]]])
+def test_manual_pairing_rejects_out_of_range_repeated_and_crossed_pages(pairs):
+    with pytest.raises(ValueError, match='手工配对'):
+        pair_pages([None] * 3, [None] * 3, mode='index', manual_pairs=pairs)

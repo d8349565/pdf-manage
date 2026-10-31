@@ -101,9 +101,28 @@ def _pair_cost(a, b):
     return min(1., cost + .3 * size_error)
 
 
-def pair_pages(old, new, *, mode='auto', cancel=None):
+def pair_pages(old, new, *, mode='auto', cancel=None, manual_pairs=()):
     """Monotone sequence alignment; bounded O(N*M), no claim of semantic alignment."""
     n, m = len(old), len(new)
+    if manual_pairs:
+        anchors = sorted(tuple(pair) for pair in manual_pairs)
+        previous_old = previous_new = 0
+        pairs = []
+        for old_page, new_page in anchors:
+            if (type(old_page) is not int or type(new_page) is not int
+                    or not previous_old < old_page <= n
+                    or not previous_new < new_page <= m):
+                raise ValueError('手工配对须在页数范围内，且两版页码都按顺序递增，不能重复或交叉')
+            segment = pair_pages(old[previous_old:old_page - 1], new[previous_new:new_page - 1],
+                                 mode=mode, cancel=cancel)
+            pairs.extend((a + previous_old if a is not None else None,
+                          b + previous_new if b is not None else None, cost) for a, b, cost in segment)
+            pairs.append((old_page - 1, new_page - 1, None))
+            previous_old, previous_new = old_page, new_page
+        segment = pair_pages(old[previous_old:], new[previous_new:], mode=mode, cancel=cancel)
+        pairs.extend((a + previous_old if a is not None else None,
+                      b + previous_new if b is not None else None, cost) for a, b, cost in segment)
+        return pairs
     if mode == 'index':
         return [(i if i < n else None, i if i < m else None, None)
                 for i in range(max(n, m))]
@@ -305,7 +324,7 @@ def _paths_and_stamps(old_path, new_path):
 
 
 def compare_files(old_path, new_path, options=None, *, old_password='', new_password='',
-                  progress=None, cancel=None):
+                  progress=None, cancel=None, manual_pairs=()):
     options = options or CompareOptions()
     options.validate(); check_cancel(cancel)
     paths, stamps = _paths_and_stamps(old_path, new_path)
@@ -313,17 +332,16 @@ def compare_files(old_path, new_path, options=None, *, old_password='', new_pass
     with _open_pdf(paths[0], old_password) as old, _open_pdf(paths[1], new_password) as new:
         if max(len(old), len(new)) > options.max_pages:
             raise ValueError(f'原型每份 PDF 最多 {options.max_pages} 页，请先提取需要核对的部分')
-        signatures = []
-        done, total = 0, len(old) + len(new)
-        for doc in (old, new):
-            group = []
-            for page in doc:
-                check_cancel(cancel)
-                group.append(_signature(page, options)); done += 1
-                if progress:
-                    progress(done, total, '正在生成页面配对指纹')
-            signatures.append(group)
-        pairs = pair_pages(*signatures, mode=options.pairing, cancel=cancel)
+        signatures = [[None] * len(old), [None] * len(new)]
+        if options.pairing == 'auto':
+            done, total = 0, len(old) + len(new)
+            for group, doc in zip(signatures, (old, new)):
+                for index, page in enumerate(doc):
+                    check_cancel(cancel)
+                    group[index] = _signature(page, options); done += 1
+                    if progress:
+                        progress(done, total, '正在生成页面配对指纹')
+        pairs = pair_pages(*signatures, mode=options.pairing, cancel=cancel, manual_pairs=manual_pairs)
         del signatures
         rows = []
         for i, pair in enumerate(pairs):
@@ -335,16 +353,23 @@ def compare_files(old_path, new_path, options=None, *, old_password='', new_pass
     if stamps != [stamp(p) for p in paths]:
         raise ValueError('来源文件在比较期间发生变化，请重新比较')
     return dict(schema=1, paths=paths, stamps=stamps, options=asdict(options), rows=rows,
+                manual_pairs=sorted([list(pair) for pair in manual_pairs]),
                 counts=dict(Counter(row['status'] for row in rows)),
                 seconds=round(time.perf_counter() - started, 3),
                 note='页面视觉差异，不代表语义差异；自动配对为顺序启发式，请人工核对。')
 
 
-def preview_pair(summary, row_index, *, old_password='', new_password='', cancel=None):
-    check_cancel(cancel)
+def check_sources(summary):
+    """Also used before reusing a preview; callers perform filesystem IO off the GUI thread."""
     paths, stamps = _paths_and_stamps(*summary['paths'])
     if [list(s) for s in stamps] != [list(s) for s in summary['stamps']]:
         raise ValueError('来源文件已经变化，请重新比较')
+    return paths, stamps
+
+
+def preview_pair(summary, row_index, *, old_password='', new_password='', cancel=None):
+    check_cancel(cancel)
+    paths, stamps = check_sources(summary)
     options = CompareOptions(**summary['options'])
     options.validate()
     item = summary['rows'][row_index]

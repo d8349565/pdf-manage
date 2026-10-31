@@ -309,11 +309,12 @@ def render_watermark_asset(text, color, image="", cancel=None):
 
 
 def compare_pdf_versions(old_path, new_path, options, progress=None, cancel=None, *,
-                         passwords=('', ''), summary=None, row=0):
+                         passwords=('', ''), summary=None, row=0, manual_pairs=()):
     """Each process owns its documents. Only metadata/current previews reach the UI."""
     with TemporaryWorkspace('pdfcompare') as folder:
         result = _worker(folder, dict(operation='compare', old_path=old_path, new_path=new_path,
-            options=asdict(options), passwords=list(passwords), summary=summary, row=row), progress, cancel)
+            options=asdict(options), passwords=list(passwords), summary=summary, row=row,
+            manual_pairs=manual_pairs), progress, cancel)
         check_cancel(cancel)
         if summary is None:
             return result['summary']
@@ -346,7 +347,7 @@ def worker_main(folder):
             if request.get('summary') is None:
                 summary = compare_files(request['old_path'], request['new_path'],
                     CompareOptions(**request['options']), old_password=passwords[0],
-                    new_password=passwords[1], progress=report)
+                    new_password=passwords[1], progress=report, manual_pairs=request.get('manual_pairs', ()))
                 result = dict(summary=summary)
             else:
                 row, images = preview_pair(request['summary'], request['row'],
