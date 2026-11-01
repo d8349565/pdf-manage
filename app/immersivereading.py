@@ -1,6 +1,6 @@
 """Reader sidebar overlay and reversible full-screen presentation."""
 from PyQt6.QtCore import QEvent, QObject, QPoint, QPropertyAnimation, QEasingCurve, QSize, QTimer, Qt
-from PyQt6.QtGui import QAction, QCursor, QKeySequence, QRegion
+from PyQt6.QtGui import QAction, QCursor, QRegion
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QStyle, QToolButton, QWidget
 
 from app.icons import toolbar_icon
@@ -28,7 +28,7 @@ class ImmersiveReading(QObject):
         self.edge = QToolButton(self.surface)
         self.edge.setObjectName('readerSidebarHandle')
         self.edge.setAccessibleName('展开页面与大纲侧栏')
-        self.edge.setToolTip('页面与大纲侧栏 (F8)')
+        self.edge.setToolTip(host.shortcut_manager.hint('view.pages', '页面与大纲侧栏'))
         self.edge.setFixedSize(28, 42)
         self.edge.setIconSize(QSize(16, 16))
         self.edge.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -78,17 +78,15 @@ class ImmersiveReading(QObject):
         self.panel.layout().insertWidget(0, header)
         self.fullscreen_action = QAction('全屏阅读', host)
         self.fullscreen_action.setCheckable(True)
-        self.fullscreen_action.setShortcut(QKeySequence('F11'))
         self.fullscreen_action.toggled.connect(self.set_fullscreen)
         host.addAction(self.fullscreen_action)
         self.borderless_action = QAction('无边框模式', host)
         self.borderless_action.setCheckable(True)
-        self.borderless_action.setShortcut(QKeySequence('Ctrl+F11'))
         self.borderless_action.setToolTip('只显示页面，页面外背景跟随纸面颜色；按 Esc 退出')
         self.borderless_action.toggled.connect(self.set_borderless)
         host.addAction(self.borderless_action)
         self.exit_button = QToolButton(self.surface)
-        self.exit_button.setText('退出全屏 (F11)')
+        self.exit_button.setText(host.shortcut_manager.hint('view.fullscreen', '退出全屏'))
         self.exit_button.setAccessibleName('退出全屏阅读')
         self.exit_button.clicked.connect(lambda: self.fullscreen_action.setChecked(False))
         self.exit_button.hide()
@@ -221,7 +219,12 @@ class ImmersiveReading(QObject):
     def _edge_icon(self):
         self.edge.setIcon(toolbar_icon('chevron-left' if self.expanded else 'panel-left', size=16))
         self.edge.setAccessibleName('收起页面与大纲侧栏' if self.expanded else '展开页面与大纲侧栏')
-        self.edge.setToolTip('收起侧栏 (F8)' if self.expanded else '页面与大纲侧栏 (F8)')
+        self.sync_shortcut_hints()
+
+    def sync_shortcut_hints(self):
+        manager = self.host.shortcut_manager
+        self.edge.setToolTip(manager.hint('view.pages', '收起侧栏' if self.expanded else '页面与大纲侧栏'))
+        self.exit_button.setText(manager.hint('view.fullscreen', '退出全屏'))
 
     def _toggle(self, *, keyboard=False):
         self.collapse() if self.expanded else self.reveal(keyboard=keyboard)

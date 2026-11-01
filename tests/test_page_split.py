@@ -53,12 +53,18 @@ def test_split_keeps_visible_content_and_undo(tmp_path):
         store.close_all()
 
 
-@pytest.mark.parametrize("direction,cuts,fit_a4,expected", [
-    ("horizontal", (.33, .67), False, (600, 132)),
-    ("vertical", (.5,), True, tuple(p.paper_size("a4"))),
-    ("vertical", (.10, .15), False, (60, 400)),
+@pytest.mark.parametrize("direction,cuts,fit_a4,target_size,auto_orient,expected", [
+    ("horizontal", (.33, .67), False, None, False, (600, 132)),
+    ("vertical", (.5,), True, None, False, tuple(p.paper_size("a4"))),
+    ("vertical", (.10, .15), False, None, False, (60, 400)),
+    ("vertical", (.5,), False, (176 * 72 / 25.4, 250 * 72 / 25.4), False,
+     (176 * 72 / 25.4, 250 * 72 / 25.4)),
+    ("horizontal", (.5,), False, (176 * 72 / 25.4, 250 * 72 / 25.4), True,
+     (250 * 72 / 25.4, 176 * 72 / 25.4)),
+    ("vertical", (.5,), False, (300, 200), False, (300, 200)),
+    ("vertical", (.5,), False, (300, 200), True, (200, 300)),
 ])
-def test_split_layout_options(tmp_path, direction, cuts, fit_a4, expected):
+def test_split_layout_options(tmp_path, direction, cuts, fit_a4, target_size, auto_orient, expected):
     source = tmp_path / "source.pdf"
     with p.open() as doc:
         doc.new_page(width=600, height=400)
@@ -66,7 +72,8 @@ def test_split_layout_options(tmp_path, direction, cuts, fit_a4, expected):
     store = PdfStore()
     try:
         ref = store.load(str(source))[0]
-        pages = store.split_page(ref, direction, cuts, fit_a4=fit_a4)
+        pages = store.split_page(ref, direction, cuts, fit_a4=fit_a4,
+                                 target_size=target_size, auto_orient=auto_orient)
         width, height = store.page_size(pages[0])
         assert len(pages) == len(cuts) + 1
         assert (width, height) == pytest.approx(expected)

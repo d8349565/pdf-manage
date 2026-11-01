@@ -86,6 +86,7 @@ class SearchBar(QFrame):
         self.results = []
         self.current = -1
         self.busy = False
+        self._preedit = False
         self.scanned = self.total = self.text_pages = self.failures = 0
         self.limited = False
         self.start_page = 0
@@ -115,7 +116,7 @@ class SearchBar(QFrame):
         self.input.setMaxLength(256)
         self.input.setMinimumWidth(120)
         self.input.textChanged.connect(self.changed)
-        self.input.returnPressed.connect(self.enter)
+        self.input.installEventFilter(self)
         layout.addWidget(self.input, 1)
         self.feedback = QLabel()
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
@@ -139,10 +140,8 @@ class SearchBar(QFrame):
         set_theme_style(divider, "background: #DFE8E3; border: none;")
         layout.addWidget(divider)
         layout.addWidget(self.close_button)
-        for key, slot in (("Shift+Return", lambda: self.step(-1)), ("Shift+Enter", lambda: self.step(-1)), ("Escape", self.close_search)):
-            shortcut = QShortcut(QKeySequence(key), self, slot)
-            shortcut.setContext(Qt.ShortcutContext.WindowShortcut if key == "Escape"
-                                else Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        shortcut = QShortcut(QKeySequence('Escape'), self, self.close_search)
+        shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.update_feedback()
         host.preview_view.viewport().installEventFilter(self)
         host.preview_view.view_changed.connect(self.position_bar)
@@ -155,9 +154,26 @@ class SearchBar(QFrame):
         self.move(viewport.width() - self.width() - 12, 10)
 
     def eventFilter(self, watched, event):
+        if watched is self.input and event.type() == QEvent.Type.InputMethod:
+            self._preedit = bool(event.preeditString())
+        if watched is self.input and not self._preedit and event.type() in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride):
+            for key, callback in (('search.confirm', self.enter), ('search.input_previous', lambda: self.step(-1))):
+                if self.host.shortcut_manager.matches(key, event):
+                    if event.type() == QEvent.Type.KeyPress:
+                        callback()
+                    event.accept()
+                    return True
         if event.type() == QEvent.Type.Resize:
             self.position_bar()
         return False
+
+    def sync_shortcut_hints(self):
+        manager = self.host.shortcut_manager
+        self.input.setToolTip('输入关键词搜索全文；' + manager.hint('search.confirm', '确认搜索／下一处')
+                             + '；' + manager.hint('search.input_previous', '上一处'))
+        self.previous.setToolTip(manager.hint('search.previous', '上一处匹配'))
+        self.next.setToolTip(manager.hint('search.next', '下一处匹配'))
+        self.update_feedback()
 
     def open_search(self):
         if not self.host.ws.pages:
@@ -236,7 +252,7 @@ class SearchBar(QFrame):
             text = f"检索 {self.scanned}/{self.total}"
             detail = f"正在搜索第 {self.scanned}/{self.total} 页 · 已找到 {count} 处"
         elif not self.input.text().strip():
-            text = "Ctrl+F"
+            text = self.host.shortcut_manager.label('search.open') or '输入关键词'
             detail = "输入关键词搜索全文"
         elif not count:
             text = "未找到" if self.text_pages or self.failures else "无文字层"

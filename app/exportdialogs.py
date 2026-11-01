@@ -434,9 +434,10 @@ class ImageImportDialog(QDialog):
             event.ignore()
 
     def eventFilter(self, watched, event):
-        # 键盘快捷键：Delete / Backspace 移除选中项
+        # The list owns this command; text fields keep native deletion.
         if watched is self.files and event.type() == QEvent.Type.KeyPress:
-            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            from app.shortcuts import manager_for
+            if manager_for(self).matches('import_images.remove', event):
                 if self.files.currentRow() >= 0:
                     self.remove_selected()
                     return True

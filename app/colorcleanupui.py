@@ -7,7 +7,7 @@ from threading import Event
 from PIL import Image, ImageChops, ImageStat
 from PyQt6.QtCore import (QEvent, QObject, QPoint, QPointF, QRectF, QRunnable,
                          Qt, QThreadPool, QTimer, pyqtSignal)
-from PyQt6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPolygonF, QShortcut
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QDialog,
     QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget)
@@ -519,11 +519,8 @@ class ColorCleanupDialog(QDialog):
         self.canvas.pan_delta.connect(self.pan); self.canvas.gesture_changed.connect(self.gesture_changed)
         self.annotation_type.currentIndexChanged.connect(self.fill_annotations)
         self.annotations.itemChanged.connect(self.annotation_changed)
-        self.shortcuts = []
-        for sequence, callback in ((QKeySequence.StandardKey.Undo, self.undo_zones),
-                (QKeySequence.StandardKey.Redo, self.redo_zones), ('Ctrl+0', lambda: self.fit.setCurrentIndex(0)),
-                ('Ctrl++', lambda: self.set_zoom(self.zoom_percent * 1.25)), ('Ctrl+-', lambda: self.set_zoom(self.zoom_percent / 1.25))):
-            shortcut = QShortcut(QKeySequence(sequence), self); shortcut.activated.connect(callback); self.shortcuts.append(shortcut)
+        from app.shortcuts import bind_window
+        bind_window(self)
         self.update_history_buttons()
         self.invalidate()
         QTimer.singleShot(0, self.fit_zoom)

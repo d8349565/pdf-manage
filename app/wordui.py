@@ -611,7 +611,8 @@ class WordConverterWindow(QWidget):
     def eventFilter(self, watched, event):
         if watched is self.table or watched is self.table.viewport():
             if event.type() == QEvent.Type.KeyPress:
-                if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                from app.shortcuts import manager_for
+                if manager_for(self).matches('word.remove', event):
                     if self.table.selectedIndexes():
                         self.remove_selected()
                         return True

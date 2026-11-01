@@ -218,12 +218,10 @@ class PagePreview(QWidget):
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             event.accept()
             return
-        directions = {Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0),
-                      Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1)}
-        if event.key() in directions and self.marks:
-            dx, dy = directions[event.key()]
-            step = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 2
-            self.translate(dx * step, dy * step)
+        from app.shortcuts import nudge_for
+        delta = nudge_for(self, 'watermark', event, small=2) if self.marks else None
+        if delta is not None:
+            self.translate(*delta)
             event.accept()
             return
         super().keyPressEvent(event)

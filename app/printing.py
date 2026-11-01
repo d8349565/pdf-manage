@@ -1019,6 +1019,8 @@ class PrintDialog(QDialog):
         root.addWidget(self._build_sidebar())
 
         self._on_printer_changed()
+        from app.shortcuts import bind_window
+        bind_window(self)
 
     # ---- 左侧预览 ----
 
@@ -1030,9 +1032,9 @@ class PrintDialog(QDialog):
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
-        toolbar.addWidget(self._tool_btn("zoom-out", "缩小", self._zoom_out, shortcut="Ctrl+-"))
-        toolbar.addWidget(self._tool_btn("zoom-in", "放大", self._zoom_in, shortcut="Ctrl+="))
-        self.btn_fit = self._tool_btn("layout-grid", "适应窗口", self._on_fit_clicked, shortcut="Ctrl+0")
+        toolbar.addWidget(self._tool_btn("zoom-out", "缩小", self._zoom_out))
+        toolbar.addWidget(self._tool_btn("zoom-in", "放大", self._zoom_in))
+        self.btn_fit = self._tool_btn("layout-grid", "适应窗口", self._on_fit_clicked)
         self.btn_fit.setCheckable(True)
         self.btn_fit.setChecked(True)
         toolbar.addWidget(self.btn_fit)
@@ -1076,15 +1078,13 @@ class PrintDialog(QDialog):
         return container
 
     def _tool_btn(
-        self, icon_name: str, tip: str, callback, shortcut: str | None = None
+        self, icon_name: str, tip: str, callback
     ) -> QToolButton:
         btn = QToolButton()
         btn.setObjectName("previewBtn")
         btn.setIcon(toolbar_icon(icon_name, "#134E4A", 18))
         btn.setIconSize(QSize(18, 18))
-        btn.setToolTip(f"{tip} ({shortcut})" if shortcut else tip)
-        if shortcut:
-            btn.setShortcut(shortcut)
+        btn.setToolTip(tip)
         btn.clicked.connect(callback)
         return btn
 

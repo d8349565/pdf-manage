@@ -7,8 +7,8 @@ import tempfile
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import (QColor, QFont, QFontMetricsF, QImage, QKeySequence, QPainter,
-                        QPen, QPixmap, QShortcut, QTextDocument, QTextOption)
+from PyQt6.QtGui import (QColor, QFont, QFontMetricsF, QImage, QPainter,
+                        QPen, QPixmap, QTextDocument, QTextOption)
 from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsRectItem,
                              QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel,
                              QMessageBox, QPushButton, QVBoxLayout, QWidget)
@@ -328,7 +328,7 @@ class CaptureDialog(QDialog):
         buttons = QHBoxLayout()
         copy = QPushButton('复制图片', self)
         copy.setDefault(True)
-        copy.setToolTip('复制整张图片，包括下方所有批注说明（Ctrl+C）')
+        copy.setToolTip('复制整张图片，包括下方所有批注说明')
         copy.clicked.connect(self.copy)
         buttons.addWidget(copy)
         save = QPushButton('保存图片…', self)
@@ -343,8 +343,8 @@ class CaptureDialog(QDialog):
         close.clicked.connect(self.reject)
         buttons.addWidget(close)
         layout.addLayout(buttons)
-        self.shortcut = QShortcut(QKeySequence.StandardKey.Copy, self)
-        self.shortcut.activated.connect(self.copy)
+        from app.shortcuts import bind_window
+        bind_window(self)
         self.default_path = export_path(Path(source_path).with_name(
             f'{Path(source_path).stem}_第{page_index + 1}页_区域批注.png'))
 

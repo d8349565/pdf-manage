@@ -44,13 +44,11 @@ from PyQt6.QtGui import (
     QFont,
     QGuiApplication,
     QImage,
-    QKeySequence,
     QPainter,
     QPainterPath,
     QPen,
     QPolygonF,
     QPixmap,
-    QShortcut,
     QTransform,
     QUndoGroup,
     QWheelEvent,
@@ -989,7 +987,7 @@ class PageListView(QListView):
         self.viewport().update()
         if self._host is not None:
             caption=f'第 {position+1} 页前' if position<self.model().rowCount() else '文档末尾'
-            self._host.statusBar().showMessage(f'粘贴位置：{caption} · Ctrl+V 粘贴为页面',5000)
+            self._host.statusBar().showMessage(self._host.shortcut_manager.hint('edit.paste_pages', f'粘贴位置：{caption} · 粘贴为页面'),5000)
 
     def mousePressEvent(self,event):
         self._pending_paste_gap=None
@@ -1029,7 +1027,8 @@ class PageListView(QListView):
         else:
             position=self._gap_at(point)
         caption=f'在第 {position} 页后粘贴为页面' if position else '在文档开头粘贴为页面'
-        action=menu.addAction(caption+'\tCtrl+V')
+        binding=self._host.shortcut_manager.label('edit.paste_pages')
+        action=menu.addAction(caption+('\t'+binding if binding else ''))
         action.setEnabled(self._host.paste_pages_action.isEnabled())
         action.triggered.connect(lambda:self._host.paste_pages(at_index=position,target_view=self))
         return action
@@ -1656,10 +1655,14 @@ class PreviewView(QGraphicsView):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event) -> None:
-        if self.spread and not event.modifiers() and event.key() in (Qt.Key.Key_PageUp, Qt.Key.Key_PageDown):
-            self.page_step.emit(-1 if event.key() == Qt.Key.Key_PageUp else 1)
-            event.accept()
-            return
+        if self.spread:
+            from app.shortcuts import manager_for
+            manager = manager_for(self)
+            for command, direction in (('reader.previous_group', -1), ('reader.next_group', 1)):
+                if manager.matches(command, event):
+                    self.page_step.emit(direction)
+                    event.accept()
+                    return
         super().keyPressEvent(event)
 
 
@@ -2336,7 +2339,7 @@ class DocumentTabBar(QFrame):
         self.new_tab_button.setFixedSize(24, 24)
         self.new_tab_button.setIconSize(QSize(14, 14))
         self.new_tab_button.setIcon(toolbar_icon("plus", "#0F766E", 14))
-        self.new_tab_button.setToolTip("打开新 PDF 标签页 (Ctrl+O)")
+        self.new_tab_button.setToolTip('打开新 PDF 标签页')
         self.new_tab_button.setAccessibleName("打开新 PDF 标签页")
         self.new_tab_button.clicked.connect(self._host.open_files)
         row.addWidget(self.new_tab_button)
@@ -2471,6 +2474,8 @@ class MainWindow(QMainWindow):
         mark("window_init_started")
         super().__init__()
         self._window_settings = preferences(QSettings)
+        from app.shortcuts import get_manager
+        self.shortcut_manager = get_manager(self._window_settings)
         initialize_theme(self._window_settings)
         self._reading_colors = ReadingColors.load(self._window_settings)
         from app.readinghistory import ReadingHistory
@@ -2613,6 +2618,14 @@ class MainWindow(QMainWindow):
         mark("window_ready")
         QTimer.singleShot(0, self._continue_last_reading)
         QTimer.singleShot(200, self.reading_history.check_missing)
+        if self.shortcut_manager.notices:
+            QTimer.singleShot(0, self._notify_shortcut_recovery)
+
+    def _notify_shortcut_recovery(self):
+        manager = self.shortcut_manager
+        if not self._closing and manager.notices and not getattr(manager, '_recovery_notified', False):
+            manager._recovery_notified = True
+            self.statusBar().showMessage('部分快捷键设置需要检查，请打开“文件 → 应用设置 → 快捷键管理”查看说明。', 15000)
 
     def _continue_last_reading(self):
         if (not self._closing and not self._opening_paths and not self.ws.pages
@@ -2669,10 +2682,11 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(0, restore_offset)
 
-    def configure_reading_shortcuts(self):
-        from app.readershortcuts import ReadingShortcutsDialog
-        dialog = ReadingShortcutsDialog(self.reading_shortcuts)
-        dialog.exec()
+    def configure_shortcuts(self):
+        from app.shortcutui import ShortcutDialog
+        dialog = ShortcutDialog(self.shortcut_manager, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.statusBar().showMessage('快捷键已保存，当前窗口立即生效。', 4000)
         dialog.deleteLater()
 
     def toggle_reading_mode(self):
@@ -2716,24 +2730,22 @@ class MainWindow(QMainWindow):
             self.first_painted.emit()
 
     def _chrome_actions(self) -> None:
-        self.find_action = self._act("全文搜索", self.open_search, QKeySequence.StandardKey.Find)
+        self.find_action = self._act("全文搜索", self.open_search)
         self.find_action.setIcon(toolbar_icon("search"))
-        self.find_action.setToolTip("全文搜索 (Ctrl+F)")
+        self.find_action.setToolTip('全文搜索')
         self.act_pages = QAction("页面栏", self)
         self.act_pages.setCheckable(True)
         self.act_pages.setChecked(False)
-        self.act_pages.setShortcut(QKeySequence("F8"))
         self.act_pages.setIcon(toolbar_icon("panel-left"))
-        self.act_pages.setToolTip("页面栏 (F8)")
-        self.act_pages.setStatusTip("显示或隐藏左侧页面栏 (F8)")
+        self.act_pages.setToolTip('页面栏')
+        self.act_pages.setStatusTip('显示或隐藏左侧页面栏')
         self.act_pages.toggled.connect(self._set_pages_visible)
         self.act_tools = QAction("工具面板", self)
         self.act_tools.setCheckable(True)
         self.act_tools.setChecked(False)
-        self.act_tools.setShortcut(QKeySequence("F9"))
         self.act_tools.setIcon(toolbar_icon("panel-right"))
-        self.act_tools.setToolTip("工具面板 (F9)")
-        self.act_tools.setStatusTip("显示或隐藏右侧工具面板 (F9)")
+        self.act_tools.setToolTip('工具面板')
+        self.act_tools.setStatusTip('显示或隐藏右侧工具面板')
         self.act_tools.toggled.connect(self._set_tools_visible)
 
     def _set_pages_visible(self, on: bool) -> None:
@@ -2922,25 +2934,25 @@ class MainWindow(QMainWindow):
         self.model.busy.connect(self._note_render_busy)
         self.setMenuWidget(TitleBar(self))
         file_menu = self._menubar.addMenu("文件")
-        self.open_action = self._act("打开 PDF / OFD / 图片", self.open_files, QKeySequence.StandardKey.Open)
+        self.open_action = self._act("打开 PDF / OFD / 图片", self.open_files)
         file_menu.addAction(self.open_action)
         file_menu.addAction(self._act('最近阅读记录…', self.manage_reading_history))
         file_menu.addSeparator()
-        self.save_action = self._act("保存", self.save, QKeySequence.StandardKey.Save)
-        self.save_as_action = self._act("另存为", lambda: self.save(True), QKeySequence.StandardKey.SaveAs)
-        self.close_file_action = self._act("关闭当前文件", self.close_current_file, QKeySequence("Ctrl+W"))
+        self.save_action = self._act("保存", self.save)
+        self.save_as_action = self._act("另存为", lambda: self.save(True))
+        self.close_file_action = self._act("关闭当前文件", self.close_current_file)
         self.close_file_action.setStatusTip("关闭当前文件并返回首页")
         for action in (self.save_action, self.save_as_action, self.close_file_action):
             file_menu.addAction(action)
         file_menu.addSeparator()
-        self.print_action = self._act("打印", self.print_document, QKeySequence.StandardKey.Print)
+        self.print_action = self._act("打印", self.print_document)
         file_menu.addAction(self.print_action)
         file_menu.addSeparator()
         self.storage_action = self._act('存储管理…', self.manage_storage)
         self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
         settings_menu=file_menu.addMenu("应用设置")
         settings_menu.addAction(self.storage_action)
-        settings_menu.addAction(self._act('阅读快捷键…', self.configure_reading_shortcuts))
+        settings_menu.addAction(self._act('快捷键管理', self.configure_shortcuts))
         if sys.platform == "win32":
             if portable_root() is not None:
                 settings_menu.addAction(self._act('右键快捷工具…', self.manage_context_menus))
@@ -2949,29 +2961,26 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._act("退出", self.close))
         edit = self._menubar.addMenu("编辑")
         self.undo_action = self.undo_group.createUndoAction(self, "撤销")
-        self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self.redo_action = self.undo_group.createRedoAction(self, "重做")
-        self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
-        self.copy_pages_action = self._act('复制页面', self.copy_pages, QKeySequence.StandardKey.Copy)
+        self.copy_pages_action = self._act('复制页面', self.copy_pages)
         self.copy_pages_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.copy_pages_action.setStatusTip('复制所选页面，可粘贴到本文件或本窗口的其他标签页。')
         for page_view in (self.left_view,self.arrange_view):
             page_view.addAction(self.copy_pages_action)
         edit.addAction(self.copy_pages_action)
-        self.paste_pages_action = self._act('粘贴为页面', self.paste_pages, QKeySequence.StandardKey.Paste)
+        self.paste_pages_action = self._act('粘贴为页面', self.paste_pages)
         self.paste_pages_action.setStatusTip('将复制的 PDF、图片文件或截图粘贴为新页面；可先点击缩略图或页面间隙。')
         edit.addAction(self.paste_pages_action)
         edit.addSeparator()
-        edit.addAction(self._act("全选", self.select_all_pages, QKeySequence.StandardKey.SelectAll))
+        edit.addAction(self._act("全选", self.select_all_pages))
         edit.addAction(self.find_action)
         edit.addSeparator()
         edit.addAction(self._act("审阅与文字修正…", self.open_annotation_tools))
-        self.capture_action = self._act("框选导出图片…", lambda: self.region_capture.begin(),
-                                        QKeySequence("Ctrl+Shift+C"))
+        self.capture_action = self._act("框选导出图片…", lambda: self.region_capture.begin())
         self.capture_action.setIcon(toolbar_icon('annotation-select'))
-        self.capture_action.setToolTip('框选原文，连同批注说明复制或保存为图片（Ctrl+Shift+C）')
+        self.capture_action.setToolTip('框选原文，连同批注说明复制或保存为图片')
         edit.addAction(self.capture_action)
         edit.addSeparator()
         self.insert_action = self._act("插入页面…", self.insert_files)
@@ -3042,7 +3051,7 @@ class MainWindow(QMainWindow):
         self.toggle_mode_action = self._act('切换阅读／整理页面', self.toggle_reading_mode)
         view.addAction(self.toggle_mode_action)
         self.addAction(self.toggle_mode_action)
-        self.outline_action = self._act("大纲书签", self.open_outline, QKeySequence('Ctrl+Shift+B'))
+        self.outline_action = self._act("大纲书签", self.open_outline)
         view.addAction(self.outline_action)
         view.addSeparator()
         view.addMenu(self.reading_settings_menu)
@@ -3073,9 +3082,9 @@ class MainWindow(QMainWindow):
         view.addAction(self.act_tools)
         view.addSeparator()
         zoom_menu=view.addMenu('缩放')
-        zoom_menu.addAction(self._act("放大", self.zoom_in, QKeySequence.StandardKey.ZoomIn))
-        zoom_menu.addAction(self._act("缩小", self.zoom_out, QKeySequence.StandardKey.ZoomOut))
-        zoom_menu.addAction(self._act("适合宽度", self.zoom_fit, QKeySequence("Ctrl+0")))
+        zoom_menu.addAction(self._act("放大", self.zoom_in))
+        zoom_menu.addAction(self._act("缩小", self.zoom_out))
+        zoom_menu.addAction(self._act("适合宽度", self.zoom_fit))
         restore=view.addMenu('界面恢复')
         restore.addAction(self.reading_orb.restore_action)
         restore.addAction(self._act('恢复界面布局',self.reset_ui_preferences))
@@ -3428,6 +3437,14 @@ class MainWindow(QMainWindow):
         self.toggle_mode_action.setEnabled(bool(count))
         self.arrange_mode_action.setEnabled(bool(count))
         self.review_button.setEnabled(bool(count))
+        for key, action in getattr(self, '_shortcut_actions', {}).items():
+            if key.startswith(('review.', 'annotation.', 'tools.')):
+                action.setEnabled(bool(count) and not self._saving and not getattr(self, '_task_dialog', None))
+            elif key.startswith('outline.'):
+                action.setEnabled(bool(count) and (key in ('outline.expand', 'outline.collapse')
+                                  or not self.store.operation_reason(self.ws.pages, 'outline')))
+            elif key == 'pages.extract_selected':
+                action.setEnabled(self.extract_action.isEnabled())
         self._update_export_controls()
         name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else
             os.path.basename(self._opening_paths[0]) if self._opening_paths else "尚未打开文档")
@@ -3470,8 +3487,8 @@ class MainWindow(QMainWindow):
         for button, label in ((self.previous_page, "上一"), (self.next_page, "下一")):
             name = label + ("组页面" if self.preview_view.spread else "页")
             button.setAccessibleName(name)
-            key = 'previous' if button is self.previous_page else 'next'
-            binding = self.reading_shortcuts.actions[key].shortcut().toString() if hasattr(self, 'reading_shortcuts') else ''
+            key = 'reader.previous' if button is self.previous_page else 'reader.next'
+            binding = self.shortcut_manager.label(key)
             button.setToolTip(f'{name} ({binding})' if binding else name)
         self.page_number.setToolTip("输入任意页码，按 Enter 跳转到所在页面组" if self.preview_view.spread
                                     else "输入页码，按 Enter 跳转")
@@ -3565,11 +3582,9 @@ class MainWindow(QMainWindow):
             label.setText(error or summary)
             label.setVisible(bool(error or summary))
 
-    def _act(self, text, slot, shortcut=None) -> QAction:
+    def _act(self, text, slot) -> QAction:
         text=text.removesuffix('…').removesuffix('...')
         action = QAction(text, self)
-        if shortcut is not None:
-            action.setShortcut(shortcut)
         action.triggered.connect(slot)
         return action
 
@@ -3637,16 +3652,16 @@ class MainWindow(QMainWindow):
         zoom_bar.setContentsMargins(0, 0, 0, 0)
         zoom_bar.setSpacing(4)
         zoom_bar.addStretch()
-        zoom_out_button = self._icon_btn("zoom-out", "缩小", self.zoom_out, shortcut="Ctrl+-")
+        zoom_out_button = self._icon_btn("zoom-out", "缩小", self.zoom_out)
         zoom_bar.addWidget(zoom_out_button)
         self.zoom_label = QLabel("100%")
         self.zoom_label.setObjectName("hint")
         self.zoom_label.setMinimumWidth(48)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_bar.addWidget(self.zoom_label)
-        zoom_in_button = self._icon_btn("zoom-in", "放大", self.zoom_in, shortcut="Ctrl+=")
+        zoom_in_button = self._icon_btn("zoom-in", "放大", self.zoom_in)
         zoom_bar.addWidget(zoom_in_button)
-        zoom_fit_button = self._icon_btn("fit-width", "适合宽度", self.zoom_fit, shortcut="Ctrl+0")
+        zoom_fit_button = self._icon_btn("fit-width", "适合宽度", self.zoom_fit)
         zoom_bar.addWidget(zoom_fit_button)
         from app.recentui import ReadingHome
         self.preview_empty = ReadingHome(self)
@@ -3714,14 +3729,13 @@ class MainWindow(QMainWindow):
         layout_menu.addAction(self.reading_fallback_notice)
         layout_menu.addSection('阅读工具')
         layout_menu.addActions(list(self.reader_tool_actions.values()))
-        layout_menu.addAction(self._act('阅读快捷键…', self.configure_reading_shortcuts))
         layout_menu.addSection('页面布局')
         self.reading_layout_group = QActionGroup(self)
         self.reading_layout_actions = {}
-        for mode, label, icon, key in (('single', '单页连续', 'page-single', 'Ctrl+1'),
-                                       ('spread', '双页对开', 'page-spread', 'Ctrl+2'),
-                                       ('four', '四页预览（2×2）', 'layout-grid', 'Ctrl+4')):
-            action = self._act(label, lambda checked=False, m=mode: self._set_reading_layout(m), QKeySequence(key))
+        for mode, label, icon in (('single', '单页连续', 'page-single'),
+                                  ('spread', '双页对开', 'page-spread'),
+                                  ('four', '四页预览（2×2）', 'layout-grid')):
+            action = self._act(label, lambda checked=False, m=mode: self._set_reading_layout(m))
             action.setIcon(toolbar_icon(icon, '#526B63', 18))
             action.setCheckable(True)
             action.setChecked(mode == self._reading_layout)
@@ -3820,14 +3834,14 @@ class MainWindow(QMainWindow):
         self.arrange_sel.setObjectName("hint")
         bar.addWidget(self.arrange_sel)
         bar.addStretch()
-        bar.addWidget(self._icon_btn("zoom-out", "缩小", self.arrange_zoom_out, shortcut="Ctrl+-"))
+        bar.addWidget(self._icon_btn("zoom-out", "缩小", self.arrange_zoom_out))
         self.arrange_zoom_label.setObjectName("hint")
         self.arrange_zoom_label.setMinimumWidth(48)
         self.arrange_zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bar.addWidget(self.arrange_zoom_label)
         self.arrange_zoom_label.show()
-        bar.addWidget(self._icon_btn("zoom-in", "放大", self.arrange_zoom_in, shortcut="Ctrl+="))
-        bar.addWidget(self._icon_btn("fit-width", "适合窗口", self.arrange_zoom_fit, shortcut="Ctrl+0"))
+        bar.addWidget(self._icon_btn("zoom-in", "放大", self.arrange_zoom_in))
+        bar.addWidget(self._icon_btn("fit-width", "适合窗口", self.arrange_zoom_fit))
         hint = QLabel("拖动排序，双击阅读。按住 Alt 悬停可放大，或右键选择放大预览。Ctrl 加选，Shift 连选；Ctrl + 滚轮缩放。")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
@@ -4083,9 +4097,8 @@ class MainWindow(QMainWindow):
         slot,
         primary: bool = False,
         danger: bool = False,
-        shortcut: str = "",
     ) -> QToolButton:
-        tip = f"{label} ({shortcut})" if shortcut else label
+        tip = label
         btn = QToolButton()
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -4101,6 +4114,8 @@ class MainWindow(QMainWindow):
         if danger:
             btn.setProperty("danger", True)
         btn.clicked.connect(slot)
+        from app.shortcuts import link_main_button_hint
+        link_main_button_hint(self, btn, label)
         return btn
 
     def _btn(
@@ -4124,6 +4139,8 @@ class MainWindow(QMainWindow):
             btn.setIcon(toolbar_icon(icon, self._icon_color(primary, danger)))
             btn.setIconSize(QSize(18, 18))
         btn.clicked.connect(slot)
+        from app.shortcuts import link_main_button_hint
+        link_main_button_hint(self, btn, text)
         return btn
 
     def _action_btn(self, action: QAction) -> QToolButton:
@@ -4144,32 +4161,18 @@ class MainWindow(QMainWindow):
         return line
 
     def _shortcuts(self) -> None:
-        # Ctrl+Shift+S 已由菜单「另存为」的 StandardKey.SaveAs 提供，再挂一条会互相打架。
-        for view in (self.left_view, self.arrange_view):
-            shortcut = QShortcut(QKeySequence.StandardKey.Delete, view, self.delete_pages)
-            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        QShortcut(QKeySequence("Ctrl+L"), self, self.focus_page_number)
-        QShortcut(QKeySequence("Ctrl+="), self, self.zoom_in)
-        QShortcut(QKeySequence("F3"), self, lambda: self.search_bar.step(1))
-        QShortcut(QKeySequence("Shift+F3"), self, lambda: self.search_bar.step(-1))
-        QShortcut(QKeySequence("Ctrl+Tab"), self, lambda: self.step_tab(1))
-        QShortcut(QKeySequence("Ctrl+Shift+Tab"), self, lambda: self.step_tab(-1))
-        from app.readershortcuts import ReadingShortcuts
-        previous = self._act('上一页／上一组', lambda: self.step_page(-1))
-        following = self._act('下一页／下一组', lambda: self.step_page(1))
-        self.addActions([previous, following])
-        for action in self.reader_tool_actions.values():
-            action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            self.preview_view.addAction(action)
-        self.reading_shortcuts = ReadingShortcuts(self, [
-            ('mode', '切换阅读／整理页面', 'F6', self.toggle_mode_action),
-            ('read', '进入阅读', '', self.reading_mode_action),
-            ('arrange', '进入整理页面', '', self.arrange_mode_action),
-            ('select', '选择文字', 'V', self.reader_tool_actions['select']),
-            ('hand', '手形拖动', 'H', self.reader_tool_actions['hand']),
-            ('previous', '上一页／上一组', 'Alt+Left', previous),
-            ('next', '下一页／下一组', 'Alt+Right', following),
-        ])
+        from app.shortcuts import install_main_shortcuts
+        install_main_shortcuts(self)
+
+    def _sync_shortcut_hints(self):
+        self.reader_interaction.reset()
+        self._sync_page_navigation()
+        self.reading_orb.sync()
+        self.text_selection.sync_shortcut_hint()
+        self.search_bar.sync_shortcut_hints()
+        self.immersive.sync_shortcut_hints()
+        self.tab_bar.new_tab_button.setToolTip(self.shortcut_manager.hint('file.open', '打开新 PDF 标签页'))
+        self._sync_controls()
 
     def focus_page_number(self) -> None:
         if self.ws.pages:
@@ -5890,7 +5893,7 @@ class MainWindow(QMainWindow):
             view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
             view.scrollTo(self.model.index(base_pos, 0))
             view._show_landing(base_pos)
-            self.statusBar().showMessage(f"已插入 {inserted_count} 页 · 可拖动调整顺序或 Ctrl+Z 撤销", 4000)
+            self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f"已插入 {inserted_count} 页 · 可拖动调整顺序或撤销"), 4000)
             return True
         return False
 
@@ -5937,7 +5940,7 @@ class MainWindow(QMainWindow):
                 inserted=self.insert_prepared_pages(pages,at_index=at_index,target_view=target_view)
             if inserted:
                 target_view.setFocus()
-                self.statusBar().showMessage(f'已粘贴 {len(self.ws.pages)-count} 页 · Ctrl+Z 可撤销，原文件保留。',6000)
+                self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f'已粘贴 {len(self.ws.pages)-count} 页 · 可撤销，原文件保留。'),6000)
             else:
                 self._release_unused_docs()
             return inserted
@@ -5974,7 +5977,7 @@ class MainWindow(QMainWindow):
             from app.pageclipboard import write_pages
             self._page_copy=write_pages(pages,on_replaced=self._invalidate_page_copy)
             self._release_unused_docs()
-            self.statusBar().showMessage(f'已复制 {len(pages)} 页 · Ctrl+V 可粘贴到本文件或其他标签页',6500)
+            self.statusBar().showMessage(self.shortcut_manager.hint('edit.paste_pages', f'已复制 {len(pages)} 页 · 可粘贴到本文件或其他标签页'),6500)
             return True
         except (ValueError,PdfError,OSError) as exc:
             self.statusBar().showMessage(str(exc),6500)
@@ -6015,7 +6018,7 @@ class MainWindow(QMainWindow):
         view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
         view.scrollTo(self.model.index(base_pos, 0))
         view._show_landing(base_pos)
-        self.statusBar().showMessage(f"已复制 {len(incoming)} 页 · Ctrl+Z 可撤销", 4000)
+        self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f"已复制 {len(incoming)} 页 · 可撤销"), 4000)
         return True
 
     def drop_pages_onto_tab(self, target_tab_id: int, source_ws: Workspace, sources: list[int]) -> bool:
@@ -6534,6 +6537,8 @@ class MainWindow(QMainWindow):
                 from app.editingui import OutlinePanel
                 self.outline_panel = OutlinePanel(self)
                 self.sidebar_stack.addWidget(self.outline_panel)
+                from app.shortcuts import bind_outline
+                bind_outline(self)
             self.outline_panel.refresh()
         self.sidebar_stack.setCurrentIndex(index)
         if index == 1:
@@ -6758,9 +6763,10 @@ class MainWindow(QMainWindow):
         except (PdfError, ValueError) as exc:
             QMessageBox.warning(self, "无法预览页面", str(exc))
             return
-        dialog = PageSplitDialog(self, image)
+        dialog = PageSplitDialog(self, image, self.store.page_size(ref))
         accepted = dialog.exec() == QDialog.DialogCode.Accepted
-        direction, cuts, fit_a4 = dialog.direction.currentData(), tuple(v / 100 for v in dialog.cuts), dialog.fit_a4.isChecked()
+        direction, cuts = dialog.direction.currentData(), tuple(v / 100 for v in dialog.cuts)
+        target_size, auto_orient = dialog.target_size(), dialog.auto_orient
         dialog.deleteLater()
         if not accepted or self.ws.pages[index] is not ref:
             return
@@ -6768,14 +6774,15 @@ class MainWindow(QMainWindow):
             def work(progress):
                 outline = (self.ws.outline if self.ws.outline is not None
                            else self.store.outline_entries(tuple(self.ws.pages)))
-                return self.store.split_page(ref, direction, cuts, fit_a4=fit_a4), outline
+                return self.store.split_page(ref, direction, cuts, target_size=target_size,
+                                             auto_orient=auto_orient), outline
 
             incoming, outline = run_operation(self, "分割页面", work)
             if self.ws.pages[index] is not ref:
                 raise ValueError("工作区已改变，请重新选择页面。")
             self.ws.replace_page_with(index, incoming, outline=outline)
             self.refresh()
-            self.statusBar().showMessage(f"已分割为 {len(incoming)} 页；Ctrl+Z 可撤销。", 6000)
+            self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f"已分割为 {len(incoming)} 页；可撤销。"), 6000)
         except (PdfError, ValueError) as exc:
             QMessageBox.warning(self, "分割失败", str(exc))
 

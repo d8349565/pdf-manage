@@ -132,7 +132,7 @@ class ReadingHome(QWidget):
         self.open_button.setIcon(toolbar_icon('folder-open', '#FFFFFF', 18))
         self.open_button.setIconSize(QSize(18, 18))
         self.open_button.setAccessibleName('打开 PDF、OFD 或图片')
-        self.open_button.setToolTip('打开 PDF、OFD 或图片（Ctrl+O），也可直接拖入窗口')
+        host.shortcut_manager.watch_hint('file.open', self.open_button, '打开 PDF、OFD 或图片，也可直接拖入窗口')
         self.open_button.clicked.connect(host.open_files)
         header.addWidget(self.open_button, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(header)

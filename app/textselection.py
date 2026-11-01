@@ -2,7 +2,7 @@
 from time import perf_counter
 
 from PyQt6.QtCore import QEvent, QObject, QPointF, Qt
-from PyQt6.QtGui import QColor, QKeySequence, QPainterPath, QPen, QShortcut
+from PyQt6.QtGui import QColor, QPainterPath, QPen, QShortcut
 from PyQt6.QtWidgets import QApplication, QGraphicsPathItem, QMenu
 
 from app.rendering import RenderSignals
@@ -25,15 +25,21 @@ class TextSelection(QObject):
         self._selection_serial = 0
         self.signals = RenderSignals(self)
         self.signals.done.connect(self._snapshot_ready, Qt.ConnectionType.QueuedConnection)
-        self.shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.view)
+        self.shortcut = QShortcut(self.view)
         self.shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         self.shortcut.activated.connect(self.copy)
         self.shortcut.setEnabled(False)
+        host.shortcut_manager.bind_shortcut('reader.copy_text', self.shortcut)
         self.view.viewport().installEventFilter(self)
         self.view.installEventFilter(self)
         self.view.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.viewport().customContextMenuRequested.connect(self.menu)
-        self.view.setAccessibleDescription('点击链接跳转；拖动选择文字；Ctrl+C 复制；按住空格拖动页面（也可 Alt+拖动）')
+        self.sync_shortcut_hint()
+
+    def sync_shortcut_hint(self):
+        manager = self.host.shortcut_manager
+        drag = 'Alt＋拖动页面' if manager.uses_reader_space() else '按住空格拖动页面（也可 Alt＋拖动）'
+        self.view.setAccessibleDescription('点击链接跳转；拖动选择文字；' + manager.hint('reader.copy_text', '复制文字') + '；' + drag)
 
     def clear(self):
         self._pending = None
@@ -156,7 +162,8 @@ class TextSelection(QObject):
     def _finish(self):
         self.start = None
         if self.text:
-            self.host.statusBar().showMessage(f'已选取 {len(self.text)} 字 · Ctrl+C 或右键复制', 5000)
+            self.host.statusBar().showMessage(self.host.shortcut_manager.hint('reader.copy_text',
+                f'已选取 {len(self.text)} 字 · 可右键复制'), 5000)
 
     def select(self, point):
         import pymupdf as p
@@ -226,7 +233,8 @@ class TextSelection(QObject):
         if not self.text or not self.active():
             return
         menu = QMenu(self.view)
-        copy = menu.addAction('复制文字\tCtrl+C')
+        binding = self.host.shortcut_manager.label('reader.copy_text')
+        copy = menu.addAction('复制文字' + ('\t' + binding if binding else ''))
         copy.triggered.connect(self.copy)
         clear = menu.addAction('取消选择')
         clear.triggered.connect(self.clear)

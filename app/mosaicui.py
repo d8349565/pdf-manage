@@ -84,7 +84,7 @@ class MosaicDialog(QDialog):
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        notice = QLabel("框选矩形内的原文字与底图会被替换，椭圆外围保留图片外观；相交批注和跨区图形可能整体移除。请在「整页检查」核对；应用后可 Ctrl+Z 撤销，Ctrl+S 保存。")
+        notice = QLabel(tools.host.shortcut_manager.describe("框选矩形内的原文字与底图会被替换，椭圆外围保留图片外观；相交批注和跨区图形可能整体移除。请在「整页检查」核对；应用后可 Ctrl+Z 撤销，Ctrl+S 保存。"))
         notice.setWordWrap(True)
         layout.addWidget(notice)
         self.feedback = QLabel("正在准备预览…")

@@ -251,7 +251,7 @@ def open_deskew(host):
             raise ValueError('工作区已改变，请重新操作。')
         host.ws.edit_pages(changes, '扫描纠偏')
         host.refresh()
-        host.statusBar().showMessage(f'已纠偏 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存副本。', 6500)
+        host.statusBar().showMessage(host.shortcut_manager.describe(f'已纠偏 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存副本。'), 6500)
     except OperationCancelled:
         host.statusBar().showMessage('已取消，页面未修改。', 5000)
     except (ValueError, PdfError) as exc:

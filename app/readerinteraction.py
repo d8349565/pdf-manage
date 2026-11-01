@@ -222,8 +222,8 @@ class ReaderInteraction(QObject):
                 self.link_press = self.link_jump = None
             if event.key() != Qt.Key.Key_Space:
                 return False
-            shortcuts = getattr(self.host, 'reading_shortcuts', None)
-            if shortcuts and shortcuts.uses_space(event):
+            shortcuts = self.host.shortcut_manager
+            if shortcuts.uses_reader_space(event):
                 return False
             # Only the canvas owns this shortcut; editors keep their normal spaces.
             if QApplication.focusWidget() not in (self.view, self.view.viewport()):

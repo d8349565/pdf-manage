@@ -467,6 +467,70 @@ def test_split_dialog_resets_cut_when_switching_page_count(reader):
         dialog.reject()
 
 
+@pytest.mark.parametrize("source_mm,direction,orientation", [
+    ((420, 297), "vertical", "纵向"),
+    ((297, 420), "horizontal", "横向"),
+])
+def test_split_a3_defaults_to_two_actual_size_a4_pages(qapp, source_mm, direction, orientation):
+    from PyQt6.QtGui import QImage
+    from app.pagegeometry import PT_PER_MM
+    from app.pagesplitui import PageSplitDialog
+
+    image = QImage(*source_mm, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    dialog = PageSplitDialog(None, image, tuple(value * PT_PER_MM for value in source_mm))
+    try:
+        assert dialog.direction.currentData() == direction
+        assert dialog.cuts == (50,) and dialog.target_size() is None
+        assert f"2 张 · 每张 A4（{orientation}）" in dialog.result_summary.text()
+        dialog.paper.setCurrentIndex(dialog.paper.findData("b5_jis"))
+        assert dialog.auto_orient
+        assert dialog.target_size() == pytest.approx((182 * PT_PER_MM, 257 * PT_PER_MM))
+        assert "B5（JIS）" in dialog.result_summary.text()
+        dialog.paper.setCurrentIndex(dialog.paper.findData("custom"))
+        dialog.width_input.setValue(180)
+        dialog.height_input.setValue(260)
+        assert not dialog.auto_orient
+        assert dialog.target_size() == pytest.approx((180 * PT_PER_MM, 260 * PT_PER_MM))
+        assert "180.0 × 260.0 mm" in dialog.result_summary.text()
+    finally:
+        dialog.reject()
+
+
+def test_split_form_labels_are_vertically_centered(qapp, tmp_path):
+    from PyQt6.QtGui import QImage
+    from PyQt6.QtWidgets import QLabel, QWidget
+    from app.pagesplitui import PageSplitDialog
+    from app.ui import STYLESHEET
+
+    host = QWidget()
+    host.setStyleSheet(STYLESHEET)
+    image = QImage(420, 595, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.white)
+    dialog = PageSplitDialog(host, image, (595, 842))
+    errors = []
+    try:
+        dialog.show()
+        for preset in ("original", "a4", "custom"):
+            dialog.paper.setCurrentIndex(dialog.paper.findData(preset))
+            qapp.processEvents()
+            labels = {label.text(): label for label in dialog.findChildren(QLabel)}
+            for text, control in (("分割后尺寸", dialog.paper), ("纸张方向", dialog.orientation),
+                                  ("实际宽高", dialog.width_input)):
+                label = labels[text]
+                if not label.isVisible():
+                    continue
+                label_center = label.mapTo(dialog, QPoint()).y() + label.height() / 2
+                control_center = control.mapTo(dialog, QPoint()).y() + control.height() / 2
+                if abs(label_center - control_center) > 1:
+                    errors.append((preset, text, label_center, control_center))
+            dialog.grab().save(str(tmp_path / f"split-alignment-{preset}.png"))
+        assert not errors, f"Label/control vertical centers differ: {errors}; captures: {tmp_path}"
+    finally:
+        dialog.reject()
+        host.close()
+
+
 def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
     from app.rendering import RenderResult
     from app.watermarkui import WatermarkDialog

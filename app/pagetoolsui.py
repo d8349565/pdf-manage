@@ -281,7 +281,7 @@ def resize_pages(host):
             raise ValueError('工作区已改变，请重新选择页面。')
         host.ws.edit_pages(changes, '调整页面大小')
         host.refresh()
-        host.statusBar().showMessage(f'已调整 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存副本。', 6500)
+        host.statusBar().showMessage(host.shortcut_manager.describe(f'已调整 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存副本。'), 6500)
     except OperationCancelled:
         host.statusBar().showMessage('已取消，页面未修改。', 5000)
     except (ValueError, PdfError) as exc:

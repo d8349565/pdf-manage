@@ -10,7 +10,7 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QLineEdit
 
 from app.readinghistory import ReadingHistory
-from app.readershortcuts import ReadingShortcutsDialog
+from app.shortcutui import ShortcutDialog
 from app.recentui import ReadingHistoryDialog
 from app.ui import MainWindow
 from app import ui
@@ -141,24 +141,26 @@ def test_recent_reopen_and_opt_in_resume_keep_last_page_without_overriding_expli
 
 
 def test_shortcut_conflicts_focus_space_paging_and_restart_persistence(reader, app):
-    controller = reader.reading_shortcuts
+    controller = reader.shortcut_manager
     values = controller.values()
-    assert values['mode'] == 'F6' and values['read'] == values['arrange'] == ''
-    assert controller.error(dict(values, next='Ctrl+S'))
-    assert controller.error(dict(values, next='H'))
-    dialog = ReadingShortcutsDialog(controller)
-    dialog.editors['next'].setKeySequence(QKeySequence('Ctrl+S'))
+    assert values['reader.mode'] == ['F6'] and values['reader.read'] == values['reader.arrange'] == []
+    assert controller.error(dict(values, **{'reader.next': ['Ctrl+S']}))
+    assert controller.error(dict(values, **{'reader.next': ['H']}))
+    dialog = ShortcutDialog(controller, reader)
+    dialog.search.setText('下一页／下一组')
+    dialog._editors[0].setKeySequence(QKeySequence('Ctrl+S'))
     assert not dialog.save_button.isEnabled() and dialog.feedback.text()
-    dialog.restore_defaults()
+    dialog.restore_selected()
     assert dialog.save_button.isEnabled()
     dialog.show()
-    dialog.editors['mode'].setFocus()
+    dialog.search.setText('切换阅读')
+    dialog._editors[0].setFocus()
     app.processEvents()
-    QTest.keyClick(dialog.editors['mode'], Qt.Key.Key_F7)
-    assert dialog.editors['mode'].keySequence() == QKeySequence('F7')
-    dialog.close()
+    QTest.keyClick(dialog._editors[0], Qt.Key.Key_F7)
+    assert dialog._editors[0].keySequence() == QKeySequence('F7')
+    dialog.reject()
     dialog.deleteLater()
-    assert controller.apply(dict(values, next='Space')) == ''
+    assert controller.apply(dict(values, **{'reader.next': ['Space']})) == ''
     view = reader.preview_view
     view.setFocus()
     reader.activateWindow()
@@ -174,8 +176,8 @@ def test_shortcut_conflicts_focus_space_paging_and_restart_persistence(reader, a
     assert editor.text() == 'v h two words'
     assert reader.ws.preview_index() == 1 and reader._reading_tool == 'select'
     restarted = MainWindow()
-    assert restarted.reading_shortcuts.values()['next'] == 'Space'
-    assert restarted.reading_shortcuts.values()['mode'] == 'F6'
+    assert restarted.shortcut_manager.values()['reader.next'] == ['Space']
+    assert restarted.shortcut_manager.values()['reader.mode'] == ['F6']
     dispose(restarted)
 
 

@@ -201,7 +201,9 @@ class ReadingSettingsOrb(QToolButton):
         layout = self.host.reading_layout_actions[self.host._reading_layout].text()
         zoom = self.host.reading_zoom_actions[self.host._zoom_mode].text()
         hint = '\n阅读区较窄，当前暂用单页。' if self.host.reading_fallback_notice.isVisible() else ''
-        self.setToolTip(f'阅读设置\n{layout} · {zoom}{hint}\n按住拖动可调整位置（本次运行有效）\nCtrl+1 单页 · Ctrl+2 双页 · Ctrl+4 四页')
+        keys = ' · '.join(self.host.shortcut_manager.hint('reader.' + key, label)
+                          for key, label in (('single', '单页'), ('spread', '双页'), ('four', '四页')))
+        self.setToolTip(f'阅读设置\n{layout} · {zoom}{hint}\n按住拖动可调整位置（本次运行有效）\n{keys}')
         visible = (available and self.parentWidget().isVisible() and not self.temporarily_hidden
                    and not (hasattr(self.host, 'immersive') and self.host.immersive.borderless))
         if not visible:

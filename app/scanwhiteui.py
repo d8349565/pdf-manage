@@ -196,14 +196,15 @@ class PaperPreview(ScrollablePagePreview):
         super().leaveEvent(event)
 
     def keyPressEvent(self,event):
-        directions={Qt.Key.Key_Left:(-1,0),Qt.Key.Key_Right:(1,0),Qt.Key.Key_Up:(0,-1),Qt.Key.Key_Down:(0,1)}
-        if self.editing and self.selected_handle is not None and event.key() in directions:
+        from app.shortcuts import nudge_for
+        delta=nudge_for(self,'whitening',event) if self.editing and self.selected_handle is not None else None
+        if delta is not None:
             row,corner=self.selected_handle
             if row in self.rows:
                 area=self.area(self.page_model.index(self.rows.index(row)))
-                dx,dy=directions[event.key()];step=10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+                dx,dy=delta
                 old=self.regions.get(row,FULL_PAGE);x,y=old[corner]
-                point=(max(0,min(1,x+dx*step/area.width())),max(0,min(1,y+dy*step/area.height())))
+                point=(max(0,min(1,x+dx/area.width())),max(0,min(1,y+dy/area.height())))
                 new=tuple(point if i==corner else value for i,value in enumerate(old))
                 if valid_quad(new):
                     self.regions[row]=new;self.update_edges(row,area,old,new,corner)
@@ -355,10 +356,10 @@ class WhiteningDialog(QDialog):
 
     def show_help(self):
         QMessageBox.information(self,'扫描件增强说明',
-            '适用于扫描 PDF 和拍照文档。先选择效果，再核对预览并应用。\n\n'
+            self.host.shortcut_manager.describe('适用于扫描 PDF 和拍照文档。先选择效果，再核对预览并应用。\n\n'
             '纸边不合适时点“调整纸边”，拖动四角或重新框选。整页模式滚轮换页；放大后滚动检查细节。\n\n'
             '未确认的页面保留整页范围。增强页转为图片，文字层与交互信息不保留；含批注、链接或表单的页不会直接处理。\n\n'
-            '原件保留，应用后可 Ctrl+Z 撤销，保存时另存 PDF。')
+            '原件保留，应用后可 Ctrl+Z 撤销，保存时另存 PDF。'))
 
     def preview_mode_changed(self,*_):
         row=self.current_row()
@@ -638,7 +639,7 @@ def open_whitening(host):
             raise ValueError('工作区已改变，请重新操作。')
         host.ws.edit_pages(changes,'扫描件增强',as_copy=True,outline=outline)
         host.refresh()
-        host.statusBar().showMessage(f'已增强 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存 PDF。',6500)
+        host.statusBar().showMessage(host.shortcut_manager.describe(f'已增强 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存 PDF。'),6500)
     except OperationCancelled:
         host.statusBar().showMessage('已取消增强，页面未修改。',5000)
         host._release_unused_docs()

@@ -164,6 +164,7 @@ class ImageTools(QObject):
         remove.setObjectName('deleteBtn')
         remove.setToolTip('删除图片（Delete）')
         remove.clicked.connect(self.delete)
+        self.host.shortcut_manager.watch_hint('image.delete', remove, '删除当前页面图片')
         layout.addWidget(remove, 1, 4, 1, 2)
         self.width.editingFinished.connect(lambda: self.apply_values('width'))
         self.height.editingFinished.connect(lambda: self.apply_values('height'))
@@ -390,7 +391,7 @@ class ImageTools(QObject):
                 item = dict(id=identifier, image_settings=dict(self.settings))
                 self.committing = False
                 self.select_image(index, item)
-            self.host.statusBar().showMessage('图片修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。', 5000)
+            self.host.statusBar().showMessage(self.host.shortcut_manager.describe('图片修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。'), 5000)
             return True
         except (ValueError, PdfError, OperationCancelled) as exc:
             if not isinstance(exc, OperationCancelled):
@@ -453,7 +454,7 @@ class ImageTools(QObject):
                 else:
                     self.clear()
                 return True
-            if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and not self.pending:
+            if self.host.shortcut_manager.matches('image.delete', event) and not self.pending:
                 self.delete()
                 return True
         if (watched is not self.view.viewport() or kind not in

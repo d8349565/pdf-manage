@@ -18,6 +18,8 @@ def generated_files_stay_in_test_directory(tmp_path, monkeypatch):
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path))
     preferences = lambda *args: QSettings(str(tmp_path / 'storage-settings.ini'), QSettings.Format.IniFormat)
     monkeypatch.setattr(storage, '_settings', preferences)
+    from app import shortcuts
+    monkeypatch.setattr(shortcuts, 'preferences', preferences)
     # UI persistence tests must never update the user's real window/sidebar choices.
     for name in ('app.ui', 'app.exportdialogs'):
         module = sys.modules.get(name)

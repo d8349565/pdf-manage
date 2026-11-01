@@ -294,8 +294,8 @@ def open_seam_stamps(host):
             raise ValueError('工作区已改变，请重新操作。')
         host.ws.edit_pages(changes, '删除骑缝章' if remove else '应用骑缝章')
         host.refresh()
-        host.statusBar().showMessage('骑缝章已删除；Ctrl+Z 可撤销。' if remove else
-                                    f'已在 {len(indices)} 页分片盖章；Ctrl+Z 可撤销。', 6500)
+        host.statusBar().showMessage(host.shortcut_manager.describe('骑缝章已删除；Ctrl+Z 可撤销。' if remove else
+                                    f'已在 {len(indices)} 页分片盖章；Ctrl+Z 可撤销。'), 6500)
     except OperationCancelled:
         host.statusBar().showMessage('已取消，页面未修改。', 5000)
     except (ValueError, PdfError) as exc:

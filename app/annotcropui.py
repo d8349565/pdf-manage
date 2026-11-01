@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QKeySequence, QPen, QShortcut
+from PyQt6.QtGui import QColor, QPen
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
     QFormLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget)
 
@@ -258,11 +258,8 @@ class AnnotationCropDialog(QDialog):
         self.region_list.currentItemChanged.connect(self.select_region)
         self.delete.clicked.connect(self.preview.delete_selected)
         self.undo_button.clicked.connect(self.preview.undo)
-        self.shortcuts = []
-        for key, callback in (('Ctrl+Z', self.preview.undo), ('Delete', self.preview.delete_selected)):
-            shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.activated.connect(callback)
-            self.shortcuts.append(shortcut)
+        from app.shortcuts import bind_window
+        bind_window(self)
         self.sync_range()
 
     def indices(self):

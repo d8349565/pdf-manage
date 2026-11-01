@@ -102,6 +102,8 @@ def main() -> None:
         raise SystemExit(1)
     from app.runtime import preferences
     initialize_theme(preferences())
+    from app.shortcuts import get_manager
+    get_manager()
     image_mode = {'--images-to-pdf': 'pdf', '--compress-image': 'compress'}.get(sys.argv[1] if len(sys.argv) > 1 else '')
     if image_mode:
         from app.imagequick import ImageQuickDialog

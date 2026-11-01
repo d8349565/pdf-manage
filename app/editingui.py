@@ -112,6 +112,7 @@ class OutlinePanel(QWidget):
         add.setProperty("primary", True)
         add.setFixedHeight(28)
         add.clicked.connect(self.add)
+        self.host.shortcut_manager.watch_hint('outline.add', add, '添加书签')
         row.addWidget(add)
 
         more = QPushButton("管理…")
@@ -344,11 +345,11 @@ class OutlinePanel(QWidget):
         menu.addAction(self.expand_all_action)
         menu.addAction(self.collapse_all_action)
         menu.addSeparator()
-        for title, callback in (("在当前页添加书签", self.add), ("重命名", self.rename),
-                                ("删除（含子项）", self.delete), ("设为子项", lambda: self.shift(1)),
-                                ("提升层级", lambda: self.shift(-1))):
-            action = menu.addAction(title)
-            action.triggered.connect(callback)
+        for key, title in (('add', '在当前页添加书签'), ('rename', '重命名'),
+                           ('delete', '删除（含子项）'), ('child', '设为子项'), ('raise', '提升层级')):
+            action = self.host._shortcut_actions['outline.' + key]
+            action.setText(title)
+            menu.addAction(action)
             action.setEnabled(bool(self.host.ws.pages) and not self.host.store.operation_reason(self.host.ws.pages, "outline"))
         menu.exec(position)
         menu.deleteLater()
@@ -544,6 +545,11 @@ class AnnotationHoverBar(QFrame):
         self.delete_btn = QToolButton(self)
         self.delete_btn.setObjectName("deleteBtn")
         self.delete_btn.clicked.connect(self._on_delete)
+        manager = tools.host.shortcut_manager
+        for key, button, label in (('note_text', self.edit_btn, '查看／修改批注备注'),
+                ('move', self.move_btn, '移动当前批注'), ('style', self.style_btn, '应用批注样式'),
+                ('delete', self.delete_btn, '删除批注')):
+            manager.watch_hint('annotation.' + key, button, label)
         btn_layout.addWidget(self.delete_btn)
         btn_layout.addStretch()
         for button, icon, title in (
@@ -605,7 +611,8 @@ class AnnotationHoverBar(QFrame):
             self.style_btn.setToolTip("设置字体、字号与颜色")
         else:
             self.style_btn.setToolTip("应用当前选择的颜色与线宽")
-        self.move_btn.setToolTip("拖动可实时预览位置；也可点击后选位置，Esc 取消")
+        self.move_btn.setToolTip(self.tools.host.shortcut_manager.hint('annotation.move',
+            '拖动可实时预览位置；也可点击后选位置，Esc 取消'))
 
         self.adjustSize()
         self.layout().activate()
@@ -732,12 +739,14 @@ class AnnotationTools(QWidget):
         for idx, (kind, icon_name, name) in enumerate(self.TOOL_DEFS):
             action = QAction(toolbar_icon(icon_name, '#526B63', 16), short_names[kind], self)
             action.setToolTip(name)
+            self.host.shortcut_manager.watch_hint('review.' + kind, action, name)
             action.setCheckable(True)
             action.triggered.connect(lambda checked=False, i=idx: self.tool.setCurrentIndex(i))
             self.tool_group.addAction(action)
             self.tool_actions.append(action)
         self.insert_image_action = QAction(toolbar_icon('image', '#526B63', 16), '图片', self)
         self.insert_image_action.setToolTip('插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）')
+        self.host.shortcut_manager.watch_hint('review.image', self.insert_image_action, '插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）')
         self.insert_image_action.triggered.connect(lambda: self.host.image_tools.choose_image())
         actions = {kind: action for (kind, _, _), action in zip(self.TOOL_DEFS, self.tool_actions)}
         actions['image'] = self.insert_image_action
@@ -812,6 +821,9 @@ class AnnotationTools(QWidget):
             bar_layout.addWidget(button)
 
         self.feedback = QLabel("拖选或点击操作；Ctrl+Z 撤销", self.bar)
+        self._feedback_source = '拖选或点击操作；Ctrl+Z 撤销'
+        self.host.shortcut_manager.changed.connect(self._refresh_shortcut_hints)
+        self._refresh_shortcut_hints()
         self.feedback.setObjectName("hint")
         self.feedback.hide()
 
@@ -853,9 +865,19 @@ class AnnotationTools(QWidget):
             more.setAccessibleName('更多审阅工具')
 
     def _set_feedback(self, text):
-        self.feedback.setText(text)
+        self._feedback_source = text
+        text = self._refresh_shortcut_hints()
         if hasattr(self.host, "statusBar"):
             self.host.statusBar().showMessage(text, 6000)
+
+    def _refresh_shortcut_hints(self):
+        text = self._feedback_source
+        manager = self.host.shortcut_manager
+        for original, identifier, label in (('Ctrl+Z 撤销', 'edit.undo', '撤销'),
+                ('Ctrl+S 保存', 'file.save', '保存'), ('Ctrl+Enter 完成', 'textbox.apply', '完成文本框')):
+            text = text.replace(original, manager.hint(identifier, label))
+        self.feedback.setText(text)
+        return text
 
     def _update_options(self):
         kind = self.tool.currentData()

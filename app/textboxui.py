@@ -88,7 +88,7 @@ class InlineTextBox(QObject):
         apply_button = self.button("", "check", row)
         apply_button.setObjectName("applyText")
         apply_button.setIcon(toolbar_icon("check", "#FFFFFF", 16))
-        apply_button.setToolTip("完成文本框（Ctrl+Enter）")
+        self.tools.host.shortcut_manager.watch_hint('textbox.apply', apply_button, '完成文本框')
         apply_button.setAccessibleName("完成文本框")
         apply_button.clicked.connect(self.apply)
         cancel_button = self.button("", "x", row)
@@ -305,10 +305,15 @@ class InlineTextBox(QObject):
                 watched.releaseMouse()
                 self.editor.setFocus()
                 return True
+        if kind in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress) and event.key() != Qt.Key.Key_Escape:
+            from app.shortcuts import keep_native_text_input
+            if keep_native_text_input(event):
+                return False
         if kind == QEvent.Type.ShortcutOverride:
+            shortcuts = self.tools.host.shortcut_manager
             if ((event.key() == Qt.Key.Key_Escape and not self.preedit)
-                    or (event.modifiers() & Qt.KeyboardModifier.ControlModifier
-                        and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_S))):
+                    or any(shortcuts.matches(key, event) for key in
+                           ('textbox.apply', 'file.save', 'file.save_as'))):
                 event.accept()
                 return True
         if kind == QEvent.Type.KeyPress:
@@ -322,13 +327,14 @@ class InlineTextBox(QObject):
                     return True
                 self.close()
                 return True
-            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-                if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                    self.apply()
-                    return True
-                if event.key() == Qt.Key.Key_S:
+            shortcuts = self.tools.host.shortcut_manager
+            if shortcuts.matches('textbox.apply', event):
+                self.apply()
+                return True
+            for key, save_as in (('file.save', False), ('file.save_as', True)):
+                if shortcuts.matches(key, event):
                     if self.apply():
-                        self.tools.host.save()
+                        self.tools.host.save(save_as)
                     return True
         if kind == QEvent.Type.Resize and watched is self.view.viewport():
             QTimer.singleShot(0, self.position)

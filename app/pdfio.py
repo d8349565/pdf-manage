@@ -411,7 +411,8 @@ class PdfStore:
             return (rect.height, rect.width)
         return (rect.width, rect.height)
 
-    def split_page(self, ref: PageRef, direction: str, cuts: tuple[float, ...], *, fit_a4=False):
+    def split_page(self, ref: PageRef, direction: str, cuts: tuple[float, ...], *, fit_a4=False,
+                   target_size: tuple[float, float] | None = None, auto_orient=False):
         """Create vector-preserving split pages in memory; the original source stays untouched."""
         import pymupdf as p
         from app.pdfstructure import copy_document_properties
@@ -423,6 +424,11 @@ class PdfStore:
                 or any(not math.isfinite(v) for v in cuts)
                 or any(b - a < .05 - 1e-9 for a, b in zip(stops, stops[1:]))):
             raise ValueError("分割位置无效，每一部分至少保留页面的 5%。")
+        if fit_a4 and target_size is None:
+            target_size, auto_orient = p.paper_size("a4"), True
+        if target_size is not None and (len(target_size) != 2 or any(
+                not math.isfinite(v) or not 10 <= v <= 14400 for v in target_size)):
+            raise ValueError("分割后的页面宽高须为 3.53～5080 mm。")
         origin = self._source(ref.source_id)
         with p.open() as source, p.open() as normalized, p.open() as result:
             with origin.lock:
@@ -447,10 +453,10 @@ class PdfStore:
                                        annots=False, widgets=False)
                     cropped[0].clip_to_rect(clip)
                     page_width, page_height = clip.width, clip.height
-                    if fit_a4:
-                        short, long = p.paper_size("a4")
-                        page_width, page_height = ((long, short) if clip.width > clip.height
-                                                   else (short, long))
+                    if target_size is not None:
+                        page_width, page_height = target_size
+                        if auto_orient and (page_width > page_height) != (clip.width > clip.height):
+                            page_width, page_height = page_height, page_width
                     target = result.new_page(width=page_width, height=page_height)
                     target.show_pdf_page(target.rect, cropped, 0, clip=clip)
             data = result.tobytes(garbage=4, deflate=True)

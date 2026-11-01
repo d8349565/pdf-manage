@@ -240,7 +240,7 @@ class WatermarkDialog(QDialog):
         body.addLayout(right, 1)
         root.addLayout(body, 1)
         footer = QHBoxLayout()
-        hint = QLabel("应用后可 Ctrl+Z 撤销，保存后写入文件。\n移除范围仅限纸序添加的水印。")
+        hint = QLabel(self.host.shortcut_manager.describe("应用后可 Ctrl+Z 撤销，保存后写入文件。\n移除范围仅限纸序添加的水印。"))
         hint.setObjectName("watermarkHint")
         hint.setWordWrap(True)
         footer.addWidget(hint, 1)
@@ -769,7 +769,7 @@ class WatermarkDialog(QDialog):
                 return
             self.host.ws.edit_pages(changes, action)
             self.host.refresh()
-            self.host.statusBar().showMessage(f"{action}已完成；Ctrl+Z 撤销，Ctrl+S 保存。", 8000)
+            self.host.statusBar().showMessage(self.host.shortcut_manager.describe(f"{action}已完成；Ctrl+Z 撤销，Ctrl+S 保存。"), 8000)
             self._applying = False
             self.accept()
         except OperationCancelled as exc:
