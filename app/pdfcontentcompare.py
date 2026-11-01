@@ -24,7 +24,7 @@ from app.output import check_cancel, stamp
 from app.pdfcompare import _open_pdf
 
 
-HEADING = re.compile(r'^(?:第[\d一二三四五六七八九十百千万零〇]+[章节条款]|[一二三四五六七八九十]+[、．.]|\d+(?:\.\d+)*[、．.、)）])\s*')
+HEADING = re.compile(r'^(?:第[\d一二三四五六七八九十百千万零〇]+[章节条款]|[一二三四五六七八九十]+[、．.]|\d+(?:\.\d+)*(?:[、)）]|[．.](?!\d)))\s*')
 PAGE_NUMBER = re.compile(r'^(?:第)?\d+(?:页|/\d+)?$')
 NUMBER = re.compile(r'[-+]?\d+(?:[.,]\d+)*(?:[%％]|万元|个月|元|米|件|台|套|天|日)?')
 PRESENTATION = str.maketrans('，：；（）％', ',:;()%')
@@ -236,6 +236,8 @@ def extract(doc, ocr, progress, cancel, budget=None, label='文档'):
             elif kind == 'table':
                 heading = current['heading'] if current else ''
                 cells, boxes = value
+                columns = [compact(str(column)) for column in cells[0]]
+                duplicate_columns = columns if len(columns) != len(set(columns)) else []
                 for row, cell_boxes in zip(cells[1:], boxes[1:]):
                     if not row[0] or any(box is None for box in cell_boxes):
                         unread.append(index + 1)
@@ -243,9 +245,10 @@ def extract(doc, ocr, progress, cancel, budget=None, label='文档'):
                     add_unit(dict(kind='table', heading=heading, key=compact(str(row[0])),
                         text='|'.join(compact(str(c or '')) for c in row),
                         refs=[(index + 1, tuple(box), 'native', 1.) for box in cell_boxes], heading_refs=[],
-                        cells={compact(str(col)):dict(text=compact(str(text or '')),
+                        duplicate_columns=duplicate_columns,
+                        cells={} if duplicate_columns else {col:dict(text=compact(str(text or '')),
                             refs=[(index + 1, tuple(box), 'native', 1.)])
-                               for col, text, box in zip(cells[0], row, cell_boxes)}))
+                               for col, text, box in zip(columns, row, cell_boxes)}))
             else:
                 heading = current['heading'] if current else ''
                 add_unit(dict(kind='image', heading=heading, key=heading,
@@ -451,6 +454,12 @@ def compare_content_files(old_path, new_path, *, ocr_runtime=None, cache_dir=Non
                     changes.append(dict(kind='review' if incomplete else 'moved', heading=a['heading'] or '正文', before=a['text'][:100], after=b['text'][:100],
                         old=locations(a['heading_refs'] or a['refs'][:30]), new=locations(b['heading_refs'] or b['refs'][:30]), reason='条款在内容顺序中的位置改变'))
             elif a['kind'] == 'table':
+                if a['duplicate_columns'] or b['duplicate_columns']:
+                    if a['text'] != b['text'] or a['duplicate_columns'] != b['duplicate_columns']:
+                        changes.append(dict(kind='review', heading=f"{a['heading']} · {a['key']}",
+                            before=a['text'], after=b['text'], old=locations(a['refs']), new=locations(b['refs']),
+                            reason='表格存在同名列，已保留整行内容，请回到原文核对列的对应关系'))
+                    continue
                 for label in dict.fromkeys([*a['cells'], *b['cells']]):
                     aa, bb = a['cells'].get(label, dict(text='',refs=[])), b['cells'].get(label, dict(text='',refs=[]))
                     if aa['text'] != bb['text']:

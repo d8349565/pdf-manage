@@ -175,3 +175,38 @@ def test_text_budget_is_checked_before_allocating_character_positions(documents,
     folder = documents['S03']
     with pytest.raises(ValueError, match='文字量'):
         compare_content_files(folder / 'old.pdf', folder / 'new.pdf')
+
+
+@pytest.mark.parametrize('body', ['', '其他条件保持不变。'])
+def test_decimal_amount_at_line_start_is_not_discarded_as_numbering(tmp_path, body):
+    for side, amount in [('old', '120000.00元'), ('new', '125000.00元')]:
+        with pdf.open() as doc:
+            page = doc.new_page()
+            page.insert_text((52, 100), amount, fontname='china-s', fontsize=11)
+            if body:
+                page.insert_text((52, 125), body, fontname='china-s', fontsize=11)
+            doc.save(tmp_path / (side + '.pdf'))
+    result = compare_content_files(tmp_path / 'old.pdf', tmp_path / 'new.pdf')
+    assert result['complete'] and result['counts'] == {'modified': 1}
+    change = result['changes'][0]
+    assert (change['before'], change['after']) == ('120000.00元', '125000.00元')
+    assert change['old'] and change['new']
+
+
+def test_duplicate_table_columns_preserve_changed_first_column_for_review(tmp_path):
+    for side, amount in [('old', '120000'), ('new', '125000')]:
+        with pdf.open() as doc:
+            page = doc.new_page()
+            page.insert_text((52, 80), '第1条 采购清单', fontname='china-s', fontsize=13)
+            for row, values in enumerate([['设备', '金额', '金额'], ['设备甲', amount, '500']]):
+                for column, text in enumerate(values):
+                    rect = pdf.Rect(52 + 140 * column, 110 + 32 * row,
+                                    192 + 140 * column, 142 + 32 * row)
+                    page.draw_rect(rect, color=(0, 0, 0), width=.5)
+                    page.insert_text((rect.x0 + 6, rect.y0 + 20), text, fontname='china-s', fontsize=11)
+            doc.save(tmp_path / (side + '.pdf'))
+    result = compare_content_files(tmp_path / 'old.pdf', tmp_path / 'new.pdf')
+    assert result['complete'] and result['counts'] == {'review': 1}
+    change = result['changes'][0]
+    assert '120000' in change['before'] and '125000' in change['after']
+    assert '同名列' in change['reason'] and change['old'] and change['new']

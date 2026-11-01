@@ -2493,6 +2493,10 @@ class MainWindow(QMainWindow):
         self._saving = False
         self._closing = False
         self._confirming_leave = False
+        self._page_copy = None
+        self._clipboard_cleanup_timer = QTimer(self)
+        self._clipboard_cleanup_timer.setSingleShot(True)
+        self._clipboard_cleanup_timer.timeout.connect(self._release_clipboard_sources)
         self.ws = Workspace()
         self.store = PdfStore()
         self._undo_refresh_timer = QTimer(self)
@@ -5944,6 +5948,20 @@ class MainWindow(QMainWindow):
         self._release_unused_docs()
         return False
 
+    def _invalidate_page_copy(self, *_):
+        self._page_copy = None
+        if not self._closing:
+            self._clipboard_cleanup_timer.start(0)
+
+    def _release_clipboard_sources(self):
+        if self._closing:
+            return
+        if (self._saving or self._confirming_leave or self._opening_paths
+                or getattr(self, '_task_dialog', None) or QApplication.activeModalWidget()):
+            self._clipboard_cleanup_timer.start(150)
+            return
+        self._release_unused_docs()
+
     def copy_pages(self,checked=False):
         rows=self.ws.target_indices()
         if not rows or self._saving or getattr(self,'_task_dialog',None) is not None:
@@ -5954,7 +5972,7 @@ class MainWindow(QMainWindow):
             for operation in ('copy','modify'):
                 self.store.require_operation(pages,operation)
             from app.pageclipboard import write_pages
-            self._page_copy=write_pages(pages)
+            self._page_copy=write_pages(pages,on_replaced=self._invalidate_page_copy)
             self._release_unused_docs()
             self.statusBar().showMessage(f'已复制 {len(pages)} 页 · Ctrl+V 可粘贴到本文件或其他标签页',6500)
             return True
@@ -7013,6 +7031,7 @@ class MainWindow(QMainWindow):
             if reading_tab is not None and reading_tab.ws.path and self.reading_history.find(reading_tab.ws.path):
                 self.reading_history.touch(reading_tab.ws.path)
             self._history_timer.stop()
+            self._clipboard_cleanup_timer.stop()
             self._closing = True
             QApplication.instance().removeEventFilter(self)
             self._preparation_timer.stop()

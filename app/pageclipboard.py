@@ -22,10 +22,12 @@ class CopiedPages:
     pages: tuple
 
 
-def write_pages(pages,*,set_mime=None):
+def write_pages(pages,*,set_mime=None,on_replaced=None):
     """Publish an opaque handle; PDF bytes and passwords stay inside this window."""
     selection=CopiedPages(uuid4().hex,tuple(pages))
     mime=QMimeData();mime.setData(PAGE_MIME,selection.token.encode('ascii'))
+    if on_replaced is not None:
+        mime.destroyed.connect(on_replaced)
     if set_mime is None:
         QGuiApplication.clipboard().setMimeData(mime)
     else:

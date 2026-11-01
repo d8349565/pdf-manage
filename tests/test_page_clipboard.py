@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pymupdf as p
 import pytest
+from PyQt6 import sip
 from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl, QThreadPool
 from PyQt6.QtGui import QColor, QDropEvent, QImage, QKeySequence
 from PyQt6.QtTest import QTest
@@ -48,9 +49,9 @@ def host(qapp,monkeypatch):
         return original(state['mime'])
     monkeypatch.setattr(pageclipboard,'read_pages',fake_clipboard)
     original_write=pageclipboard.write_pages
-    def fake_write(pages):
+    def fake_write(pages, **kwargs):
         state['writes']+=1
-        return original_write(pages,set_mime=lambda mime:state.update(mime=mime))
+        return original_write(pages,set_mime=lambda mime:state.update(mime=mime),**kwargs)
     monkeypatch.setattr(pageclipboard,'write_pages',fake_write)
     warnings=[]
     monkeypatch.setattr(QMessageBox,'warning',lambda *args:warnings.append(args[-1]))
@@ -61,6 +62,66 @@ def host(qapp,monkeypatch):
     for tab in window._tabs:
         tab.ws.reset()
     window.store.close_all(); window.close(); qapp.processEvents()
+
+
+@pytest.mark.parametrize('close_first', [False, True])
+def test_replaced_page_clipboard_releases_closed_source_without_reading_clipboard(host,tmp_path,qapp,close_first):
+    window,state,_ = host
+    source = tmp_path / 'copied.pdf'; pdf(source, 2)
+    window.open_files_in_tabs([str(source)])
+    window.ws.set_selection([0], current=0)
+    assert window.copy_pages()
+    sid = window._page_copy.pages[0].source_id
+    if close_first:
+        assert window.close_tab(window._active_tab_id)
+        assert sid in window.store._sources
+    previous = state['mime']
+    state['mime'] = QMimeData(); state['mime'].setText('replacement text')
+    sip.delete(previous)
+    if not close_first:
+        assert window.close_tab(window._active_tab_id)
+    qapp.processEvents()
+    assert window._page_copy is None and sid not in window.store._sources
+    assert state['reads'] == 0
+
+
+def test_copying_again_keeps_new_snapshot_when_previous_mime_is_destroyed(host,tmp_path,monkeypatch):
+    window,state,_ = host
+    source = tmp_path / 'copied-again.pdf'; pdf(source, 2)
+    window.open_files_in_tabs([str(source)])
+    window.ws.set_selection([0], current=0)
+    assert window.copy_pages()
+    previous = state['mime']
+    original_write = pageclipboard.write_pages
+    def replace_copy(pages, **kwargs):
+        sip.delete(previous)
+        return original_write(pages, **kwargs)
+    window.ws.set_selection([1], current=1)
+    monkeypatch.setattr(pageclipboard, 'write_pages', replace_copy)
+    assert window.copy_pages()
+    assert window._page_copy.pages[0].source_page == 1
+    assert window.paste_pages() and len(window.ws.pages) == 3
+
+
+def test_clipboard_replacement_waits_for_import_before_releasing_sources(host,tmp_path,qapp):
+    window,state,_ = host
+    source = tmp_path / 'copied-busy.pdf'; pdf(source)
+    window.open_files_in_tabs([str(source)])
+    assert window.copy_pages()
+    sid = window._page_copy.pages[0].source_id
+    assert window.close_tab(window._active_tab_id)
+    incoming = tmp_path / 'incoming.pdf'; pdf(incoming)
+    pages = window.store.load(str(incoming))
+    window._task_dialog = object()
+    previous = state['mime']; state['mime'] = QMimeData(); sip.delete(previous)
+    qapp.processEvents()
+    assert sid in window.store._sources and pages[0].source_id in window.store._sources
+    window.ws.open_replace(pages, str(incoming))
+    del window._task_dialog
+    window._clipboard_cleanup_timer.stop()
+    window._release_clipboard_sources()
+    assert sid not in window.store._sources and pages[0].source_id in window.store._sources
+    assert state['reads'] == 0
 
 
 def test_file_order_takes_precedence_over_bitmap_and_cut_marker(tmp_path,qapp):
@@ -252,6 +313,7 @@ def test_copy_selected_pages_to_same_file_is_a_stable_editable_snapshot(host,tmp
     original_bytes=path.read_bytes()
     window.open_files_in_tabs([str(path)]);window.act_pages.setChecked(True)
     window.ws.set_selection([0,2],current=2);window.rotate(90);window._sync_selection()
+    window.immersive.auto_action.setChecked(False)
     window.activateWindow();window.left_view.setFocus();qapp.processEvents()
     QTest.keyClick(window.left_view,Qt.Key.Key_C,Qt.KeyboardModifier.ControlModifier);qapp.processEvents()
     assert state['writes']==1 and len(window._page_copy.pages)==2
