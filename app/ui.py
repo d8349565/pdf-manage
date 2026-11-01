@@ -2344,15 +2344,6 @@ class DocumentTabBar(QFrame):
         self.new_tab_button.clicked.connect(self._host.open_files)
         row.addWidget(self.new_tab_button)
         row.addStretch(1)
-        self.merge_button = QToolButton(self)
-        self.merge_button.setText('合并')
-        self.merge_button.setIcon(toolbar_icon('merge', '#526B63', 16))
-        self.merge_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.merge_button.setAccessibleName('合并已打开的文件')
-        self.merge_button.setToolTip('勾选已打开的 PDF，合并另存为新文件')
-        self.merge_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.merge_button.clicked.connect(self._host.merge_open_files)
-        row.addWidget(self.merge_button)
 
     @property
     def pills(self) -> list[_TabPill]:
@@ -2376,10 +2367,6 @@ class DocumentTabBar(QFrame):
                 self._pills[tab.tab_id] = pill
                 self._pills_layout.insertWidget(idx, pill)
             pill.update_content(tab.ws, tab.tab_id == active_tab_id)
-        can_merge = sum(is_pdf_workspace(tab.ws) for tab in tabs) >= 2
-        self.merge_button.setVisible(can_merge)
-        if hasattr(self._host, 'merge_open_action'):
-            self._host.merge_open_action.setEnabled(can_merge)
         self.setVisible(len(tabs) > 1)
 
     def dragEnterEvent(self, event) -> None:
@@ -2986,6 +2973,8 @@ class MainWindow(QMainWindow):
         self.insert_action = self._act("插入页面…", self.insert_files)
         self.append_action = self._act("合并文件…", self.append_files)
         self.merge_open_action = self._act('合并已打开文件', self.merge_open_files)
+        self.merge_open_action.setIcon(toolbar_icon('merge'))
+        self.merge_open_action.setToolTip('勾选已打开的 PDF，合并另存为新文件')
         self.merge_open_action.setEnabled(False)
         self.delete_action = self._act("删除页面", self.delete_pages)
         tools = self._menubar.addMenu("页面")
@@ -3275,6 +3264,10 @@ class MainWindow(QMainWindow):
         for button in (self.split_tool_button, self.convert_tool_button):
             button.setFixedSize(28, 28)
             layout.addWidget(button)
+        self.merge_open_button = self._action_btn(self.merge_open_action)
+        self.merge_open_button.setFixedSize(28, 28)
+        self.merge_open_button.hide()
+        layout.addWidget(self.merge_open_button)
         layout.addStretch()
         layout.addWidget(self.navigation_bar)
         for action in (self.act_pages, self.act_tools):
@@ -5617,6 +5610,9 @@ class MainWindow(QMainWindow):
         tab = self._active_tab()
         if tab is not None and hasattr(self, "tab_bar"):
             self.tab_bar.sync_tabs(self._tabs, self._active_tab_id)
+            can_merge = sum(is_pdf_workspace(tab.ws) for tab in self._tabs) >= 2
+            self.merge_open_button.setVisible(can_merge)
+            self.merge_open_action.setEnabled(can_merge)
             if hasattr(self, 'immersive') and (self.immersive.fullscreen or self.immersive.borderless):
                 self.tab_bar.hide()
 

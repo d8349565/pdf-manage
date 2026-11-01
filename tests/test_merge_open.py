@@ -175,7 +175,7 @@ def test_protected_sources_are_visible_with_reasons_and_not_selected(opened, mon
 
 def test_merge_entry_requires_two_pdf_tabs_and_explains_image_source(opened, tmp_path, monkeypatch):
     window, paths = opened
-    assert window.tab_bar.merge_button.isVisible() and window.merge_open_action.isEnabled()
+    assert window.merge_open_button.isVisible() and window.merge_open_action.isEnabled()
     assert window.close_tab(window._tabs[-1].tab_id)
     image_path = tmp_path / 'generated.png'
     image = QImage(80, 100, QImage.Format.Format_RGB32)
@@ -191,7 +191,7 @@ def test_merge_entry_requires_two_pdf_tabs_and_explains_image_source(opened, tmp
     interact_with_dialog(monkeypatch, inspect)
     assert not window.merge_open_files()
     assert window.close_tab(window._tabs[1].tab_id)
-    assert not window.tab_bar.merge_button.isVisible()
+    assert not window.merge_open_button.isVisible()
     assert not window.merge_open_action.isEnabled()
 
 
