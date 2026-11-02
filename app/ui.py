@@ -1131,9 +1131,14 @@ class PageListView(QListView):
         drag.setPixmap(pix)
         drag.setHotSpot(QPoint(pix.width() // 2, pix.height() // 2))
         self.model().drag_source_ws = self.model().ws
+        sidebar = getattr(self._host, 'immersive', None) if not self._arrange else None
         try:
+            if sidebar is not None:
+                sidebar.begin_page_drag()
             drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
         finally:
+            if sidebar is not None:
+                sidebar.end_page_drag()
             self.model().drag_source_ws = None
             self._set_drop_row(None)
             drag.deleteLater()
@@ -2181,13 +2186,14 @@ _TAB_ID_COUNTER = count(1)
 
 @dataclass
 class _DocumentTab:
+    """Document view state; the reading/arranging work mode belongs to the window."""
+
     ws: Workspace
     tab_id: int = 0
     zoom: float = 1.0
     zoom_mode: str = "page"
     reading_layout: str = "single"
     arrange_zoom: float = 1.0
-    mode_index: int = 0
     scroll_y: int | None = None
 
     def __post_init__(self) -> None:
@@ -2960,6 +2966,7 @@ class MainWindow(QMainWindow):
         self.storage_action = self._act('存储管理…', self.manage_storage)
         self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
         settings_menu=file_menu.addMenu("应用设置")
+        settings_menu.addAction(self._act('保存设置', self.configure_save_settings))
         settings_menu.addAction(self.storage_action)
         settings_menu.addAction(self._act('快捷键管理', self.configure_shortcuts))
         if sys.platform == "win32":
@@ -2996,7 +3003,7 @@ class MainWindow(QMainWindow):
         self.append_action = self._act("合并文件…", self.append_files)
         self.merge_open_action = self._act('合并已打开文件', self.merge_open_files)
         self.merge_open_action.setIcon(toolbar_icon('merge'))
-        self.merge_open_action.setToolTip('勾选已打开的 PDF，合并另存为新文件')
+        self.merge_open_action.setToolTip('勾选已打开的 PDF，默认合并另存，也可覆盖指定文件')
         self.merge_open_action.setEnabled(False)
         self.delete_action = self._act("删除页面", self.delete_pages)
         tools = self._menubar.addMenu("页面")
@@ -3467,6 +3474,9 @@ class MainWindow(QMainWindow):
         self.document_name.setToolTip(self.ws.path or "保存时选择新文件位置")
         state = "未保存 · 保存为新文件" if self.ws.dirty and not self.ws.path else (
             "有未保存的修改" if self.ws.dirty else ("已保存" if self.ws.path else "本机处理"))
+        if self.ws.dirty and not self.ws.path and (self.ws.last_saved_path
+                or self._window_settings.value('saving/default_mode', 'copy') == 'overwrite'):
+            state = '有未保存的修改'
         if read_only:
             state = "只读"
         elif self._opening_paths and not count:
@@ -5646,7 +5656,6 @@ class MainWindow(QMainWindow):
         cur.zoom_mode = self._zoom_mode
         cur.reading_layout = self._reading_layout
         cur.arrange_zoom = self._arrange_zoom
-        cur.mode_index = self.stack.currentIndex()
         if hasattr(self, "preview_view"):
             cur.scroll_y = self.preview_view.verticalScrollBar().value()
         self._remember_reading_state()
@@ -5688,9 +5697,6 @@ class MainWindow(QMainWindow):
             self.reading_layout_actions[target.reading_layout].setChecked(True)
         self._arrange_zoom = target.arrange_zoom
         self.arrange_zoom_label.setText(f"{int(round(self._arrange_zoom * 100))}%")
-        target_mode = target.mode_index if target.ws.pages else 0
-        if self.stack.currentIndex() != target_mode:
-            self.stack.setCurrentIndex(target_mode)
         self.refresh()
         if target.scroll_y is not None and target.ws.pages:
             self.preview_view.verticalScrollBar().setValue(target.scroll_y)
@@ -5753,7 +5759,6 @@ class MainWindow(QMainWindow):
             tab.zoom_mode = "page"
             tab.reading_layout = "single"
             tab.arrange_zoom = 1.0
-            tab.mode_index = 0
             tab.scroll_y = None
             self.refresh()
             self.stack.setCurrentIndex(0)
@@ -6143,7 +6148,10 @@ class MainWindow(QMainWindow):
             self.ws.reset()
             self._reading_layout, self._zoom_mode = self._default_reading_view()
             for path, pages in batches:
-                self.ws.load_first_or_merge(pages, path)
+                if len(batches) > 1:
+                    self.ws.merge_pages(pages)
+                else:
+                    self.ws.load_first_or_merge(pages, path)
             self.refresh()
             # 关闭旧文档时按文档加锁，最多等这一次渲染跑完，而不是整个线程池排空。
             self._release_unused_docs()
@@ -6258,7 +6266,7 @@ class MainWindow(QMainWindow):
         return True
 
     def _write_pdf(self, pages, path, title, *, register_result=False, groups=None, dests=None,
-                   options=None, cancellable=True):
+                   options=None, cancellable=True, allow_tag_overwrite=False):
         options = options or WriteOptions()
         if options.outline is None and self.ws.outline is not None:
             options = replace(options, outline=self.ws.outline)
@@ -6276,7 +6284,20 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(str(exc), 8000)
                 return None
             except WriteNeedsConfirmation as exc:
-                if exc.kind == "encryption":
+                if exc.kind == 'accessibility' and groups is None:
+                    from app.savesettings import confirm_tag_loss
+                    source_target = self.store.is_source_destination(path)
+                    choice = confirm_tag_loss(self, path, source_target and allow_tag_overwrite)
+                    if choice == 'cancel':
+                        return None
+                    options = replace(options, allow_tag_loss=True)
+                    if source_target and choice != 'overwrite':
+                        from app.exportdialogs import new_pdf_path
+                        path = new_pdf_path(self, self.store, '另存副本', os.path.splitext(path)[0] + '_副本.pdf')
+                        if not path:
+                            return None
+                    continue
+                elif exc.kind == "encryption":
                     from app.exportdialogs import EncryptionDialog
                     dialog = EncryptionDialog(self, allow_plain=True)
                     dialog.setWindowTitle("原加密不能沿用 · 请选择输出保护")
@@ -6614,6 +6635,15 @@ class MainWindow(QMainWindow):
             saved = self.statusBar().currentMessage()
             self.statusBar().showMessage(f"{saved}\n无法自动打开文件夹：{folder}", 10000)
 
+    def configure_save_settings(self):
+        from app.savesettings import SaveSettingsDialog
+        dialog = SaveSettingsDialog(self, self._window_settings)
+        try:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.refresh()
+        finally:
+            dialog.deleteLater()
+
     def save(self, save_as: bool = False) -> bool:
         # 保存与错误提示都会运行事件循环，期间的重复保存或关闭请求不能再次进入。
         if self._saving or getattr(self, "_task_dialog", None) is not None:
@@ -6625,6 +6655,9 @@ class MainWindow(QMainWindow):
             self._saving = False
 
     def _save_document(self, save_as: bool) -> bool:
+        from app.savesettings import (
+            confirm_overwrite, default_save_mode, remember_overwrite_choice,
+        )
         tools = getattr(self, "annotation_tools", None)
         if tools is not None and not tools.finish_text_box():
             return False
@@ -6637,27 +6670,49 @@ class MainWindow(QMainWindow):
         merged_output = self.ws.path is None and bool(self.ws.protected_paths)
         page_tool_copy = any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup')
                              for ref in self.ws.pages for edit in ref.edits)
+        requires_copy = page_tool_copy or any(self.store._source(ref.source_id).requires_copy for ref in self.ws.pages)
+        self._window_settings.sync()
+        mode = default_save_mode(self._window_settings)
         while True:
-            path = self.ws.path
-            is_ofd = bool(path and path.lower().endswith('.ofd'))
-            if save_as or not path or is_ofd or page_tool_copy:
-                suggested = (os.path.splitext(path)[0] + '_副本.pdf' if page_tool_copy and path else
-                             os.path.splitext(path)[0] + '.pdf' if is_ofd else path or "未命名.pdf")
+            original = self.ws.last_saved_path or self.ws.path
+            is_ofd = bool(original and original.lower().endswith('.ofd'))
+            path = self.ws.last_saved_path or (self.ws.path if mode == 'overwrite' else None)
+            remember_overwrite = False
+            selected_source = False
+            if not save_as and not requires_copy and not is_ofd and not path and mode == 'overwrite':
+                candidates = sorted({os.path.abspath(ref.source_path) for ref in self.ws.pages
+                                     if ref.source_path.lower().endswith('.pdf')}, key=os.path.normcase)
+                if candidates:
+                    path, remember_overwrite = confirm_overwrite(self, candidates, self._window_settings)
+                    if not path:
+                        return False
+                    selected_source = True
+            use_save_target = bool(path) and not (save_as or requires_copy or is_ofd)
+            if not use_save_target:
+                suggested = (os.path.splitext(original)[0] + '.pdf' if is_ofd else
+                             os.path.splitext(original)[0] + '_副本.pdf' if original else "未命名.pdf")
                 path, _ = QFileDialog.getSaveFileName(self, "另存为 PDF" if is_ofd else "保存 PDF", export_path(suggested), "PDF (*.pdf)")
                 if not path:
                     return False
                 if not path.lower().endswith(".pdf"):
                     path += ".pdf"
-                if self.ws.blocks_save_to(path) or page_tool_copy and self.store.is_source_destination(path):
-                    QMessageBox.warning(
-                        self,
-                        "不能覆盖原件",
-                        "请另选一个新文件，以保留本次用过的原件。",
-                    )
+            initial_copy = mode == 'copy' and not self.ws.last_saved_path and not save_as
+            if (self.ws.blocks_save_to(path) and not use_save_target
+                    or (requires_copy or initial_copy) and self.store.is_source_destination(path)):
+                QMessageBox.warning(self, "不能覆盖原件", "请另选一个新文件，以保留本次用过的原件。")
+                return False
+            # A successful save establishes this workspace's current destination.
+            # Keep checking permissions and external changes, but do not ask again.
+            same_saved_target = (self.ws.last_saved_path is not None
+                                 and os.path.normcase(os.path.abspath(path))
+                                 == os.path.normcase(os.path.abspath(self.ws.last_saved_path)))
+            if not selected_source and not same_saved_target and os.path.exists(path) and self.store.is_source_destination(path):
+                path, remember_overwrite = confirm_overwrite(self, [path], self._window_settings)
+                if not path:
                     return False
             try:
                 before = list(self.ws.pages)
-                result = self._write_pdf(before, path, "保存 PDF", register_result=True)
+                result = self._write_pdf(before, path, "保存 PDF", register_result=True, allow_tag_overwrite=True)
                 break
             except PdfError as exc:
                 self.ws.last_error = str(exc)
@@ -6677,6 +6732,7 @@ class MainWindow(QMainWindow):
                 save_as = True
         if result is None:
             return False
+        remember_overwrite_choice(self, self._window_settings, remember_overwrite, path, result.path)
         # 文件已经提交成功。界面或缓存更新出错时，不能再把本次写入报告为失败。
         try:
             after = list(result.pages)

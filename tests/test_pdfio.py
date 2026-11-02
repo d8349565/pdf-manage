@@ -123,7 +123,7 @@ def test_merge_does_not_rewrite_sources(qapp, tmp_path):
     ws = Workspace()
     ws.open_replace(store.load(str(a)), str(a))
     ws.merge_pages(store.load(str(b)))
-    assert ws.path is None
+    assert ws.path == str(a)
     out = tmp_path / "合订.pdf"
     store.write(ws.pages, str(out))
     assert a.read_bytes() == a_bytes

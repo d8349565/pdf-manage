@@ -180,7 +180,8 @@ def test_insert_multiple_files_undo_redo_and_save(window, tmp_path, monkeypatch)
     window.insert_files()
     expected = ["A-1", "A-2", "B-1", "B-2", "C-1", "A-3"]
     assert window.ws.target_indices() == [2, 3, 4]
-    assert all(window.ws.blocks_save_to(str(path)) for path in originals)
+    assert window.ws.path == str(first) and not window.ws.blocks_save_to(str(first))
+    assert all(window.ws.blocks_save_to(str(path)) for path in (second, third))
     window.ws.undo_stack.undo()
     window.ws.undo_stack.undo()
     assert len(window.ws.pages) == 3 and not window.ws.dirty

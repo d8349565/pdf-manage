@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import pymupdf
 import pytest
-from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
-from PyQt6.QtGui import QDrag, QDragEnterEvent, QDragLeaveEvent, QDropEvent
-from PyQt6.QtWidgets import QApplication, QFileDialog
+from PyQt6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt, QUrl
+from PyQt6.QtGui import QCursor, QDrag, QDragEnterEvent, QDragLeaveEvent, QDropEvent
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QApplication, QFileDialog, QFrame
 
 from app.ui import MIME, MainWindow
 
@@ -108,6 +109,32 @@ def test_reopening_file_reuses_tab_and_preserves_edits(window, tmp_path, monkeyp
         assert window.ws.pages[0].rotation == 0
 
 
+def test_reading_and_arranging_are_shared_across_document_tabs(window, tmp_path, qapp):
+    doc_a, doc_b, doc_c = (tmp_path / name for name in ("A.pdf", "B.pdf", "C.pdf"))
+    for path in (doc_a, doc_b, doc_c):
+        _make_pdf(path, 2, path.stem)
+    assert window.open_files_in_tabs([str(doc_a), str(doc_b)])
+
+    window.mode_buttons[1].click()
+    window.step_tab(-1)
+    qapp.processEvents()
+    assert window.arrange_view.isVisible(), "切换文件应保持整理模式"
+    assert window.mode_buttons[1].isChecked()
+
+    assert window.open_files_in_tabs([str(doc_c)])
+    qapp.processEvents()
+    assert window.arrange_view.isVisible(), "打开新文件应沿用窗口的整理模式"
+    window.close_current_file()
+    qapp.processEvents()
+    assert window.arrange_view.isVisible(), "关闭标签后也应保持整理模式"
+
+    window.mode_buttons[0].click()
+    window.step_tab(1)
+    qapp.processEvents()
+    assert window.preview_view.isVisible(), "切换文件应保持阅读模式"
+    assert window.mode_buttons[0].isChecked()
+
+
 def test_per_tab_independent_state_and_undo_group(window, tmp_path, qapp):
     doc_a = tmp_path / "A.pdf"
     doc_b = tmp_path / "B.pdf"
@@ -130,15 +157,15 @@ def test_per_tab_independent_state_and_undo_group(window, tmp_path, qapp):
     assert tab_a.ws.pages[0].rotation == 90
     assert "● A.pdf" in window.tab_bar.pill_for(tab_a.tab_id).title_label.text()
 
-    # Switch to Tab B via step_tab: Tab B is in Reading mode, clean, and has empty undo stack
+    # Switching files keeps Arrange mode, while edits and undo history stay independent.
     window.step_tab(1)
     qapp.processEvents()
     assert window._active_tab_id == tab_b.tab_id
-    assert window.stack.currentIndex() == 0
+    assert window.stack.currentIndex() == 1
     assert not window.ws.dirty
     assert not window.undo_action.isEnabled()
 
-    # Switch back to Tab A: Arrange mode restored, undo_action enabled and undoes Tab A's rotation
+    # Switch back to Tab A: undo_action undoes only Tab A's rotation.
     window.step_tab(-1)
     qapp.processEvents()
     assert window._active_tab_id == tab_a.tab_id
@@ -148,6 +175,41 @@ def test_per_tab_independent_state_and_undo_group(window, tmp_path, qapp):
     qapp.processEvents()
     assert not tab_a.ws.dirty
     assert tab_a.ws.pages[0].rotation == 0
+
+
+def test_tabs_keep_document_state_and_share_window_controls(window, tmp_path, qapp):
+    doc_a, doc_b = tmp_path / "A.pdf", tmp_path / "B.pdf"
+    _make_pdf(doc_a, 4, "A")
+    _make_pdf(doc_b, 3, "B")
+    assert window.open_files_in_tabs([str(doc_a)])
+    window.reading_zoom_actions["width"].trigger()
+    window.go_to_page(3)
+    window.reader_tool_actions["hand"].trigger()
+    window.immersive.auto_action.setChecked(False)
+    qapp.processEvents()
+
+    assert window.open_files_in_tabs([str(doc_b)])
+    window.go_to_page(2)
+    window.rotate(90)
+    window.step_tab(-1)
+    qapp.processEvents()
+    assert window.ws.path == str(doc_a) and len(window.ws.pages) == 4
+    assert window.page_number.value() == 3
+    assert window.reading_zoom_actions["width"].isChecked()
+    assert not window.ws.dirty and not window.undo_action.isEnabled()
+    assert window.reader_tool_actions["hand"].isChecked()
+    assert window.left_view.isVisible() and not window.immersive.auto_action.isChecked()
+
+    window.step_tab(1)
+    qapp.processEvents()
+    assert window.ws.path == str(doc_b) and len(window.ws.pages) == 3
+    assert window.page_number.value() == 2
+    assert window.reading_zoom_actions["page"].isChecked()
+    assert window.ws.pages[1].rotation == 90 and window.undo_action.isEnabled()
+    assert window.reader_tool_actions["hand"].isChecked()
+    assert window.left_view.isVisible() and not window.immersive.auto_action.isChecked()
+    window.undo_action.trigger()
+    assert not window.ws.dirty and window.ws.pages[1].rotation == 0
 
 
 def test_new_pdf_fits_page_while_existing_tabs_keep_their_zoom(window, tmp_path, qapp):
@@ -237,6 +299,7 @@ def test_cross_tab_page_drop_onto_pill_and_hover_into_view(window, tmp_path, qap
 
     # Activate Tab A and start dragging page 0
     window.activate_tab(tab_a.tab_id)
+    window.mode_buttons[1].click()
     qapp.processEvents()
     mime = window.model.mimeData([window.model.index(0)])
     assert window.model.drag_source_ws is tab_a.ws
@@ -254,6 +317,7 @@ def test_cross_tab_page_drop_onto_pill_and_hover_into_view(window, tmp_path, qap
     qapp.processEvents()
     assert drop_pill.isAccepted()
     assert window._active_tab_id == tab_b.tab_id
+    assert window.arrange_view.isVisible()
     assert len(tab_a.ws.pages) == 2
     assert len(tab_b.ws.pages) == 3
     assert [(os.path.basename(p.source_path), p.source_page) for p in tab_b.ws.pages] == [
@@ -303,8 +367,8 @@ def test_cross_tab_page_drop_onto_pill_and_hover_into_view(window, tmp_path, qap
     assert window._active_tab_id == tab_b.tab_id
     assert pill_b.title_label.text() == "+1页到此文件"
 
-    window.stack.setCurrentIndex(1)
     qapp.processEvents()
+    assert window.arrange_view.isVisible(), "悬停切换文件后应继续停留在整理模式"
     view = window.arrange_view
     drop_view = QDropEvent(
         QPointF(view.visualRect(window.model.index(1)).center()),
@@ -322,6 +386,77 @@ def test_cross_tab_page_drop_onto_pill_and_hover_into_view(window, tmp_path, qap
         ("A.pdf", 1),
         ("B.pdf", 1),
     ]
+
+
+@pytest.mark.parametrize("ending", ["drop", "cancel"])
+@pytest.mark.parametrize("auto_hide", [True, False])
+def test_sidebar_stays_open_until_cross_tab_page_drag_finishes(window, tmp_path, monkeypatch, qapp, ending, auto_hide):
+    doc_a, doc_b = tmp_path / "A.pdf", tmp_path / "B.pdf"
+    _make_pdf(doc_a, 3, "A")
+    _make_pdf(doc_b, 2, "B")
+    assert window.open_files_in_tabs([str(doc_a), str(doc_b)])
+    window.step_tab(-1)
+    window.resize(1100, 900)
+    control = window.immersive
+    if auto_hide:
+        control.edge.click()
+    else:
+        control.auto_action.setChecked(False)
+    QTest.qWait(240)
+    view = window.left_view
+    assert view.isVisible() and control.auto_action.isChecked() == auto_hide
+    for row in (0, 1):
+        point = view.visualRect(window.model.index(row)).center()
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.ControlModifier if row else Qt.KeyboardModifier.NoModifier, point)
+    assert {index.row() for index in view.selectedIndexes()} == {0, 1}
+    source_ws = window.ws
+    source_pages = list(source_ws.pages)
+    away = window.preview_view.mapToGlobal(QPoint(window.preview_view.width() - 10, 10))
+    monkeypatch.setattr(QCursor, "pos", lambda: away)
+
+    # Stub the OS drag loop and cursor position; widget events and application code remain real.
+    def native_drag(drag, actions):
+        QApplication.sendEvent(window.left_panel, QEvent(QEvent.Type.Leave))
+        QApplication.sendEvent(window, QEvent(QEvent.Type.WindowDeactivate))
+        QTest.qWait(500)
+        assert view.isVisible(), "离开侧栏后，拖拽中的页面栏不能收起"
+
+        pill = next(item for item in window.tab_bar.findChildren(QFrame) if item.accessibleName() == "B.pdf")
+        enter = QDragEnterEvent(pill.rect().center(), actions, drag.mimeData(),
+                                Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(pill, enter)
+        assert enter.isAccepted()
+        QTest.qWait(460)
+        assert window.ws.path == str(doc_b)
+        assert view.isVisible(), "悬停切换到目标标签后，页面栏仍须展开"
+        assert control.auto_action.isChecked() == auto_hide
+        assert control.pin.isChecked() != auto_hide
+        if ending == "cancel":
+            QApplication.sendEvent(pill, QDragLeaveEvent())
+            return Qt.DropAction.IgnoreAction
+
+        position = view.visualRect(window.model.index(1)).center()
+        enter = QDragEnterEvent(position, actions, drag.mimeData(),
+                               Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(view.viewport(), enter)
+        drop = QDropEvent(QPointF(position), actions, drag.mimeData(),
+                          Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        QApplication.sendEvent(view.viewport(), drop)
+        assert drop.isAccepted() and drop.dropAction() == Qt.DropAction.CopyAction
+        assert view.isVisible(), "落下页面时的刷新也不能提前收起侧栏"
+        return drop.dropAction()
+
+    monkeypatch.setattr(QDrag, "exec", native_drag)
+    view.startDrag(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
+    assert source_ws.pages == source_pages
+    expected = [("B.pdf", 0), ("A.pdf", 0), ("A.pdf", 1), ("B.pdf", 1)] if ending == "drop" else [("B.pdf", 0), ("B.pdf", 1)]
+    assert [(os.path.basename(ref.source_path), ref.source_page) for ref in window.ws.pages] == expected
+    assert control.auto_action.isChecked() == auto_hide
+    assert control.pin.isChecked() != auto_hide
+    QApplication.sendEvent(window.left_panel, QEvent(QEvent.Type.Leave))
+    QTest.qWait(700)
+    assert view.isVisible() != auto_hide, "放下或取消拖拽后应恢复原来的自动隐藏或固定设置"
 
 
 def test_page_drag_thumbnail_is_scaled_down(window, tmp_path, monkeypatch, qapp):

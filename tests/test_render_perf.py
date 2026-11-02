@@ -393,6 +393,8 @@ def test_arrange_zoom_in_rerenders_sharper_thumbnails(window, tmp_path, qapp):
 
 def test_saving_reuses_the_thumbnail_cache(window, tmp_path, qapp):
     """保存只是把同样的内容写进了新文件，不该让所有缩略图重画一遍。"""
+    window._window_settings.setValue('saving/default_mode', 'overwrite')
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     src = tmp_path / "save.pdf"
     _make_pdf(src, 6)
     assert window._load_one(str(src))
@@ -413,6 +415,8 @@ def test_saving_reuses_the_thumbnail_cache(window, tmp_path, qapp):
 
 
 def test_saving_releases_documents_the_undo_stack_no_longer_needs(window, tmp_path, qapp):
+    window._window_settings.setValue('saving/default_mode', 'overwrite')
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     src = tmp_path / "recycle.pdf"
     _make_pdf(src, 2)
     assert window._load_one(str(src))

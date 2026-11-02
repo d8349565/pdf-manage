@@ -5,7 +5,7 @@ import pymupdf
 import pytest
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
 from app.mergeopenui import MergeOpenDialog
 from app.output import OperationCancelled
@@ -17,7 +17,9 @@ from app.workspace import OutlineEntry
 
 @pytest.fixture(scope='session')
 def qapp():
-    return QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])
+    app.setQuitOnLastWindowClosed(False)
+    return app
 
 
 @pytest.fixture
@@ -34,6 +36,9 @@ def opened(qapp, tmp_path, monkeypatch):
             doc.save(path)
         paths.append(path)
     window = MainWindow()
+    # Tab merging still defaults to a new file, regardless of the global save mode.
+    window._window_settings.setValue('saving/default_mode', 'overwrite')
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     window.resize(1300, 850)
     window.show()
     assert window.open_files_in_tabs([str(path) for path in paths])
@@ -42,14 +47,24 @@ def opened(qapp, tmp_path, monkeypatch):
     for tab in window._tabs:
         tab.ws.reset()
     window.close()
+    window.deleteLater()
     qapp.processEvents()
 
 
 def interact_with_dialog(monkeypatch, interaction):
     real_exec = MergeOpenDialog.exec
     def execute(dialog):
-        QTimer.singleShot(0, lambda: interaction(dialog))
-        return real_exec(dialog)
+        errors = []
+        def interact():
+            try:
+                interaction(dialog)
+            except BaseException as exc:
+                errors.append(f'{type(exc).__name__}: {exc}')
+                dialog.reject()
+        QTimer.singleShot(0, interact)
+        result = real_exec(dialog)
+        assert not errors, errors
+        return result
     monkeypatch.setattr(MergeOpenDialog, 'exec', execute)
 
 
@@ -68,6 +83,7 @@ def test_merge_uses_selected_order_current_edits_and_current_bookmarks(opened, t
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *args, **kwargs: (str(output), 'PDF'))
     monkeypatch.setattr(QFileDialog, 'getOpenFileNames', lambda *args, **kwargs: pytest.fail('Must use opened workspaces'))
     def choose(dialog):
+        assert dialog.save_mode.currentData() == 'copy'
         assert dialog.selected_ids() == [tab.tab_id for tab in tabs]
         assert '未保存修改' in dialog.files.item(0).text()
         dialog.files.item(1).setCheckState(Qt.CheckState.Unchecked)
@@ -132,7 +148,8 @@ def test_cannot_overwrite_even_an_unselected_source(opened, monkeypatch):
 
 
 @pytest.mark.parametrize('error', [OperationCancelled('已取消'), PdfError('目标写入失败')])
-def test_writer_cancel_or_failure_preserves_workspaces_and_has_no_output(opened, tmp_path, monkeypatch, error):
+@pytest.mark.parametrize('overwrite', [False, True])
+def test_writer_cancel_or_failure_preserves_workspaces_and_has_no_output(opened, tmp_path, monkeypatch, error, overwrite):
     import app.pdfworker
     window, paths = opened
     before = [tab.ws._fingerprint() for tab in window._tabs]
@@ -144,7 +161,12 @@ def test_writer_cancel_or_failure_preserves_workspaces_and_has_no_output(opened,
     monkeypatch.setattr(app.pdfworker, 'write_pdf', stop)
     warnings = []
     monkeypatch.setattr(QMessageBox, 'warning', lambda *args: warnings.append(args[2]))
-    interact_with_dialog(monkeypatch, lambda dialog: dialog.start.click())
+    def choose(dialog):
+        if overwrite:
+            dialog.save_mode.setCurrentIndex(1)
+            dialog.target.setCurrentIndex(dialog.target.findData(window._tabs[1].tab_id))
+        dialog.start.click()
+    interact_with_dialog(monkeypatch, choose)
     assert not window.merge_open_files()
     assert [tab.ws._fingerprint() for tab in window._tabs] == before
     assert [path.read_bytes() for path in paths] == originals
@@ -193,6 +215,60 @@ def test_merge_entry_requires_two_pdf_tabs_and_explains_image_source(opened, tmp
     assert window.close_tab(window._tabs[1].tab_id)
     assert not window.merge_open_button.isVisible()
     assert not window.merge_open_action.isEnabled()
+
+
+def test_merge_can_replace_a_selected_file_and_update_only_its_tab(opened, monkeypatch):
+    window, paths = opened
+    tabs = list(window._tabs)
+    before = [tab.ws._fingerprint() for tab in tabs]
+    originals = [path.read_bytes() for path in paths]
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *args: pytest.fail('Overwrite must use the specified target'))
+    def choose(dialog):
+        assert dialog.save_mode.currentData() == 'copy'
+        dialog.save_mode.setCurrentIndex(1)
+        dialog.target.setCurrentIndex(dialog.target.findData(tabs[1].tab_id))
+        dialog.files.setCurrentRow(2)
+        dialog.move_up.click()
+        dialog.move_up.click()
+        assert dialog.start.text() == '合并并覆盖'
+        assert dialog.target_path.text() == str(paths[1])
+        dialog.start.click()
+    interact_with_dialog(monkeypatch, choose)
+    assert window.merge_open_files()
+    assert len(window._tabs) == 3 and window.ws is tabs[1].ws
+    assert not window.ws.dirty and window.ws.path == str(paths[1])
+    assert [tabs[index].ws._fingerprint() for index in (0, 2)] == [before[index] for index in (0, 2)]
+    assert [paths[index].read_bytes() for index in (0, 2)] == [originals[index] for index in (0, 2)]
+    with pymupdf.open(paths[1]) as saved:
+        assert [page.get_text().strip() for page in saved] == ['C-1', 'A-1', 'A-2', 'B-1']
+    window.ws.undo_stack.undo()
+    assert window.ws.path == str(paths[1]) and window.ws.dirty
+    assert len(window.ws.pages) == 1
+    assert window.save()
+    with pymupdf.open(paths[1]) as saved:
+        assert [page.get_text().strip() for page in saved] == ['B-1']
+
+
+def test_canceling_merge_overwrite_confirmation_keeps_the_dialog_and_sources(opened, monkeypatch):
+    from app.savesettings import OverwriteDialog
+    window, paths = opened
+    originals = [path.read_bytes() for path in paths]
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', False)
+    def cancel_confirmation(dialog):
+        dialog.skip.setChecked(True)
+        dialog.reject()
+        return QDialog.DialogCode.Rejected
+    monkeypatch.setattr(OverwriteDialog, 'exec', cancel_confirmation)
+    def choose(dialog):
+        dialog.save_mode.setCurrentIndex(1)
+        dialog.target.setCurrentIndex(dialog.target.findData(window._tabs[0].tab_id))
+        dialog.start.click()
+        assert dialog.isVisible() and dialog.output_path is None
+        dialog.reject()
+    interact_with_dialog(monkeypatch, choose)
+    assert not window.merge_open_files()
+    assert [path.read_bytes() for path in paths] == originals
+    assert not window._window_settings.value('saving/skip_overwrite_confirmation', type=bool)
 
 
 def test_file_name_and_metadata_both_render_on_separate_lines(opened, qapp):

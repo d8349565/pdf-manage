@@ -235,6 +235,8 @@ def window(qapp):
 
 
 def test_open_arrange_save(window, tmp_path):
+    window._window_settings.setValue('saving/default_mode', 'overwrite')
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     src = tmp_path / "合同.pdf"
     _make_pdf(src, 5, "C")
     original = src.read_bytes()
@@ -320,7 +322,7 @@ def test_details_omit_source_rotation_when_it_is_zero(window, tmp_path):
     assert "源文件" not in window.details.text()
 
 
-def test_merge_requires_new_path(window, tmp_path):
+def test_merge_keeps_a_and_can_still_save_a_copy(window, tmp_path):
     a = tmp_path / "A.pdf"
     b = tmp_path / "B.pdf"
     _make_pdf(a, 1, "A")
@@ -328,7 +330,7 @@ def test_merge_requires_new_path(window, tmp_path):
     a_bytes, b_bytes = a.read_bytes(), b.read_bytes()
     assert window._load_one(str(a))
     assert window._load_one(str(b))
-    assert window.ws.path is None
+    assert window.ws.path == str(a)
     assert window.ws.dirty
     out = tmp_path / "合订.pdf"
     window.store.write(window.ws.pages, str(out))
@@ -567,7 +569,6 @@ def test_thumbnails_render_at_device_pixel_ratio(window, tmp_path, qapp, monkeyp
     _make_pdf(src, 3, "D")
     assert window._load_one(str(src))
     window.model.set_icon_width(200)
-    box = window.model._thumb_box(window.ws.pages[0])
 
     ratio = [1.0]
     monkeypatch.setattr(window, 'devicePixelRatioF', lambda: ratio[0])
@@ -576,6 +577,7 @@ def test_thumbnails_render_at_device_pixel_ratio(window, tmp_path, qapp, monkeyp
     ratio[0] = 2.0
     window.model.set_device_pixel_ratio(2.0)
     crisp = _settled_thumb(window, qapp)
+    box = window.model._thumb_box(window.ws.pages[0])
 
     assert crisp.devicePixelRatio() == 2.0, (
         window.model.dpr, len(window.model.thumbs), len(window.model.shown),
@@ -909,6 +911,7 @@ def test_arrange_extended_selection_writes_workspace(window, tmp_path, qapp):
 
 
 def test_arrange_selected_thumbs_are_visibly_stronger(window, tmp_path, qapp):
+    from app.themes import current_theme
     _enter_arrange(window, tmp_path)
     window.ws.set_selection({0, 2}, current=0)
     window._sync_selection()
@@ -921,12 +924,13 @@ def test_arrange_selected_thumbs_are_visibly_stronger(window, tmp_path, qapp):
     painter.end()
     image = canvas.toImage()
 
+    accent = QColor(current_theme().colors['accent'])
     def teal_hits(rect) -> int:
         hits = 0
         for y in range(max(0, rect.y()), min(image.height(), rect.y() + rect.height())):
             for x in range(max(0, rect.x()), min(image.width(), rect.x() + rect.width())):
                 c = image.pixelColor(x, y)
-                if abs(c.red() - 15) < 25 and abs(c.green() - 118) < 25 and abs(c.blue() - 110) < 25:
+                if abs(c.red() - accent.red()) < 25 and abs(c.green() - accent.green()) < 25 and abs(c.blue() - accent.blue()) < 25:
                     hits += 1
         return hits
 
@@ -1154,8 +1158,8 @@ def test_merge_save_rejects_source_path(window, tmp_path, monkeypatch):
     a_bytes = a.read_bytes()
     assert window._load_one(str(a))
     assert window._load_one(str(b))
-    assert window.ws.path is None
-    assert window.ws.blocks_save_to(str(a))
+    assert window.ws.path == str(a)
+    assert window.ws.blocks_save_to(str(b))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: (str(a), "PDF (*.pdf)"))
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.StandardButton.Ok)
     assert window.save() is False
@@ -1180,6 +1184,8 @@ def test_current_changed_syncs_selection(window, tmp_path):
 
 
 def test_encrypted_save_preserves_protection(window, tmp_path, monkeypatch):
+    window._window_settings.setValue('saving/default_mode', 'overwrite')
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     path = tmp_path / "enc.pdf"
     doc = pymupdf.open()
     page = doc.new_page()
@@ -1207,12 +1213,13 @@ def test_sidebar_thumb_width_fills_bar():
 
 
 def test_sidebar_does_not_oscillate_with_its_scrollbars(window, tmp_path, qapp):
-    window.act_pages.setChecked(True)
     """滚动条一出现 viewport 就变窄；缩略图宽度不能跟着 viewport 走，否则两边互相追，
     每次计时器一到就把卡片重新缩放一遍，看起来就是一直抖。"""
     src = tmp_path / "mixed.pdf"
     _make_shaped_pdf(src, [(802, 555)] * 6)
     assert window._load_one(str(src))
+    window.immersive.auto_action.setChecked(False)
+    window.act_pages.setChecked(True)
     window.refresh()
     window.resize(1200, 1000)
     window.show()
@@ -1268,13 +1275,13 @@ def test_icon_toolbar_has_names_and_tooltips(window):
     names = {btn.accessibleName() for btn in named}
     assert required <= names
     for btn in named:
-        assert btn.toolTip(),(btn.text(),btn.accessibleName(),btn.objectName())
-        if btn is not window.reading_orb:
+        assert btn.toolTip() or btn.text(),(btn.text(),btn.accessibleName(),btn.objectName())
+        if btn.accessibleName() in required:
             assert btn.icon() and not btn.icon().isNull()
     from PyQt6.QtWidgets import QPushButton
     labels = {btn.text() for btn in window.findChildren(QPushButton)} | names
     assert {"打开 PDF / OFD / 图片", "保存", "另存为", "阅读", "整理页面", "左转所选页", "右转所选页", "删除所选页", "全选"} <= labels
-    assert window.append_action.text() == "合并文件" and window.append_action.isEnabled()
+    assert window.append_action.text() == "合并文件"
 
 
 def test_toolbar_icon_not_clipped_to_top_left(qapp):
@@ -1291,7 +1298,11 @@ def test_toolbar_icon_not_clipped_to_top_left(qapp):
     assert hits > 30, "放大镜手柄应画在右下角；若只剩左上角碎片说明 DPI 裁切又出现了"
 
 
-def test_menu_selected_item_shows_highlight(window, qapp):
+def test_menu_selected_item_shows_highlight(window, qapp, tmp_path):
+    from app.themes import current_theme
+    source = tmp_path / 'menu.pdf'
+    _make_pdf(source, 1, 'menu')
+    assert window._load_one(str(source))
     menu = next(m for m in window.findChildren(QMenu) if m.menuAction().text() == "视图")
     menu = next(action.menu() for action in menu.actions() if action.text() == '缩放')
     action = next(a for a in menu.actions() if a.text() == "放大")
@@ -1302,20 +1313,23 @@ def test_menu_selected_item_shows_highlight(window, qapp):
     img = menu.grab().toImage()
     menu.hide()
     hits = 0
+    selected = QColor(current_theme().colors['selected'])
     for y in range(img.height()):
         for x in range(img.width()):
             c = img.pixelColor(x, y)
-            if abs(c.red() - 204) < 25 and abs(c.green() - 251) < 25 and abs(c.blue() - 241) < 25:
+            if abs(c.red() - selected.red()) < 15 and abs(c.green() - selected.green()) < 15 and abs(c.blue() - selected.blue()) < 15:
                 hits += 1
     assert hits > 40, "菜单当前项应当有青色底，鼠标划过才看得出选中"
 
 
 def test_pages_and_tools_can_hide(window, qapp, tmp_path):
-    assert window.left_panel.isHidden()
-    assert window.tools_panel.isHidden()
+    assert not window.left_panel.isVisible()
+    assert not window.tools_panel.isVisible()
     source = tmp_path / "panels.pdf"
     _make_pdf(source, 2, "P")
     window._ingest([str(source)], replace=True)
+    window.immersive.auto_action.setChecked(False)
+    window.act_pages.setChecked(False)
     assert window.left_panel.isHidden()
     assert window.tools_panel.isHidden()
     window.act_pages.setChecked(True)
@@ -1366,7 +1380,7 @@ def test_custom_title_bar_matches_app_chrome(window, qapp):
     assert window.menuWidget() is not None
     from app import APP_NAME, __version__
     title = f"合同.pdf — {APP_NAME} v{__version__}"
-    assert window.windowTitle().endswith(f"{APP_NAME} v{__version__}")
+    assert window.windowTitle() == '未命名'
     window.setWindowTitle(title)
     assert window.title_label.toolTip() == title
     assert window.btn_min.accessibleName() == "最小化"

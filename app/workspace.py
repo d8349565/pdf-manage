@@ -134,6 +134,8 @@ class Workspace:
         self.pages: list[PageRef] = []
         self.outline: tuple[OutlineEntry, ...] | None = None
         self.path: str | None = None
+        # A successful save owns its destination even when undo restores an older path.
+        self.last_saved_path: str | None = None
         self.select_all = False
         self.selected_index: int | None = None
         self.selected: set[int] = set()
@@ -195,6 +197,7 @@ class Workspace:
         self.last_error = None
 
     def rebase_to_saved_file(self, path: str, pages: list[PageRef]) -> None:
+        self.last_saved_path = path
         self.pages = list(pages)
         self.path = path
         self.protected_paths = set()
@@ -206,6 +209,7 @@ class Workspace:
         self.pages = []
         self.outline = None
         self.path = None
+        self.last_saved_path = None
         self.select_all = False
         self.selected_index = None
         self.selected = set()
@@ -219,6 +223,7 @@ class Workspace:
         self.pages = self._unique_pages(pages)
         self.outline = None
         self.path = path
+        self.last_saved_path = None
         self.select_all = False
         self.selected_index = 0 if pages else None
         self.selected = {0} if pages else set()
@@ -229,8 +234,6 @@ class Workspace:
         self.protected_paths = set()
 
     def blocks_save_to(self, dest: str) -> bool:
-        if self.path is not None:
-            return False
         if not dest:
             return False
         return os.path.normcase(os.path.abspath(dest)) in self.protected_paths
@@ -287,19 +290,14 @@ class Workspace:
 
     def _restore(self, pages: tuple[PageRef, ...], path: str | None, outline=None) -> None:
         self.pages = list(pages)
-        self.path = path
+        self.path = self.last_saved_path or path
         self.outline = outline
-        # 保护名单只由「当前有没有落盘路径」和页面来源决定，必须跟着一起还原：
-        # 保存成功后名单会被清空，撤销回到合并态时若不同步重算，就能存回源文件了。
-        self.protected_paths = (
-            set()
-            if path is not None
-            else {
-                os.path.normcase(os.path.abspath(p.source_path))
-                for p in self.pages
-                if p.source_path
-            }
-        )
+        # Inserting B edits A; only the other sources remain protected.
+        owner = os.path.normcase(os.path.abspath(self.path)) if self.path else None
+        self.protected_paths = {
+            os.path.normcase(os.path.abspath(p.source_path)) for p in self.pages
+            if p.source_path and os.path.normcase(os.path.abspath(p.source_path)) != owner
+        }
         self._clamp_selection()
 
     def _clamp_selection(self) -> None:
@@ -442,11 +440,6 @@ class Workspace:
             after = incoming + list(self.pages)
         else:
             after = list(self.pages[:at_index]) + incoming + list(self.pages[at_index:])
-        self.protected_paths = {
-            os.path.normcase(os.path.abspath(p.source_path))
-            for p in after
-            if p.source_path
-        }
         combined = self.outline
         if combined is not None:
             if outline is None:
@@ -460,7 +453,7 @@ class Workspace:
                 outline = roots
             combined = (*combined, *outline)
         action_text = "合并" if at_index is None else "插入"
-        self._push(after, None, action_text, outline=combined)
+        self._push(after, self.path, action_text, outline=combined)
 
     def merge_pages(self, incoming: list[PageRef], outline=None) -> None:
         self.insert_pages(incoming, at_index=None, outline=outline)

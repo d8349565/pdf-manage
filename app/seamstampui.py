@@ -5,7 +5,7 @@ import uuid
 
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
-from PyQt6.QtWidgets import (QAbstractSpinBox, QDialog, QDialogButtonBox,
+from PyQt6.QtWidgets import (QAbstractSpinBox, QCheckBox, QDialog, QDialogButtonBox,
                              QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
                              QMessageBox, QPushButton, QSlider, QToolButton,
                              QVBoxLayout, QWidget)
@@ -52,11 +52,12 @@ class SeamStampDialog(QDialog):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(12)
         self.group = ClearComboBox()
-        self.group.addItem('＋ 新增骑缝章', '')
+        self.group.addItem('＋ 新增盖章', '')
         for number, (identifier, value) in enumerate(groups.items(), 1):
-            self.group.addItem(f'骑缝章 {number} · {len(value["members"])} 页', identifier)
+            name = '每页盖章' if value.get('mode') == 'per_page' else '骑缝章'
+            self.group.addItem(f'{name} {number} · {len(value["members"])} 页', identifier)
         self.group.setVisible(bool(groups))
-        self.group.setAccessibleName('已有骑缝章')
+        self.group.setAccessibleName('已有盖章')
         controls.addWidget(self.group)
         title = QLabel('选择印章图片')
         set_theme_style(title, 'font-size: 15px; font-weight: 600;')
@@ -71,9 +72,11 @@ class SeamStampDialog(QDialog):
         self.choose.clicked.connect(self.choose_image)
         controls.addWidget(self.choose)
         selected = host.ws.target_indices() if selected is None else selected
-        self.scope = PageScope(self.pages, selected if len(selected) >= 2 else [])
+        self.scope = PageScope(self.pages, selected)
         form = QFormLayout()
         form.setVerticalSpacing(12)
+        self.per_page = QCheckBox('每页完整盖章')
+        form.addRow('盖章方式', self.per_page)
         form.addRow('盖章页面', self.scope)
         self.width_input, self.height_input = spin_mm(42), spin_mm(42)
         self.height_input.setParent(self)
@@ -111,10 +114,10 @@ class SeamStampDialog(QDialog):
         self.advanced.hide()
         controls.addWidget(self.advanced)
         controls.addStretch()
-        hint = QLabel('同一枚章按页数分片。支持撤销；保存时另存副本。')
-        hint.setWordWrap(True)
-        set_theme_style(hint, 'color: #60756A; font-size: 11px;')
-        controls.addWidget(hint)
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+        set_theme_style(self.hint, 'color: #60756A; font-size: 11px;')
+        controls.addWidget(self.hint)
         body.addWidget(settings)
         right = QVBoxLayout()
         self.preview_caption = QLabel('连续预览 · 滚轮查看上下页')
@@ -141,6 +144,7 @@ class SeamStampDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
         self.group.currentIndexChanged.connect(self.select_group)
+        self.per_page.toggled.connect(self.sync)
         self.edge.currentIndexChanged.connect(self.sync)
         self.scope.mode.currentIndexChanged.connect(self.sync)
         self.scope.range.textChanged.connect(self.sync)
@@ -159,8 +163,8 @@ class SeamStampDialog(QDialog):
         self.loading = True
         value = self.groups.get(self.group.currentData())
         self.remove.setVisible(value is not None)
-        self.apply_button.setText('保存修改' if value else '添加骑缝章')
         if value:
+            self.per_page.setChecked(value.get('mode') == 'per_page')
             self.image = value['image']
             self.asset = QImage.fromData(base64.b64decode(self.image))
             self.scope.mode.setCurrentIndex(self.scope.mode.findData('range'))
@@ -195,34 +199,50 @@ class SeamStampDialog(QDialog):
             raise ValueError('先选择印章图片，再确认盖章范围。')
         return dict(image=self.image, width=self.width_input.value() * PT_PER_MM,
                     height=self.height_input.value() * PT_PER_MM, edge=self.edge.currentData(),
-                    position=self.position.value() / 100)
+                    position=self.position.value() / 100, mode='per_page' if self.per_page.isChecked() else 'seam')
 
     def sync(self, *_):
         if self.loading:
             return
+        per_page = self.per_page.isChecked()
+        self.apply_button.setText('保存修改' if self.group.currentData() else
+                                  ('每页盖章' if per_page else '添加骑缝章'))
+        self.hint.setText(('每个所选页面盖一枚完整印章。' if per_page else '同一枚章按页数分片。') +
+                          '支持撤销；保存时另存副本。')
+        self.seal_preview.setAccessibleName('完整印章预览' if per_page else '完整印章及分片线预览')
         place = '居中' if self.position.value() == 50 else f'{self.position.value()}%'
         self.advanced_toggle.setText(f'更多设置 · {self.edge.currentText()}{place}')
         try:
             indices = self.scope.indices()
             self.preview.set_rows(indices, self.group.currentData() or '')
-            if len(indices) < 2:
-                raise ValueError('至少选择两页；单页请使用插入图片。')
+            if not indices:
+                raise ValueError('至少选择一页。')
+            if not per_page and len(indices) < 2:
+                raise ValueError('至少选择两页；单页可勾选“每页完整盖章”。')
             options = self.options()
             for ordinal, row in enumerate(indices):
                 slice_rect(options['width'], options['height'], len(indices), ordinal,
-                           options['edge'], options['position'], *self.host.store.page_size(self.pages[row]))
+                           options['edge'], options['position'], *self.host.store.page_size(self.pages[row]),
+                           mode=options['mode'])
             self.preview_options = options
-            thickness = (options['width'] if options['edge'] in ('left', 'right') else options['height']) / len(indices) / PT_PER_MM
-            warning = ' · 分片较窄，请核对预览' if thickness < 1 else ''
-            self.status.setText(f'{len(indices)} 页 · 每片约 {thickness:.1f} mm{warning} · 图片盖章，不提供数字签名或验签')
-            self.dimensions.setText(f'{self.width_input.value():g} × {self.height_input.value():g} mm · 保持原图比例')
-            self.choose.setText('更换图片…')
-            self.update_seal_preview(len(indices))
+            if per_page:
+                detail = '每页一枚完整印章'
+            else:
+                thickness = (options['width'] if options['edge'] in ('left', 'right') else options['height']) / len(indices) / PT_PER_MM
+                warning = ' · 分片较窄，请核对预览' if thickness < 1 else ''
+                detail = f'每片约 {thickness:.1f} mm{warning}'
+            self.status.setText(f'{len(indices)} 页 · {detail} · 图片盖章，不提供数字签名或验签')
             enabled = True
         except (ValueError, PdfError) as exc:
             self.preview_options = None
             self.status.setText(str(exc))
             enabled = False
+        # The imported image must remain visible even while the page range or
+        # stamping mode needs correcting. Only a valid seam gets slice lines.
+        if not self.asset.isNull():
+            self.dimensions.setText(f'{self.width_input.value():g} × {self.height_input.value():g} mm · 保持原图比例')
+            self.choose.setText('更换图片…')
+            self.update_seal_preview(len(self.preview.rows) if self.preview_options else 1)
         self.preview.refresh_pages()
         self.apply_button.setEnabled(enabled)
 
@@ -234,7 +254,7 @@ class SeamStampDialog(QDialog):
         indices = self.preview.rows
         page_width, page_height = self.host.store.page_size(self.pages[row])
         area, fraction = slice_rect(options['width'], options['height'], len(indices), indices.index(row),
-                                   options['edge'], options['position'], page_width, page_height)
+                                   options['edge'], options['position'], page_width, page_height, mode=options['mode'])
         target = QRectF(rectangle.x() + area.x0 / page_width * rectangle.width(),
                         rectangle.y() + area.y0 / page_height * rectangle.height(),
                         area.width / page_width * rectangle.width(), area.height / page_height * rectangle.height())
@@ -248,6 +268,8 @@ class SeamStampDialog(QDialog):
         painter.restore()
 
     def update_seal_preview(self, count):
+        if self.per_page.isChecked():
+            count = 1
         seal = self.asset.scaled(240, 110, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         painter = QPainter(seal)
         painter.setPen(QPen(QColor('#6C8B7C'), 1))
@@ -287,15 +309,17 @@ def open_seam_stamps(host):
         remove = dialog.remove_requested
         indices, options = ([], {}) if remove else (dialog.scope.indices(), dialog.options())
         dialog.deleteLater()
-        changes = run_operation(host, '删除骑缝章' if remove else '应用骑缝章', lambda progress, cancel:
+        action = '删除盖章' if remove else '应用盖章'
+        changes = run_operation(host, action, lambda progress, cancel:
             prepare_group(host.store, before, indices, options, group, previous=previous,
                           remove=remove, progress=progress, cancel=cancel), cancellable=True)
         if tuple(host.ws.pages) != before:
             raise ValueError('工作区已改变，请重新操作。')
-        host.ws.edit_pages(changes, '删除骑缝章' if remove else '应用骑缝章')
+        host.ws.edit_pages(changes, action)
         host.refresh()
-        host.statusBar().showMessage(host.shortcut_manager.describe('骑缝章已删除；Ctrl+Z 可撤销。' if remove else
-                                    f'已在 {len(indices)} 页分片盖章；Ctrl+Z 可撤销。'), 6500)
+        message = ('已逐页盖完整印章' if options.get('mode') == 'per_page' else '已分片盖骑缝章')
+        host.statusBar().showMessage(host.shortcut_manager.describe('这组印章已删除；Ctrl+Z 可撤销。' if remove else
+                                    f'{message}，共 {len(indices)} 页；Ctrl+Z 可撤销。'), 6500)
     except OperationCancelled:
         host.statusBar().showMessage('已取消，页面未修改。', 5000)
     except (ValueError, PdfError) as exc:

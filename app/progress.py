@@ -4,7 +4,7 @@ from app.themes import set_theme_style
 from time import monotonic
 from threading import Event
 
-from PyQt6.QtCore import QEventLoop, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QEvent, QEventLoop, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout
 
 from app import APP_NAME
@@ -199,3 +199,6 @@ def run_operation(parent, title, work, *, cancellable=False, show_delay_ms=SHOW_
         dialog.complete()
         parent._task_dialog = previous
         dialog.deleteLater()
+        # Finish this dialog's deferred deletion while its worker and parent are
+        # still alive; collecting the parent first can crash Qt during teardown.
+        QCoreApplication.sendPostedEvents(dialog, QEvent.Type.DeferredDelete)

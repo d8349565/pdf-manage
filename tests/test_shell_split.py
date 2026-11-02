@@ -180,6 +180,7 @@ def test_split_every_writes_correct_groups_without_changing_source(window, tmp_p
 
 
 def test_merge_save_opens_output_folder_once(window, tmp_path, monkeypatch):
+    window._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     first = make_pdf(tmp_path / "first.pdf")
     second = make_pdf(tmp_path / "second.pdf", count=3)
     target = tmp_path / "merged.pdf"
@@ -202,9 +203,11 @@ def test_windows_exit_normally_after_loading_and_garbage_collection(tmp_path):
     source = make_pdf(tmp_path / "synthetic.pdf")
     result = subprocess.run([sys.executable, "-c", """
 import gc, sys
-from PyQt6.QtCore import QThreadPool
+from PyQt6.QtCore import QSettings, QThreadPool
 from PyQt6.QtWidgets import QApplication
 from app.ui import MainWindow
+QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, sys.argv[2])
 app = QApplication([])
 for _ in range(3):
     win = MainWindow()
@@ -215,7 +218,7 @@ for _ in range(3):
     del win
     gc.collect()
     app.processEvents()
-""", source], cwd=Path(__file__).resolve().parents[1],
+""", source, str(tmp_path)], cwd=Path(__file__).resolve().parents[1],
         env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
         capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr

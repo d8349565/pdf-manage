@@ -1,4 +1,4 @@
-"""One image split over page edges, kept as one editable stamp group."""
+"""Split or repeat one image over page edges as one editable stamp group."""
 import base64
 import json
 import math
@@ -25,7 +25,9 @@ def settings(page, annot):
                        for key in ('width', 'height', 'position', 'rotation'))
             or value['width'] <= 0 or value['height'] <= 0 or not 0 <= value['position'] <= 1
             or value.get('edge') not in ('left', 'right', 'top', 'bottom')
-            or not isinstance(value.get('count'), int) or not 2 <= value['count'] <= 10000
+            or value.get('mode', 'seam') not in ('seam', 'per_page')
+            or not isinstance(value.get('count'), int)
+            or not (1 if value.get('mode') == 'per_page' else 2) <= value['count'] <= 10000
             or not isinstance(value.get('ordinal'), int) or not 0 <= value['ordinal'] < value['count']):
         raise ValueError('骑缝章信息无法读取，请先撤销当前操作或使用原文件。')
     return value
@@ -41,13 +43,16 @@ def image_pdf(encoded):
         return doc.tobytes(), width, height
 
 
-def slice_rect(width, height, count, ordinal, edge, position, page_width, page_height):
+def slice_rect(width, height, count, ordinal, edge, position, page_width, page_height, *, mode='seam'):
     if (not all(math.isfinite(v) for v in (width, height, position))
             or width <= 0 or height <= 0 or not 0 <= position <= 1
-            or not isinstance(count, int) or not 2 <= count <= 10000
+            or mode not in ('seam', 'per_page')
+            or not isinstance(count, int) or not (1 if mode == 'per_page' else 2) <= count <= 10000
             or not isinstance(ordinal, int) or not 0 <= ordinal < count
             or edge not in ('left', 'right', 'top', 'bottom')):
-        raise ValueError('骑缝章尺寸、页数或位置无效；请至少选择两页。')
+        raise ValueError('盖章方式、尺寸、页数或位置无效；骑缝章至少选择两页，每页完整盖章至少选择一页。')
+    if mode == 'per_page':
+        count, ordinal = 1, 0
     vertical = edge in ('left', 'right')
     w, h = (width / count, height) if vertical else (width, height / count)
     if w > page_width + .001 or h > page_height + .001:
@@ -72,7 +77,8 @@ def apply_seam(page, edit):
     try:
         page.set_rotation(options['rotation'])
         area, clip = slice_rect(options['width'], options['height'], options['count'],
-            options['ordinal'], options['edge'], options['position'], page.rect.width, page.rect.height)
+            options['ordinal'], options['edge'], options['position'], page.rect.width, page.rect.height,
+            mode=options.get('mode', 'seam'))
         area *= page.derotation_matrix
         clip = p.Rect(clip)
         clip = p.Rect(clip.x0 * iw, clip.y0 * ih, clip.x1 * iw, clip.y1 * ih)
@@ -82,7 +88,10 @@ def apply_seam(page, edit):
             annot = page.add_stamp_annot(area)
             if annot.set_rect(area) is False:
                 raise ValueError('无法放置骑缝章，本次未修改页面。')
-            annot.set_info(title='纸序 PDF 骑缝章', content=f'骑缝章 · 第 {options["ordinal"] + 1}/{options["count"]} 片')
+            if options.get('mode') == 'per_page':
+                annot.set_info(title='纸序 PDF 每页盖章', content=f'每页完整盖章 · 第 {options["ordinal"] + 1}/{options["count"]} 页')
+            else:
+                annot.set_info(title='纸序 PDF 骑缝章', content=f'骑缝章 · 第 {options["ordinal"] + 1}/{options["count"]} 片')
             doc = page.parent
             doc.xref_set_key(annot.xref, 'NM', p.get_pdf_str(f'{group}-{options["ordinal"]}'))
             metadata = {key: value for key, value in options.items() if key != 'image'}
@@ -131,8 +140,11 @@ def list_groups(store, pages, progress=None, cancel=None):
 def prepare_group(store, pages, indices, options, group, *, previous=(), remove=False, progress=None, cancel=None):
     indices = sorted(set(indices))
     ordinals = {row: index for index, row in enumerate(indices)}
-    if not remove and len(indices) < 2:
-        raise ValueError('骑缝章需要至少两页；单页请使用插入图片。')
+    if not remove:
+        if not indices:
+            raise ValueError('至少选择一页。')
+        if options.get('mode', 'seam') != 'per_page' and len(indices) < 2:
+            raise ValueError('骑缝章需要至少两页；单页可选择“每页完整盖章”。')
     changes = {}
     targets = sorted(set(previous) | set(indices))
     for step, row in enumerate(targets):

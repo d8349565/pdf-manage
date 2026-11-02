@@ -83,6 +83,7 @@ def test_seam_simple_defaults_and_visible_native_controls(window, qapp):
     assert dialog.group.isHidden() and dialog.remove.isHidden()
     assert dialog.advanced.isHidden() and dialog.scope.range.isHidden()
     assert dialog.height_input.isHidden()
+    assert not dialog.per_page.isChecked() and dialog.options()['mode'] == 'seam'
     QTest.mouseClick(dialog.advanced_toggle, Qt.MouseButton.LeftButton)
     qapp.processEvents()
     assert dialog.advanced.isVisible()
@@ -272,13 +273,60 @@ def test_real_resize_relayouts_reader_and_survives_undo_redo_and_save(window, qa
     assert host.store._source(before[0].source_id).data == original
 
 
-def test_seam_dialog_apply_reopen_manage_and_cancel(window, qapp, monkeypatch):
+def test_per_page_stamp_preview_and_single_page_scope(window, qapp):
+    host, warnings = window
+    dialog = populated_seam_dialog(host)
+    QTest.mouseClick(dialog.per_page, Qt.MouseButton.LeftButton, pos=QPoint(8, dialog.per_page.height() // 2))
+    assert dialog.apply_button.isEnabled() and dialog.options()['mode'] == 'per_page'
+    assert '每页一枚完整印章' in dialog.status.text()
+    expected = dialog.asset.scaled(240, 110, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+    actual = dialog.seal_preview.pixmap().toImage()
+    assert actual == expected.convertToFormat(actual.format())
+    dialog.scope.mode.setCurrentIndex(dialog.scope.mode.findData('range'))
+    dialog.scope.range.setText('2')
+    assert dialog.preview.rows == [1] and dialog.apply_button.isEnabled()
+    QTest.mouseClick(dialog.per_page, Qt.MouseButton.LeftButton, pos=QPoint(8, dialog.per_page.height() // 2))
+    assert not dialog.apply_button.isEnabled() and '至少选择两页' in dialog.status.text()
+    QTest.mouseClick(dialog.per_page, Qt.MouseButton.LeftButton, pos=QPoint(8, dialog.per_page.height() // 2))
+    assert dialog.apply_button.isEnabled() and dialog.preview_options['mode'] == 'per_page'
+    assert not warnings
+    dialog.reject()
+    dialog.deleteLater()
+
+
+def test_single_selected_page_stays_selected_when_choosing_stamp_mode(window, qapp, tmp_path, monkeypatch, request):
+    host, _ = window
+    dialog = SeamStampDialog(host, {}, [1])
+    request.addfinalizer(dialog.reject)
+    image_path = tmp_path / 'stamp.png'
+    image_path.write_bytes(asset())
+    monkeypatch.setattr(QFileDialog, 'getOpenFileName', lambda *args, **kwargs: (str(image_path), ''))
+    dialog.show()
+    QTest.mouseClick(dialog.choose, Qt.MouseButton.LeftButton)
+    assert not dialog.seal_preview.pixmap().isNull(), '导入图片后，即使页数不足也应显示印章图片'
+    assert dialog.choose.text() == '更换图片…'
+    assert dialog.scope.mode.currentData() == 'selected'
+    assert not dialog.apply_button.isEnabled()
+    assert dialog.preview_options is None and '至少选择两页' in dialog.status.text()
+    dialog.per_page.setChecked(True)
+    assert dialog.scope.indices() == [1] and dialog.apply_button.isEnabled()
+    assert dialog.preview_options['mode'] == 'per_page'
+    dialog.scope.mode.setCurrentIndex(dialog.scope.mode.findData('all'))
+    assert dialog.scope.indices() == [0, 1, 2]
+    dialog.reject()
+    dialog.deleteLater()
+
+
+@pytest.mark.parametrize('per_page', [False, True])
+def test_seam_dialog_apply_reopen_manage_and_cancel(window, qapp, monkeypatch, per_page):
     host, warnings = window
     before = tuple(host.ws.pages)
     def configure(dialog):
         from PyQt6.QtGui import QImage
         data = asset()
         dialog.image, dialog.asset = base64.b64encode(data).decode('ascii'), QImage.fromData(data)
+        dialog.per_page.setChecked(per_page)
         dialog.scope.mode.setCurrentIndex(dialog.scope.mode.findData('all'))
         dialog.resize_asset(True)
         assert dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
@@ -290,8 +338,10 @@ def test_seam_dialog_apply_reopen_manage_and_cancel(window, qapp, monkeypatch):
     groups = list_groups(host.store, host.ws.pages)
     assert len(groups) == 1
     assert next(iter(groups.values()))['members'] == [0, 1, 2]
+    assert next(iter(groups.values()))['mode'] == ('per_page' if per_page else 'seam')
     def remove(dialog):
         assert dialog.group.currentData() in groups
+        assert dialog.per_page.isChecked() == per_page
         dialog.remove_requested = True
         return QDialog.DialogCode.Accepted
     monkeypatch.setattr(SeamStampDialog, 'exec', remove)

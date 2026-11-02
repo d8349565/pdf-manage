@@ -43,13 +43,15 @@ def create_pages(path, count):
 
 
 @pytest.mark.parametrize('edge', ['left', 'right', 'top', 'bottom'])
-@pytest.mark.parametrize('count', [2, 4, 5])
-def test_seal_slices_reassemble_with_alpha_on_mixed_rotated_pages(tmp_path, qapp, edge, count):
+@pytest.mark.parametrize('mode,count', [('seam', 2), ('seam', 4), ('seam', 5), ('per_page', 1), ('per_page', 4)])
+def test_seal_image_with_alpha_on_mixed_rotated_pages(tmp_path, qapp, edge, mode, count):
     path, output = tmp_path / 'generated.pdf', tmp_path / 'sealed.pdf'
     create_pages(path, count)
     original_hash = hashlib.sha256(path.read_bytes()).digest()
     original_image, encoded = seal_image()
     options = dict(image=encoded, width=120, height=80, edge=edge, position=.5)
+    if mode == 'per_page':
+        options['mode'] = mode
     store = PdfStore()
     try:
         refs = store.load(str(path))
@@ -63,7 +65,10 @@ def test_seal_slices_reassemble_with_alpha_on_mixed_rotated_pages(tmp_path, qapp
         with p.open(output) as doc:
             for index, page in enumerate(doc):
                 width, height = page.rect.width, page.rect.height
-                area, fraction = slice_rect(120, 80, count, index, edge, .5, width, height)
+                area, fraction = slice_rect(120, 80, count, index, edge, .5, width, height, mode=mode)
+                if mode == 'per_page':
+                    assert fraction == (0, 0, 1, 1)
+                    assert area.width == pytest.approx(120) and area.height == pytest.approx(80)
                 pixels = page.get_pixmap(clip=area, alpha=False)
                 actual = Image.frombytes('RGB', (pixels.width, pixels.height), pixels.samples)
                 crop = (fraction[0] * 120, fraction[1] * 80, fraction[2] * 120, fraction[3] * 80)
@@ -79,6 +84,9 @@ def test_seal_slices_reassemble_with_alpha_on_mixed_rotated_pages(tmp_path, qapp
                 assert error < 5, (edge, index, error)
                 assert f'Generated page {index + 1}' in page.get_text()
                 assert len(list(page.annots())) == 1
+        group = list_groups(store, store.load(str(output)))['zhixu-seam-generated']
+        assert group.get('mode', 'seam') == mode
+        assert group['members'] == list(range(count)) and group['count'] == count
         assert hashlib.sha256(path.read_bytes()).digest() == original_hash
         ws.undo_stack.undo()
         assert ws.pages == refs
@@ -88,11 +96,17 @@ def test_seal_slices_reassemble_with_alpha_on_mixed_rotated_pages(tmp_path, qapp
         store.close_all()
 
 
-def test_saved_group_can_change_range_and_be_deleted(tmp_path, qapp):
+@pytest.mark.parametrize('initial_mode,updated_mode,indices', [
+    ('seam', 'seam', [1, 3, 4]), ('seam', 'per_page', [2]),
+    ('per_page', 'seam', [1, 3, 4]), ('per_page', 'per_page', [2]),
+])
+def test_saved_group_can_change_mode_range_and_be_deleted(tmp_path, qapp, initial_mode, updated_mode, indices):
     path, output, updated = (tmp_path / name for name in ('generated.pdf', 'sealed.pdf', 'updated.pdf'))
     create_pages(path, 5)
     _, encoded = seal_image()
     options = dict(image=encoded, width=120, height=80, edge='right', position=.4)
+    if initial_mode == 'per_page':
+        options['mode'] = initial_mode
     store = PdfStore()
     try:
         refs = store.load(str(path))
@@ -102,13 +116,22 @@ def test_saved_group_can_change_range_and_be_deleted(tmp_path, qapp):
         group = list_groups(store, reopened)['zhixu-seam-generated']
         assert group['image'] == encoded
         assert group['members'] == [0, 1, 2, 3]
-        changes = prepare_group(store, reopened, [1, 3, 4], dict(options, edge='top'),
+        assert group.get('mode', 'seam') == initial_mode
+        changes = prepare_group(store, reopened, indices, dict(options, edge='top', mode=updated_mode),
                                 group['group'], previous=group['members'])
         pages = [changes.get(i, ref) for i, ref in enumerate(reopened)]
         store.write(pages, str(updated))
         with p.open(updated) as doc:
-            assert [len(list(page.annots() or ())) for page in doc] == [0, 1, 0, 1, 1]
+            assert [len(list(page.annots() or ())) for page in doc] == [int(i in indices) for i in range(5)]
+            for index in indices:
+                page = doc[index]
+                area = next(page.annots()).rect * page.rotation_matrix
+                assert area.width == pytest.approx(120, abs=.002)
+                assert area.height == pytest.approx(80 if updated_mode == 'per_page' else 80 / len(indices), abs=.002)
+        pages = store.load(str(updated))
         groups = list_groups(store, pages)
+        assert groups[group['group']]['mode'] == updated_mode
+        assert groups[group['group']]['members'] == indices
         changes = prepare_group(store, pages, [], {}, group['group'], previous=groups[group['group']]['members'], remove=True)
         assert not list_groups(store, [changes.get(i, ref) for i, ref in enumerate(pages)])
     finally:
@@ -127,6 +150,10 @@ def test_cancel_single_page_and_oversize_leave_workspace_unchanged(tmp_path, qap
         ws.open_replace(pages, str(path))
         with pytest.raises(ValueError, match='至少两页'):
             prepare_group(store, pages, [0], options, 'generated')
+        with pytest.raises(ValueError, match='至少选择一页'):
+            prepare_group(store, pages, [], dict(options, mode='per_page'), 'generated')
+        with pytest.raises(ValueError, match='超出'):
+            prepare_group(store, pages, [0], dict(options, mode='per_page', width=300), 'generated')
         with pytest.raises(ValueError, match='超出'):
             prepare_group(store, pages, [0, 1], dict(options, height=10000), 'generated')
         calls = []

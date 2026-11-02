@@ -55,6 +55,7 @@ class WriteOptions:
     editable_copy: bool = False
     page_numbers: "PageNumberOptions | None" = None
     outline: tuple | None = None
+    allow_tag_loss: bool = False
 
 
 # Colour/grayscale images only; keep monochrome scans at their original resolution.
@@ -639,11 +640,16 @@ class PdfStore:
                 item for item in special if item not in ("可选内容图层", "无障碍标签结构") and not unchanged)
             risky = tuple(dict.fromkeys((*source.lost_structures, *risky)))
             if risky:
-                if not options.allow_structure_loss:
+                tags_only = set(risky) == {'无障碍标签结构'}
+                if not options.allow_structure_loss and not (tags_only and options.allow_tag_loss):
+                    if tags_only:
+                        raise WriteNeedsConfirmation(
+                            '合并后，供屏幕阅读器使用的标题、段落和阅读顺序信息可能无法完整保留。', 'accessibility')
                     raise WriteNeedsConfirmation(
                         "当前页面重组无法保证以下信息完整保留：\n" + "、".join(risky) +
                         "\n原文件不会覆盖。可明确确认后另存副本。", "structure")
-                warnings.append(f"来源 {ordinal} 的特殊结构需在副本中核对：{'、'.join(risky)}。")
+                warnings.append(f'来源 {ordinal} 的辅助阅读信息可能未保留。' if tags_only else
+                                f"来源 {ordinal} 的特殊结构需在副本中核对：{'、'.join(risky)}。")
         if (options.preserve_encryption and not options.encryption
                 and (any(s.needs_encryption_choice for s in sources.values())
                      or not preserve_structure and any(s.safety.encrypted for s in sources.values()))):

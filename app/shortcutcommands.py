@@ -47,6 +47,7 @@ for _key, _path, _keys in (
     ('file.print', '文件/打印', ('Ctrl+P',)),
     ('file.exit', '文件/退出', ()),
     ('app.storage', '文件/应用设置/存储管理', ()),
+    ('app.save_settings', '文件/应用设置/保存设置', ()),
     ('app.shortcuts', '文件/应用设置/快捷键管理', ()),
     ('app.shell_tools', '文件/应用设置/右键快捷工具', ()),
     ('app.default_pdf', '文件/应用设置/设为默认 PDF 应用', ()),

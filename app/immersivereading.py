@@ -20,6 +20,7 @@ class ImmersiveReading(QObject):
         self._borderless_chrome = []
         self._keyboard_reveal = False
         self._syncing_visibility = False
+        self._page_dragging = False
         self._document = None
         self._saved_chrome = []
         self._split_sizes = host.reader_split.sizes()
@@ -138,7 +139,20 @@ class ImmersiveReading(QObject):
         self.host._thumb_timer.start(0)
 
     def _available(self):
-        return bool(self.host.ws.pages) and self.host.stack.currentIndex() == 0
+        return (bool(self.host.ws.pages) or self._page_dragging) and self.host.stack.currentIndex() == 0
+
+    def begin_page_drag(self):
+        self._page_dragging = True
+        self.reveal()
+        self.hide_timer.stop()
+
+    def end_page_drag(self):
+        self._page_dragging = False
+        if not self._active:
+            return
+        self.sync()
+        if self.auto_action.isChecked() and self.expanded:
+            self.hide_timer.start()
 
     def sync(self, *_):
         if not self._active or self._syncing_visibility:
@@ -293,6 +307,9 @@ class ImmersiveReading(QObject):
         self.hide_timer.start()
 
     def collapse(self, *, animate=True):
+        # A native page drag can leave/deactivate this window and switch documents.
+        if self._page_dragging and self._available() and not self.borderless:
+            return
         self.hide_timer.stop()
         self.reveal_timer.stop()
         if not self.expanded and animate:

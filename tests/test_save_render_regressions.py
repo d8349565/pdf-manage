@@ -35,6 +35,9 @@ def window(qapp, tmp_path):
     source = tmp_path / 'scan.pdf'
     make_image_pdf(source)
     win = MainWindow()
+    # These regressions exercise the explicitly selected in-place save policy.
+    win._window_settings.setValue('saving/default_mode', 'overwrite')
+    win._window_settings.setValue('saving/skip_overwrite_confirmation', True)
     assert win._load_one(str(source))
     win.resize(1000, 720)
     win.show()
@@ -66,6 +69,8 @@ def test_image_rotation_save_as_and_repeated_save(qapp, tmp_path, monkeypatch, s
     monkeypatch.setattr(QMessageBox, 'warning', lambda *args: warnings.append(args))
     win = MainWindow()
     try:
+        win._window_settings.setValue('saving/default_mode', 'overwrite')
+        win._window_settings.setValue('saving/skip_overwrite_confirmation', True)
         assert win._load_one(str(source))
         expected_rotation = source_rotation
         for attempt, turn in enumerate((90, 90, -90)):

@@ -76,12 +76,12 @@ def test_open_first_file_has_path(qapp):
     assert ws.selected_index == 0
 
 
-def test_merge_clears_path(qapp):
+def test_merge_keeps_the_document_being_edited(qapp):
     ws = Workspace()
     ws.open_replace(_pages("a"), "C:/tmp/a.pdf")
     extra = [PageRef("b", "C:/tmp/b.pdf", 0, 0)]
     ws.merge_pages(extra)
-    assert ws.path is None
+    assert ws.path == 'C:/tmp/a.pdf'
     assert ws.dirty
     assert len(ws.pages) == 2
     ws.undo_stack.undo()
@@ -145,19 +145,19 @@ def test_load_first_or_merge(qapp):
     ws.load_first_or_merge(_pages("a"), "C:/tmp/a.pdf")
     assert ws.path.endswith("a.pdf")
     ws.load_first_or_merge([PageRef("b", "C:/tmp/b.pdf", 0, 0)], "C:/tmp/b.pdf")
-    assert ws.path is None
+    assert ws.path.endswith('a.pdf')
     assert len(ws.pages) == 2
 
 
-def test_merge_blocks_source_save_paths(qapp, tmp_path):
+def test_merge_protects_imported_sources_but_keeps_its_owner(qapp, tmp_path):
     a = tmp_path / "A.pdf"
     b = tmp_path / "B.pdf"
     ws = Workspace()
     ws.open_replace([PageRef("s", str(a), 0, 0)], str(a))
     assert not ws.blocks_save_to(str(a))
     ws.merge_pages([PageRef("t", str(b), 0, 0)])
-    assert ws.path is None
-    assert ws.blocks_save_to(str(a))
+    assert ws.path == str(a)
+    assert not ws.blocks_save_to(str(a))
     assert ws.blocks_save_to(str(b))
     assert not ws.blocks_save_to(str(tmp_path / "合订.pdf"))
     ws.rebase_to_saved_file(str(tmp_path / "合订.pdf"), list(ws.pages))
@@ -165,7 +165,7 @@ def test_merge_blocks_source_save_paths(qapp, tmp_path):
 
 
 def test_protected_paths_come_back_with_undo(qapp, tmp_path):
-    """另存为会清空保护名单；撤销回到合并态时若不同步重算，就能存回源文件了。"""
+    """Undo keeps the saved copy's identity and restores protection for its inputs."""
     a = tmp_path / "A.pdf"
     b = tmp_path / "B.pdf"
     ws = Workspace()
@@ -176,7 +176,7 @@ def test_protected_paths_come_back_with_undo(qapp, tmp_path):
 
     ws.undo_stack.undo()
     ws.undo_stack.redo()
-    assert ws.path is None
+    assert ws.path == str(tmp_path / 'C.pdf')
     assert ws.blocks_save_to(str(a))
     assert ws.blocks_save_to(str(b))
 

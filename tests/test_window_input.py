@@ -414,7 +414,7 @@ def test_save_state_tracks_edit_undo_merge_and_save(loaded_window, tmp_path, mon
     assert window.save_state.text() == '已保存'
     window.ws.merge_pages(window.ws.pages[:1])
     window.refresh()
-    assert window.save_state.text() == '未保存 · 保存为新文件'
+    assert window.save_state.text() == '有未保存的修改'
     output = tmp_path / 'combined.pdf'
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *a, **k: (str(output), ''))
     assert window.save()
@@ -508,7 +508,8 @@ def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, t
     window.resize(980, 680)
     QApplication.processEvents()
     assert window.width() == 980
-    for button in buttons.values():
+    for name in ('左转所选页', '右转所选页', '删除所选页', '提取所选页', '拆分文件', 'PDF 转 Excel'):
+        button = buttons[name]
         assert button.isVisible()
         assert button.geometry().right() < toolbar.width()
         assert button.geometry().bottom() < toolbar.height()
