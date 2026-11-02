@@ -896,6 +896,7 @@ class PageListView(QListView):
         self._host = None
         self._acc = 0
         self._drop_row: int | None = None
+        self._drop_after = False
         self._paste_anchor = None
         self._pending_paste_gap = None
         self._highlight_rect = QRectF()
@@ -1057,10 +1058,11 @@ class PageListView(QListView):
         painter.drawLine(start,end)
         painter.end()
 
-    def _set_drop_row(self, row: int | None) -> None:
-        if row == self._drop_row:
+    def _set_drop_row(self, row: int | None, *, after: bool = False) -> None:
+        if row == self._drop_row and after == self._drop_after:
             return
         self._drop_row = row
+        self._drop_after = after
         self._drop_motion.stop()
         self._drop_fade.stop()
         self._highlight_opacity = 1.0
@@ -1072,6 +1074,7 @@ class PageListView(QListView):
         self._drop_motion.setStartValue(start)
         self._drop_motion.setEndValue(target)
         self._drop_motion.start()
+        self.viewport().update()
 
     def _move_highlight(self, rect) -> None:
         if not self.isVisible():
@@ -1139,7 +1142,17 @@ class PageListView(QListView):
         model = self.model()
         source_ws = getattr(model, 'drag_source_ws', None) or model.ws
         copy = source_ws is not model.ws or bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
-        self._set_drop_row(self._drop_row_at(event.position().toPoint()))
+        try:
+            sources = [int(row) for row in bytes(event.mimeData().data(MIME)).decode("utf-8").split(",")]
+        except (ValueError, UnicodeDecodeError):
+            self._set_drop_row(None)
+            event.ignore()
+            return
+        pos = event.position().toPoint()
+        row = self._drop_row_at(pos)
+        # 与 move_pages 一致：向后移动放在目标后，向前移动和复制放在目标前。
+        after = not self.indexAt(pos).isValid() or (not copy and row > min(sources))
+        self._set_drop_row(row, after=after)
         event.setDropAction(Qt.DropAction.CopyAction if copy else Qt.DropAction.MoveAction)
         event.accept()
 
@@ -1150,7 +1163,8 @@ class PageListView(QListView):
         if _document_paths_from_mime(event.mimeData()):
             model = self.model()
             if model is not None and not model.store.operation_reason(model.ws.pages, "modify"):
-                self._set_drop_row(self._drop_row_at(event.position().toPoint()))
+                pos = event.position().toPoint()
+                self._set_drop_row(self._drop_row_at(pos), after=not self.indexAt(pos).isValid())
                 event.acceptProposedAction()
                 return
         event.ignore()
@@ -1162,7 +1176,8 @@ class PageListView(QListView):
         if _document_paths_from_mime(event.mimeData()):
             model = self.model()
             if model is not None and not model.store.operation_reason(model.ws.pages, "modify"):
-                self._set_drop_row(self._drop_row_at(event.position().toPoint()))
+                pos = event.position().toPoint()
+                self._set_drop_row(self._drop_row_at(pos), after=not self.indexAt(pos).isValid())
                 event.acceptProposedAction()
                 return
         event.ignore()
@@ -1252,8 +1267,15 @@ class PageListView(QListView):
         landing.setAlpha(56)
         painter.setBrush(landing)
         painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 8, 8)
-        painter.setPen(QPen(QColor(ui_color("#0D9488")), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(rect.left() + 4, rect.top() + 12), QPointF(rect.left() + 4, rect.bottom() - 12))
+        if self._drop_row is not None:
+            painter.setPen(QPen(QColor(ui_color("#0D9488")), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            if self._arrange:
+                x = rect.right() - 4 if self._drop_after else rect.left() + 4
+                start, end = QPointF(x, rect.top() + 12), QPointF(x, rect.bottom() - 12)
+            else:
+                y = rect.bottom() - 4 if self._drop_after else rect.top() + 4
+                start, end = QPointF(rect.left() + 12, y), QPointF(rect.right() - 12, y)
+            painter.drawLine(start, end)
         painter.end()
 
     def wheelEvent(self, event: QWheelEvent) -> None:

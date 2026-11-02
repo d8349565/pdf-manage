@@ -700,6 +700,8 @@ def test_drag_events_track_and_clear_the_landing_slot(window, tmp_path, qapp):
 
 
 def test_drag_highlight_paints_the_landing_slot(window, tmp_path, qapp):
+    from app.themes import ui_color
+
     _enter_arrange(window, tmp_path)
     qapp.processEvents()
     view = window.arrange_view
@@ -718,19 +720,75 @@ def test_drag_highlight_paints_the_landing_slot(window, tmp_path, qapp):
     assert view._drop_row == 1
     marked = shot().toImage()
 
-    def teal(image) -> int:
+    def accent(image) -> int:
+        target = QColor(ui_color("#0D9488"))
         hits = 0
         for y in range(image.height()):
             for x in range(image.width()):
                 c = image.pixelColor(x, y)
-                if abs(c.red() - 13) < 30 and abs(c.green() - 148) < 30 and abs(c.blue() - 136) < 30:
+                if abs(c.red() - target.red()) < 30 and abs(c.green() - target.green()) < 30 and abs(c.blue() - target.blue()) < 30:
                     hits += 1
         return hits
 
-    assert teal(marked) > teal(plain), "落点高亮没有被画出来"
+    assert accent(marked) > accent(plain), "落点高亮没有被画出来"
 
     view._set_drop_row(None)
     assert view._drop_row is None
+
+
+@pytest.mark.parametrize("arrange", [False, True])
+@pytest.mark.parametrize("sources, target, modifiers, after", [
+    ([0], 2, Qt.KeyboardModifier.NoModifier, True),
+    ([3], 1, Qt.KeyboardModifier.NoModifier, False),
+    ([0, 2], 3, Qt.KeyboardModifier.NoModifier, True),
+    ([0], 2, Qt.KeyboardModifier.ControlModifier, False),
+    ([0], None, Qt.KeyboardModifier.NoModifier, True),
+])
+def test_drag_marker_matches_insertion_side(window, tmp_path, qapp, arrange, sources, target, modifiers, after):
+    from PyQt6.QtCore import QPointF
+    from PyQt6.QtGui import QDropEvent
+    from app.themes import ui_color
+
+    _enter_arrange(window, tmp_path)
+    window.stack.setCurrentIndex(1 if arrange else 0)
+    if not arrange:
+        window.immersive.auto_action.setChecked(False)
+        window.act_pages.setChecked(True)
+    window.ws.set_selection(set(sources), sources[-1])
+    window._sync_selection()
+    qapp.processEvents()
+    view = window.arrange_view if arrange else window.left_view
+    assert view.isVisible()
+    row = window.model.rowCount() - 1 if target is None else target
+    view.scrollTo(window.model.index(row))
+    qapp.processEvents()
+    rect = view.visualRect(window.model.index(row))
+    point = rect.center() if target is not None else QPoint(view.viewport().width() - 2, view.viewport().height() - 2)
+    if target is None:
+        assert not view.indexAt(point).isValid()
+    before = list(window.ws.pages)
+    mime = window.model.mimeData([window.model.index(row) for row in sources])
+    actions = Qt.DropAction.MoveAction | Qt.DropAction.CopyAction
+    move = QDragMoveEvent(point, actions, mime, Qt.MouseButton.LeftButton, modifiers)
+    view.dragMoveEvent(move)
+    assert move.isAccepted()
+    QTest.qWait(180)
+    marked = view.viewport().grab().toImage()
+    if arrange:
+        marker = QPoint(rect.right() - 4 if after else rect.left() + 4, rect.center().y())
+    else:
+        marker = QPoint(rect.center().x(), rect.bottom() - 4 if after else rect.top() + 4)
+    assert marked.pixelColor(marker) == QColor(ui_color("#0D9488")), "插入标记必须与松手后的前后位置一致"
+
+    drop = QDropEvent(QPointF(point), actions, mime, Qt.MouseButton.LeftButton, modifiers)
+    view.dropEvent(drop)
+    assert drop.isAccepted()
+    incoming = [window.ws.pages[index] for index in sorted(window.ws.selected)]
+    anchor = window.ws.pages.index(before[row])
+    if after:
+        assert window.ws.pages[anchor + 1:anchor + 1 + len(sources)] == incoming
+    else:
+        assert window.ws.pages[anchor - len(sources):anchor] == incoming
 
 
 def test_drag_motion_does_not_reset_or_relayout_pages(window, tmp_path, qapp):
