@@ -147,6 +147,7 @@ def test_fit_modes_show_whole_page_and_preserve_manual_scale(reader_window, read
         win._reading_scrolled()
         assert win.ws.preview_index() == number - 1
     win.zoom_fit()
+    win._zoom_animation.setCurrentTime(win._zoom_animation.duration())
     assert win._zoom_mode == 'width'
     assert win.preview_view.transform().m11() * rect.width() == pytest.approx(
         win.preview_view.viewport().width() - 24, abs=2)

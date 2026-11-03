@@ -169,12 +169,15 @@ ICON_PX = 22
 # 落到屏幕上才是系统窗口按钮那种约 10px 的笔画。
 CAPTION_PX = 22
 WM_MOUSEMOVE = 0x0200
+WM_NCCALCSIZE = 0x0083
 WM_NCHITTEST = 0x0084
 WM_NCMOUSEMOVE = 0x00A0
 WM_NCLBUTTONDOWN = 0x00A1
 WM_NCLBUTTONUP = 0x00A2
 WM_NCLBUTTONDBLCLK = 0x00A3
 HTMAXBUTTON = 9
+WS_CAPTION = 0x00C00000
+WS_THICKFRAME = 0x00040000
 
 
 def sidebar_thumb_width(view_w: int, scrollbar_w: int) -> int:
@@ -2605,6 +2608,11 @@ class MainWindow(QMainWindow):
         self._view_zoom_timer.setSingleShot(True)
         self._view_zoom_timer.setInterval(16)
         self._view_zoom_timer.timeout.connect(self._apply_view_zoom)
+        self._zoom_animation = QVariantAnimation(self)
+        self._zoom_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._zoom_animation.valueChanged.connect(self._animate_view_zoom)
+        self._zoom_animation.finished.connect(self._finish_zoom_animation)
+        self._zoom_animation_context = None
         self._thumb_timer = QTimer(self)
         self._thumb_timer.setSingleShot(True)
         self._thumb_timer.setInterval(120)
@@ -3327,6 +3335,8 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentIndex(0)
             return
         if index == 1:
+            if self._zoom_animation_running():
+                self._zoom_animation.setCurrentTime(self._zoom_animation.duration())
             self._ensure_arrange()
         self.mode_buttons[index].setChecked(True)
         self.navigation_bar.setVisible(bool(self.ws.pages) and index == 0 and not (
@@ -3774,7 +3784,7 @@ class MainWindow(QMainWindow):
         for mode, label, icon in (('page', '适合页面', 'page-single'),
                                    ('width', '适合宽度', 'fit-width'),
                                    ('custom', '手动缩放', 'zoom-in')):
-            action = self._act(label, lambda checked=False, m=mode: self._set_zoom_mode(m))
+            action = self._act(label, lambda checked=False, m=mode: self._set_zoom_mode(m, animate=True))
             action.setIcon(toolbar_icon(icon, '#526B63', 18))
             action.setCheckable(True)
             action.setChecked(mode == self._zoom_mode)
@@ -4397,6 +4407,7 @@ class MainWindow(QMainWindow):
             and event.type() == QEvent.Type.Resize
             and not getattr(self, '_applying_zoom', False)
         ):
+            self._zoom_animation.stop()
             # 等 Qt 完成本轮滚动条布局再缩放，避免在 Resize 内改变场景后反复触发 Resize。
             # 连续拖动时每帧合并一次，不反复推迟到拖动结束。
             if not self._view_zoom_timer.isActive():
@@ -4433,6 +4444,19 @@ class MainWindow(QMainWindow):
             )
 
     def _toggle_max(self) -> None:
+        if sys.platform == 'win32' and QGuiApplication.platformName() == 'windows':
+            try:
+                from ctypes import wintypes
+                self._enable_native_frame()
+                show = ctypes.windll.user32.ShowWindow
+                show.argtypes = [wintypes.HWND, ctypes.c_int]
+                show.restype = wintypes.BOOL
+                # Qt 的无边框最大化用 MoveWindow，绕过了系统过渡动画。
+                show(int(self.winId()), 9 if self.isMaximized() else 3)  # SW_RESTORE / SW_MAXIMIZE
+                self._sync_chrome()
+                return
+            except (AttributeError, OSError):
+                pass
         if self.isMaximized():
             self.showNormal()
         else:
@@ -4485,7 +4509,8 @@ class MainWindow(QMainWindow):
         super().keyPressEvent(event)
 
     def _enable_native_frame(self) -> None:
-        if sys.platform != "win32" or QGuiApplication.platformName() != "windows":
+        if (sys.platform != "win32" or QGuiApplication.platformName() != "windows"
+                or self.isFullScreen()):
             return
         try:
             from ctypes import wintypes
@@ -4500,9 +4525,10 @@ class MainWindow(QMainWindow):
                                            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
             user32.SetWindowPos.restype = wintypes.BOOL
             style = user32.GetWindowLongPtrW(hwnd, -16)
-            # FramelessWindowHint 会去掉 WS_THICKFRAME；只返回边缘编码不足以启动系统拖拽。
-            if not style & 0x00040000:
-                user32.SetWindowLongPtrW(hwnd, -16, style | 0x00040000)
+            # 保留系统动画和拖拽所需的窗口样式；Qt 仍负责隐藏原生标题栏。
+            frame_style = WS_CAPTION | WS_THICKFRAME
+            if style & frame_style != frame_style:
+                user32.SetWindowLongPtrW(hwnd, -16, style | frame_style)
                 user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0037)
             class MARGINS(ctypes.Structure):
                 _fields_ = [
@@ -4512,9 +4538,10 @@ class MainWindow(QMainWindow):
                     ("cyBottomHeight", ctypes.c_int),
                 ]
 
-            ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
-                int(self.winId()), ctypes.byref(MARGINS(1, 1, 1, 1))
-            )
+            extend = ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea
+            extend.argtypes = [wintypes.HWND, ctypes.POINTER(MARGINS)]
+            extend.restype = ctypes.c_long
+            extend(hwnd, ctypes.byref(MARGINS(1, 1, 1, 1)))
         except Exception:
             pass
 
@@ -4526,6 +4553,29 @@ class MainWindow(QMainWindow):
                 import ctypes.wintypes
 
                 msg = ctypes.wintypes.MSG.from_address(int(message))
+                if msg.message == WM_NCCALCSIZE and msg.wParam and not self.isFullScreen():
+                    user32 = ctypes.windll.user32
+                    user32.IsZoomed.argtypes = [ctypes.wintypes.HWND]
+                    user32.IsZoomed.restype = ctypes.wintypes.BOOL
+                    if user32.IsZoomed(msg.hWnd):
+                        # 原生最大化的外框可越过屏幕工作区，内容必须留在任务栏以内。
+                        class MONITORINFO(ctypes.Structure):
+                            _fields_ = [('cbSize', ctypes.wintypes.DWORD),
+                                        ('rcMonitor', ctypes.wintypes.RECT),
+                                        ('rcWork', ctypes.wintypes.RECT),
+                                        ('dwFlags', ctypes.wintypes.DWORD)]
+                        user32.MonitorFromWindow.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
+                        user32.MonitorFromWindow.restype = ctypes.wintypes.HANDLE
+                        user32.GetMonitorInfoW.argtypes = [ctypes.wintypes.HANDLE, ctypes.POINTER(MONITORINFO)]
+                        user32.GetMonitorInfoW.restype = ctypes.wintypes.BOOL
+                        monitor = MONITORINFO()
+                        monitor.cbSize = ctypes.sizeof(monitor)
+                        if user32.GetMonitorInfoW(user32.MonitorFromWindow(msg.hWnd, 2), ctypes.byref(monitor)):
+                            rect = ctypes.wintypes.RECT.from_address(msg.lParam)
+                            work = monitor.rcWork
+                            rect.left, rect.top = max(rect.left, work.left), max(rect.top, work.top)
+                            rect.right, rect.bottom = min(rect.right, work.right), min(rect.bottom, work.bottom)
+                            return True, 0
                 # 最大化按钮交给系统做命中测试后，Qt 收不到这块区域的鼠标移动，
                 # 悬停底色得按非客户区消息自己同步，否则三个按钮的反馈会不一致。
                 if msg.message in (WM_MOUSEMOVE, WM_NCMOUSEMOVE):
@@ -4590,6 +4640,9 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event) -> None:
         if event.type() == QEvent.Type.WindowStateChange:
+            if hasattr(self, '_zoom_animation') and self._zoom_animation_running():
+                self._zoom_animation.stop()
+                self._view_zoom_timer.start()
             self._sync_chrome()
         if event.type() == QEvent.Type.DevicePixelRatioChange and hasattr(self, "arrange_view"):
             self._apply_thumb_size()
@@ -4644,37 +4697,38 @@ class MainWindow(QMainWindow):
         if self._in_arrange():
             self.arrange_zoom_in()
             return
-        self._set_zoom(self._zoom * ZOOM_STEP)
+        self._set_zoom(self._zoom * ZOOM_STEP, animate=True)
 
     def zoom_out(self) -> None:
         if self._in_arrange():
             self.arrange_zoom_out()
             return
-        self._set_zoom(self._zoom / ZOOM_STEP)
+        self._set_zoom(self._zoom / ZOOM_STEP, animate=True)
 
     def zoom_fit(self) -> None:
         if self._in_arrange():
             self.arrange_zoom_fit()
             return
-        self._set_zoom_mode('width')
+        self._set_zoom_mode('width', animate=True)
 
-    def _set_zoom_mode(self, mode) -> None:
+    def _set_zoom_mode(self, mode, *, animate=False) -> None:
+        self._zoom_animation.stop()
         self._zoom_mode = mode
         self.reading_zoom_actions[mode].setChecked(True)
         self.reading_orb.sync()
-        self._apply_view_zoom()
+        self._apply_view_zoom(animate=animate)
         self._preview_timer.start()
         index = self.ws.preview_index()
-        if index is not None and mode != 'custom':
+        if index is not None and mode != 'custom' and not self._zoom_animation_running():
             self.preview_view.jump_to_page(index)
 
     def _on_zoom_steps(self, steps: int) -> None:
-        self._set_zoom(zoom_by_steps(self._zoom, steps, ZOOM_STEP))
+        self._set_zoom(zoom_by_steps(self._zoom, steps, ZOOM_STEP), animate=True)
 
-    def _set_zoom(self, value: float) -> None:
+    def _set_zoom(self, value: float, *, animate=False) -> None:
         zoom = max(ZOOM_MIN, min(ZOOM_MAX, round(value, 3)))
         self._zoom = zoom
-        self._set_zoom_mode('custom')
+        self._set_zoom_mode('custom', animate=animate)
 
     def arrange_zoom_in(self) -> None:
         self._set_arrange_zoom(self._arrange_zoom * ARRANGE_ZOOM_STEP)
@@ -4816,6 +4870,7 @@ class MainWindow(QMainWindow):
         if arrange_sel is not None:
             arrange_sel.setText(caption)
         if not self.ws.pages:
+            self._zoom_animation.stop()
             self._zoom_mode = 'page'
             self._preview_busy = False
             self._invalidate_detail_requests()
@@ -4916,6 +4971,7 @@ class MainWindow(QMainWindow):
                 and not self._in_arrange() and not self._scrolling
                 and not self._preview_busy and not self._detail_busy and not self._other_detail_pending
                 and not self._detail_timer.isActive() and not self._view_zoom_timer.isActive()
+                and not self._zoom_animation_running()
                 and not self._preview_timer.isActive() and not self._reading_settle_timer.isActive()
                 and not self._saving and not self._confirming_leave
                 and not self.search_bar.busy
@@ -4973,7 +5029,8 @@ class MainWindow(QMainWindow):
 
     def _reading_scrolled(self) -> None:
         view = self.preview_view
-        if not self.ws.pages or not view.isVisible() or self._in_arrange() or not view.page_rects:
+        if (not self.ws.pages or not view.isVisible() or self._in_arrange() or not view.page_rects
+                or self._zoom_animation_running()):
             return
         if len(view.page_rects) != len(self.ws.pages):
             return  # A tab switch or page edit can briefly leave the previous layout visible.
@@ -5261,7 +5318,7 @@ class MainWindow(QMainWindow):
 
     def _request_detail(self, *, cached_only=False) -> None:
         index = self.ws.preview_index()
-        if (index is None or self._in_arrange()
+        if (index is None or self._in_arrange() or self._zoom_animation_running()
                 or (not cached_only and (self._preview_image is None or self._preview_busy or self._scrolling))):
             return
         if self._preview_key is None or self._preview_key[:3] != self.ws.pages[index].render_key:
@@ -5501,12 +5558,51 @@ class MainWindow(QMainWindow):
         else:
             self._preparation_timer.start()
 
-    def _apply_view_zoom(self) -> None:
+    def _zoom_animation_running(self) -> bool:
+        return self._zoom_animation.state() == QVariantAnimation.State.Running
+
+    def _animate_view_zoom(self, value) -> None:
+        if not self._zoom_animation_running() or self._closing:
+            return
+        interaction = self.reader_interaction
+        if interaction.busy_gesture(buttons=False) or interaction.origin is not None:
+            # 落笔、框选或拖动后冻结当前比例，避免内容继续移离鼠标。
+            self._zoom = self.preview_view.transform().m11() / PDF_LOGICAL_SCALE
+            self._set_zoom_mode('custom')
+            return
+        animation = self._zoom_animation
+        progress = (value - animation.startValue()) / (animation.endValue() - animation.startValue())
+        center = self._zoom_start_center + (self._zoom_end_center - self._zoom_start_center) * progress
+        factor = math.exp(value)
+        updating = self._reader_updating
+        self._applying_zoom = self._reader_updating = True
+        try:
+            view = self.preview_view
+            view.setTransform(QTransform.fromScale(factor, factor))
+            view.centerOn(center)
+            view.view_changed.emit()
+        finally:
+            self._reader_updating = updating
+            self._applying_zoom = False
+
+    def _finish_zoom_animation(self) -> None:
+        if self._closing:
+            return
+        self._apply_view_zoom()
+        self.preview_view.view_changed.emit()
+        self._detail_timer.start()
+
+    def _apply_view_zoom(self, *, animate=False) -> None:
         view = self.preview_view
         index = self.ws.preview_index()
         if (getattr(self, '_applying_zoom', False) or index is None
                 or not 0 <= index < len(view.page_rects)):
             return
+        factor = self._reading_scale(index)
+        context = (id(self.ws), view.layout_generation, index, self._zoom_mode, factor)
+        if self._zoom_animation_running() and self._zoom_animation_context == context and not animate:
+            return  # 新清晰图到达时换图，不打断当前缩放。
+        self._zoom_animation.stop()
         self._applying_zoom = True
         updating = self._reader_updating
         self._reader_updating = True
@@ -5553,6 +5649,21 @@ class MainWindow(QMainWindow):
                 return
             view.clear_detail()
             self._invalidate_detail_requests()
+            duration = (min(160, self.immersive._animation_duration())
+                        if animate and view.isVisible() and not self.reader_interaction.busy_gesture(buttons=False) else 0)
+            if duration > 0:
+                self._detail_timer.stop()
+                self._zoom_start_center = center
+                self._zoom_end_center = rect.center() if mode == 'page' else center
+                if mode == 'width':
+                    self._zoom_end_center = QPointF(rect.center().x(), rect.top() + view.viewport().height() / factor / 2 - 4)
+                self._zoom_animation_context = (id(self.ws), view.layout_generation, index, mode, factor)
+                self._zoom_animation.setDuration(duration)
+                # 对数插值让大跨度缩放也按相近的视觉速度变化。
+                self._zoom_animation.setStartValue(math.log(view.transform().m11()))
+                self._zoom_animation.setEndValue(math.log(factor))
+                self._zoom_animation.start()
+                return
             view.setTransform(QTransform.fromScale(factor, factor))
             view.centerOn(rect.center() if mode == 'page' else center)
             view.view_changed.emit()
@@ -5652,6 +5763,8 @@ class MainWindow(QMainWindow):
         cur = self._active_tab()
         if cur is None:
             return
+        if self._zoom_animation_running():
+            self._zoom_animation.setCurrentTime(self._zoom_animation.duration())
         cur.zoom = self._zoom
         cur.zoom_mode = self._zoom_mode
         cur.reading_layout = self._reading_layout
@@ -5676,6 +5789,7 @@ class MainWindow(QMainWindow):
         self._reading_settle_timer.stop()
         self._preview_timer.stop()
         self._view_zoom_timer.stop()
+        self._zoom_animation.stop()
         self._detail_timer.stop()
         self.arrange_view._drop_motion.stop()
         self.arrange_view._drop_fade.stop()
@@ -5749,6 +5863,7 @@ class MainWindow(QMainWindow):
             self._reading_settle_timer.stop()
             self._preview_timer.stop()
             self._view_zoom_timer.stop()
+            self._zoom_animation.stop()
             self._detail_timer.stop()
             self.arrange_view._drop_motion.stop()
             self.arrange_view._drop_fade.stop()
@@ -7129,6 +7244,7 @@ class MainWindow(QMainWindow):
             self._reading_settle_timer.stop()
             self._preview_timer.stop()
             self._view_zoom_timer.stop()
+            self._zoom_animation.stop()
             self._detail_timer.stop()
             self._render_status_timer.stop()
             self._render_show_timer.stop()

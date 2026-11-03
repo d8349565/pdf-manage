@@ -711,3 +711,112 @@ def test_zoom_below_ten_percent_stays_in_reading_at_minimum(loaded_window):
     from app.ui import PDF_LOGICAL_SCALE
     expected = PDF_LOGICAL_SCALE * 0.10
     assert abs(window.preview_view.transform().m11() - expected) < 0.001
+
+
+def test_zoom_motion_retargets_from_the_visible_scale_without_reselecting_pages(loaded_window, monkeypatch):
+    from app.ui import PDF_LOGICAL_SCALE
+
+    window = loaded_window
+    window.go_to_page(3)
+    window._set_zoom(1)
+    monkeypatch.setattr(window.immersive, '_animation_duration', lambda: 160)
+    view = window.preview_view
+    window.zoom_in()
+    assert window._zoom == 1.25
+    assert window._zoom_animation_running()
+    assert view.transform().m11() == pytest.approx(PDF_LOGICAL_SCALE)
+    window._zoom_animation.setCurrentTime(80)
+    midway = view.transform().m11()
+    assert PDF_LOGICAL_SCALE < midway < 1.25 * PDF_LOGICAL_SCALE
+    window._apply_view_zoom()  # A new preview image must not snap to the target.
+    assert window._zoom_animation_running()
+    assert view.transform().m11() == pytest.approx(midway)
+    window.zoom_in()
+    assert window._zoom == 1.562
+    assert view.transform().m11() == pytest.approx(midway)
+    window._reading_scrolled()
+    assert window.ws.preview_index() == 2
+    window._zoom_animation.setCurrentTime(window._zoom_animation.duration())
+    assert not window._zoom_animation_running()
+    assert view.transform().m11() == pytest.approx(window._zoom * PDF_LOGICAL_SCALE)
+    assert window.ws.preview_index() == 2
+    assert not window.ws.dirty
+
+
+def test_zoom_respects_disabled_motion_and_cancels_when_leaving_reading(loaded_window, monkeypatch):
+    from app.ui import PDF_LOGICAL_SCALE
+
+    window = loaded_window
+    window._set_zoom(1)
+    monkeypatch.setattr(window.immersive, '_animation_duration', lambda: 0)
+    window.zoom_in()
+    assert not window._zoom_animation_running()
+    assert window.preview_view.transform().m11() == pytest.approx(1.25 * PDF_LOGICAL_SCALE)
+    monkeypatch.setattr(window.immersive, '_animation_duration', lambda: 160)
+    window.zoom_in()
+    assert window._zoom_animation_running()
+    window.stack.setCurrentIndex(1)
+    assert not window._zoom_animation_running()
+    window.stack.setCurrentIndex(0)
+    assert window.preview_view.transform().m11() == pytest.approx(window._zoom * PDF_LOGICAL_SCALE)
+    window.zoom_out()
+    assert window._zoom_animation_running()
+    assert window.close_tab(window._active_tab_id)
+    assert not window._zoom_animation_running()
+    assert not window.ws.pages
+
+
+def test_beginning_a_reader_gesture_keeps_the_current_visible_zoom(loaded_window, monkeypatch):
+    from app.ui import PDF_LOGICAL_SCALE
+
+    window = loaded_window
+    window._set_zoom(1)
+    monkeypatch.setattr(window.immersive, '_animation_duration', lambda: 160)
+    window.zoom_in()
+    window._zoom_animation.setCurrentTime(60)
+    visible_scale = window.preview_view.transform().m11()
+    monkeypatch.setattr(window.reader_interaction, 'busy_gesture', lambda **kwargs: True)
+    window._zoom_animation.setCurrentTime(80)
+    assert not window._zoom_animation_running()
+    assert window.preview_view.transform().m11() == pytest.approx(visible_scale)
+    assert window._zoom * PDF_LOGICAL_SCALE == pytest.approx(visible_scale)
+    assert not window.ws.dirty
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows native window commands')
+def test_caption_maximize_and_restore_use_windows_commands(window, monkeypatch):
+    from PyQt6.QtGui import QGuiApplication
+
+    commands = []
+    def show(hwnd, command):
+        commands.append(command)
+        return 1
+    monkeypatch.setattr(QGuiApplication, 'platformName', lambda: 'windows')
+    monkeypatch.setattr(ctypes.windll.user32, 'ShowWindow', show)
+    monkeypatch.setattr(window, '_enable_native_frame', lambda: None)
+    monkeypatch.setattr(window, 'isMaximized', lambda: False)
+    window._toggle_max()
+    monkeypatch.setattr(window, 'isMaximized', lambda: True)
+    window._toggle_max()
+    assert commands == [3, 9]  # SW_MAXIMIZE, SW_RESTORE
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows maximized client bounds')
+@pytest.mark.parametrize('work_area', [(0, 0, 1920, 1040), (-1920, -300, 0, 740), (40, 0, 1920, 1080)])
+def test_native_maximized_content_stays_inside_the_monitor_work_area(window, monkeypatch, work_area):
+    import ctypes.wintypes as wt
+    from app.ui import WM_NCCALCSIZE
+
+    def monitor_info(handle, info):
+        info._obj.rcWork = wt.RECT(*work_area)
+        return 1
+    monkeypatch.setattr(ctypes.windll.user32, 'IsZoomed', lambda hwnd: 1)
+    monkeypatch.setattr(ctypes.windll.user32, 'MonitorFromWindow', lambda hwnd, flags: 1)
+    monkeypatch.setattr(ctypes.windll.user32, 'GetMonitorInfoW', monitor_info)
+    left, top, right, bottom = work_area
+    rect = wt.RECT(left - 8, top - 8, right + 8, bottom + 8)
+    msg = wt.MSG()
+    msg.hWnd, msg.message, msg.wParam = 1, WM_NCCALCSIZE, 1
+    msg.lParam = ctypes.addressof(rect)
+    assert window.nativeEvent(b'windows_generic_MSG', ctypes.addressof(msg)) == (True, 0)
+    assert (rect.left, rect.top, rect.right, rect.bottom) == work_area

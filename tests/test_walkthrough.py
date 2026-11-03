@@ -399,6 +399,7 @@ def test_zoom_in_renders_wider(window, tmp_path, qapp):
     assert window._zoom > 1
     assert window._preview_render_width() > base
     window.zoom_fit()
+    window._zoom_animation.setCurrentTime(window._zoom_animation.duration())
     QTest.qWait(30)
     qapp.processEvents()
     assert window._zoom_mode == 'width'
