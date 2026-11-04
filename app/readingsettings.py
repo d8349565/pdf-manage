@@ -81,12 +81,14 @@ class ReadingSettingsOrb(QToolButton):
 
     def _target(self, expanded=None):
         viewport = self.view.viewport()
+        expanded = self.expanded if expanded is None else expanded
         if self._custom_position is not None:
             point = self._custom_position
-            return viewport.pos() + QPoint(
-                max(0, min(point.x(), viewport.width() - self.SIZE)),
-                max(0, min(point.y(), viewport.height() - self.SIZE)))
-        expanded = self.expanded if expanded is None else expanded
+            x = max(0, min(point.x(), viewport.width() - self.SIZE))
+            y = max(0, min(point.y(), viewport.height() - self.SIZE))
+            if not expanded:
+                x = self.PEEK - self.SIZE if x < (viewport.width() - self.SIZE) / 2 else viewport.width() - self.PEEK
+            return viewport.pos() + QPoint(x, y)
         x = viewport.width() - (self.SIZE + 12 if expanded else self.PEEK)
         return viewport.pos() + QPoint(max(4, x), max(8, viewport.height() - self.SIZE - 20))
 
@@ -129,8 +131,7 @@ class ReadingSettingsOrb(QToolButton):
                 and point.y() >= viewport.height() - 132)
 
     def _hide_if_away(self):
-        if (self._press_position is not None or self._custom_position is not None
-                or self.settings_menu.isVisible() or not self.isVisible()):
+        if (self._press_position is not None or self.settings_menu.isVisible() or not self.isVisible()):
             return
         point = self.view.viewport().mapFromGlobal(QCursor.pos())
         if self._near_edge(point):
@@ -254,6 +255,7 @@ class ReadingSettingsOrb(QToolButton):
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             if dragged:
                 self.setDown(False)
+                self.hide_timer.start(self.HIDE_DELAY)
                 event.accept()
                 return
         super().mouseReleaseEvent(event)
@@ -284,15 +286,15 @@ class ReadingSettingsOrb(QToolButton):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # 图标跟随实际位置变化，收起途中再次靠近也能连续衔接。
         closed, opened = self._target(False), self._target(True)
-        progress = (1.0 if self._custom_position is not None else
-                    (closed.x() - self.x()) / max(1, closed.x() - opened.x()))
+        progress = (closed.x() - self.x()) / (closed.x() - opened.x() or 1)
         opacity = max(0.0, min(1.0, progress))
         if opacity < 1:
             painter.setOpacity(1 - opacity)
             painter.setPen(QPen(QColor(ui_color('#0F766E')), 1.6, Qt.PenStyle.SolidLine,
                                 Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-            painter.drawLine(8, 17, 5, 21)
-            painter.drawLine(5, 21, 8, 25)
+            start, tip = (8, 5) if closed.x() >= opened.x() else (self.SIZE - 8, self.SIZE - 5)
+            painter.drawLine(start, 17, tip, 21)
+            painter.drawLine(tip, 21, start, 25)
         if opacity > 0:
             painter.setOpacity(opacity)
             painter.translate(self.SIZE / 2, self.SIZE / 2)

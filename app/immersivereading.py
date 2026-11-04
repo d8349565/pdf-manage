@@ -49,7 +49,7 @@ class ImmersiveReading(QObject):
         self.auto_action = QAction('侧栏自动隐藏', host)
         self.auto_action.setCheckable(True)
         self.auto_action.setChecked(True)
-        self.auto_action.setToolTip('触碰左侧边缘展开；取消勾选可固定侧栏')
+        self.auto_action.setToolTip('触碰左侧边缘展开；取消勾选可固定侧栏，下次打开沿用选择')
         self.auto_action.toggled.connect(self._change_auto)
         header = QWidget(self.panel)
         header_layout = QHBoxLayout(header)
@@ -111,6 +111,16 @@ class ImmersiveReading(QObject):
         host.act_pages.toggled.connect(self.request_visible)
         QApplication.instance().installEventFilter(self)
         self._change_auto(True)
+        # Only explicit choices persist; full-screen temporarily changes this action.
+        self.auto_action.triggered.connect(self._remember_auto)
+        self.pin.clicked.connect(lambda fixed: self._remember_auto(not fixed))
+
+    def _remember_auto(self, enabled):
+        if self.fullscreen:
+            self._auto = enabled
+            self._pages_visible = not enabled
+        self.host._window_settings.setValue('reading/sidebarAutoHide', enabled)
+        self.host._window_settings.sync()
 
     def _change_auto(self, enabled):
         self.animation.stop()
@@ -122,7 +132,8 @@ class ImmersiveReading(QObject):
         self.pin.blockSignals(True)
         self.pin.setChecked(not enabled)
         self.pin.blockSignals(False)
-        self.pin.setToolTip('取消固定，回到正文后自动收起' if not enabled else '固定侧栏，阅读时保持展开')
+        self.pin.setToolTip('取消固定，回到正文后自动收起；下次打开沿用选择' if not enabled
+                            else '固定侧栏，阅读时保持展开；下次打开沿用选择')
         if enabled:
             self._split_sizes = self.host.reader_split.sizes()
             self.panel.setParent(self.overlay)

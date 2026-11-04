@@ -89,10 +89,17 @@ def main() -> None:
                      "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "app.updates", "markdown",
                      "app.imagecompress", "app.imagequick", "app.runtime", "app.contextmenus", "app.contextmenuui",
                      "app.themes", "app.updateui", "app.immersivereading", "app.signatureinfo", "app.signatureui",
+                     "app.quickstartui",
                      "app.readingcache", "app.annotcrop", "app.annotcropui",
                      "app.colorcleanup", "app.colorcleanupui", "app.replacementui",
                      "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
         assert required in python_modules, f"Missing module: {required}"
+    for filename in ('home.png', 'reading.png', 'arrange.png'):
+        relative = Path('app/assets/quickstart') / filename
+        captured = internal / relative
+        assert captured.is_file(), f'Missing operation-guide image: {relative}'
+        assert hashlib.sha256(captured.read_bytes()).digest() == hashlib.sha256((ROOT / relative).read_bytes()).digest(), (
+            f'Operation-guide image differs from the current source: {relative}')
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
     for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "rapidocr", "onnxruntime", "cv2", "pandas", "lxml", "libssl", "libcrypto"):
         assert not any(unwanted.lower() in n.lower() for n in names), unwanted

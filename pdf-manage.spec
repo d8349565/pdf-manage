@@ -135,6 +135,9 @@ a = Analysis(
            # 只选择应用资源，不把目录内的其他本机文件一起打包。
            (str(ROOT / "app" / "assets" / "app.png"), "app/assets"),
            (str(ROOT / "app" / "assets" / "pdf.svg"), "app/assets"),
+           (str(ROOT / "app" / "assets" / "quickstart" / "home.png"), "app/assets/quickstart"),
+           (str(ROOT / "app" / "assets" / "quickstart" / "reading.png"), "app/assets/quickstart"),
+           (str(ROOT / "app" / "assets" / "quickstart" / "arrange.png"), "app/assets/quickstart"),
            (str(ROOT / "packaging" / "licenses"), "licenses")]
           + collect_license_data(ROOT)
           + ([(str(DONATION_IMAGE), "app/assets")] if DONATION_IMAGE.is_file() else []),

@@ -29,6 +29,7 @@
 !/app/README.md
 !/app/assets/app.png
 !/app/assets/pdf.svg
+!/app/assets/quickstart/*.png
 
 # 测试只入库代码，样例文档由测试自行生成。
 /tests/**

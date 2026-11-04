@@ -2838,6 +2838,8 @@ class MainWindow(QMainWindow):
             except (TypeError, ValueError):
                 index = 0
             widget.setCurrentIndex(index if 0 <= index < widget.count() else 0)
+        self.immersive.auto_action.setChecked(
+            self._window_settings.value('reading/sidebarAutoHide', True, type=bool))
 
     def _default_reading_view(self):
         layout = self._window_settings.value('reading/defaultLayout', 'single')
@@ -2856,6 +2858,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f'默认视图已设为：{layout} · {zoom}；新打开的文档将使用此设置。', 6000)
 
     def reset_ui_preferences(self):
+        self.immersive.auto_action.setChecked(True)
+        self._window_settings.remove('reading/sidebarAutoHide')
         self.act_pages.setChecked(False)
         self.act_tools.setChecked(False)
         self.sidebar_mode.setCurrentIndex(0)
@@ -3114,6 +3118,9 @@ class MainWindow(QMainWindow):
         restore=view.addMenu('界面恢复')
         restore.addAction(self.reading_orb.restore_action)
         restore.addAction(self._act('恢复界面布局',self.reset_ui_preferences))
+        self.quick_start_action = self._act('操作指南', self.show_quick_start)
+        self.quick_start_action.setStatusTip('查看拖入文件、缩放、移动页面与侧栏的常用操作')
+        self._menubar.addAction(self.quick_start_action)
         self.about_action = self._act("关于", self.show_about)
         self.about_action.setStatusTip("查看版本、检查更新、项目地址与赞赏信息")
         self._menubar.addAction(self.about_action)
@@ -3141,6 +3148,33 @@ class MainWindow(QMainWindow):
         self.addAction(self.act_pages)
         self.addAction(self.outline_action)
         QApplication.instance().installEventFilter(self)
+
+    def show_first_run_guide(self) -> None:
+        if (self._closing or not self.isVisible()
+                or self._window_settings.value('onboarding/quickStartSeen', False, type=bool)):
+            return
+        if (self._opening_paths or self._saving or getattr(self, '_task_dialog', None)
+                or QApplication.activeModalWidget() or QApplication.activePopupWidget()):
+            QTimer.singleShot(400, self.show_first_run_guide)
+            return
+        self.show_quick_start()
+
+    def show_quick_start(self) -> None:
+        dialog = getattr(self, '_quick_start_dialog', None)
+        if dialog is not None:
+            dialog.raise_()
+            dialog.activateWindow()
+            return
+        from app.quickstartui import QuickStartDialog
+        self._quick_start_dialog = QuickStartDialog(self)
+        self._quick_start_dialog.finished.connect(self._finish_quick_start)
+        self._quick_start_dialog.open()
+
+    def _finish_quick_start(self, _result) -> None:
+        self._window_settings.setValue('onboarding/quickStartSeen', True)
+        self._window_settings.sync()
+        self._quick_start_dialog.deleteLater()
+        self._quick_start_dialog = None
 
     def show_about(self) -> None:
         from app.aboutui import AboutDialog

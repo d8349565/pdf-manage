@@ -482,22 +482,34 @@ def test_reading_orb_peeks_reveals_and_opens_the_shared_menu(reader, qapp):
     assert not reader.ws.dirty
 
 
-def test_reading_orb_drag_stays_put_without_opening_menu(reader, qapp):
+@pytest.mark.parametrize('edge', ['left', 'right'])
+def test_reading_orb_drag_restores_auto_hide_without_opening_menu(reader, qapp, edge):
     orb, viewport = reader.reading_orb, reader.preview_view.viewport()
     orb.reveal()
     orb._move(False)
     offset = orb.rect().center()
     QTest.mousePress(orb, Qt.MouseButton.LeftButton, pos=offset)
-    destination = QPoint(40, 60)
+    destination = QPoint(40 if edge == 'left' else viewport.width() - orb.SIZE - 80, 60)
     global_point = viewport.mapToGlobal(destination + offset)
     move = QMouseEvent(QEvent.Type.MouseMove, QPointF(orb.mapFromGlobal(global_point)),
                        QPointF(global_point), Qt.MouseButton.NoButton,
                        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
     QApplication.sendEvent(orb, move)
+    orb._hide_if_away()
+    assert orb.expanded and not orb.hide_timer.isActive()
     QTest.mouseRelease(orb, Qt.MouseButton.LeftButton, pos=offset)
     assert orb.pos() == viewport.pos() + destination
+    assert orb.hide_timer.isActive()
     assert not reader.reading_settings_menu.isVisible()
-    orb._hide_if_away()
+    QTest.mouseMove(viewport, QPoint(viewport.width() // 2, viewport.height() - 40))
+    QTest.qWait(orb.HIDE_DELAY + orb._motion_duration + 100)
+    assert not orb.expanded and orb.icon().isNull(), '拖动后移开鼠标仍应自动收起'
+    hidden_x = orb.PEEK - orb.SIZE if edge == 'left' else viewport.width() - orb.PEEK
+    assert orb.pos() == viewport.pos() + QPoint(hidden_x, destination.y())
+    assert orb.geometry().intersected(viewport.geometry()).width() == orb.PEEK
+    QTest.mouseMove(viewport, QPoint(1 if edge == 'left' else viewport.width() - 1,
+                                    destination.y() + offset.y()))
+    QTest.qWait(orb._motion_duration + 100)
     assert orb.expanded and not orb.icon().isNull()
     assert orb.pos() == viewport.pos() + destination
     orb.hide_temporarily()
@@ -505,7 +517,14 @@ def test_reading_orb_drag_stays_put_without_opening_menu(reader, qapp):
     assert orb.pos() == viewport.pos() + destination
     QTest.mouseClick(orb, Qt.MouseButton.LeftButton, pos=offset)
     assert reader.reading_settings_menu.isVisible()
+    orb._hide_if_away()
+    assert orb.expanded and not orb.hide_timer.isActive()
     reader.reading_settings_menu.hide()
+    QTest.mouseMove(viewport, QPoint(viewport.width() // 2, viewport.height() - 40))
+    QTest.qWait(orb.HIDE_DELAY + orb._motion_duration + 100)
+    assert not orb.expanded and orb.icon().isNull()
+    orb.reveal()
+    orb._move(False)
     # 缩小阅读区时将自定义位置限制在可见范围内。
     orb._custom_position = QPoint(viewport.width() + 100, viewport.height() + 100)
     reader.resize(980, 720)

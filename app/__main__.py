@@ -172,6 +172,7 @@ def main() -> None:
             sys.exit(1)
     if not paths:
         win.first_painted.connect(_start_pdf_warmup, Qt.ConnectionType.QueuedConnection)
+    win.first_painted.connect(win.show_first_run_guide, Qt.ConnectionType.QueuedConnection)
     win.show()
     mark("window_shown")
     win.updates.start()
