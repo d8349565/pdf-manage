@@ -1,4 +1,5 @@
 """Sidebar and first-use preferences, with isolated settings and no user documents."""
+import pymupdf
 import pytest
 from PyQt6 import sip
 from PyQt6.QtCore import Qt
@@ -30,6 +31,8 @@ def windows(qapp):
             dialog = getattr(window, '_quick_start_dialog', None)
             if dialog is not None:
                 dialog.reject()
+            for tab in window._tabs:
+                tab.ws.reset()
             window.close()
     qapp.processEvents()
 
@@ -58,6 +61,35 @@ def test_sidebar_remembers_both_explicit_choices_after_restart(windows, qapp, en
     assert automatic.immersive.auto_action.isChecked()
     assert not automatic.immersive.pin.isChecked()
     assert automatic.left_panel.parent() is automatic.immersive.overlay
+
+
+@pytest.mark.parametrize('visible', [False, True])
+@pytest.mark.parametrize('fullscreen', [False, True])
+def test_pinned_sidebar_remembers_visibility_after_restart(windows, qapp, tmp_path, visible, fullscreen):
+    source = tmp_path / 'sidebar.pdf'
+    with pymupdf.open() as document:
+        document.new_page().insert_text((72, 72), 'Generated sidebar sample')
+        document.save(source)
+    window = windows()
+    assert window.open_files_in_tabs([str(source)])
+    window.immersive.pin.click()
+    window.act_pages.setChecked(visible)
+    window.immersive.fullscreen_action.setChecked(fullscreen)
+    for tab in window._tabs:
+        tab.ws.reset()
+    window.close()
+    qapp.processEvents()
+    restored = windows()
+    assert restored.immersive.pin.isChecked()
+    assert not restored.immersive.auto_action.isChecked()
+    assert restored.act_pages.isChecked() == visible
+    assert restored.reader_split.widget(0) is restored.left_panel
+    assert restored.open_files_in_tabs([str(source)])
+    qapp.processEvents()
+    assert restored.left_panel.isVisible() == visible
+    restored.act_pages.trigger()
+    assert restored.left_panel.isVisible() != visible
+    assert restored.immersive.pin.isChecked()
 
 
 def test_closing_in_fullscreen_does_not_replace_the_saved_sidebar_choice(windows, qapp):

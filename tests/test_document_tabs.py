@@ -109,6 +109,80 @@ def test_reopening_file_reuses_tab_and_preserves_edits(window, tmp_path, monkeyp
         assert window.ws.pages[0].rotation == 0
 
 
+def test_reopening_reconverted_pdf_uses_the_latest_heading_format(window, tmp_path, qapp):
+    output = tmp_path / 'converted.pdf'
+    _make_pdf(output, 1, 'Original heading')
+    assert window.open_files_in_tabs([str(output)])
+    original_tab = window._active_tab_id
+
+    replacement = tmp_path / 'new-export.pdf'
+    with pymupdf.open() as document:
+        page = document.new_page(width=300, height=400)
+        page.insert_text((40, 80), 'Updated heading', fontsize=32, fontname='hebo')
+        page.insert_text((40, 120), 'Changed body font', fontsize=12, fontname='tiro')
+        document.save(replacement)
+    os.replace(replacement, output)
+    assert window.open_files_in_tabs([str(output)])
+    qapp.processEvents()
+
+    assert window._active_tab_id == original_tab and len(window._tabs) == 1
+    with window.store._render_page(window.ws.pages[0]) as page:
+        spans = [span for block in page.get_text('dict')['blocks'] if 'lines' in block
+                 for line in block['lines'] for span in line['spans']]
+    assert spans[0]['text'] == 'Updated heading'
+    assert spans[0]['size'] == 32 and spans[0]['flags'] & 16
+    assert spans[1]['font'] == 'Times-Roman'
+
+
+def test_reopening_changed_pdf_preserves_unsaved_changes(window, tmp_path, monkeypatch):
+    output = tmp_path / 'converted.pdf'
+    _make_pdf(output, 1, 'Original')
+    assert window.open_files_in_tabs([str(output)])
+    window.ws.select_index(0)
+    window.rotate(90)
+    pages = list(window.ws.pages)
+    undo_count = window.ws.undo_stack.count()
+    replacement = tmp_path / 'replacement.pdf'
+    _make_pdf(replacement, 2, 'Updated')
+    os.replace(replacement, output)
+    monkeypatch.setattr(window, '_try_load', lambda *args, **kwargs: pytest.fail('Unsaved edits must be preserved'))
+
+    assert window.open_files_in_tabs([str(output)])
+    assert window.ws.pages == pages and window.ws.dirty
+    assert window.ws.undo_stack.count() == undo_count
+    assert '未保存修改' in window.statusBar().currentMessage()
+
+
+def test_failed_reload_keeps_the_previously_open_pdf(window, tmp_path, monkeypatch):
+    output = tmp_path / 'converted.pdf'
+    _make_pdf(output, 1, 'Original')
+    assert window.open_files_in_tabs([str(output)])
+    pages = list(window.ws.pages)
+    replacement = tmp_path / 'replacement.pdf'
+    _make_pdf(replacement, 2, 'Updated')
+    os.replace(replacement, output)
+    monkeypatch.setattr(window, '_try_load', lambda *args, **kwargs: None)
+
+    assert not window.open_files_in_tabs([str(output)])
+    assert window.ws.pages == pages and not window.ws.dirty
+    assert len(window._tabs) == 1
+
+
+def test_reloading_changed_pdf_keeps_zoom_and_clamps_reading_position(window, tmp_path):
+    source, replacement = tmp_path / 'converted.pdf', tmp_path / 'replacement.pdf'
+    _make_pdf(source, 3, 'Original')
+    assert window.open_files_in_tabs([str(source)])
+    window.reading_zoom_actions['width'].trigger()
+    window.go_to_page(3)
+    assert window.ws.preview_index() == 2
+    _make_pdf(replacement, 2, 'Updated')
+    os.replace(replacement, source)
+
+    assert window.open_files_in_tabs([str(source)])
+    assert len(window.ws.pages) == 2 and window.ws.preview_index() == 1
+    assert window._zoom_mode == 'width'
+
+
 def test_reading_and_arranging_are_shared_across_document_tabs(window, tmp_path, qapp):
     doc_a, doc_b, doc_c = (tmp_path / name for name in ("A.pdf", "B.pdf", "C.pdf"))
     for path in (doc_a, doc_b, doc_c):

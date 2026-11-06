@@ -647,7 +647,8 @@ def _annotation_operation(host, name):
 def bind_outline(host):
     panel, manager = host.outline_panel, host.shortcut_manager
     for name, callback in (
-        ('add', panel.add), ('rename', panel.rename), ('delete', panel.delete),
+        ('add', panel.add), ('add_child', panel.add_child), ('rename', panel.rename), ('delete', panel.delete),
+        ('move_up', lambda: panel.move(-1)), ('move_down', lambda: panel.move(1)),
         ('child', lambda: panel.shift(1)), ('raise', lambda: panel.shift(-1)),
         ('expand', lambda: panel.set_all_expanded(True)), ('collapse', lambda: panel.set_all_expanded(False)),
     ):
@@ -658,6 +659,7 @@ def bind_outline(host):
             action.triggered.connect(lambda checked=False, fn=callback: fn())
         host._shortcut_actions[identifier] = manager.bind_action(identifier, action, panel,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
+    panel.sync_actions()
 
 
 def nudge_for(widget, prefix, event, small=1):

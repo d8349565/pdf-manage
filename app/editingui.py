@@ -108,12 +108,18 @@ class OutlinePanel(QWidget):
 
         row = QHBoxLayout()
         row.setSpacing(6)
-        add = QPushButton("添加书签")
-        add.setProperty("primary", True)
-        add.setFixedHeight(28)
-        add.clicked.connect(self.add)
-        self.host.shortcut_manager.watch_hint('outline.add', add, '添加书签')
-        row.addWidget(add)
+        self.add_button = QPushButton("添加书签")
+        self.add_button.setProperty("primary", True)
+        self.add_button.setFixedHeight(28)
+        self.add_button.clicked.connect(self.add)
+        self.host.shortcut_manager.watch_hint('outline.add', self.add_button, '在选中书签后添加同级书签，目标为当前阅读页')
+        row.addWidget(self.add_button)
+
+        self.add_child_button = QPushButton("添加子书签")
+        self.add_child_button.setFixedHeight(28)
+        self.add_child_button.clicked.connect(self.add_child)
+        self.host.shortcut_manager.watch_hint('outline.add_child', self.add_child_button, '在选中书签下添加子书签，目标为当前阅读页')
+        row.addWidget(self.add_child_button)
 
         more = QPushButton("管理…")
         more.setFixedHeight(28)
@@ -130,8 +136,9 @@ class OutlinePanel(QWidget):
         self.tree.setColumnWidth(1, 44)
         self.tree.setAccessibleName("文档大纲书签")
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(lambda pos: self.menu(self.tree.viewport().mapToGlobal(pos)))
+        self.tree.customContextMenuRequested.connect(self.context_menu)
         self.tree.itemClicked.connect(self.jump)
+        self.tree.currentItemChanged.connect(lambda *_: self.sync_actions())
         self.tree.viewport().installEventFilter(self)
         self.tree.installEventFilter(self)
         self.tree.verticalScrollBar().installEventFilter(self)
@@ -151,16 +158,18 @@ class OutlinePanel(QWidget):
         key = (id(self.host.ws.pages), id(self.host.ws.outline))
         if key == self._key:
             self.sync_position()
+            self.sync_actions()
             return
-        self._key = key
-        self._expansion_mode = None
-        self.entries = self.host.ws.outline
-        if self.entries is None:
+        entries = self.host.ws.outline
+        if entries is None:
             try:
-                self.entries = run_operation(self.host, "读取大纲", lambda progress: self.host.store.outline_entries(self.host.ws.pages))
+                entries = run_operation(self.host, "读取大纲", lambda progress: self.host.store.outline_entries(self.host.ws.pages))
             except PdfError as exc:
                 self.feedback.setText(str(exc))
-                self.entries = ()
+                entries = ()
+        self._key = key
+        self._expansion_mode = None
+        self.entries = entries
         targets = {ref.page_id: i + 1 for i, ref in enumerate(self.host.ws.pages)}
         self.tree.clear()
         self._items = []
@@ -186,12 +195,10 @@ class OutlinePanel(QWidget):
                 self.tree.addTopLevelItem(item)
             parents.append(item)
         self.tree.expandToDepth(1)
-        has_children = any(item.childCount() for item in self._items)
-        self.expand_all_action.setEnabled(has_children)
-        self.collapse_all_action.setEnabled(has_children)
         self._chapter_pages = sorted(self._chapters)
-        self.feedback.setText("在当前阅读页添加书签。" if self.entries else "暂无大纲，可为关键页面添加书签。")
+        self.feedback.setText("选中书签后可添加同级或子书签；在“管理”中调整顺序。" if self.entries else "暂无大纲，可为关键页面添加书签。")
         self.sync_position()
+        self.sync_actions()
 
     def eventFilter(self, watched, event):
         if event.type() in (QEvent.Type.Wheel, QEvent.Type.MouseButtonPress,
@@ -289,23 +296,38 @@ class OutlinePanel(QWidget):
                 return
         self.feedback.setText("此书签目标已删除，可修改或撤销页面删除。")
 
-    def commit(self, entries):
+    def commit(self, entries, *, selected=None):
         if not self.host._allow_operation("outline"):
             return
         try:
+            self._follow_timer.start()
             self.host.ws.set_outline(entries)
             self.host.refresh()
             self.refresh()
+            if selected is not None and 0 <= selected < len(self._items):
+                item = self._items[selected]
+                self.tree.setCurrentItem(item)
+                self.tree.scrollToItem(item)
         except ValueError as exc:
             QMessageBox.information(self, "大纲未修改", str(exc))
 
-    def add(self):
+    def add(self, *, child=False):
         index = self.host.ws.preview_index()
         if index is None or not self.host._allow_operation("outline"):
             return
-        title, accepted = QInputDialog.getText(self, "添加书签", "书签名称", text=f"第 {index + 1} 页")
+        selected = self.selected()
+        if child and selected is None:
+            self.feedback.setText("请先选择上级书签。")
+            return
+        at = self.subtree_end(selected) if selected is not None else len(self.entries)
+        level = self.entries[selected].level + int(child) if selected is not None else 1
+        target = self.host.ws.pages[index].page_id
+        title, accepted = QInputDialog.getText(self, "添加子书签" if child else "添加书签", "书签名称", text=f"第 {index + 1} 页")
         if accepted and title.strip():
-            self.commit((*self.entries, OutlineEntry(1, title.strip(), self.host.ws.pages[index].page_id)))
+            self.commit((*self.entries[:at], OutlineEntry(level, title.strip(), target), *self.entries[at:]), selected=at)
+
+    def add_child(self):
+        self.add(child=True)
 
     def subtree_end(self, index):
         end = index + 1
@@ -321,36 +343,95 @@ class OutlinePanel(QWidget):
         if accepted and title.strip():
             entries = list(self.entries)
             entries[index] = replace(entries[index], title=title.strip())
-            self.commit(entries)
+            self.commit(entries, selected=index)
 
     def delete(self):
         index = self.selected()
         if index is not None:
-            self.commit((*self.entries[:index], *self.entries[self.subtree_end(index):]))
+            entries = (*self.entries[:index], *self.entries[self.subtree_end(index):])
+            self.commit(entries, selected=min(index, len(entries) - 1) if entries else None)
+
+    def sibling(self, index, delta):
+        level = self.entries[index].level
+        other = self.subtree_end(index) if delta > 0 else index - 1
+        while 0 <= other < len(self.entries) and self.entries[other].level > level:
+            other -= 1
+        return other if 0 <= other < len(self.entries) and self.entries[other].level == level else None
+
+    def move(self, delta):
+        index = self.selected()
+        if index is None:
+            return
+        other = self.sibling(index, delta)
+        if other is None:
+            return
+        start, middle = sorted((index, other))
+        end = self.subtree_end(middle)
+        entries = (*self.entries[:start], *self.entries[middle:end],
+                   *self.entries[start:middle], *self.entries[end:])
+        self.commit(entries, selected=start if delta < 0 else start + end - middle)
 
     def shift(self, delta):
         index = self.selected()
         if index is None:
             return
-        level = self.entries[index].level + delta
-        if level < 1 or (delta > 0 and (index == 0 or level > self.entries[index - 1].level + 1)):
+        level = self.entries[index].level
+        if level + delta < 1 or (delta > 0 and self.sibling(index, -1) is None):
             self.feedback.setText("请选择可调整层级的书签。")
             return
         end = self.subtree_end(index)
-        entries = [replace(entry, level=entry.level + delta) if index <= i < end else entry for i, entry in enumerate(self.entries)]
-        self.commit(entries)
+        shifted = tuple(replace(entry, level=entry.level + delta) for entry in self.entries[index:end])
+        if delta > 0:
+            entries = (*self.entries[:index], *shifted, *self.entries[end:])
+            selected = index
+        else:
+            parent = index - 1
+            while self.entries[parent].level >= level:
+                parent -= 1
+            parent_end = self.subtree_end(parent)
+            entries = (*self.entries[:index], *self.entries[end:parent_end], *shifted, *self.entries[parent_end:])
+            selected = parent_end - (end - index)
+        self.commit(entries, selected=selected)
+
+    def sync_actions(self):
+        editable = (bool(self.host.ws.pages) and not self.host._saving
+                    and not getattr(self.host, '_task_dialog', None)
+                    and not self.host.store.operation_reason(self.host.ws.pages, "outline"))
+        index = self.selected()
+        selected = index is not None
+        has_children = any(entry.level > 1 for entry in self.entries)
+        enabled = {'add': True, 'add_child': selected, 'rename': selected, 'delete': selected,
+                   'child': selected and self.sibling(index, -1) is not None,
+                   'raise': selected and self.entries[index].level > 1,
+                   'move_up': selected and self.sibling(index, -1) is not None,
+                   'move_down': selected and self.sibling(index, 1) is not None}
+        self.add_button.setEnabled(editable)
+        self.add_child_button.setEnabled(editable and selected)
+        self.expand_all_action.setEnabled(has_children)
+        self.collapse_all_action.setEnabled(has_children)
+        for key, available in enabled.items():
+            action = getattr(self.host, '_shortcut_actions', {}).get('outline.' + key)
+            if action is not None:
+                action.setEnabled(editable and available)
+
+    def context_menu(self, position):
+        self.tree.setCurrentItem(self.tree.itemAt(position))
+        self._follow_timer.start()
+        self.menu(self.tree.viewport().mapToGlobal(position))
 
     def menu(self, position):
+        self.sync_actions()
         menu = QMenu(self)
         menu.addAction(self.expand_all_action)
         menu.addAction(self.collapse_all_action)
         menu.addSeparator()
-        for key, title in (('add', '在当前页添加书签'), ('rename', '重命名'),
-                           ('delete', '删除（含子项）'), ('child', '设为子项'), ('raise', '提升层级')):
+        for key, title in (('add', '添加同级书签' if self.selected() is not None else '在当前页添加书签'),
+                           ('add_child', '添加子书签'), ('rename', '重命名'), ('delete', '删除（含子项）'),
+                           ('move_up', '上移'), ('move_down', '下移'),
+                           ('child', '设为子项'), ('raise', '提升层级')):
             action = self.host._shortcut_actions['outline.' + key]
             action.setText(title)
             menu.addAction(action)
-            action.setEnabled(bool(self.host.ws.pages) and not self.host.store.operation_reason(self.host.ws.pages, "outline"))
         menu.exec(position)
         menu.deleteLater()
 

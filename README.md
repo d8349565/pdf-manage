@@ -18,7 +18,7 @@
 
 **需要识别扫描文字时**，另行下载 [OCR 增强包](https://github.com/d8349565/pdf-manage/releases/latest/download/ZhiXuPDF-OCR-win-x64.zip)，从“扫描 → 文字识别（OCR）”导入 ZIP。已有兼容组件可继续使用，无需随主程序更新重装。[安装与使用说明](docs/OCR.md)
 
-本页按当前源码说明功能，下载版以对应的 [Release 说明](https://github.com/d8349565/pdf-manage/releases)为准。当前源码还包含 v0.11.0 标签之后的改动：统一快捷键管理、单页分割尺寸设置、顶部工具栏合并入口，以及保存设置和每页完整盖章；这些改动尚未记入新的正式版本。
+本页按当前源码说明功能，下载版以对应的 [Release 说明](https://github.com/d8349565/pdf-manage/releases)为准。
 
 ## 功能
 

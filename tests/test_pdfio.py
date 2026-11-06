@@ -25,6 +25,22 @@ def _make_pdf(path: str, n: int, label: str) -> None:
     doc.close()
 
 
+def test_external_change_distinguishes_own_save_from_replaced_file(qapp, tmp_path):
+    source, replacement = tmp_path / 'source.pdf', tmp_path / 'replacement.pdf'
+    _make_pdf(str(source), 1, 'Original')
+    store = PdfStore()
+    try:
+        pages = store.load(str(source))
+        assert not store.has_external_change(str(source))
+        store.write(pages, str(source))
+        assert not store.has_external_change(str(source))
+        _make_pdf(str(replacement), 2, 'Changed externally')
+        os.replace(replacement, source)
+        assert store.has_external_change(str(source))
+    finally:
+        store.close_all()
+
+
 def _make_rotated_pdf(path, rotations: list[int], w: int = 300, h: int = 400) -> None:
     """每页按给定 /Rotate 写盘，模拟扫描件、手机拍的照片这类自带旋转的文件。"""
     doc = pymupdf.open()

@@ -28,9 +28,15 @@ OCR 增强包单独分发，包含模型、字符字典和推理运行库。源�
 增强包默认安装到 `%LOCALAPPDATA%/ZhiXuPDF/ocr/`，也可在“文件 → 应用设置 → 存储管理”选择其他磁盘。
 任务缓存与默认输出位置可独立设置；安装器不打入 OCR 组件，主程序卸载也不会自动删除独立组件或用户选择的存储目录。
 
+## 正式发布与蓝奏云同步
+
 每次正式发布同时提供安装器 `ZhiXuPDF-Setup.exe` 和同版绿色包 `ZhiXuPDF-Portable-vX.Y.Z.zip`。绿色包复用同一份目录式程序，只添加便携标记和使用说明；不改变安装器原有流程，不包含个人设置、缓存或 OCR 模型。构建和校验脚本为 `packaging/make_portable.py`、`packaging/verify_portable.py`；所有安装器仍直接生成到固定的 `dist-installer/ZhiXuPDF-Setup.exe`。
 
-正式发布后同步到蓝奏云既有 `ZhiXuPDF-Setup` 文件夹，安装器使用 `ZhiXuPDF-Setup-vX.Y.Z.exe`，绿色包使用 `ZhiXuPDF-Portable-vX.Y.Z-绿色版.zip`。上传副本与 GitHub Release 对应附件保持字节及 SHA-256 一致，不因改名重新构建；保留历史文件，同版上传前先检查避免重复。
+每次正式发布后，安装 EXE 和绿色 ZIP 必须一起同步到蓝奏云既有 `ZhiXuPDF-Setup` 文件夹，作为发布流程的一部分。安装器使用 `ZhiXuPDF-Setup-vX.Y.Z.exe`，绿色包使用 `ZhiXuPDF-Portable-vX.Y.Z-绿色版.zip`。复用该版 GitHub Release 已验证的对应附件，仅创建改名副本，逐个核对字节及 SHA-256，不为同步重新构建。
+
+通过蓝奏云官方管理网页复用现有登录会话上传；登录失效时，请用户在页面中完成验证。上传前分别检查两类同版文件，已存在且核验一致的直接复用，只补传缺失的附件，保留历史版本。
+
+安装包和绿色版均完成网页文件名、显示大小核对，并分别取得分享链接后，才算同步完成。发布结果应同时报告两类附件的同步状态和链接；有一类受阻时，明确列出尚未完成的附件。
 
 ## 每次提交前
 

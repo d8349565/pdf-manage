@@ -251,6 +251,17 @@ class PdfStore:
             raise PdfError("源文档已关闭")
         return src
 
+    def has_external_change(self, path: str) -> bool:
+        key = _path_key(path)
+        sources = [source for source in self._sources.values() if _path_key(source.path) == key]
+        expected = self._written_stamps.get(key, sources[-1].disk_stamp if sources else None)
+        if expected is None:
+            return False
+        try:
+            return _file_stamp(path) != expected
+        except OSError:
+            return True
+
     def close_all(self) -> None:
         self._clear_edit_caches()
         with self._annotation_lock:

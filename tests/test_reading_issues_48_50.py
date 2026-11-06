@@ -29,7 +29,18 @@ def reader(qapp, tmp_path):
     window.ws.load_first_or_merge(window.store.load(str(path)), str(path))
     window.refresh()
     window.show()
-    QTest.qWait(80)
+    # Geometry assertions need the initial rendering and deferred layout to finish.
+    timers = (window._reading_timer, window._reading_settle_timer, window._preview_timer,
+              window._detail_timer, window._preparation_timer,
+              window._render_show_timer, window._render_hide_timer)
+    for _ in range(500):
+        qapp.processEvents()
+        if (not window.rendering.active and not window.rendering.pending
+                and not window._reading_cache.busy and not any(timer.isActive() for timer in timers)):
+            break
+        QTest.qWait(10)
+    else:
+        pytest.fail('The initial document rendering did not settle before checking sidebar geometry')
     yield window
     window.ws.reset()
     window.close()
@@ -149,18 +160,6 @@ def test_outline_bulk_view_preserves_a_manually_selected_branch(reader):
 
 
 def test_overlay_reverses_without_resizing_reader_and_pin_restores_splitter(reader):
-    # Measure sidebar motion after the initial document rendering and layout settle.
-    timers = (reader._reading_timer, reader._reading_settle_timer, reader._preview_timer,
-              reader._detail_timer, reader._preparation_timer,
-              reader._render_show_timer, reader._render_hide_timer)
-    for _ in range(500):
-        QApplication.processEvents()
-        if (not reader.rendering.active and not reader.rendering.pending
-                and not reader._reading_cache.busy and not any(timer.isActive() for timer in timers)):
-            break
-        QTest.qWait(10)
-    else:
-        pytest.fail('The initial document rendering did not settle before checking sidebar geometry')
     control = reader.immersive
     bounds = reader.preview_view.geometry()
     control.reveal()

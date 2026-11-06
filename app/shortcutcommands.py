@@ -117,6 +117,7 @@ for _key, _path, _keys in (
     ('theme.mountain', '视图/界面主题/远山', ()),
     ('theme.terracotta', '视图/界面主题/赤陶', ()),
     ('theme.night', '视图/界面主题/夜航（深色）', ()),
+    ('app.quick_start', '操作指南', ()),
     ('app.about', '关于', ()),
 ):
     _menu(_key, _path, _keys)
@@ -175,7 +176,9 @@ for _key, _label in (
 ):
     _add('annotation.' + _key, _label, '审阅工具', scope='reader')
 for _key, _label in (
-    ('add', '在当前页添加书签'), ('rename', '重命名书签'), ('delete', '删除书签（含子项）'),
+    ('add', '添加同级书签'), ('add_child', '添加子书签'),
+    ('rename', '重命名书签'), ('delete', '删除书签（含子项）'),
+    ('move_up', '上移书签（含子项）'), ('move_down', '下移书签（含子项）'),
     ('child', '设为子项'), ('raise', '提升层级'), ('expand', '展开全部书签'), ('collapse', '折叠全部书签'),
 ):
     _add('outline.' + _key, _label, '大纲书签', scope='outline')

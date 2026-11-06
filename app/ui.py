@@ -2819,14 +2819,16 @@ class MainWindow(QMainWindow):
             return
         if hasattr(self, 'immersive') and self.immersive._syncing_visibility:
             return
-        for key, value in (('pagesVisible', self.act_pages.isChecked()),
+        pages_visible = (self.immersive._pages_visible
+                         if hasattr(self, 'immersive') and self.immersive.fullscreen
+                         else self.act_pages.isChecked())
+        for key, value in (('pagesVisible', pages_visible),
                            ('toolsVisible', self.act_tools.isChecked()),
                            ('sidebarMode', self.sidebar_mode.currentIndex()),
                            ('toolIndex', self._tool_index)):
             self._window_settings.setValue('mainWindow/' + key, value)
 
     def _restore_ui_preferences(self):
-        self.act_pages.setChecked(self._window_settings.value('mainWindow/pagesVisible', False, type=bool))
         self.act_tools.setChecked(self._window_settings.value('mainWindow/toolsVisible', False, type=bool))
         try:
             self._tool_index = max(-1, min(6, self._window_settings.value('mainWindow/toolIndex', 0, type=int)))
@@ -2840,6 +2842,7 @@ class MainWindow(QMainWindow):
             widget.setCurrentIndex(index if 0 <= index < widget.count() else 0)
         self.immersive.auto_action.setChecked(
             self._window_settings.value('reading/sidebarAutoHide', True, type=bool))
+        self.act_pages.setChecked(self._window_settings.value('mainWindow/pagesVisible', False, type=bool))
 
     def _default_reading_view(self):
         layout = self._window_settings.value('reading/defaultLayout', 'single')
@@ -3506,11 +3509,10 @@ class MainWindow(QMainWindow):
         for key, action in getattr(self, '_shortcut_actions', {}).items():
             if key.startswith(('review.', 'annotation.', 'tools.')):
                 action.setEnabled(bool(count) and not self._saving and not getattr(self, '_task_dialog', None))
-            elif key.startswith('outline.'):
-                action.setEnabled(bool(count) and (key in ('outline.expand', 'outline.collapse')
-                                  or not self.store.operation_reason(self.ws.pages, 'outline')))
             elif key == 'pages.extract_selected':
                 action.setEnabled(self.extract_action.isEnabled())
+        if hasattr(self, 'outline_panel'):
+            self.outline_panel.sync_actions()
         self._update_export_controls()
         name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else
             os.path.basename(self._opening_paths[0]) if self._opening_paths else "尚未打开文档")
@@ -5955,7 +5957,25 @@ class MainWindow(QMainWindow):
                 None,
             )
             if existing is not None:
-                self.activate_tab(existing.tab_id)
+                if not self.activate_tab(existing.tab_id):
+                    break
+                if self.store.has_external_change(path):
+                    tools = getattr(self, 'annotation_tools', None)
+                    if tools is not None and not tools.finish_text_box():
+                        break
+                    if self.ws.dirty:
+                        self.statusBar().showMessage(
+                            '磁盘文件已有变化；当前标签保留未保存修改。请先另存副本，再关闭并重新打开文件。', 10000)
+                    else:
+                        pages = self._try_load(path, index, len(valid_paths), defer_safety=True)
+                        if pages is None:
+                            self._release_unused_docs()
+                            break
+                        page_index = min(self.ws.preview_index() or 0, len(pages) - 1)
+                        self.ws.open_replace(pages, path)
+                        self.refresh()
+                        self.go_to_page(page_index + 1)
+                        self.statusBar().showMessage('已重新读取磁盘上的最新文件', 5000)
                 self.reading_history.touch(path)
                 opened_any = True
                 continue
