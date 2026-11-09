@@ -507,9 +507,11 @@ def page_layout(page, *, include_images=False, preserve_positions=False, spatial
         if native_graphic_text(page,raw):
             warnings.append('图形内同色字样保留原图，识别内容保存在图片说明中，避免混入正文；其余正文和表格仍可编辑。')
     verified=[]; unverified=[]
+    has_images = bool(page.get_images())
     for table in tables:
-        pixel_grid=table_has_visible_grid(page,table) if preserve_positions and (page.get_images() or table.confidence<.9) else False
-        if spatial and page.get_images() and not pixel_grid:
+        check_grid = (spatial and has_images) or (preserve_positions and (has_images or table.confidence < .9))
+        pixel_grid = check_grid and table_has_visible_grid(page, table)
+        if spatial and has_images and not pixel_grid:
             continue
         if preserve_positions and not pixel_grid and not table_has_column_gutters(raw,table):
             continue

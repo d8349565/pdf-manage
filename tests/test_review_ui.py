@@ -582,6 +582,53 @@ def test_watermark_preview_discards_old_results(reader, qapp, monkeypatch):
         dialog.reject()
 
 
+def test_watermark_waits_for_preview_after_range_change(reader, monkeypatch):
+    from PyQt6.QtGui import QImage
+    from app.rendering import RenderResult
+    from app.watermarkui import WatermarkDialog
+
+    requests = []
+    monkeypatch.setattr(reader.rendering, "request",
+                        lambda ref, width, key, *args, **kwargs: requests.append((ref, key)))
+    dialog = WatermarkDialog(reader)
+    try:
+        reader._page_images.clear()
+        sprite = QImage(200, 72, QImage.Format.Format_ARGB32_Premultiplied)
+        sprite.fill(Qt.GlobalColor.transparent)
+        color = (dialog.color.redF(), dialog.color.greenF(), dialog.color.blueF())
+        dialog._asset_cache[(dialog.text.text(), color, "")] = (sprite, 200, 72)
+        dialog.preview()
+        ref, old_key = requests[-1]
+        assert ref is reader.ws.pages[0]
+
+        dialog.range_mode.setCurrentIndex(dialog.range_mode.findData("custom"))
+        dialog.range_text.setText("2")
+        assert dialog.timer.isActive() and not dialog.apply_button.isEnabled()
+        image = QImage(100, 150, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.white)
+        result = RenderResult(reader.rendering.generation, value=image)
+        # Deliver the old page while the new range is still waiting for its timer.
+        dialog.signals.done.emit(old_key, result)
+        assert not dialog.apply_button.isEnabled()
+        before = reader.ws.pages
+        dialog.apply()
+        assert reader.ws.pages is before
+
+        dialog.preview()
+        ref, new_key = requests[-1]
+        assert ref is reader.ws.pages[1] and new_key != old_key
+        dialog.signals.done.emit(old_key, result)
+        assert not dialog.apply_button.isEnabled()
+        dialog.signals.done.emit(new_key, result)
+        assert dialog.apply_button.isEnabled()
+        dialog.apply_button.click()
+        assert dialog._closed and reader.ws.pages[0] is before[0]
+        assert reader.ws.pages[1].edits[-1].kind == "watermark"
+    finally:
+        if not dialog._closed:
+            dialog.reject()
+
+
 def test_watermark_selection_edit_delete_and_no_annotation_popup(reader, qapp, monkeypatch):
     from app.watermarkui import WatermarkDialog
     from PyQt6.QtGui import QImage
@@ -715,6 +762,9 @@ def test_watermark_saved_reopened_selected_and_deleted_through_ui(reader, qapp, 
             assert list_watermarks(page)[0]["id"] == identifier
         reopened.ws.undo_stack.redo()
         reopened.refresh()
+        # This round trip writes the deletion back to the generated copy.
+        reopened._window_settings.setValue("saving/default_mode", "overwrite")
+        reopened._window_settings.setValue("saving/skip_overwrite_confirmation", True)
         assert reopened.save()
         with p.open(output) as doc:
             for page in doc:

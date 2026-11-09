@@ -421,6 +421,7 @@ class WatermarkDialog(QDialog):
             return
         self._version += 1
         self._ready_version = None
+        self._settings_valid = False
         self.apply_button.setEnabled(False)
         self.timer.start()
 
@@ -724,7 +725,7 @@ class WatermarkDialog(QDialog):
             self.set_status("正在更新水印内容…")
 
     def apply(self, *, remove=False):
-        if self._applying:
+        if self._closed or self._applying or (not remove and not self.apply_button.isEnabled()):
             return
         try:
             if self.host.ws.pages is not self._document_pages:

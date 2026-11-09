@@ -136,7 +136,7 @@ class InstanceRouter(QObject):
         if window is None or self.dispatching:
             return
         from PyQt6.QtWidgets import QApplication
-        if (getattr(window, '_closing', False) or window._opening_paths
+        if (getattr(window, '_closing', False) or getattr(window, '_saving', False) or window._opening_paths
                 or getattr(window, '_task_dialog', None) is not None
                 or QApplication.activeModalWidget() is not None):
             return

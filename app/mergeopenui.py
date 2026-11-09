@@ -353,12 +353,12 @@ def merge_open_files(host):
             if replaced:
                 target.ws._push(pages, path, '合并已打开的文件', outline=outline)
                 target.ws.rebase_to_saved_file(result.path, list(result.pages))
-                host.activate_tab(target.tab_id)
+                host._activate_tab(target.tab_id)
                 host.refresh()
                 host.reading_history.touch(result.path)
                 opened = True
             else:
-                opened = host.open_files_in_tabs([result.path])
+                opened = host._open_files_in_tabs([result.path])
                 if opened:
                     host.ws.last_saved_path = result.path
             host._release_unused_docs()

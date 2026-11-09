@@ -159,6 +159,10 @@ assert not router.start_or_forward([sys.argv[3]])
         assert process.returncode == 0, (out + err).decode(errors='replace')
         assert list(router.pending) == [[str(source)]] and not window.paths
         window._task_dialog = None
+        window._saving = True
+        router._drain()
+        assert list(router.pending) == [[str(source)]] and not window.paths
+        window._saving = False
         wait_until(qapp, lambda: window.paths == [str(source)])
         assert not router.pending
     finally:

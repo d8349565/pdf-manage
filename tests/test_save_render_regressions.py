@@ -53,7 +53,8 @@ def window(qapp, tmp_path):
     yield win
     QThreadPool.globalInstance().waitForDone(30000)
     qapp.processEvents()
-    win.ws.reset()
+    for tab in win._tabs:
+        tab.ws.reset()
     win.close()
 
 
@@ -95,6 +96,106 @@ def test_image_rotation_save_as_and_repeated_save(qapp, tmp_path, monkeypatch, s
         qapp.processEvents()
         win.ws.reset()
         win.close()
+
+
+def _queue_during_save(window, monkeypatch, callback):
+    write = window._write_pdf
+
+    def write_with_callback(*args, **kwargs):
+        QTimer.singleShot(0, callback)
+        return write(*args, **kwargs)
+
+    monkeypatch.setattr(window, '_write_pdf', write_with_callback)
+
+
+def test_save_keeps_result_on_originating_tab(window, tmp_path, monkeypatch):
+    first = window._active_tab()
+    other_path = tmp_path / 'other.pdf'
+    make_image_pdf(other_path)
+    assert window.open_files_in_tabs([str(other_path)])
+    other = window._active_tab()
+    other.ws.select_index(0)
+    other.ws.rotate(180)
+    other_before = other.ws._fingerprint()
+    other_undo = other.ws.undo_stack.index()
+
+    assert window.activate_tab(first.tab_id)
+    first.ws.select_index(0)
+    first.ws.rotate(90)
+    output = tmp_path / 'saved.pdf'
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *args: (str(output), 'PDF'))
+    active_after_shortcut = []
+
+    def switch_tab():
+        window._shortcut_actions['tabs.next'].trigger()
+        active_after_shortcut.append(window._active_tab_id)
+
+    _queue_during_save(window, monkeypatch, switch_tab)
+    assert window.save(True)
+    with p.open(output) as saved:
+        assert saved[0].rotation == 90
+    assert other.ws._fingerprint() == other_before
+    assert other.ws.dirty and other.ws.undo_stack.index() == other_undo
+    assert first.ws.path == str(output) and not first.ws.dirty
+    assert active_after_shortcut == [first.tab_id]
+    assert window.activate_tab(other.tab_id)
+
+
+@pytest.mark.parametrize('save_as', [False, True])
+def test_undo_during_save_stays_unsaved_after_output_is_written(window, tmp_path, monkeypatch, save_as):
+    source = tmp_path / 'scan.pdf'
+    output = tmp_path / 'copy.pdf' if save_as else source
+    original_pages = tuple(window.ws.pages)
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+    with monkeypatch.context() as during_write:
+        during_write.setattr(QFileDialog, 'getSaveFileName', lambda *args: (str(output), 'PDF'))
+        _queue_during_save(window, during_write, window.undo_action.trigger)
+        finished = window.save(save_as)
+
+    with p.open(output) as saved:
+        assert saved[0].rotation == 90
+    assert tuple(window.ws.pages) == original_pages
+    assert window.ws.path == str(output)
+    assert window.ws.dirty and not finished
+
+    assert window.save()
+    with p.open(output) as saved:
+        assert saved[0].rotation == 0
+    assert not window.ws.dirty
+
+
+def test_cancelled_pdf_save_keeps_edits_and_allows_retry(window, tmp_path, monkeypatch):
+    source = tmp_path / 'scan.pdf'
+    original = source.read_bytes()
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+    edits = tuple(window.ws.pages)
+    with monkeypatch.context() as during_write:
+        _queue_during_save(window, during_write, lambda: window._task_dialog.request_cancel())
+        assert not window.save()
+
+    assert source.read_bytes() == original
+    assert tuple(window.ws.pages) == edits and window.ws.dirty
+    assert window.save()
+    with p.open(source) as saved:
+        assert saved[0].rotation == 90
+
+
+def test_close_tab_saves_edits_before_leaving(window, tmp_path, monkeypatch):
+    window.ws.select_index(0)
+    window.ws.rotate(90)
+
+    def choose_save(box):
+        assert box.windowTitle() == '未保存的更改'
+        next(button for button in box.buttons() if button.text() == '保存').click()
+        return 0
+
+    monkeypatch.setattr(QMessageBox, 'exec', choose_save)
+    assert window.close_tab(window._active_tab_id)
+    assert not window.ws.pages
+    with p.open(tmp_path / 'scan.pdf') as saved:
+        assert saved[0].rotation == 90
 
 
 @pytest.mark.parametrize('failure', ['target_changed', 'write_denied'])

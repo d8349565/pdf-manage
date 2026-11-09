@@ -150,7 +150,7 @@ class Workspace:
         self._dirty_value = False
         self._dirty_outline = None
 
-    def _fingerprint(self) -> tuple[tuple[PageRef, ...], str | None]:
+    def _fingerprint(self) -> tuple[tuple[PageRef, ...], str | None, tuple[OutlineEntry, ...] | None]:
         return (tuple(self.pages), self.path, self.outline)
 
     @property
@@ -205,6 +205,13 @@ class Workspace:
         self._saved = self._fingerprint()
         self.last_error = None
 
+    def record_saved_snapshot(self, path: str, pages: list[PageRef], outline: tuple[OutlineEntry, ...] | None) -> None:
+        """Record a successful write while keeping edits made during that write."""
+        self.last_saved_path = path
+        self._restore(tuple(self.pages), path, self.outline)
+        self._saved = (tuple(pages), path, outline)
+        self.last_error = None
+
     def reset(self) -> None:
         self.pages = []
         self.outline = None
@@ -248,8 +255,9 @@ class Workspace:
         return target in self.protected_paths
 
     def live_sources(self) -> set[str]:
-        """工作区页面和撤销栈都还可能用到的源文档，回收时这两边都不能碰。"""
+        """保留当前页、保存基线和撤销栈引用的源文档。"""
         ids = {p.source_id for p in self.pages}
+        ids.update(p.source_id for p in self._saved[0])
         for i in range(self.undo_stack.count()):
             command = self.undo_stack.command(i)
             if isinstance(command, _StateCommand):
