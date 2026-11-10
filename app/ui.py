@@ -364,21 +364,6 @@ QCheckBox {
     color: #134E4A;
     font-size: 14px;
 }
-QCheckBox::indicator {
-    width: 18px;
-    height: 18px;
-    border: 1px solid #C5D5D2;
-    border-radius: 4px;
-    background: #FFFFFF;
-}
-QCheckBox::indicator:hover {
-    border-color: #0D9488;
-    background: #F0FDFA;
-}
-QCheckBox::indicator:checked {
-    border-color: #0F766E;
-    background: #0F766E;
-}
 QTreeWidget {
     background: #FFFFFF;
     border: 1px solid #E2EEEC;
@@ -2632,8 +2617,8 @@ class MainWindow(QMainWindow):
         self._restore_ui_preferences()
         from app.updates import UpdateChecker
         self.updates = UpdateChecker(self._window_settings, self)
+        self._notified_update_message = ""
         self.updates.changed.connect(self._update_release_notice)
-        self._notified_update_tag = ""
         self._update_release_notice()
         for signal in (self.act_pages.toggled, self.act_tools.toggled, self.sidebar_mode.currentIndexChanged):
             signal.connect(self._save_ui_preferences)
@@ -2946,6 +2931,7 @@ class MainWindow(QMainWindow):
             QToolButton#updateNotice:focus { border: 2px solid #0F766E; }
         ''')
         self.update_notice_button.setAccessibleName("查看新版本的更新内容")
+        self.update_notice_button.setToolTip("在软件内查看本次更新内容与下载入口")
         self.update_notice_button.clicked.connect(self.show_updates)
         self.update_notice_button.hide()
         self.statusBar().addPermanentWidget(self.update_notice_button)
@@ -3121,12 +3107,12 @@ class MainWindow(QMainWindow):
         restore=view.addMenu('界面恢复')
         restore.addAction(self.reading_orb.restore_action)
         restore.addAction(self._act('恢复界面布局',self.reset_ui_preferences))
+        help_menu = self._menubar.addMenu('帮助')
         self.quick_start_action = self._act('操作指南', self.show_quick_start)
         self.quick_start_action.setStatusTip('查看拖入文件、缩放、移动页面与侧栏的常用操作')
-        self._menubar.addAction(self.quick_start_action)
-        self.about_action = self._act("关于", self.show_about)
+        self.about_action = self._act(f"关于{APP_NAME}", self.show_about)
         self.about_action.setStatusTip("查看版本、检查更新、项目地址与赞赏信息")
-        self._menubar.addAction(self.about_action)
+        help_menu.addActions([self.quick_start_action, self.about_action])
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -3224,17 +3210,20 @@ class MainWindow(QMainWindow):
         show_update_dialog(self, self.updates)
 
     def _update_release_notice(self) -> None:
-        available = self.updates.update_available
-        self.update_notice_button.setText(f"查看更新 {self.updates.latest_tag}")
-        self.update_notice_button.setVisible(available)
-        self.update_notice_button.setToolTip("在软件内查看本次更新内容与下载入口")
-        self.about_action.setText("关于 · 有新版本" if available else "关于")
-        self.about_action.setStatusTip(
-            f"发现新版本 {self.updates.latest_tag}，可在“关于”中查看更新内容" if available
-            else "查看版本、检查更新、项目地址与赞赏信息")
-        if available and self._notified_update_tag != self.updates.latest_tag:
-            self._notified_update_tag = self.updates.latest_tag
-            self.statusBar().showMessage(f"发现新版本 {self.updates.latest_tag}，点击“查看更新”了解更新内容。", 15000)
+        show_notice = self.updates.reminders_enabled and self.updates.update_available
+        tag = self.updates.latest_tag
+        self.update_notice_button.setText(f"查看更新 {tag}")
+        self.update_notice_button.setVisible(show_notice)
+
+        message = f"发现新版本 {tag}，点击“查看更新”了解更新内容。" if show_notice else ""
+        if message == self._notified_update_message:
+            return
+        status_bar = self.statusBar()
+        if message:
+            status_bar.showMessage(message, 15000)
+        elif status_bar.currentMessage() == self._notified_update_message:
+            status_bar.clearMessage()
+        self._notified_update_message = message
 
     def manage_storage(self) -> None:
         from app.storageui import StorageDialog

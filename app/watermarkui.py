@@ -44,7 +44,6 @@ QDialog#watermarkDialog QScrollArea { border: none; background: transparent; }
 QDialog#watermarkDialog QWidget#watermarkSettings { background: transparent; }
 QDialog#watermarkDialog QFrame#watermarkCanvas { background: #E8EDF2; border: 1px solid #D8E0E8; border-radius: 8px; }
 QDialog#watermarkDialog QCheckBox { spacing: 7px; color: #334155; font-weight: 400; }
-QDialog#watermarkDialog QCheckBox::indicator { width: 15px; height: 15px; }
 QDialog#watermarkDialog QSlider::groove:horizontal { height: 4px; background: #DDE5E9; border-radius: 2px; }
 QDialog#watermarkDialog QSlider::handle:horizontal { width: 12px; margin: -5px 0; background: #0F766E; border: 1px solid #0F766E; border-radius: 6px; }
 """

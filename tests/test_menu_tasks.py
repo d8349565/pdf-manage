@@ -42,7 +42,7 @@ EXPECTED={
     ('视图','界面主题'):['石墨（默认）','原版绿','远山','赤陶','夜航（深色）'],
     ('视图','缩放'):['放大','缩小','适合宽度'],
     ('视图','界面恢复'):['显示阅读悬浮球','恢复界面布局'],
-    ():['操作指南','关于'],
+    ('帮助',):['操作指南','关于纸序 PDF'],
 }
 
 
@@ -140,9 +140,9 @@ def test_top_level_task_menus_share_actions_with_existing_tools(qapp):
     window=MainWindow()
     try:
         root=window._menubar.actions()
-        assert [action.text() for action in root[:7]]==['文件','编辑','页面','文档','扫描','转换','视图']
-        assert root[-1] is window.about_action and window.about_action.menu() is None
+        assert [action.text() for action in root]==['文件','编辑','页面','文档','扫描','转换','视图','帮助']
         menus={action.text():action.menu() for action in root if action.menu()}
+        assert menus['帮助'].actions()==[window.quick_start_action,window.about_action]
         assert window.copy_pages_action in menus['编辑'].actions()
         assert window.paste_pages_action in menus['编辑'].actions()
         assert window.insert_action in menus['页面'].actions()

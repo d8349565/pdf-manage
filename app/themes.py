@@ -4,9 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from PyQt6.QtCore import QObject, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPalette, QPixmap
-from PyQt6.QtWidgets import QAbstractButton, QApplication, QGraphicsView
+from PyQt6.QtCore import QObject, QPointF, QRect, QRectF, QSettings, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPalette, QPen, QPixmap
+from PyQt6.QtWidgets import QAbstractButton, QApplication, QGraphicsView, QProxyStyle, QStyle
 
 
 @dataclass(frozen=True)
@@ -156,6 +156,58 @@ def theme_swatch(theme: Theme) -> QIcon:
     return QIcon(pixmap)
 
 
+class _CheckboxStyle(QProxyStyle):
+    """Share the indicator between native checkboxes and checkable list/table cells."""
+
+    def pixelMetric(self, metric, option=None, widget=None):
+        if metric in (QStyle.PixelMetric.PM_IndicatorWidth, QStyle.PixelMetric.PM_IndicatorHeight):
+            return 16
+        return super().pixelMetric(metric, option, widget)
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element not in (QStyle.PrimitiveElement.PE_IndicatorCheckBox,
+                           QStyle.PrimitiveElement.PE_IndicatorItemViewItemCheck):
+            super().drawPrimitive(element, option, painter, widget)
+            return
+
+        colors = current_theme().colors
+        state = option.state
+        flags = QStyle.StateFlag
+        enabled = bool(state & flags.State_Enabled)
+        focused = enabled and bool(state & flags.State_HasFocus)
+        partial = bool(state & flags.State_NoChange)
+        checked = bool(state & flags.State_On) or partial
+        border = colors["accent" if checked or focused else "muted"]
+        fill = colors["selected" if checked else "surface"]
+        mark = colors["accent"]
+        if not enabled:
+            border, fill, mark = colors["strong_border"], colors["subtle"], colors["disabled"]
+        elif state & flags.State_Sunken:
+            border, fill = colors["accent_pressed"], colors["selected"]
+        elif state & flags.State_MouseOver:
+            border, fill = colors["accent"], colors["hover"]
+
+        outline = 2 if focused else 1
+        inset = outline / 2
+        rect = QRectF(option.rect).adjusted(inset, inset, -inset, -inset)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(border), outline))
+        painter.setBrush(QColor(fill))
+        painter.drawRoundedRect(rect, 3.5, 3.5)
+        if partial:
+            painter.setPen(QPen(QColor(mark), 1.5))
+            offset = QPointF(3.5, 0)
+            painter.drawLine(rect.center() - offset, rect.center() + offset)
+        elif checked:
+            from app.icons import toolbar_icon
+
+            mark_rect = QRect(0, 0, 22, 22)
+            mark_rect.moveCenter(option.rect.center())
+            toolbar_icon("check", mark, mark_rect.width(), themed=False).paint(painter, mark_rect)
+        painter.restore()
+
+
 class ThemeManager(QObject):
     changed = pyqtSignal(str)
 
@@ -163,6 +215,11 @@ class ThemeManager(QObject):
         if key not in _THEMES_BY_KEY:
             return False
         app = QApplication.instance()
+        if not isinstance(app.style(), _CheckboxStyle):
+            base = app.style().objectName()
+            style = _CheckboxStyle(base)
+            style.setObjectName(base)
+            app.setStyle(style)
         app.setProperty("uiTheme", key)
         colors = _THEMES_BY_KEY[key].colors
         palette = QPalette()

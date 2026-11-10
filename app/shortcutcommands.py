@@ -5,6 +5,8 @@ Manual commands are dispatched by their existing, state-aware event handlers.
 """
 from dataclasses import dataclass, replace
 
+from app import APP_NAME
+
 
 @dataclass(frozen=True)
 class Command:
@@ -34,7 +36,7 @@ def _menu(key, path, keys=(), *, scope='main', repeat=False):
     # The open-file label itself contains slashes.
     if key == 'file.open':
         parts = ('文件', '打开 PDF / OFD / 图片')
-    _add(key, parts[-1], '应用设置' if key.startswith('app.') else parts[0],
+    _add(key, parts[-1], '应用设置' if parts[:2] == ('文件', '应用设置') else parts[0],
          defaults=keys, menu=parts, scope=scope, repeat=repeat)
 
 
@@ -117,8 +119,8 @@ for _key, _path, _keys in (
     ('theme.mountain', '视图/界面主题/远山', ()),
     ('theme.terracotta', '视图/界面主题/赤陶', ()),
     ('theme.night', '视图/界面主题/夜航（深色）', ()),
-    ('app.quick_start', '操作指南', ()),
-    ('app.about', '关于', ()),
+    ('app.quick_start', '帮助/操作指南', ()),
+    ('app.about', f'帮助/关于{APP_NAME}', ()),
 ):
     _menu(_key, _path, _keys)
 

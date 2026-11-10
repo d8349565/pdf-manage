@@ -7,12 +7,13 @@ from pathlib import Path
 from PyQt6.QtCore import QSettings, QSize, Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
 from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, APP_VERSION_DISPLAY
 from app.icons import brand_icon, toolbar_icon
+from app.settingwidgets import SettingSwitch
 from app.updates import UpdateChecker
 from app.updateui import LANZOU_PASSWORD, open_lanzou_download, show_update_dialog
 from app.runtime import portable_root, preferences
@@ -38,6 +39,8 @@ class AboutDialog(QDialog):
             QDialog#aboutDialog QLabel#aboutTitle { font-size: 24px; font-weight: 600; }
             QDialog#aboutDialog QLabel#aboutName { font-size: 22px; font-weight: 600; }
             QDialog#aboutDialog QLabel#aboutMuted { color: #65796E; }
+            QDialog#aboutDialog QLabel#aboutUpdateHint { color: #4D6B67; font-size: 12px; }
+            QDialog#aboutDialog QLabel#aboutUpdateSettings { font-size: 13px; font-weight: 600; }
             QDialog#aboutDialog QLabel#aboutSection { font-size: 18px; font-weight: 600; }
             QDialog#aboutDialog QLabel#aboutVersion { font-size: 16px; font-weight: 600; }
             QDialog#aboutDialog QFrame#aboutCard {
@@ -191,19 +194,35 @@ class AboutDialog(QDialog):
         update_buttons.addStretch()
         updates_layout.addLayout(update_buttons)
         self.lanzou_status = QLabel(f"蓝奏云密码：{LANZOU_PASSWORD}（点击“蓝奏云”自动复制）")
-        self.lanzou_status.setObjectName("aboutMuted")
+        self.lanzou_status.setObjectName("aboutUpdateHint")
         self.lanzou_status.setTextFormat(Qt.TextFormat.PlainText)
         self.lanzou_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
                                                   | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         self.lanzou_status.setWordWrap(True)
         updates_layout.addWidget(self.lanzou_status)
-        self.auto_updates = QCheckBox("自动检查更新（每天最多一次）")
+
+        update_divider = QFrame()
+        update_divider.setObjectName("aboutDivider")
+        update_divider.setFixedHeight(1)
+        updates_layout.addWidget(update_divider)
+        settings_rows = QVBoxLayout()
+        settings_rows.setSpacing(2)
+        settings_title = QLabel("更新设置")
+        settings_title.setObjectName("aboutUpdateSettings")
+        settings_rows.addWidget(settings_title)
+        self.auto_updates = SettingSwitch("自动检查更新", "后台检查，每天最多一次。")
         self.auto_updates.setObjectName("aboutAutoUpdates")
         self.auto_updates.setChecked(self.updates.automatic)
         self.auto_updates.toggled.connect(self.updates.set_automatic)
-        updates_layout.addWidget(self.auto_updates)
-        update_note = QLabel("自动检查更新默认开启，可在上方关闭。仅向 GitHub 查询版本，不上传文档。下载后请关闭软件，再运行安装包。")
-        update_note.setObjectName("aboutMuted")
+        settings_rows.addWidget(self.auto_updates)
+        self.update_reminders = SettingSwitch("新版本提醒", "在主窗口显示「查看更新」，关闭后仍可手动检查。")
+        self.update_reminders.setObjectName("aboutUpdateReminders")
+        self.update_reminders.setChecked(self.updates.reminders_enabled)
+        self.update_reminders.toggled.connect(self.updates.set_reminders_enabled)
+        settings_rows.addWidget(self.update_reminders)
+        updates_layout.addLayout(settings_rows)
+        update_note = QLabel("仅向 GitHub 查询版本，不上传文档。运行安装包前请关闭软件。")
+        update_note.setObjectName("aboutUpdateHint")
         update_note.setWordWrap(True)
         updates_layout.addWidget(update_note)
         content.addWidget(updates_card)

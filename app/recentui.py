@@ -4,11 +4,12 @@ import os
 from PyQt6.QtCore import QRect, QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPen
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout,
+    QAbstractItemView, QDialog, QDialogButtonBox, QFrame, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy,
     QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 from app.icons import toolbar_icon
+from app.settingwidgets import SettingSwitch
 from app.themes import set_theme_style, ui_color
 from app import APP_NAME
 
@@ -44,8 +45,6 @@ QWidget#homeEmpty { background: transparent; }
 QLabel#homeEmptyTitle { font-size: 16px; font-weight: 600; color: #134E4A; }
 QLabel#homeEmptyHint { font-size: 13px; color: #4D6B67; }
 QFrame#homeFooterLine { border: none; background: #D7E8E4; }
-QCheckBox#homeResume { background: transparent; font-size: 13px; color: #4D6B67; spacing: 8px; }
-QCheckBox#homeResume:focus { color: #134E4A; }
 QLabel#homePrivacy { font-size: 12px; color: #4D6B67; }
 '''
 
@@ -208,7 +207,7 @@ class RecentFiles(QFrame):
         line.setFixedHeight(1)
         layout.addWidget(line)
         footer = QHBoxLayout()
-        self.resume = QCheckBox('启动时继续上次阅读')
+        self.resume = SettingSwitch('启动时继续上次阅读')
         self.resume.setObjectName('homeResume')
         self.resume.setChecked(host._window_settings.value('reading/resumeLast', False, type=bool))
         self.resume.toggled.connect(lambda enabled: host._window_settings.setValue('reading/resumeLast', enabled))

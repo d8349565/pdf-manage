@@ -161,6 +161,15 @@ class UpdateChecker(QObject):
             self._automatic_timer.stop()
         self.changed.emit()
 
+    @property
+    def reminders_enabled(self) -> bool:
+        return self.settings.value("updates/reminders", True, type=bool)
+
+    def set_reminders_enabled(self, enabled: bool) -> None:
+        self.settings.setValue("updates/reminders", enabled)
+        self.settings.sync()
+        self.changed.emit()
+
     def start(self) -> None:
         # Called by production entry points, never implicitly by a test window.
         if not self.automatic:
