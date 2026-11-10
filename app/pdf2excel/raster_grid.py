@@ -1,4 +1,5 @@
 """Find connected ruled grids in page pixels, independent of text and filenames."""
+from collections import defaultdict
 from statistics import mean
 
 
@@ -61,18 +62,58 @@ def _thin_segments(values):
     return result
 
 
-def raster_grid_lines(page):
-    """Return visible page-coordinate line pairs only for confirmed closed grids."""
+def _bridge_rule_gaps(rules, crossings, scale):
+    """Reconnect measured fragments without bridging a whole cell or table gutter."""
+    bands = []
+    for rule in sorted(rules):
+        if not bands or rule[0] - bands[-1][0][0] > 3:
+            bands.append([])
+        bands[-1].append(rule)
+    starts, ends = defaultdict(set), defaultdict(set)
+    for index, band in enumerate(bands):
+        for _, start, end in band:
+            for offset in range(-3, 4):
+                starts[start + offset].add(index)
+                ends[end + offset].add(index)
+    result = []
+    for band in bands:
+        band.sort(key=lambda rule: rule[1])
+        coordinate, first, end = band[0]
+        previous_start = first
+        for across, start, last in band[1:]:
+            gap = start - end
+            support = min(end - previous_start, last - start)
+            if 0 < gap <= min(16 * scale, support):
+                joints = [pos for pos, left, right in crossings
+                          if end - 3 <= pos <= start + 3 and left - 3 <= across <= right + 3]
+                # Two separate joints mark a missing cell edge or the borders
+                # of adjacent tables. Repeated facing endpoints can mark a
+                # gutter even when both facing borders have faded.
+                repeated_gap = len(ends[end] & starts[start]) >= 3
+                inside_joint = any(end + 3 < pos < start - 3 for pos in joints)
+                bridge = max(joints) - min(joints) <= 3 if joints else gap * 3 <= support
+                if bridge and (not repeated_gap or inside_joint):
+                    end, previous_start = last, start
+                    continue
+            result.append((coordinate, first, end))
+            coordinate, first, end = across, start, last
+            previous_start = start
+        result.append((coordinate, first, end))
+    return result
+
+
+def raster_grid_lines(page, *, incomplete=None):
+    """Return closed grids and optionally collect bounds of incomplete grids."""
     import pymupdf as p
     if not page.get_images():
         return []
     # Dense, large tables lose their thin rules when reduced to a 1600px page.
     scale = min(2, 3200 / max(page.rect.width, page.rect.height))
     pix = page.get_pixmap(matrix=p.Matrix(scale, scale), colorspace=p.csGRAY, alpha=False, annots=False)
-    return _grid_lines(pix, scale)
+    return _grid_lines(pix, scale, incomplete)
 
 
-def _grid_lines(pix, scale):
+def _grid_lines(pix, scale, incomplete=None):
     """Recover rule fragments and supported outer edges from grayscale pixels."""
     width, height = pix.width, pix.height
     from PIL import Image,ImageChops,ImageFilter
@@ -94,8 +135,12 @@ def _grid_lines(pix, scale):
     vertical = _thin_segments([(x, y0, y1) for x in range(width)
                               for y0, y1 in _runs(vertical_dark[x::width], minimum)])
     # Bound work for dense artwork; uncertain pages must not become fake tables.
-    if len(horizontal) * len(vertical) > 250000:
+    if not horizontal or not vertical or len(horizontal) * len(vertical) > 250000:
         return []
+    # Both directions must use measured crossings, without treating a bridge
+    # created in one direction as evidence for a bridge in the other.
+    horizontal, vertical = (_bridge_rule_gaps(horizontal, vertical, scale),
+                            _bridge_rule_gaps(vertical, horizontal, scale))
     edges = {}
     for h_index, (y, left, right) in enumerate(horizontal):
         for v_index, (x, top, bottom) in enumerate(vertical):
@@ -125,22 +170,20 @@ def _grid_lines(pix, scale):
         if right - left < 40 * scale or bottom - top < 32 * scale:
             continue
         # Outer horizontal/vertical rules separate the table from nearby prose.
-        if not all(any(abs(h[0] - y) <= 3 and h[1] <= left + 3 and h[2] >= right - 3 for h in hs)
-                   for y in (top, bottom)):
+        closed_rows = all(any(abs(h[0] - y) <= 3 and h[1] <= left + 3 and h[2] >= right - 3 for h in hs)
+                          for y in (top, bottom))
+        missing_sides = [(x, endpoint) for x, endpoint in ((left, 1), (right, 2))
+                         if not any(abs(v[0] - x) <= 3 and v[1] <= top + 3 and v[2] >= bottom - 3 for v in vs)]
+        # A faded side needs three aligned row endpoints as evidence.
+        if not closed_rows or any(sum(abs(h[endpoint] - x) <= 3 for h in hs) < 3 for x, endpoint in missing_sides):
+            if incomplete is not None:
+                incomplete.append(((left + pix.x) / scale, (top + pix.y) / scale,
+                                   (right + pix.x) / scale, (bottom + pix.y) / scale))
             continue
-        borders = []
-        for x, endpoint in ((left, 1), (right, 2)):
-            if any(abs(v[0] - x) <= 3 and v[1] <= top + 3 and v[2] >= bottom - 3 for v in vs):
-                continue
-            # A clipped/faded side is supported only by at least three rules
-            # ending there, including the confirmed top and bottom rules.
-            if sum(abs(h[endpoint] - x) <= 3 for h in hs) < 3:
-                break
-            borders.append((x, top, bottom))
-        else:
-            output.extend([(((start + pix.x) / scale, (y + pix.y) / scale),
-                            ((end + pix.x) / scale, (y + pix.y) / scale)) for y, start, end in hs])
-            output.extend([(((x + pix.x) / scale, (max(start, top) + pix.y) / scale),
-                            ((x + pix.x) / scale, (min(end, bottom) + pix.y) / scale))
-                           for x, start, end in vs + borders])
+        borders = [(x, top, bottom) for x, _ in missing_sides]
+        output.extend([(((start + pix.x) / scale, (y + pix.y) / scale),
+                        ((end + pix.x) / scale, (y + pix.y) / scale)) for y, start, end in hs])
+        output.extend([(((x + pix.x) / scale, (max(start, top) + pix.y) / scale),
+                        ((x + pix.x) / scale, (min(end, bottom) + pix.y) / scale))
+                       for x, start, end in vs + borders])
     return output

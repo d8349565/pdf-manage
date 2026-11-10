@@ -185,11 +185,52 @@ def _positioned_line_parts(chars, sizes, direction):
     return groups
 
 
-def layout_from_raw(raw, tables, *, positioned_areas=()):
+def _join_positioned_ocr(raw, positions):
+    """Reassemble search-layer glyphs on the same line before placing editable text."""
+    import pymupdf as p
+    from app.pdf2excel.analyzer import text_rows
+
+    hidden_lines, other_lines = [], []
+    for block in raw.get('blocks', ()):
+        for line in block.get('lines', ()):
+            spans = line.get('spans', ())
+            dx, dy = line.get('dir', (1, 0))
+            if (dx > 0 and abs(dy) < .26 and not line.get('wmode')
+                    and spans and all(s.get('alpha', 255) == 0 and not s.get('image_text') for s in spans)
+                    and any(area.intersects(p.Rect(line['bbox'])) for area in positions)):
+                text = ''.join(c['c'] for s in spans for c in s.get('chars', ()))
+                # Narrow OCR glyphs can have a larger angle error than their
+                # neighbors even though the baseline is horizontal.
+                if text.strip() and (abs(dy) < .18 or len(text.strip()) == 1):
+                    hidden_lines.append(dict(line, text=text))
+                    continue
+            other_lines.append(line)
+    if not hidden_lines:
+        return raw
+    for row in text_rows(hidden_lines):
+        spans = [span for line in row for span in line['spans']]
+        glyphs = [c for span in spans for c in span['chars']]
+        if not glyphs:
+            other_lines.extend(row)
+            continue
+        glyphs.sort(key=lambda c: c.get('origin', c['bbox'])[0])
+        bounds = p.Rect(row[0]['bbox'])
+        for line in row[1:]:
+            bounds |= p.Rect(line['bbox'])
+        size = median(span.get('size', 11) for span in spans)
+        direction = (1, 0) if len(row) > 1 else row[0].get('dir', (1, 0))
+        other_lines.append(dict(row[0], bbox=tuple(bounds), dir=direction, joined_ocr=True,
+                                spans=[dict(spans[0], chars=glyphs, size=size)]))
+    return dict(raw, blocks=[dict(lines=other_lines)])
+
+
+def layout_from_raw(raw, tables, *, positioned_areas=(), rejoin_ocr=False):
     import pymupdf as p
     from app.pdf2excel.analyzer import text_rows
     areas = [p.Rect(table.bbox) for table in tables]
     positions = [p.Rect(area) for area in positioned_areas]
+    if rejoin_ocr and positions:
+        raw = _join_positioned_ocr(raw, positions)
     fragments = []
     for block in raw.get('blocks', ()):
         for line in block.get('lines', ()):
@@ -228,9 +269,12 @@ def layout_from_raw(raw, tables, *, positioned_areas=()):
                         runs[-1]['bbox']=tuple(p.Rect(runs[-1]['bbox'])|p.Rect(char['bbox']))
                     else:
                         runs.append(dict(style,text=char['c'].replace('\xa0',' '),bbox=char['bbox']))
-                fragments.append(dict(kind='text', text=text, runs=runs, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
-                                      positioned=any(area.contains((bounds.tl+bounds.br)/2) for area in positions),
-                                      bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ()))))
+                fragment=dict(kind='text', text=text, runs=runs, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
+                              positioned=any(area.contains((bounds.tl+bounds.br)/2) for area in positions),
+                              bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ())))
+                if line.get('joined_ocr'):
+                    fragment['ocr_glyphs'] = part
+                fragments.append(fragment)
     body_size=median([item['size'] for item in fragments]) if fragments else 11
     for item in fragments:
         item['heading']=item['size']>=body_size*1.3 and len(item['text'])<=100
@@ -286,6 +330,8 @@ def table_text_runs(raw, table, *, include_hidden=False):
                                        bold=bool(span.get('flags',0)&16),italic=bool(span.get('flags',0)&2),
                                        colour=f"#{span.get('color',0):06X}",hidden=span.get('alpha',255)==0,bbox=tuple(bounds)))
                     pieces[-1]['image_text']=span.get('image_text',False)
+                    if include_hidden and pieces[-1]['hidden']:
+                        pieces[-1]['ocr_glyphs'] = chars
             if pieces:
                 if (any(run['text'].strip() and not run.get('image_text') for run in runs)
                         and not all(piece.get('image_text') for piece in pieces)):
@@ -432,7 +478,7 @@ def table_has_spatial_fields(raw, table):
                 and cell.bbox[2]-cell.bbox[0]>=width*.45 and cell.bbox[3]-cell.bbox[1]>=24]
     if not candidates:
         return False
-    pieces=layout_from_raw(raw,[],positioned_areas=[table.bbox])
+    pieces=layout_from_raw(raw,[],positioned_areas=[table.bbox],rejoin_ocr=True)
     for area in candidates:
         fields=[item for item in pieces if item['kind']=='text'
                 and area.contains((p.Rect(item['bbox']).tl+p.Rect(item['bbox']).br)/2)]
@@ -511,9 +557,10 @@ def page_layout(page, *, include_images=False, preserve_positions=False, spatial
     for table in tables:
         check_grid = (spatial and has_images) or (preserve_positions and (has_images or table.confidence < .9))
         pixel_grid = check_grid and table_has_visible_grid(page, table)
-        if spatial and has_images and not pixel_grid:
-            continue
-        if preserve_positions and not pixel_grid and not table_has_column_gutters(raw,table):
+        if not pixel_grid and ((spatial and has_images) or
+                               (preserve_positions and not table_has_column_gutters(raw,table))):
+            if has_images:
+                unverified.append(table.bbox)
             continue
         if preserve_positions and table_has_spatial_fields(raw,table):
             unverified.append(table.bbox)
@@ -531,14 +578,16 @@ def page_layout(page, *, include_images=False, preserve_positions=False, spatial
             unverified.append(table.bbox)
     tables=verified
     if unverified:
-        warnings.append(f'第 {page.number+1} 页部分网格未能完整承载原文，已按原位置保留全部识别文字，请核对表格。')
+        warnings.append(f'原 PDF 第 {page.number+1} 页表格待核对，已按原位置保留全部识别文字。')
     hidden=any(span.get('alpha',255)==0 and any(char['c'].isalnum() for char in span.get('chars',()))
                for block in raw.get('blocks',()) for line in block.get('lines',()) for span in line.get('spans',()))
     page_area=page.cropbox.width*page.cropbox.height
-    scan_area=sum(p.Rect(image['bbox']).get_area() for image in page.get_image_info())
+    image_areas=[p.Rect(image['bbox']).get_area() for image in page.get_image_info()]
+    scan_area=sum(image_areas)
     fixed=spatial or preserve_positions and (bool(tables) or bool(unverified) or hidden and scan_area>=page_area*.65)
     positions=[(0,0,page.cropbox.width,page.cropbox.height)] if fixed else unverified
-    layout=layout_from_raw(raw,tables,positioned_areas=positions)
+    rejoin_ocr=include_images and preserve_positions and hidden and any(area>=page_area*.65 for area in image_areas)
+    layout=layout_from_raw(raw,tables,positioned_areas=positions,rejoin_ocr=rejoin_ocr)
     if preserve_positions:
         for item in layout:
             if item['kind']=='table':

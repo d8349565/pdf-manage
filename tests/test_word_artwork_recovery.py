@@ -5,7 +5,7 @@ from PIL import Image,ImageChops,ImageDraw,ImageStat
 import pymupdf as p
 import pytest
 
-from app.documentlayout import document_layout
+from app.documentlayout import document_layout, page_layout
 from app.ocr.scan_layout import restore_scan
 from app.ocr.word_export import write_layout,paragraph,W,WP,exported_text
 from app.pdf2excel.raster_grid import raster_grid_lines
@@ -38,6 +38,85 @@ def test_coloured_artwork_crossing_a_cell_does_not_add_rows_or_become_body_text(
         assert 'TEST' not in ''.join(n.text or '' for n in body.iter(f'{{{W}}}t'))
         assert 'TEST' in exported_text(body)
         assert all(edge.get(f'{{{W}}}val')=='nil' for node in body.iter(f'{{{W}}}tcBorders') for edge in node)
+
+
+@pytest.mark.parametrize('start,end,ink,matching_fill', [((180,142),(265,166),0,False),
+                                                         ((331.4,143),(331.4,149),0,False),
+                                                         ((331.4,143),(331.4,149),.32,True)])
+def test_scan_table_keeps_unrecognized_ink(start,end,ink,matching_fill):
+    with p.open() as doc:
+        page=doc.new_page(width=360,height=320)
+        if matching_fill:
+            page.draw_rect((120,120,330,180),fill=(ink,ink,ink),color=None)
+        for y in (70,120,180):
+            page.draw_line((20,y),(330,y),width=.8)
+        for x in (20,120,330):
+            page.draw_line((x,70),(x,180),width=.8)
+        text=[((30,95),'Item'),((135,95),'Signature'),((30,148),'Approved')]
+        for origin,label in text:
+            page.insert_text(origin,label,fontsize=11)
+        page.draw_line(start,end,width=1,color=(ink,ink,ink))
+        with raster_copy(page) as scan:
+            for origin,label in text:
+                scan[0].insert_text(origin,label,fontsize=11,render_mode=3)
+            record=document_layout(scan,include_images=True,preserve_positions=True,spatial=True)[0]
+            table=next(item['table'] for item in record['items'] if item['kind']=='table')
+            assert (table.row_count,table.col_count)==(2,2)
+            pix=p.Pixmap(next(item['data'] for item in record['items'] if item['kind']=='image'))
+            scale=pix.width/360
+            x,y=(sum(pair)/2 for pair in zip(start,end))
+            assert max(pix.pixel(round(x*scale),round(y*scale)))<128
+            assert any('表格底图无法可靠分离' in warning for warning in record['warnings'])
+
+
+def test_aligned_scan_tables_keep_faded_facing_borders_separate():
+    with p.open() as doc:
+        page=doc.new_page(width=500,height=250)
+        for left,right,verticals in ((25,205,(25,85,145)), (215,395,(275,335,395))):
+            for y in (60,92,124,156):
+                page.draw_line((left,y),(right,y),width=.8)
+            for x in verticals:
+                page.draw_line((x,60),(x,156),width=.8)
+        with raster_copy(page) as scan:
+            scan[0].insert_text((152,82),'Left value',fontsize=9,render_mode=3)
+            scan[0].insert_text((222,82),'Right value',fontsize=9,render_mode=3)
+            items,_=page_layout(scan[0])
+            tables=[item['table'] for item in items if item['kind']=='table']
+    assert [(table.col_count, [cell.text for cell in table.cells if cell.text])
+            for table in sorted(tables,key=lambda table:table.bbox[0])]==[
+        (3,['Left value']),(3,['Right value'])]
+
+
+@pytest.mark.parametrize('grid',['partial','open','none'])
+def test_incomplete_scan_grid_warns_without_turning_prose_into_a_table(grid):
+    with p.open() as doc:
+        page=doc.new_page(width=360,height=320)
+        if grid!='none':
+            for x in (40,120,200,280):
+                page.draw_line((x,60),(x,180),width=.8)
+        if grid=='partial':
+            page.draw_line((40,60),(120,60),width=.8)
+        for y in (100,140,180):
+            page.draw_line((40,y),(280,y),width=.8)
+        page.insert_text((50,90),'Reference note')
+        with raster_copy(page) as scan:
+            scan[0].insert_text((50,90),'Reference note',render_mode=3)
+            record=document_layout(scan,include_images=True,preserve_positions=True,spatial=True)[0]
+    assert all(item['kind']!='table' for item in record['items'])
+    assert any('原 PDF 第 1 页表格待核对' in warning for warning in record['warnings'])==(grid!='none')
+
+
+def test_scan_ocr_joins_words_without_dropping_existing_spaces():
+    with p.open() as doc:
+        page=doc.new_page(width=320,height=180)
+        label,detail='Status:','Approved today'
+        page.insert_text((30,70),f'{label} {detail}',fontsize=14)
+        with raster_copy(page) as scan:
+            split=30+p.get_text_length(label+' ',fontsize=14)
+            scan[0].insert_text((30,70),label,fontsize=14,render_mode=3)
+            scan[0].insert_text((split,70),detail,fontsize=14,render_mode=3)
+            record=document_layout(scan,include_images=True,preserve_positions=True,spatial=True)[0]
+    assert [item['text'] for item in record['items'] if item['kind']=='text']==[f'{label} {detail}']
 
 
 @pytest.mark.parametrize('grey,tilt',[(.86,0),(.72,.35)])

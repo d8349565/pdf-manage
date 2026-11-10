@@ -47,3 +47,31 @@ def test_positioned_line_keeps_title_together_and_distant_fields_separate():
     groups=_positioned_line_parts(chars,[20]*5,(1,0))
     assert [''.join(char['c'] for char in part) for part,_ in groups]==['报价单','日期']
     assert groups[1][0][0]['bbox'][0]==170
+
+
+def scan_table(left,top):
+    cells=[CellModel(row,col,text='Value' if (row,col)==(0,0) else '',
+                     bbox=(left+col*50,top+row*20,left+(col+1)*50,top+(row+1)*20))
+           for row in range(2) for col in range(2)]
+    table=TableModel(page_no=1,bbox=(left,top,left+100,top+40),row_count=2,col_count=2,
+                     cells=cells,row_heights=[20,20],col_widths=[50,50])
+    return dict(kind='table',bbox=table.bbox,table=table,scanned=True)
+
+
+def test_stacked_scan_tables_have_distinct_word_boundaries():
+    layout=[scan_table(20,100),scan_table(140,140.75)]
+    body,_,_=write_layout(layout,500,250,(6,6,6,6),(),{},[],{},'continuous',positioned=True)
+    first,second=[index for index,node in enumerate(body) if node.tag==f'{{{W}}}tbl']
+    assert (any(node.tag==f'{{{W}}}p' for node in body[first+1:second])
+            or any(node.find(f'{{{W}}}tblPr/{{{W}}}tblpPr') is not None for node in (body[first],body[second])))
+
+
+def test_inline_scan_cell_text_fits_the_reserved_row_height():
+    item=scan_table(20,100)
+    item['cell_runs']={(0,0):[dict(text='Value',bbox=(26,114,50,120),size=8,scanned=True)]}
+    body,_,_=write_layout([item],500,250,(6,6,6,6),(),{},[],{},'continuous',positioned=True)
+    assert not list(body.iter(f'{{{W}}}tblpPr'))
+    row=next(body.iter(f'{{{W}}}tr'))
+    height=int(row.find(f'{{{W}}}trPr/{{{W}}}trHeight').get(f'{{{W}}}val'))
+    spacing=row.find(f'{{{W}}}tc/{{{W}}}p/{{{W}}}pPr/{{{W}}}spacing')
+    assert int(spacing.get(f'{{{W}}}before'))+int(spacing.get(f'{{{W}}}line'))<=height

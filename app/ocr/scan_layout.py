@@ -54,6 +54,8 @@ def match_scan_font(text,ink_mask,heading=False):
 
 
 def restore_scan(page, layout, warnings):
+    from bisect import bisect_right
+    from itertools import groupby
     import pymupdf as p
     from app.documentimages import export_image_scale, _regions
     from app.documentlayout import table_text_runs
@@ -98,7 +100,8 @@ def restore_scan(page, layout, warnings):
     protect=ImageDraw.Draw(protected)
     for mark in marks:protect.rectangle(pixels(mark,1),fill=255)
     rules=Image.new('L',original.size);rule_draw=ImageDraw.Draw(rules)
-    for start,end in raster_grid_lines(page):
+    grid_lines=raster_grid_lines(page)
+    for start,end in grid_lines:
         rule_draw.line((start[0]*scale,start[1]*scale,end[0]*scale,end[1]*scale),fill=255,width=max(2,round(scale*2)))
     keep=ImageChops.lighter(protected,rules)
     raw=page.get_text('rawdict',flags=(p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)|p.TEXT_INHIBIT_SPACES)
@@ -121,9 +124,126 @@ def restore_scan(page, layout, warnings):
         pts += [(x,y) for y in range(y0,y1,max(1,(y1-y0)//30)) for x in (x0,x1-1)]
         return common([original.getpixel(point) for point in pts])
 
-    def recover(text, box, heading=False, keep_image=False):
+    def different_pixels(first, second):
+        red,green,blue=ImageChops.difference(first,second).split()
+        return ImageChops.lighter(ImageChops.lighter(red,green),blue).point(lambda value:255 if value>32 else 0)
+
+    def table_clear_mask(table, cell_runs, bounds, paper_colour):
+        area=p.Rect(table.bbox)+(-2,-2,2,2)
+        if any(mark.intersects(area) for mark in marks):
+            return None
+        if sum(cell.row_span*cell.col_span for cell in table.cells if cell.bbox)!=table.row_count*table.col_count:
+            return None
+        left,top,right,bottom=bounds
+        expected=Image.new('RGB',(right-left,bottom-top),paper_colour)
+        replaceable=Image.new('L',expected.size)
+        draw=ImageDraw.Draw(replaceable)
+        cell_regions=[]
+        for cell in table.cells:
+            runs=cell_runs.get((cell.row,cell.col),())
+            if any(run.get('image_text') for run in runs):
+                return None
+            if not cell.bbox:
+                continue
+            x0,y0,x1,y1=pixels(cell.bbox)
+            expected.paste(cell.style.fill_color,(x0-left,y0-top,x1-left,y1-top))
+            # Inferred borders can be a few pixels from the colour transition.
+            # Allow a matching strip of fill, while keeping isolated ink of
+            # the same colour outside the cell.
+            nearby=pixels(cell.bbox,2)
+            cell_regions.append((nearby[0]-left,nearby[1]-top,nearby[2]-left,nearby[3]-top))
+            strips=((nearby[0],y0,x0,y1),(x1,y0,nearby[2],y1),
+                    (x0,nearby[1],x1,y0),(x0,y1,x1,nearby[3]))
+            for sx0,sy0,sx1,sy1 in strips:
+                if sx0>=sx1 or sy0>=sy1:
+                    continue
+                crop=background.crop((sx0,sy0,sx1,sy1))
+                same_fill=ImageChops.invert(different_pixels(crop,Image.new('RGB',crop.size,cell.style.fill_color)))
+                if same_fill.histogram()[255]>=.75*crop.width*crop.height:
+                    replaceable.paste(255,(sx0-left,sy0-top),same_fill)
+            x0,y0,x1,y1=(round(value*scale)-offset for value,offset in zip(cell.bbox,(left,top,left,top)))
+            edges=(('left',(x0,y0,x0,y1)),('top',(x0,y0,x1,y0)),
+                   ('right',(x1,y0,x1,y1)),('bottom',(x0,y1,x1,y1)))
+            for edge,line in edges:
+                # Allow a thin band around the reconstructed rule, or a
+                # single pixel at the seam between adjoining cell fills.
+                width=2*max(1,round(scale))+1 if getattr(cell.style,'border_'+edge) else 1
+                draw.line(line,fill=255,width=width)
+            for run in runs:
+                if 'bbox' in run:
+                    x0,y0,x1,y1=pixels(run['bbox'])
+                    draw.rectangle((x0-left,y0-top,x1-left-1,y1-top-1),fill=255)
+        # Inspect the same area that will be cleared, including the outer rim.
+        unexplained=ImageChops.subtract(different_pixels(background.crop(bounds),expected),replaceable)
+        if any(unexplained.crop(region).histogram()[255]>3*scale*scale for region in cell_regions):
+            return None
+        return ImageChops.invert(unexplained)
+
+    def grid_colour(box):
+        area=p.Rect(box)+(-2,-2,2,2)
+        colours=[]
+        for start,end in grid_lines:
+            if not area.contains(p.Point(start)) or not area.contains(p.Point(end)):
+                continue
+            horizontal=abs(end[0]-start[0])>=abs(end[1]-start[1])
+            for fraction in (.2,.45,.7):
+                x,y=(a+(b-a)*fraction for a,b in zip(start,end))
+                def sample(offset):
+                    px=round((x if horizontal else x+offset)*scale)
+                    py=round((y+offset if horizontal else y)*scale)
+                    return original.getpixel((min(pix.width-1,max(0,px)),min(pix.height-1,max(0,py))))
+                sides=[sample(-2),sample(2)]
+                def contrast(rgb):
+                    return min(sum(abs(a-b) for a,b in zip(rgb,side)) for side in sides)
+                ink=max((sample(offset) for offset in (-.5,0,.5)),key=contrast)
+                if contrast(ink)>30:
+                    colours.append(ink)
+        return '%02X%02X%02X'%tuple(round(median(channel)) for channel in zip(*colours)) if colours else '606060'
+
+    def word_spaces(text, glyphs, mask, ink, x_offset):
+        # The searchable PDF can omit spaces. Measure word gaps in the scan,
+        # since adjacent OCR glyph boxes can have artificial gaps or overlap.
+        characters=[(i,glyph) for i,glyph in enumerate(glyphs) if not glyph['c'].isspace()]
+        if not ink or len(characters)<2:
+            return text
+        centers = [(glyph['bbox'][0] + glyph['bbox'][2]) / 2 for _,glyph in characters]
+        if centers != sorted(centers):
+            return text
+        has_authored_spaces=any(glyph['c'].isspace() and not glyph.get('synthetic') for glyph in glyphs)
+        minimum = max(2, round((ink[3] - ink[1]) * .24))
+        spaces = set()
+        column = ink[0]
+        for inked, run in groupby(mask.getprojection()[0][ink[0]:ink[2]]):
+            length = sum(1 for _ in run)
+            if not inked and length >= minimum:
+                index = bisect_right(centers, (x_offset + column + length / 2) / scale)
+                if 0 < index < len(characters):
+                    left_index,left_glyph=characters[index-1]
+                    right_index,right_glyph=characters[index]
+                    between=glyphs[left_index+1:right_index]
+                    left,right=left_glyph['c'][-1:],right_glyph['c'][:1]
+                    latin_gap=(left.isascii() and right.isascii() and left.isalnum() and right.isalnum()
+                               and (left.isalpha() or right.isalpha()))
+                    punctuation_gap=left in ':;!?：；！？' and right.isalpha()
+                    # Keep authored spaces in place and confirm inferred
+                    # spaces against the pixels at each individual gap.
+                    # The invisible font can differ from the scan. Where it
+                    # already has authored spaces, require geometric support
+                    # before inserting a new break between touching glyphs.
+                    box_gap=right_glyph['bbox'][0]-left_glyph['bbox'][2]
+                    if between and all(glyph.get('synthetic') for glyph in between):
+                        spaces.add(right_index)
+                    elif not between and (latin_gap or punctuation_gap) and (not has_authored_spaces or box_gap>=1/scale):
+                        spaces.add(right_index)
+            column += length
+        return ''.join((' ' if i in spaces else '') + glyph['c'].replace('\xa0',' ')
+                       for i,glyph in enumerate(glyphs) if not (glyph.get('synthetic') and glyph['c'].isspace()))
+
+    def recover(text, box, heading=False, keep_image=False, glyphs=()):
         bg=paper(box)
-        bounds=pixels(box)
+        # Individual OCR character boxes can trim the outer edge of a stroke.
+        margin = 1.25 if glyphs else 0
+        bounds=pixels((box[0]-margin,box[1],box[2]+margin,box[3]))
         crop=original.crop(bounds)
         diff=ImageChops.difference(crop,Image.new('RGB',crop.size,bg))
         mask=diff.convert('L').point(lambda v:255 if v>45 else 0)
@@ -156,6 +276,7 @@ def restore_scan(page, layout, warnings):
         if first:mask.paste(0,(0,0,mask.width,first))
         if last<mask.height:mask.paste(0,(0,last,mask.width,mask.height))
         ink=mask.getbbox()
+        text=word_spaces(text,glyphs,mask,ink,bounds[0])
         values=[rgb for rgb,m in zip(crop.get_flattened_data(),mask.get_flattened_data()) if m]
         if values:
             contrast=lambda rgb:max(abs(c-b) for c,b in zip(rgb,bg))
@@ -185,8 +306,9 @@ def restore_scan(page, layout, warnings):
     for item in layout:
         if item['kind']=='text':
             vertical=abs(item.get('angle',0))>=10
-            run,image_text=recover(item['text'],item['bbox'],item.get('heading',False),keep_image=vertical)
-            item.update(size=run['size'],bold=run['bold'],colour=run['colour'],font=run['font'],runs=[run],
+            run,image_text=recover(item['text'],item['bbox'],item.get('heading',False),keep_image=vertical,
+                                   glyphs=item.pop('ocr_glyphs',()))
+            item.update(text=run['text'],size=run['size'],bold=run['bold'],colour=run['colour'],font=run['font'],runs=[run],
                         image_text=image_text,scanned=True)
             item.pop('fill_colour',None)
         elif item['kind']=='table':
@@ -202,7 +324,10 @@ def restore_scan(page, layout, warnings):
                     box=p.Rect(group[0]['bbox'])
                     for part in group[1:]:
                         box |= p.Rect(part['bbox'])
-                    run,_=recover(''.join(part['text'] for part in group),box,cell.style.bold)
+                    glyphs=[glyph for part in group for glyph in part.get('ocr_glyphs',())]
+                    if not all(part.get('ocr_glyphs') for part in group):
+                        glyphs=[]
+                    run,_=recover(''.join(part['text'] for part in group),box,cell.style.bold,glyphs=glyphs)
                     if recovered:
                         recovered.append(dict(text='\n'))
                     recovered.append(run)
@@ -216,7 +341,19 @@ def restore_scan(page, layout, warnings):
                               **{f'border_{edge}':'thin' if getattr(cell.style,f'border_{edge}') else None
                                  for edge in ('left','right','top','bottom')})
                 cells.append(replace(cell,text=''.join(run['text'] for run in recovered) if recovered else cell.text,style=style))
-            item.update(table=replace(table,cells=cells),cell_runs=cell_runs,scanned=True,source_grid=True)
+            table=replace(table,cells=cells)
+            bounds=pixels(table.bbox,2)
+            paper_colour=paper(table.bbox)
+            clear_mask=table_clear_mask(table,cell_runs,bounds,paper_colour)
+            native_grid=clear_mask is not None
+            if native_grid:
+                background.paste(paper_colour,bounds,clear_mask)
+                item['border_colour']=grid_colour(table.bbox)
+            else:
+                warning=f'原 PDF 第 {page.number+1} 页的表格底图无法可靠分离，已保留该处外观，编辑后请核对位置。'
+                if warning not in warnings:
+                    warnings.append(warning)
+            item.update(table=table,cell_runs=cell_runs,scanned=True,source_grid=not native_grid)
     # Search-layer font sizes are distorted by OCR box fitting. Re-evaluate
     # hierarchy using the visible glyph sizes recovered from the scan itself.
     text_items=[item for item in layout if item['kind']=='text' and not item.get('image_text')]

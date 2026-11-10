@@ -7,7 +7,7 @@ import openpyxl
 import pymupdf as p
 import pytest
 
-from app.ocr.word_export import A, R, W, WP, convert_ocr_pdf_to_docx
+from app.ocr.word_export import W, convert_ocr_pdf_to_docx
 from app.pdf2excel.converter import convert_pdf_to_excel
 from app.pdf2excel.excel_builder import build_workbook
 from app.pdf2excel.models import CellModel, TableModel
@@ -165,13 +165,6 @@ def test_local_grid_does_not_split_whole_shaded_table(tmp_path, dark, sparse, ti
     convert_ocr_pdf_to_docx(source, word, False, None, lambda: False)
     with ZipFile(word) as archive:
         root = ET.fromstring(archive.read('word/document.xml'))
-        if tinted:
-            anchor = root.find(f'.//{{{WP}}}anchor[@behindDoc="1"]')
-            assert anchor is not None
-            image_id = anchor.find(f'.//{{{A}}}blip').get(f'{{{R}}}embed')
-            relationships = ET.fromstring(archive.read('word/_rels/document.xml.rels'))
-            image_target = next(link.get('Target') for link in relationships if link.get('Id') == image_id)
-            background = p.Pixmap(archive.read('word/' + image_target))
     tables = list(root.iter(f'{{{W}}}tbl'))
     assert len(tables) == 1
     assert len(tables[0].find(f'{{{W}}}tblGrid')) == 4
@@ -182,9 +175,11 @@ def test_local_grid_does_not_split_whole_shaded_table(tmp_path, dark, sparse, ti
     # Check cell ownership and character coverage across Word's OCR spacing recovery.
     assert [[''.join(text.split()) for text in row] for row in word_rows] == expected
     if tinted:
-        # Positioned Word tables leave the measured borders and row tint in the source background.
-        for y in (130, 202):
-            for x in (90, 260, 425, 565):
-                pixel = background.pixel(round(x * background.width / 720), round(y * background.height / 420))
-                assert max(abs(value - tint) for value, tint in zip(pixel[:3], (245, 251, 255))) <= 2
+        rows = tables[0].findall(f'{{{W}}}tr')
+        for index in (1,3):
+            fills = rows[index].findall(f'{{{W}}}tc/{{{W}}}tcPr/{{{W}}}shd')
+            assert len(fills)==4
+            for fill in fills:
+                rgb=bytes.fromhex(fill.get(f'{{{W}}}fill'))
+                assert max(abs(value-tint) for value,tint in zip(rgb,(245,251,255)))<=2
     assert source.read_bytes() == before
