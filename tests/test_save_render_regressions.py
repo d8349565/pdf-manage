@@ -198,6 +198,63 @@ def test_close_tab_saves_edits_before_leaving(window, tmp_path, monkeypatch):
         assert saved[0].rotation == 90
 
 
+@pytest.mark.parametrize('multiple_tabs', [False, True])
+@pytest.mark.parametrize('outcome', ['cancel', 'save', 'commit_failure'])
+def test_close_shortcut_protects_pending_textbox(window, tmp_path, monkeypatch, qapp,
+                                               multiple_tabs, outcome):
+    source = tmp_path / 'scan.pdf'
+    original = source.read_bytes()
+    tab = window._active_tab()
+    if multiple_tabs:
+        other = tmp_path / 'other.pdf'
+        make_image_pdf(other)
+        assert window.open_files_in_tabs([str(other)])
+        assert window.activate_tab(tab.tab_id)
+    window.open_annotation_tools()
+    tools = window.annotation_tools
+    assert tools.ensure_snapshot()
+    tools.start_text_box((30, 100, 210, 160), 0, window.ws.pages[0])
+    box = tools._inline_text_box
+    text = 'Pending close input'
+    box.editor.setPlainText(text)
+    window.activateWindow()
+    box.editor.setFocus()
+    qapp.processEvents()
+    assert not tab.ws.dirty
+    prompts = []
+
+    def choose(box):
+        prompts.append(box.windowTitle())
+        role = (QMessageBox.ButtonRole.AcceptRole if outcome == 'save'
+                else QMessageBox.ButtonRole.RejectRole)
+        next(button for button in box.buttons() if box.buttonRole(button) == role).click()
+        return 0
+
+    monkeypatch.setattr(QMessageBox, 'exec', choose)
+    if outcome == 'commit_failure':
+        monkeypatch.setattr(tools, 'apply_text_box', lambda *args: False)
+    try:
+        QTest.keyClick(box.editor, Qt.Key.Key_W, Qt.KeyboardModifier.ControlModifier)
+        if outcome == 'save':
+            assert len(prompts) == 1
+            with p.open(source) as saved:
+                assert any(text in annot.info['content'] for annot in saved[0].annots())
+            assert window._get_tab(tab.tab_id) is None if multiple_tabs else not window.ws.pages
+        else:
+            assert window._active_tab() is tab
+            assert len(window._tabs) == (2 if multiple_tabs else 1)
+            assert source.read_bytes() == original
+            if outcome == 'cancel':
+                assert len(prompts) == 1 and tab.ws.dirty
+                assert any(edit.text == text for edit in tab.ws.pages[0].edits)
+            else:
+                assert not prompts and not tab.ws.dirty
+                assert tools._inline_text_box is box and box.editor.toPlainText() == text
+    finally:
+        if tools._inline_text_box is not None:
+            tools._inline_text_box.close()
+
+
 @pytest.mark.parametrize('failure', ['target_changed', 'write_denied'])
 def test_save_failure_keeps_edits_closes_progress_and_allows_save_as(window, tmp_path, monkeypatch, failure):
     from app import pdfworker

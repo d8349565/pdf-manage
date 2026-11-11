@@ -5884,7 +5884,7 @@ class MainWindow(QMainWindow):
         tab = self._get_tab(tab_id)
         if tab is None:
             return False
-        if tab.ws.dirty:
+        if tab_id == self._active_tab_id or tab.ws.dirty:
             if self._active_tab_id != tab_id and not self.activate_tab(tab_id):
                 return False
             if not self.confirm_leave():
