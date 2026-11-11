@@ -30,7 +30,7 @@ Translations are stored in shared text catalogues with checks for new messages a
 
 ## Features
 
-[![Feature map in Chinese: reading, page organization, review and extraction, experimental PDF comparison, scanning and OCR, conversion, printing, and document tools](docs/images/feature-map.svg)](docs/images/feature-map.svg)
+[![ZhiXu PDF feature map: reading, page organization, review and extraction, experimental PDF comparison, scanning and OCR, conversion, printing, and document tools](docs/images/feature-map-en.svg)](docs/images/feature-map-en.svg)
 
 <details>
 <summary>View the feature list in English</summary>
