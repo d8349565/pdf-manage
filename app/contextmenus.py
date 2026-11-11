@@ -10,7 +10,7 @@ import uuid
 from app import APP_NAME, APP_SLUG
 from app.imagecompress import IMAGE_SUFFIXES
 from app.runtime import portable_root
-from app.windows_integration import IMAGE_PDF_CLSID, PDF_MERGE_CLSID
+from app.windows_integration import IMAGE_PDF_CLSID, PDF_MERGE_CLSID, WORD_PDF_CLSID
 
 OWNER = 'ZhiXuPDF.Owner'
 EDITION = 'ZhiXuPDF.Edition'
@@ -29,6 +29,7 @@ class MenuPlan:
     clsid: str
     trees: dict
     image_clsid: str
+    word_clsid: str
 
 
 def registration_plan(executable, *, portable=None):
@@ -39,6 +40,7 @@ def registration_plan(executable, *, portable=None):
     token = hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]
     clsid = '{' + str(uuid.uuid5(uuid.UUID(PDF_MERGE_CLSID), identity)).upper() + '}'
     image_clsid = '{' + str(uuid.uuid5(uuid.UUID(IMAGE_PDF_CLSID), identity)).upper() + '}'
+    word_clsid = '{' + str(uuid.uuid5(uuid.UUID(WORD_PDF_CLSID), identity)).upper() + '}'
     trees = {}
     suffix = '（绿色版）' if portable else ''
     def verb(file_type, action, title, arguments=None, target=None):
@@ -56,8 +58,9 @@ def registration_plan(executable, *, portable=None):
         verb(kind, 'CompressImage', '压缩图片', '--compress-image')
     for extension in ('.md', '.markdown'):
         verb('SystemFileAssociations\\' + extension, 'MarkdownPDF', 'Markdown 转 PDF', '--markdown-to-pdf')
-    for kind in (r'SystemFileAssociations\.doc', r'SystemFileAssociations\.docx', 'Directory'):
-        verb(kind, 'WordPDF', '批量 Word 转 PDF' if kind == 'Directory' else 'Word 转 PDF', '--word-to-pdf')
+    for kind in (r'SystemFileAssociations\.doc', r'SystemFileAssociations\.docx'):
+        verb(kind, 'WordPDF', 'Word 转 PDF', target=word_clsid)
+    verb('Directory', 'WordPDF', '批量 Word 转 PDF', '--word-to-pdf')
     verb(r'SystemFileAssociations\.pdf', 'Split', f'用{APP_NAME}拆分', '--split-pdf')
     verb(r'SystemFileAssociations\.pdf', 'Merge', f'用{APP_NAME}合并', target=clsid)
     trees[fr'{CLASSES}\CLSID\{clsid}'] = {
@@ -70,7 +73,12 @@ def registration_plan(executable, *, portable=None):
         'LocalServer32': {'': f'"{exe}" --image-pdf-shell-server --context-id {image_clsid}'},
         'PythonCOM': {'': 'app.pdfshell.MergeDropTarget'},
     }
-    return MenuPlan(exe, portable, token, clsid, trees, image_clsid)
+    trees[fr'{CLASSES}\CLSID\{word_clsid}'] = {
+        '': {OWNER: exe, EDITION: edition, '': APP_NAME + ' Word 转 PDF' + suffix},
+        'LocalServer32': {'': f'"{exe}" --word-shell-server --context-id {word_clsid}'},
+        'PythonCOM': {'': 'app.pdfshell.MergeDropTarget'},
+    }
+    return MenuPlan(exe, portable, token, clsid, trees, image_clsid, word_clsid)
 
 
 class WindowsRegistry:

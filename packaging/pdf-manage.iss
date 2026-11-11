@@ -80,6 +80,7 @@ Name: "contextmenus"; Description: "启用右键快捷工具（PDF、图片、Wo
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{41AFF37A-E9F9-43F8-B2EF-10D3EED33033}"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 #sub ImageRegistry
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuImageToPDF"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\{#ImageExtensions[ImageIndex]}\shell\ZhiXuCompressImage"; ValueType: none; Flags: deletekey; Tasks: not contextmenus
@@ -136,12 +137,17 @@ Root: HKCU; Subkey: "Software\PDFManage\Capabilities\FileAssociations"; ValueTyp
 Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "PDFManage"; ValueData: "Software\PDFManage\Capabilities"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF"; ValueType: string; ValueName: ""; ValueData: "Word 转 PDF"; Flags: uninsdeletekey; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --word-to-pdf ""%1"""; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF\command"; ValueType: none; Flags: deletekey; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.doc\shell\PageArkWordToPDF\DropTarget"; ValueType: string; ValueName: "CLSID"; ValueData: "{{41AFF37A-E9F9-43F8-B2EF-10D3EED33033}"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF"; ValueType: string; ValueName: ""; ValueData: "Word 转 PDF"; Flags: uninsdeletekey; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: contextmenus
-Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --word-to-pdf ""%1"""; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF\command"; ValueType: none; Flags: deletekey; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.docx\shell\PageArkWordToPDF\DropTarget"; ValueType: string; ValueName: "CLSID"; ValueData: "{{41AFF37A-E9F9-43F8-B2EF-10D3EED33033}"; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{41AFF37A-E9F9-43F8-B2EF-10D3EED33033}"; ValueType: string; ValueName: ""; ValueData: "纸序 PDF Word 转 PDF 入口"; Flags: uninsdeletekey; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{41AFF37A-E9F9-43F8-B2EF-10D3EED33033}\LocalServer32"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --word-shell-server"; Tasks: contextmenus
+Root: HKCU; Subkey: "Software\Classes\CLSID\{{41AFF37A-E9F9-43F8-B2EF-10D3EED33033}\PythonCOM"; ValueType: string; ValueName: ""; ValueData: "app.pdfshell.MergeDropTarget"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF"; ValueType: string; ValueName: ""; ValueData: "批量 Word 转 PDF"; Flags: uninsdeletekey; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName}"; Tasks: contextmenus
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Single"; Tasks: contextmenus

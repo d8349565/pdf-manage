@@ -136,9 +136,11 @@ def test_installed_and_portable_plans_and_open_with_entries_are_disjoint(tmp_pat
     assert first.clsid != second.clsid and first.token != second.token
     assert second.clsid != PDF_MERGE_CLSID
     assert set(first.trees).isdisjoint(second.trees)
-    assert len(first.trees) == len(second.trees) == 23
+    assert len(first.trees) == len(second.trees) == 24
     assert first.image_clsid != second.image_clsid
     assert first.image_clsid != first.clsid
+    assert first.word_clsid != second.word_clsid
+    assert len({first.clsid, first.image_clsid, first.word_clsid}) == 3
     for plan in (first,second):
         image_entries=[tree for root,tree in plan.trees.items() if root.endswith('.ImagePDF')]
         assert image_entries
