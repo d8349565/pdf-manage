@@ -1,4 +1,5 @@
 """Lightweight, reversible placement and transforms for paper images."""
+from app.i18n import tr, mark_text
 from app.themes import set_theme_style
 import base64
 import math
@@ -150,19 +151,19 @@ class ImageTools(QObject):
                                                                ('高', self.height, (.1, 40000), ' mm'),
                                                                ('角度', self.angle, (-180, 180), '°'))):
             layout.addWidget(QLabel(label), 0, column * 2)
-            spin.setAccessibleName('图片' + label)
+            spin.setAccessibleName(tr('图片') + label)
             spin.setKeyboardTracking(False)
             spin.setDecimals(1)
             spin.setRange(lo, hi)
             spin.setSuffix(sfx)
             spin.setMaximumWidth(86)
             layout.addWidget(spin, 0, column * 2 + 1)
-        self.lock = QCheckBox('锁定比例')
+        self.lock = QCheckBox(tr('锁定比例'))
         self.lock.setChecked(True)
         layout.addWidget(self.lock, 1, 0, 1, 4)
-        remove = QPushButton('删除')
+        remove = QPushButton(tr('删除'))
         remove.setObjectName('deleteBtn')
-        remove.setToolTip('删除图片（Delete）')
+        remove.setToolTip(tr('删除图片（Delete）'))
         remove.clicked.connect(self.delete)
         self.host.shortcut_manager.watch_hint('image.delete', remove, '删除当前页面图片')
         layout.addWidget(remove, 1, 4, 1, 2)
@@ -264,7 +265,7 @@ class ImageTools(QObject):
         tools._close_inline_replace()
         tools.clear_overlay()
         tools.hover_bar.hide()
-        path, _ = QFileDialog.getOpenFileName(self.host, '插入图片', '', '图片 (*.png *.jpg *.jpeg)')
+        path, _ = QFileDialog.getOpenFileName(self.host, tr('插入图片'), '', tr('图片 (*.png *.jpg *.jpeg)'))
         if not path:
             return
         self.clear()
@@ -285,11 +286,11 @@ class ImageTools(QObject):
             self.update_overlay()
             self.view.setFocus()
             self.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
-            self.host.statusBar().showMessage('在当前页点击放置图片；Esc 取消。', 6000)
+            self.host.statusBar().showMessage(tr('在当前页点击放置图片；Esc 取消。'), 6000)
         except (OSError, ValueError, PdfError, OperationCancelled) as exc:
             self.clear()
             if not isinstance(exc, OperationCancelled):
-                QMessageBox.information(self.host, '图片未插入', str(exc))
+                QMessageBox.information(self.host, tr('图片未插入'), str(exc))
 
     def select_image(self, index, item):
         if not self.host._allow_operation('content_edit'):
@@ -321,7 +322,7 @@ class ImageTools(QObject):
         except (ValueError, PdfError, OperationCancelled) as exc:
             self.clear()
             if not isinstance(exc, OperationCancelled):
-                QMessageBox.information(self.host, '图片未选中', str(exc))
+                QMessageBox.information(self.host, tr('图片未选中'), str(exc))
             return False
 
     def hit(self, point):
@@ -391,11 +392,11 @@ class ImageTools(QObject):
                 item = dict(id=identifier, image_settings=dict(self.settings))
                 self.committing = False
                 self.select_image(index, item)
-            self.host.statusBar().showMessage(self.host.shortcut_manager.describe('图片修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。'), 5000)
+            self.host.statusBar().showMessage(self.host.shortcut_manager.describe(mark_text('图片修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。')), 5000)
             return True
         except (ValueError, PdfError, OperationCancelled) as exc:
             if not isinstance(exc, OperationCancelled):
-                QMessageBox.information(self.host, '图片修改未应用', str(exc))
+                QMessageBox.information(self.host, tr('图片修改未应用'), str(exc))
             return False
         finally:
             self.committing = False

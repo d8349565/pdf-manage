@@ -1,4 +1,5 @@
 """Continuous page previews: one background render at a time, bounded cache."""
+from app.i18n import tr
 from app.themes import PAPER_HINT_COLOR, set_theme_style, ui_color
 from collections import OrderedDict
 from threading import Event
@@ -131,7 +132,7 @@ class ScrollablePagePreview(QListView):
         self.setSpacing(0)
         self.setMinimumSize(330, 320)
         set_theme_style(self, 'QListView { background: #EAF0EB; border: 1px solid #D5DFD6; border-radius: 8px; }')
-        self.setAccessibleName('连续页面预览，滚轮查看上下页')
+        self.setAccessibleName(tr('连续页面预览，滚轮查看上下页'))
         self.verticalScrollBar().setSingleStep(55)
         self.verticalScrollBar().valueChanged.connect(self.schedule)
 

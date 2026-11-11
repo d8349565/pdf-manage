@@ -1,4 +1,5 @@
 """Reading-only colour mapping; source pixmaps and PDF output stay untouched."""
+from app.i18n import tr
 import json
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -112,7 +113,7 @@ class ReadingColorsDialog(QDialog):
     def __init__(self, parent, colors, preview):
         from app.exportdialogs import COMPACT_QSS
         super().__init__(parent)
-        self.setWindowTitle('阅读配色')
+        self.setWindowTitle(tr('阅读配色'))
         self.setObjectName('readingColors')
         self.setMinimumSize(680, 500)
         self.resize(740, 540)
@@ -134,11 +135,11 @@ class ReadingColorsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
-        title = QLabel('阅读配色')
+        title = QLabel(tr('阅读配色'))
         title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         set_theme_style(title, 'font-size: 20px; font-weight: 600; color: #173C36;')
         layout.addWidget(title)
-        subtitle = QLabel('选一个方案，直接看当前页面的变化。')
+        subtitle = QLabel(tr('选一个方案，直接看当前页面的变化。'))
         subtitle.setWordWrap(True)
         subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         subtitle.setObjectName('hint')
@@ -147,17 +148,17 @@ class ReadingColorsDialog(QDialog):
         body.setSpacing(24)
         controls = QVBoxLayout()
         controls.setSpacing(12)
-        self.scheme_label = QLabel('配色方案')
+        self.scheme_label = QLabel(tr('配色方案'))
         controls.addWidget(self.scheme_label)
         self.presets = QListWidget()
         self.presets.setObjectName('readingSchemes')
-        self.presets.setAccessibleName('阅读配色方案')
+        self.presets.setAccessibleName(tr('阅读配色方案'))
         self.presets.setIconSize(QSize(36, 26))
         self.presets.setFixedHeight(232)
-        schemes = [('文档原色', None), *[(name, (paper, ink, canvas)) for name, paper, ink, canvas in (
-                ('米色纸面', '#F5F0E5', '#252A25', '#D9DEDA'),
-                ('浅绿纸面', '#E2EFDF', '#213C2D', '#CBD8CC'),
-                ('深色阅读', '#24282E', '#E2E4E7', '#171A1F'))], ('自定义颜色', None)]
+        schemes = [(tr('文档原色'), None), *[(name, (paper, ink, canvas)) for name, paper, ink, canvas in (
+                (tr('米色纸面'), '#F5F0E5', '#252A25', '#D9DEDA'),
+                (tr('浅绿纸面'), '#E2EFDF', '#213C2D', '#CBD8CC'),
+                (tr('深色阅读'), '#24282E', '#E2E4E7', '#171A1F'))], (tr('自定义颜色'), None)]
         for name, values in schemes:
             paper, ink = values[:2] if values else ('#FFFFFF', '#25282B')
             swatch = QPixmap(36, 26)
@@ -173,7 +174,7 @@ class ReadingColorsDialog(QDialog):
             if self.presets.item(index).data(Qt.ItemDataRole.UserRole) == (colors.paper, colors.ink, colors.canvas)), 4)
         self.presets.setCurrentRow(selected)
         controls.addWidget(self.presets)
-        self.custom_button = QPushButton('返回配色方案')
+        self.custom_button = QPushButton(tr('返回配色方案'))
         self.custom_button.setProperty('compact', True)
         self.custom_button.clicked.connect(self.show_schemes)
         controls.addWidget(self.custom_button)
@@ -183,7 +184,7 @@ class ReadingColorsDialog(QDialog):
         form.setContentsMargins(0, 0, 0, 0)
         form.setVerticalSpacing(8)
         self.color_buttons = {}
-        for key, label in (('paper', '纸面底色'), ('ink', '文字颜色'), ('canvas', '页面外背景')):
+        for key, label in (('paper', tr('纸面底色')), ('ink', tr('文字颜色')), ('canvas', tr('页面外背景'))):
             button = QPushButton()
             button.setAccessibleName(label)
             button.setProperty('compact', True)
@@ -194,7 +195,7 @@ class ReadingColorsDialog(QDialog):
             form.addRow(label, button)
         controls.addWidget(self.custom_area)
         controls.addStretch(1)
-        scope = QLabel('所有阅读标签共用此配色。\n点击应用后记住选择，下次继续使用。')
+        scope = QLabel(tr('所有阅读标签共用此配色。\n点击应用后记住选择，下次继续使用。'))
         scope.setObjectName('hint')
         scope.setWordWrap(True)
         controls.addWidget(scope)
@@ -203,16 +204,15 @@ class ReadingColorsDialog(QDialog):
         self.preview_frame.setObjectName('readingColorPreview')
         preview_layout = QVBoxLayout(self.preview_frame)
         preview_layout.setContentsMargins(16, 12, 16, 12)
-        self.preview_caption = QLabel('当前页面预览' if not self.preview_source.isNull() else '配色预览')
+        self.preview_caption = QLabel(tr('当前页面预览') if not self.preview_source.isNull() else tr('配色预览'))
         preview_layout.addWidget(self.preview_caption)
-        self.sample = ReadingColorPreview('正文显示效果\n纸序 PDF · Aa 0123456789')
+        self.sample = ReadingColorPreview(tr('正文显示效果\n纸序 PDF · Aa 0123456789'))
         self.sample.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.sample.setMinimumSize(210, 250)
         preview_layout.addWidget(self.sample, 1)
         body.addWidget(self.preview_frame, 1)
         layout.addLayout(body, 1)
-        note = QLabel('仅改变阅读显示，保存、导出和打印仍用原色。'
-                      '\n图片、扫描页和批注也会按明暗换色，不单独识别文字。')
+        note = QLabel(tr('仅改变阅读显示，保存、导出和打印仍用原色。\n图片、扫描页和批注也会按明暗换色，不单独识别文字。'))
         note.setWordWrap(True)
         note.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         note.setObjectName('hint')
@@ -221,15 +221,15 @@ class ReadingColorsDialog(QDialog):
         self.feedback.setWordWrap(True)
         layout.addWidget(self.feedback)
         row = QHBoxLayout()
-        self.restore = QPushButton('恢复原色')
+        self.restore = QPushButton(tr('恢复原色'))
         self.restore.clicked.connect(lambda: self.presets.setCurrentRow(0))
         row.addWidget(self.restore)
         row.addStretch()
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        self.apply_button = self.buttons.addButton('应用', QDialogButtonBox.ButtonRole.AcceptRole)
+        self.apply_button = self.buttons.addButton(tr('应用'), QDialogButtonBox.ButtonRole.AcceptRole)
         self.apply_button.setObjectName('primary')
         self.apply_button.setDefault(True)
-        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         row.addWidget(self.buttons)
@@ -261,7 +261,7 @@ class ReadingColorsDialog(QDialog):
         self.custom_area.setVisible(custom)
         self.custom_button.setVisible(custom)
         self.presets.setVisible(not custom)
-        self.scheme_label.setText('自定义颜色' if custom else '配色方案')
+        self.scheme_label.setText(tr('自定义颜色') if custom else tr('配色方案'))
         self.refresh()
         if self.isVisible():
             self.layout().activate()
@@ -271,7 +271,7 @@ class ReadingColorsDialog(QDialog):
         self.presets.show()
         self.custom_area.hide()
         self.custom_button.hide()
-        self.scheme_label.setText('配色方案')
+        self.scheme_label.setText(tr('配色方案'))
 
     def refresh(self):
         for key, button in self.color_buttons.items():
@@ -283,7 +283,7 @@ class ReadingColorsDialog(QDialog):
             button.setEnabled(self.colors.enabled)
         valid = not self.colors.enabled or self.colors.contrast >= 4.5
         self.apply_button.setEnabled(valid)
-        self.feedback.setText('文字与纸面的颜色太接近，请调整后应用。' if not valid else '')
+        self.feedback.setText(tr('文字与纸面的颜色太接近，请调整后应用。') if not valid else '')
         self.feedback.setVisible(not valid)
         paper, ink = (self.colors.paper, self.colors.ink) if self.colors.enabled else ('#FFFFFF', '#25282B')
         canvas = self.colors.canvas if self.colors.enabled else ui_color('#F4F7F6')

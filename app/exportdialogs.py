@@ -1,5 +1,6 @@
 """Small, purpose-specific dialogs for the existing PDF tool area."""
 from __future__ import annotations
+from app.i18n import tr
 from app.themes import set_theme_style
 
 from pathlib import Path
@@ -56,7 +57,7 @@ def buttons(dialog, layout, text):
     box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
     start = box.addButton(text, QDialogButtonBox.ButtonRole.AcceptRole)
     start.setObjectName("primary")
-    box.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+    box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
     box.accepted.connect(dialog.accept)
     box.rejected.connect(dialog.reject)
     layout.addWidget(box)
@@ -66,32 +67,32 @@ def buttons(dialog, layout, text):
 class EncryptionDialog(QDialog):
     def __init__(self, parent=None, *, allow_plain=False):
         super().__init__(parent)
-        self.setWindowTitle("选择输出保护" if allow_plain else "加密另存")
+        self.setWindowTitle(tr('选择输出保护') if allow_plain else tr('加密另存'))
         self.setMinimumWidth(480)
         self.setting = None
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        hint(layout, "密码仅用于本次输出，不会保存。请妥善保管，本软件无法找回。")
+        hint(layout, tr('密码仅用于本次输出，不会保存。请妥善保管，本软件无法找回。'))
         self.mode = QComboBox()
-        self.mode.setAccessibleName("输出保护方式")
-        self.mode.addItem("打开密码 · 输入密码才能阅读", "open")
-        self.mode.addItem("免密阅读 · 限制打印与复制", "permissions")
-        self.mode.addItem("双重保护 · 打开密码与独立管理密码", "both")
+        self.mode.setAccessibleName(tr('输出保护方式'))
+        self.mode.addItem(tr('打开密码 · 输入密码才能阅读'), "open")
+        self.mode.addItem(tr('免密阅读 · 限制打印与复制'), "permissions")
+        self.mode.addItem(tr('双重保护 · 打开密码与独立管理密码'), "both")
         layout.addWidget(self.mode)
-        self.plain = QCheckBox("明确选择不加密")
+        self.plain = QCheckBox(tr('明确选择不加密'))
         self.plain.setVisible(allow_plain)
         layout.addWidget(self.plain)
         form = QFormLayout()
         self.password_form = form
         self.algorithm = QComboBox()
-        self.algorithm.setAccessibleName("PDF 加密格式")
-        self.algorithm.addItem("AES-256 · 常规加密", pymupdf.PDF_ENCRYPT_AES_256)
-        self.algorithm.addItem("AES-128 · 兼容旧版 Foxit", pymupdf.PDF_ENCRYPT_AES_128)
+        self.algorithm.setAccessibleName(tr('PDF 加密格式'))
+        self.algorithm.addItem(tr('AES-256 · 常规加密'), pymupdf.PDF_ENCRYPT_AES_256)
+        self.algorithm.addItem(tr('AES-128 · 兼容旧版 Foxit'), pymupdf.PDF_ENCRYPT_AES_128)
         from app.runtime import preferences
         self.preferences = preferences(QSettings)
         if self.preferences.value("pdf/encryption_algorithm", "aes256") == "aes128":
             self.algorithm.setCurrentIndex(1)
-        form.addRow("加密格式", self.algorithm)
+        form.addRow(tr('加密格式'), self.algorithm)
         self.password = QLineEdit()
         self.confirm = QLineEdit()
         self.owner = QLineEdit()
@@ -99,31 +100,31 @@ class EncryptionDialog(QDialog):
             edit.setEchoMode(QLineEdit.EchoMode.Password)
             edit.setMaxLength(40)
             edit.textChanged.connect(self.validate)
-        form.addRow("打开密码", self.password)
-        form.addRow("再次输入", self.confirm)
+        form.addRow(tr('打开密码'), self.password)
+        form.addRow(tr('再次输入'), self.confirm)
         layout.addLayout(form)
         self.compatibility_hint = hint(layout, "")
-        hint(layout, "会记住上次确认的加密格式，下次无需重新选择。")
-        self.advanced = QCheckBox("高级选项 · 打印与复制权限")
+        hint(layout, tr('会记住上次确认的加密格式，下次无需重新选择。'))
+        self.advanced = QCheckBox(tr('高级选项 · 打印与复制权限'))
         layout.addWidget(self.advanced)
         self.options = QWidget()
         details = QVBoxLayout(self.options)
         details.setContentsMargins(0, 0, 0, 0)
-        self.printing = QCheckBox("允许打印")
-        self.copying = QCheckBox("允许复制和内容导出")
+        self.printing = QCheckBox(tr('允许打印'))
+        self.copying = QCheckBox(tr('允许复制和内容导出'))
         for check in (self.printing, self.copying):
             check.setChecked(True)
             check.toggled.connect(self.validate)
             details.addWidget(check)
         owner_form = QFormLayout()
-        owner_form.addRow("独立管理密码", self.owner)
+        owner_form.addRow(tr('独立管理密码'), self.owner)
         details.addLayout(owner_form)
-        hint(details, "限制权限时必须使用不同的管理密码。权限限制不能保证绝对防复制。")
+        hint(details, tr('限制权限时必须使用不同的管理密码。权限限制不能保证绝对防复制。'))
         self.options.hide()
         self.advanced.toggled.connect(self.options.setVisible)
         layout.addWidget(self.options)
         self.feedback = hint(layout, "")
-        self.start = buttons(self, layout, "确认输出保护")
+        self.start = buttons(self, layout, tr('确认输出保护'))
         self.plain.toggled.connect(self.validate)
         self.algorithm.currentIndexChanged.connect(self.validate)
         self.mode.currentIndexChanged.connect(self.protection_changed)
@@ -149,9 +150,8 @@ class EncryptionDialog(QDialog):
         self.owner.setEnabled(restricted and not plain)
         error = ""
         compatible = self.algorithm.currentData() == pymupdf.PDF_ENCRYPT_AES_128
-        self.compatibility_hint.setText("AES-128 用于兼容旧版阅读器，强度低于 AES-256。"
-            "密码限 1～32 个字符，仅支持字母、数字、英文符号和空格，中文密码请使用 AES-256。"
-            if compatible else "AES-256 支持 1～40 个字符；旧版阅读器不一定支持此格式。")
+        self.compatibility_hint.setText(tr('AES-128 用于兼容旧版阅读器，强度低于 AES-256。密码限 1～32 个字符，仅支持字母、数字、英文符号和空格，中文密码请使用 AES-256。')
+            if compatible else tr('AES-256 支持 1～40 个字符；旧版阅读器不一定支持此格式。'))
         if not plain:
             permission_only = self.mode.currentData() == "permissions"
             user_password = "" if permission_only else self.password.text()
@@ -198,13 +198,13 @@ class ImageImportDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setWindowTitle("图片转 PDF")
+        self.setWindowTitle(tr('图片转 PDF'))
         self.resize(680, 560)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        hint(layout, "支持 PNG、JPEG、WebP、BMP、TIFF。列表顺序就是页序；多帧 TIFF 按帧生成页面。")
+        hint(layout, tr('支持 PNG、JPEG、WebP、BMP、TIFF。列表顺序就是页序；多帧 TIFF 按帧生成页面。'))
 
         # File list card ---------------------------------------------------------
         files_card = QFrame()
@@ -216,18 +216,18 @@ class ImageImportDialog(QDialog):
 
         files_header = QHBoxLayout()
         files_header.setSpacing(10)
-        files_title = QLabel("待转换图片 · 可直接拖入")
+        files_title = QLabel(tr('待转换图片 · 可直接拖入'))
         set_theme_style(files_title, "font-weight: 600; color: #134E4A;")
         files_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         files_header.addWidget(files_title)
         files_header.addStretch()
 
-        self.count_label = QLabel("0 张")
+        self.count_label = QLabel(tr('0 张'))
         set_theme_style(self.count_label, "color: #4D6B67;")
         self.count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         files_header.addWidget(self.count_label)
 
-        add = QPushButton("添加图片…")
+        add = QPushButton(tr('添加图片…'))
         add.setProperty("compact", True)
         add.setCursor(Qt.CursorShape.PointingHandCursor)
         add.clicked.connect(self.add_files)
@@ -240,7 +240,7 @@ class ImageImportDialog(QDialog):
 
         # Empty-state hint occupies the same slot as the list so the layout never
         # jumps between the two states.
-        self.placeholder = QLabel("把图片拖到这里\n\n或点击右上角「添加图片…」")
+        self.placeholder = QLabel(tr('把图片拖到这里\n\n或点击右上角「添加图片…」'))
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
         set_theme_style(self.placeholder, "color: #4D6B67; background: transparent; font-size: 14px;")
@@ -252,7 +252,7 @@ class ImageImportDialog(QDialog):
         # 文件拖放经 eventFilter 转交给对话框统一处理，两者互不影响。
         self.files.installEventFilter(self)
         self.files.viewport().installEventFilter(self)
-        self.files.setAccessibleName("图片页序，可拖动或使用上移下移按钮")
+        self.files.setAccessibleName(tr('图片页序，可拖动或使用上移下移按钮'))
         self.files.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.files.setUniformItemSizes(True)
         self.files.hide()
@@ -272,10 +272,10 @@ class ImageImportDialog(QDialog):
 
         reorder_row = QHBoxLayout()
         reorder_row.setSpacing(8)
-        self.btn_move_up = QPushButton("上移")
-        self.btn_move_down = QPushButton("下移")
-        self.btn_remove = QPushButton("移除")
-        self.btn_clear = QPushButton("清空")
+        self.btn_move_up = QPushButton(tr('上移'))
+        self.btn_move_down = QPushButton(tr('下移'))
+        self.btn_remove = QPushButton(tr('移除'))
+        self.btn_clear = QPushButton(tr('清空'))
         for btn, slot in (
             (self.btn_move_up, lambda: self.move(-1)),
             (self.btn_move_down, lambda: self.move(1)),
@@ -296,13 +296,13 @@ class ImageImportDialog(QDialog):
 
         self.feedback = hint(layout, "")
 
-        self.start = buttons(self, layout, "另存为 PDF…")
+        self.start = buttons(self, layout, tr('另存为 PDF…'))
         self.start.setEnabled(False)
         self._refresh_state()
 
     # ----- core actions -------------------------------------------------------
     def add_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "按顺序添加图片", "", IMAGE_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('按顺序添加图片'), "", IMAGE_FILTER)
         if paths:
             self.add_paths(paths)
 
@@ -361,20 +361,20 @@ class ImageImportDialog(QDialog):
 
     def _refresh_state(self, added=0):
         count = self.files.count()
-        self.count_label.setText(f"{count} 张")
+        self.count_label.setText(tr('{p0} 张', p0=f'{count}'))
         self.start.setEnabled(count > 0)
         self._update_button_states()
         if count == 0:
             self.placeholder.setVisible(True)
             self.files.setVisible(False)
-            self.feedback.setText("请拖入或选择 PNG、JPEG、WebP、BMP、TIFF 文件。重复文件自动忽略。")
+            self.feedback.setText(tr('请拖入或选择 PNG、JPEG、WebP、BMP、TIFF 文件。重复文件自动忽略。'))
             return
         self.placeholder.setVisible(False)
         self.files.setVisible(True)
         if added:
-            self.feedback.setText(f"已添加 {added} 张，共 {count} 张。列表顺序就是页序。")
+            self.feedback.setText(tr('已添加 {p0} 张，共 {p1} 张。列表顺序就是页序。', p0=f'{added}', p1=f'{count}'))
         else:
-            self.feedback.setText(f"共 {count} 张。列表顺序就是页序，可拖动或用上移/下移调整。")
+            self.feedback.setText(tr('共 {p0} 张。列表顺序就是页序，可拖动或用上移/下移调整。', p0=f'{count}'))
 
     # ----- drag & drop --------------------------------------------------------
     def _set_drop_active(self, active):
@@ -430,7 +430,7 @@ class ImageImportDialog(QDialog):
             self.add_paths(paths)
         else:
             if event.mimeData().hasUrls():
-                self.feedback.setText("未发现支持的图片。请拖入 PNG、JPEG、WebP、BMP、TIFF 文件或包含图片的文件夹。")
+                self.feedback.setText(tr('未发现支持的图片。请拖入 PNG、JPEG、WebP、BMP、TIFF 文件或包含图片的文件夹。'))
             event.ignore()
 
     def eventFilter(self, watched, event):
@@ -461,21 +461,21 @@ class ImageImportDialog(QDialog):
 class ImageExportDialog(QDialog):
     def __init__(self, count, current, selected, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("PDF 转图片")
+        self.setWindowTitle(tr('PDF 转图片'))
         self.setMinimumWidth(440)
         self.count, self.current, self.selected = count, current, selected
         layout = QVBoxLayout(self)
-        self.current_mode = QRadioButton("当前页")
-        self.selected_mode = QRadioButton(f"所选页面（{len(selected)} 页）")
-        self.range_mode = QRadioButton("按页码范围")
+        self.current_mode = QRadioButton(tr('当前页'))
+        self.selected_mode = QRadioButton(tr('所选页面（{p0} 页）', p0=f'{len(selected)}'))
+        self.range_mode = QRadioButton(tr('按页码范围'))
         self.current_mode.setChecked(True)
         self.selected_mode.setEnabled(bool(selected))
         for radio in (self.current_mode, self.selected_mode, self.range_mode):
             layout.addWidget(radio)
             radio.toggled.connect(self.validate)
         self.range = QLineEdit()
-        self.range.setPlaceholderText("例如 1-3,5")
-        self.range.setAccessibleName("图片导出页码范围")
+        self.range.setPlaceholderText(tr('例如 1-3,5'))
+        self.range.setAccessibleName(tr('图片导出页码范围'))
         self.range.setVisible(False)
         self.range_mode.toggled.connect(self.range.setVisible)
         self.range.textChanged.connect(self.validate)
@@ -485,14 +485,14 @@ class ImageExportDialog(QDialog):
         self.format.addItems(["PNG", "JPEG"])
         self.dpi = QComboBox()
         self.dpi.addItems(["150 DPI", "300 DPI"])
-        form.addRow("图片格式", self.format)
-        form.addRow("分辨率", self.dpi)
+        form.addRow(tr('图片格式'), self.format)
+        form.addRow(tr('分辨率'), self.dpi)
         layout.addLayout(form)
-        self.overwrite = QCheckBox("覆盖同名图片（默认跳过）")
+        self.overwrite = QCheckBox(tr('覆盖同名图片（默认跳过）'))
         layout.addWidget(self.overwrite)
-        hint(layout, "每页生成一个文件，页码按当前工作区顺序编号。取消保留已经完整导出的图片。")
+        hint(layout, tr('每页生成一个文件，页码按当前工作区顺序编号。取消保留已经完整导出的图片。'))
         self.feedback = hint(layout, "")
-        self.start = buttons(self, layout, "导出到文件夹…")
+        self.start = buttons(self, layout, tr('导出到文件夹…'))
         self.validate()
 
     def indices(self):
@@ -524,6 +524,6 @@ def new_pdf_path(parent, store, title, suggested):
         path += ".pdf"
     if store.is_source_destination(path):
         from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.warning(parent, "请另存副本", "不能覆盖已打开的来源文件，请选择新的文件名。")
+        QMessageBox.warning(parent, tr('请另存副本'), tr('不能覆盖已打开的来源文件，请选择新的文件名。'))
         return None
     return str(Path(path).absolute())

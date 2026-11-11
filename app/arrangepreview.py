@@ -1,4 +1,5 @@
 """Temporary enlarged page preview without taking focus from page sorting."""
+from app.i18n import tr
 from app.themes import set_theme_style
 from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, QTimer, Qt
 from PyQt6.QtGui import QCursor, QPixmap
@@ -60,7 +61,7 @@ class ArrangePreview(QObject):
         self.image_size = QSize(max(1, int(width * scale)), max(1, int(height * scale)))
         self.popup.setFixedSize(self.image_size + QSize(14, 14))
         self.popup.clear()
-        self.popup.setText("正在生成清晰预览…")
+        self.popup.setText(tr('正在生成清晰预览…'))
         anchor = self.view.viewport().mapToGlobal(self.view.visualRect(index).topRight()) + QPoint(12, 0)
         x = min(max(screen.left(), anchor.x()), screen.right() - self.popup.width() + 1)
         y = min(max(screen.top(), anchor.y()), screen.bottom() - self.popup.height() + 1)
@@ -81,7 +82,7 @@ class ArrangePreview(QObject):
         if result.cancelled:
             self.hide()
         elif result.value is None or result.error:
-            self.popup.setText("预览未完成，请重试")
+            self.popup.setText(tr('预览未完成，请重试'))
         else:
             ratio = self.view.devicePixelRatioF()
             pixmap = QPixmap.fromImage(result.value).scaled(
@@ -95,7 +96,7 @@ class ArrangePreview(QObject):
         if not index.isValid():
             index = self.view.currentIndex()
         menu = QMenu(self.view)
-        action = menu.addAction("放大预览（Esc 关闭）") if index.isValid() else None
+        action = menu.addAction(tr('放大预览（Esc 关闭）')) if index.isValid() else None
         self.view.add_page_paste_action(menu,point)
         if menu.exec(self.view.viewport().mapToGlobal(point)) is action and action is not None:
             self.show(index, pinned=True)

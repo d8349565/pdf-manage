@@ -1,4 +1,5 @@
 """Two continuous PDF columns sharing one scroll position, scale and render queue."""
+from app.i18n import tr
 from app.themes import PAPER_HINT_COLOR, set_theme_style, ui_color
 from bisect import bisect_right
 from collections import OrderedDict
@@ -59,7 +60,7 @@ class CompressionPreview(QAbstractScrollArea):
         self.pump.timeout.connect(self.render_next)
         self.setMinimumSize(620, 280)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName('压缩前后连续对照预览，两侧同步滚动和缩放')
+        self.setAccessibleName(tr('压缩前后连续对照预览，两侧同步滚动和缩放'))
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.verticalScrollBar().setSingleStep(60)
         self.horizontalScrollBar().setSingleStep(60)

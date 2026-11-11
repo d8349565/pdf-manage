@@ -1,4 +1,5 @@
 """Merge current workspaces, saving a new PDF by default or replacing a chosen one."""
+from app.i18n import tr
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -79,7 +80,7 @@ class MergeOpenDialog(QDialog):
     def __init__(self, parent, sources):
         from app.exportdialogs import COMPACT_QSS
         super().__init__(parent)
-        self.setWindowTitle('合并已打开的文件')
+        self.setWindowTitle(tr('合并已打开的文件'))
         self.setObjectName('mergeOpen')
         self.resize(660, 600)
         self.setMinimumSize(520, 420)
@@ -99,16 +100,16 @@ class MergeOpenDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setSpacing(12)
-        title = QLabel('合并已打开的文件')
+        title = QLabel(tr('合并已打开的文件'))
         set_theme_style(title, 'font-size: 20px; font-weight: 600; color: #173C36;')
         layout.addWidget(title)
-        instruction = QLabel('选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。')
+        instruction = QLabel(tr('选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。'))
         instruction.setObjectName('hint')
         instruction.setWordWrap(True)
         layout.addWidget(instruction)
         row = QHBoxLayout()
-        row.addWidget(QLabel('文件顺序'), 1)
-        self.select_all_button = QPushButton('全选')
+        row.addWidget(QLabel(tr('文件顺序')), 1)
+        self.select_all_button = QPushButton(tr('全选'))
         self.select_all_button.setProperty('compact', True)
         self.select_all_button.clicked.connect(lambda: self.select_all(
             len(self.selected_ids()) != sum(not source['reason'] for source in self.sources.values())))
@@ -120,7 +121,7 @@ class MergeOpenDialog(QDialog):
         self.files.setUniformItemSizes(True)
         self.files.setMinimumHeight(132)
         self.files.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.files.setAccessibleName('待合并文件，勾选并拖动排序')
+        self.files.setAccessibleName(tr('待合并文件，勾选并拖动排序'))
         self.files.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.files.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.files.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -140,29 +141,28 @@ class MergeOpenDialog(QDialog):
             self.files.addItem(item)
         layout.addWidget(self.files, 1)
         move_row = QHBoxLayout()
-        self.move_up = QPushButton('上移')
-        self.move_down = QPushButton('下移')
+        self.move_up = QPushButton(tr('上移'))
+        self.move_down = QPushButton(tr('下移'))
         for button, delta in ((self.move_up, -1), (self.move_down, 1)):
             button.setProperty('compact', True)
             button.clicked.connect(lambda unused=False, step=delta: self.move_selected(step))
             move_row.addWidget(button)
         move_row.addStretch()
         layout.addLayout(move_row)
-        self.note = QLabel('拖动文件或选中后点上移／下移排序。'
-                      '\n包含未保存修改，原文件和原标签保持不变。')
+        self.note = QLabel(tr('拖动文件或选中后点上移／下移排序。\n包含未保存修改，原文件和原标签保持不变。'))
         self.note.setObjectName('hint')
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
         form = QFormLayout()
         self.save_mode = QComboBox()
-        self.save_mode.setAccessibleName('合并结果保存方式')
-        self.save_mode.addItem('另存为新文件（默认）', 'copy')
-        self.save_mode.addItem('覆盖指定文件', 'overwrite')
-        form.addRow('保存方式', self.save_mode)
+        self.save_mode.setAccessibleName(tr('合并结果保存方式'))
+        self.save_mode.addItem(tr('另存为新文件（默认）'), 'copy')
+        self.save_mode.addItem(tr('覆盖指定文件'), 'overwrite')
+        form.addRow(tr('保存方式'), self.save_mode)
         layout.addLayout(form)
-        self.target_caption = QLabel('覆盖到')
+        self.target_caption = QLabel(tr('覆盖到'))
         self.target = QComboBox()
-        self.target.setAccessibleName('合并覆盖目标')
+        self.target.setAccessibleName(tr('合并覆盖目标'))
         self.target.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.target.setMinimumContentsLength(24)
         form.addRow(self.target_caption, self.target)
@@ -176,8 +176,8 @@ class MergeOpenDialog(QDialog):
         self.summary.setWordWrap(True)
         footer.addWidget(self.summary, 1)
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        box.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
-        self.start = box.addButton('合并并另存', QDialogButtonBox.ButtonRole.ActionRole)
+        box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
+        self.start = box.addButton(tr('合并并另存'), QDialogButtonBox.ButtonRole.ActionRole)
         self.start.setObjectName('primary')
         self.start.setDefault(True)
         self.start.clicked.connect(self.choose_output)
@@ -205,7 +205,7 @@ class MergeOpenDialog(QDialog):
         first_target = self.target.count() == 0
         self.target.blockSignals(True)
         self.target.clear()
-        self.target.addItem('请选择要覆盖的文件', None)
+        self.target.addItem(tr('请选择要覆盖的文件'), None)
         for tid in selected:
             source = self.sources[tid]
             if source.get('save_path'):
@@ -217,10 +217,10 @@ class MergeOpenDialog(QDialog):
         self.target.blockSignals(False)
         self.refresh_target()
         pages = sum(self.sources[tid]['pages'] for tid in selected)
-        self.summary.setText(f'已选择 {len(selected)} 份 · 共 {pages} 页'
-                             + ('\n至少选择 2 份 PDF。' if len(selected) < 2 else ''))
+        self.summary.setText(tr('已选择 {p0} 份 · 共 {p1} 页', p0=f'{len(selected)}', p1=f'{pages}')
+                             + (tr('\n至少选择 2 份 PDF。') if len(selected) < 2 else ''))
         eligible = sum(not source['reason'] for source in self.sources.values())
-        self.select_all_button.setText('取消全选' if eligible and len(selected) == eligible else '全选')
+        self.select_all_button.setText(tr('取消全选') if eligible and len(selected) == eligible else tr('全选'))
         self.select_all_button.setEnabled(eligible > 0)
         row = self.files.currentRow()
         self.move_up.setEnabled(row > 0)
@@ -237,14 +237,14 @@ class MergeOpenDialog(QDialog):
         for widget in (self.target_caption, self.target, self.target_path):
             widget.setVisible(overwrite)
         self.target_path.setText(target.get('save_path', '') if eligible_target else
-                                 '所选文件目前仅支持另存新文件，请切换保存方式。')
+                                 tr('所选文件目前仅支持另存新文件，请切换保存方式。'))
         self.target_path.setToolTip(target.get('save_path', ''))
-        self.start.setText('合并并覆盖' if overwrite else '合并并另存')
-        self.note.setText('合并包含未保存修改。仅覆盖指定文件，其他文件和标签保留。' if overwrite else
-                          '拖动文件或选中后点上移／下移排序。\n包含未保存修改，原文件和原标签保持不变。')
+        self.start.setText(tr('合并并覆盖') if overwrite else tr('合并并另存'))
+        self.note.setText(tr('合并包含未保存修改。仅覆盖指定文件，其他文件和标签保留。') if overwrite else
+                          tr('拖动文件或选中后点上移／下移排序。\n包含未保存修改，原文件和原标签保持不变。'))
         if not eligible_target:
-            self.note.setText(self.note.text() + ('\n所选内容需要另存副本，暂不支持覆盖。' if copy_only else
-                                                 '\n所选标签没有可覆盖的文件位置，请另存新文件。'))
+            self.note.setText(self.note.text() + (tr('\n所选内容需要另存副本，暂不支持覆盖。') if copy_only else
+                                                 tr('\n所选标签没有可覆盖的文件位置，请另存新文件。')))
         self.start.setEnabled(len(selected) >= 2 and (not overwrite or eligible_target and bool(target.get('save_path'))))
 
     def select_all(self, checked):
@@ -283,7 +283,7 @@ class MergeOpenDialog(QDialog):
             self.accept()
             return
         from app.exportdialogs import new_pdf_path
-        path = new_pdf_path(self, self.parent().store, '合并并另存', '合并文件.pdf')
+        path = new_pdf_path(self, self.parent().store, tr('合并并另存'), tr('合并文件.pdf'))
         if path:
             self.output_path = path
             self.accept()
@@ -363,18 +363,18 @@ def merge_open_files(host):
                     host.ws.last_saved_path = result.path
             host._release_unused_docs()
         except Exception:
-            QMessageBox.warning(host, '文件已保存', f'合并结果已保存到：\n{result.path}\n界面刷新未完成，请重新打开查看。')
+            QMessageBox.warning(host, tr('文件已保存'), tr('合并结果已保存到：\n{p0}\n界面刷新未完成，请重新打开查看。', p0=f'{result.path}'))
             return True
         if result.warnings:
-            QMessageBox.information(host, '合并完成 · 请核对', '\n'.join(result.warnings))
-        host.statusBar().showMessage('已合并并保存到指定文件。' if replaced else '已合并并打开新 PDF。' if opened else
-                                    f'已保存合并结果，可从“文件 → 打开”查看：{result.path}', 7000)
+            QMessageBox.information(host, tr('合并完成 · 请核对'), '\n'.join(result.warnings))
+        host.statusBar().showMessage(tr('已合并并保存到指定文件。') if replaced else tr('已合并并打开新 PDF。') if opened else
+                                    tr('已保存合并结果，可从“文件 → 打开”查看：{p0}', p0=f'{result.path}'), 7000)
         return True
     except OperationCancelled as exc:
         host.statusBar().showMessage(str(exc), 5000)
         return False
     except (PdfError, OSError) as exc:
-        QMessageBox.warning(host, '未能完成合并', str(exc))
+        QMessageBox.warning(host, tr('未能完成合并'), str(exc))
         return False
     finally:
         host._saving = False

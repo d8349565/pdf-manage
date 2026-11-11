@@ -100,6 +100,18 @@ def main() -> None:
         assert captured.is_file(), f'Missing operation-guide image: {relative}'
         assert hashlib.sha256(captured.read_bytes()).digest() == hashlib.sha256((ROOT / relative).read_bytes()).digest(), (
             f'Operation-guide image differs from the current source: {relative}')
+    from app.i18n import LANGUAGES
+    for language in LANGUAGES:
+        if language in ('auto', 'zh-CN'):
+            continue
+        relative = Path('app/locales') / f'{language}.json'
+        catalogue = internal / relative
+        assert catalogue.is_file(), f'Missing language catalogue: {relative}'
+        assert hashlib.sha256(catalogue.read_bytes()).digest() == hashlib.sha256((ROOT / relative).read_bytes()).digest(), (
+            f'Language catalogue differs from the current source: {relative}')
+        if language != 'en':
+            qt_name = 'qtbase_' + language.replace('-', '_') + '.qm'
+            assert (internal / 'PyQt6/Qt6/translations' / qt_name).is_file(), f'Missing Qt language: {qt_name}'
     assert any(n.startswith("win32com/shell/shell.") and n.endswith(".pyd") for n in names), "Missing native Shell extension"
     for unwanted in ("Qt6WebEngine", "Qt6Qml", "Qt6Quick", "numpy", "rapidocr", "onnxruntime", "cv2", "pandas", "lxml", "libssl", "libcrypto"):
         assert not any(unwanted.lower() in n.lower() for n in names), unwanted

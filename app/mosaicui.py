@@ -1,4 +1,5 @@
 """Mosaic settings with asynchronous previews of the actual edited PDF."""
+from app.i18n import tr, mark_text
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QColor, QImage, QPixmap
 from PyQt6.QtWidgets import (QColorDialog, QComboBox, QDialog, QDialogButtonBox,
@@ -21,7 +22,7 @@ class MosaicDialog(QDialog):
         self.worker = self.ready = None
         self.generation = 0
         self.closed = False
-        self.setWindowTitle("马赛克 · 预览与样式")
+        self.setWindowTitle(tr('马赛克 · 预览与样式'))
         self.setMinimumSize(640, 480)
         available = tools.host.screen().availableGeometry()
         self.resize(min(940, available.width() - 48), min(760, available.height() - 48))
@@ -38,7 +39,7 @@ class MosaicDialog(QDialog):
         for title, widget in (("样式", self.style), ("形状", self.shape)):
             label = QLabel(title)
             label.setBuddy(widget)
-            widget.setAccessibleName("马赛克" + title)
+            widget.setAccessibleName(tr('马赛克') + title)
             row.addWidget(label)
             row.addWidget(widget, 1)
         self.style.setCurrentIndex(self.style.findData(settings["style"]))
@@ -54,8 +55,8 @@ class MosaicDialog(QDialog):
         self.strength.setKeyboardTracking(False)
         self.slider.setRange(2, 40)
         self.slider.setValue(self.strength.value())
-        self.slider.setAccessibleName("马赛克强度")
-        self.strength.setAccessibleName("马赛克强度数值")
+        self.slider.setAccessibleName(tr('马赛克强度'))
+        self.strength.setAccessibleName(tr('马赛克强度数值'))
         self.strength_label.setBuddy(self.strength)
         self.slider.valueChanged.connect(self.strength.setValue)
         self.strength.valueChanged.connect(self.slider.setValue)
@@ -64,7 +65,7 @@ class MosaicDialog(QDialog):
         row.addWidget(self.strength)
         self.color_button = QPushButton()
         self.color_button.setAutoDefault(False)
-        self.color_button.setAccessibleName("马赛克遮盖颜色")
+        self.color_button.setAccessibleName(tr('马赛克遮盖颜色'))
         self.color_button.clicked.connect(self.choose_color)
         row.addWidget(self.color_button)
         layout.addLayout(row)
@@ -75,28 +76,28 @@ class MosaicDialog(QDialog):
         placeholder.fill(QColor("white"))
         for title in ("选区效果", "整页检查"):
             preview = CapturePreview(placeholder, self)
-            preview.setAccessibleName("马赛克" + title)
-            preview.setToolTip("Ctrl+滚轮缩放，拖动查看")
+            preview.setAccessibleName(tr('马赛克') + title)
+            preview.setToolTip(tr('Ctrl+滚轮缩放，拖动查看'))
             self.previews.append(preview)
             self.tabs.addTab(preview, title)
         layout.addWidget(self.tabs, 1)
-        hint = QLabel("Ctrl+滚轮缩放，拖动查看。像素块与模糊可能仍可辨认，敏感信息建议使用纯色遮盖。")
+        hint = QLabel(tr('Ctrl+滚轮缩放，拖动查看。像素块与模糊可能仍可辨认，敏感信息建议使用纯色遮盖。'))
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
-        notice = QLabel(tools.host.shortcut_manager.describe("框选矩形内的原文字与底图会被替换，椭圆外围保留图片外观；相交批注和跨区图形可能整体移除。请在「整页检查」核对；应用后可 Ctrl+Z 撤销，Ctrl+S 保存。"))
+        notice = QLabel(tools.host.shortcut_manager.describe(mark_text("框选矩形内的原文字与底图会被替换，椭圆外围保留图片外观；相交批注和跨区图形可能整体移除。请在「整页检查」核对；应用后可 Ctrl+Z 撤销，Ctrl+S 保存。")))
         notice.setWordWrap(True)
         layout.addWidget(notice)
-        self.feedback = QLabel("正在准备预览…")
+        self.feedback = QLabel(tr('正在准备预览…'))
         self.feedback.setWordWrap(True)
         layout.addWidget(self.feedback)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
         self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
-        self.apply_button.setText("应用马赛克")
+        self.apply_button.setText(tr('应用马赛克'))
         self.apply_button.setProperty("primary", True)
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.apply)
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
@@ -126,14 +127,14 @@ class MosaicDialog(QDialog):
         self.slider.setVisible(not solid)
         self.strength.setVisible(not solid)
         self.color_button.setVisible(solid)
-        self.color_button.setText("选择颜色 · " + self.color.name().upper())
+        self.color_button.setText(tr('选择颜色 · ') + self.color.name().upper())
         self.color_button.setIcon(toolbar_icon("square", self.color.name(), 16, themed=False))
-        self.strength_label.setText("像素块大小" if self.style.currentData() == "pixelate" else "模糊强度")
-        self.slider.setToolTip("数值越大，遮挡越强；效果按页面尺寸计算，不受阅读缩放影响。")
+        self.strength_label.setText(tr('像素块大小') if self.style.currentData() == "pixelate" else tr('模糊强度'))
+        self.slider.setToolTip(tr('数值越大，遮挡越强；效果按页面尺寸计算，不受阅读缩放影响。'))
         self.generation += 1
         self.ready = None
         self.apply_button.setEnabled(False)
-        self.feedback.setText("正在更新预览…")
+        self.feedback.setText(tr('正在更新预览…'))
         self.timer.start(150)
 
     def start_preview(self):
@@ -172,7 +173,7 @@ class MosaicDialog(QDialog):
             self.timer.start(0)
             return
         if worker.error is not None:
-            self.feedback.setText(f"预览未完成：{worker.error}")
+            self.feedback.setText(tr('预览未完成：{p0}', p0=f'{worker.error}'))
             return
         whole, crop = worker.result
         for preview, image in zip(self.previews, (crop, whole)):
@@ -180,7 +181,7 @@ class MosaicDialog(QDialog):
             preview.setSceneRect(preview.item.boundingRect().adjusted(-12, -12, 12, 12))
             preview.set_mode("whole")
         self.ready = (edit, candidate, whole, settings)
-        self.feedback.setText("预览已更新。可继续调整样式，或应用到页面。")
+        self.feedback.setText(tr('预览已更新。可继续调整样式，或应用到页面。'))
         self.apply_button.setEnabled(True)
 
     def apply(self):
@@ -204,6 +205,6 @@ class MosaicDialog(QDialog):
             self.apply_button.setEnabled(False)
             for widget in (self.style, self.shape, self.slider, self.strength, self.color_button):
                 widget.setEnabled(False)
-            self.feedback.setText("正在结束预览，请稍候…")
+            self.feedback.setText(tr('正在结束预览，请稍候…'))
             return
         super().done(result)

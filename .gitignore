@@ -3,6 +3,7 @@
 !/.gitignore
 !/.gitattributes
 !/README.md
+!/README.zh-CN.md
 !/CHANGELOG.md
 !/LICENSE
 !/requirements.txt
@@ -26,6 +27,7 @@
 /app/**
 !/app/**/
 !/app/**/*.py
+!/app/locales/*.json
 !/app/README.md
 !/app/assets/app.png
 !/app/assets/pdf.svg
@@ -50,6 +52,7 @@
 /docs/**
 !/docs/USAGE.md
 !/docs/DEVELOPMENT.md
+!/docs/LOCALIZATION.md
 !/docs/REPOSITORY.md
 !/docs/ACCEPTANCE.md
 !/docs/COMPRESSION.md

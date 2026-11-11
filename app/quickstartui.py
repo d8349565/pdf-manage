@@ -1,4 +1,5 @@
 """A short, replayable guide illustrated with the current application's UI."""
+from app.i18n import tr
 from pathlib import Path
 
 from PyQt6.QtCore import QRect, Qt
@@ -18,7 +19,7 @@ class _GuideImage(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumHeight(220)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
-        self.setAccessibleName('当前版本的实际界面示例')
+        self.setAccessibleName(tr('当前版本的实际界面示例'))
 
     def set_image(self, name, crop):
         path = Path(__file__).resolve().parent / 'assets' / 'quickstart' / name
@@ -38,7 +39,7 @@ class QuickStartDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setObjectName('quickStartDialog')
-        self.setWindowTitle(f'{APP_NAME} · 操作指南')
+        self.setWindowTitle(tr('{p0} · 操作指南', p0=tr(APP_NAME)))
         self.resize(800, 640)
         set_theme_style(self, '''
             QDialog#quickStartDialog { background: #FBFCFA; color: #173C36; }
@@ -46,21 +47,21 @@ class QuickStartDialog(QDialog):
             QDialog#quickStartDialog QLabel#quickStartTitle { font-size: 22px; font-weight: 600; }
             QDialog#quickStartDialog QLabel#quickStartHint { color: #65796E; font-size: 12px; }
         ''')
-        drag = ('按住 Alt，再按住鼠标左键拖动' if parent.shortcut_manager.uses_reader_space()
-                else '按住空格或 Alt，再按住鼠标左键拖动')
+        drag = (tr('按住 Alt，再按住鼠标左键拖动') if parent.shortcut_manager.uses_reader_space()
+                else tr('按住空格或 Alt，再按住鼠标左键拖动'))
         # These captures come from this version's MainWindow with a generated example.
         # Refresh them whenever the illustrated controls move or change appearance.
         self.steps = (
-            ('拖入文件，开始阅读', 'home.png', (100, 85, 960, 450),
-             '把 PDF、OFD 或图片拖进窗口即可打开，也可点击首页右上角的“打开文件”。'),
-            ('放大或缩小，看清细节', 'reading.png', (570, 0, 590, 220),
-             '按住 Ctrl 滚动鼠标滚轮：向上放大，向下缩小。也可点击顶部的放大、缩小按钮，或点击它们旁边的“适合宽度”。'),
-            ('放大后，上下左右移动页面', 'reading.png', (310, 80, 840, 615),
-             f'{drag}，页面就会跟着移动。也可在“视图 → 阅读设置”选择“手形拖动”，直接拖动页面。'),
-            ('拖动缩略图，调整页序', 'arrange.png', (0, 35, 1160, 535),
-             '点击顶部的“整理页面”图标，再拖动页面调整顺序；左侧缩略图也支持拖动。操作有误时，可从“编辑”菜单撤销。'),
-            ('固定还是自动收起，由你选择', 'reading.png', (0, 75, 400, 320),
-             '鼠标靠近左侧箭头可展开侧栏。点击顶部的“固定”保持展开，再点一次恢复自动收起；下次打开软件会沿用你的选择。'),
+            (tr('拖入文件，开始阅读'), 'home.png', (100, 85, 960, 450),
+             tr('把 PDF、OFD 或图片拖进窗口即可打开，也可点击首页右上角的“打开文件”。')),
+            (tr('放大或缩小，看清细节'), 'reading.png', (570, 0, 590, 220),
+             tr('按住 Ctrl 滚动鼠标滚轮：向上放大，向下缩小。也可点击顶部的放大、缩小按钮，或点击它们旁边的“适合宽度”。')),
+            (tr('放大后，上下左右移动页面'), 'reading.png', (310, 80, 840, 615),
+             tr('{p0}，页面就会跟着移动。也可在“视图 → 阅读设置”选择“手形拖动”，直接拖动页面。', p0=f'{drag}')),
+            (tr('拖动缩略图，调整页序'), 'arrange.png', (0, 35, 1160, 535),
+             tr('点击顶部的“整理页面”图标，再拖动页面调整顺序；左侧缩略图也支持拖动。操作有误时，可从“编辑”菜单撤销。')),
+            (tr('固定还是自动收起，由你选择'), 'reading.png', (0, 75, 400, 320),
+             tr('鼠标靠近左侧箭头可展开侧栏。点击顶部的“固定”保持展开，再点一次恢复自动收起；下次打开软件会沿用你的选择。')),
         )
         self.step = 0
         root = QVBoxLayout(self)
@@ -76,7 +77,7 @@ class QuickStartDialog(QDialog):
         self.description.setWordWrap(True)
         self.description.setMinimumHeight(64)
         root.addWidget(self.description)
-        hint = QLabel('关闭后不再自动弹出，随时可点顶部“操作指南”重新查看。')
+        hint = QLabel(tr('关闭后不再自动弹出，随时可点顶部“操作指南”重新查看。'))
         hint.setObjectName('quickStartHint')
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -85,13 +86,13 @@ class QuickStartDialog(QDialog):
         self.progress.setObjectName('quickStartHint')
         footer.addWidget(self.progress)
         footer.addStretch(1)
-        self.skip_button = QPushButton('直接使用')
+        self.skip_button = QPushButton(tr('直接使用'))
         self.skip_button.clicked.connect(self.reject)
         footer.addWidget(self.skip_button)
-        self.back_button = QPushButton('上一步')
+        self.back_button = QPushButton(tr('上一步'))
         self.back_button.clicked.connect(lambda: self._show_step(self.step - 1))
         footer.addWidget(self.back_button)
-        self.next_button = QPushButton('下一步')
+        self.next_button = QPushButton(tr('下一步'))
         self.next_button.setObjectName('primary')
         self.next_button.setDefault(True)
         self.next_button.clicked.connect(self._next)
@@ -109,7 +110,7 @@ class QuickStartDialog(QDialog):
         self.progress.setText(f'{index + 1} / {len(self.steps)}')
         self.back_button.setEnabled(index > 0)
         self.skip_button.setVisible(index < len(self.steps) - 1)
-        self.next_button.setText('开始使用' if index == len(self.steps) - 1 else '下一步')
+        self.next_button.setText(tr('开始使用') if index == len(self.steps) - 1 else tr('下一步'))
 
     def _next(self):
         if self.step == len(self.steps) - 1:

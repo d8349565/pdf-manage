@@ -1,4 +1,5 @@
 """Page-local text entry with controls anchored to the box."""
+from app.i18n import tr
 from app.themes import set_theme_style
 import math
 import pymupdf as p
@@ -30,8 +31,8 @@ class InlineTextBox(QObject):
         self.editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.editor.setAcceptRichText(False)
         self.editor.setPlainText(text)
-        self.editor.setPlaceholderText("输入文字…")
-        self.editor.setAccessibleName("页面文本框内容")
+        self.editor.setPlaceholderText(tr('输入文字…'))
+        self.editor.setAccessibleName(tr('页面文本框内容'))
         self.editor.document().setDocumentMargin(2)
         layout.addWidget(self.editor)
         self.handles = {}
@@ -45,8 +46,8 @@ class InlineTextBox(QObject):
             set_theme_style(handle, 'QFrame#textBoxResizeHandle { background: #0F766E; border: 1px solid white; border-radius: 2px; }')
             handle.setFixedSize(10, 10)
             handle.setCursor(cursor)
-            handle.setToolTip('拖动调整文本框宽高；文字放不下时高度会自动增长')
-            handle.setAccessibleName('调整文本框尺寸')
+            handle.setToolTip(tr('拖动调整文本框宽高；文字放不下时高度会自动增长'))
+            handle.setAccessibleName(tr('调整文本框尺寸'))
             self.handles[edge] = handle
         self.toolbar = QFrame(self.view.viewport())
         self.toolbar.setObjectName("textBoxControls")
@@ -68,7 +69,7 @@ class InlineTextBox(QObject):
         self.font.setEditable(False)
         self.font.setFixedWidth(140)
         self.font.setCurrentFont(QFont(settings.get("font", "Microsoft YaHei")))
-        self.font.setAccessibleName("文本框字体")
+        self.font.setAccessibleName(tr('文本框字体'))
         row.addWidget(self.font)
         self.size = QComboBox()
         self.size.setEditable(False)
@@ -79,8 +80,8 @@ class InlineTextBox(QObject):
             self.size.addItem(f"{size:g} pt", float(size))
         self.size.setCurrentIndex(self.size.findData(current_size))
         self.size.setFixedWidth(80)
-        self.size.setToolTip("选择字号")
-        self.size.setAccessibleName("文本框字号")
+        self.size.setToolTip(tr('选择字号'))
+        self.size.setAccessibleName(tr('文本框字号'))
         row.addWidget(self.size)
         self.color = QColor.fromRgbF(*settings.get("color", (0, 0, 0)))
         self.color_button = self.button("颜色", "circle", row)
@@ -89,11 +90,11 @@ class InlineTextBox(QObject):
         apply_button.setObjectName("applyText")
         apply_button.setIcon(toolbar_icon("check", "#FFFFFF", 16))
         self.tools.host.shortcut_manager.watch_hint('textbox.apply', apply_button, '完成文本框')
-        apply_button.setAccessibleName("完成文本框")
+        apply_button.setAccessibleName(tr('完成文本框'))
         apply_button.clicked.connect(self.apply)
         cancel_button = self.button("", "x", row)
-        cancel_button.setToolTip("取消本次输入（Esc）")
-        cancel_button.setAccessibleName("取消文本框输入")
+        cancel_button.setToolTip(tr('取消本次输入（Esc）'))
+        cancel_button.setAccessibleName(tr('取消文本框输入'))
         cancel_button.clicked.connect(self.close)
         controls.addLayout(row)
         self.error = QLabel()
@@ -135,7 +136,7 @@ class InlineTextBox(QObject):
 
     def style_changed(self, *_):
         self.color_button.setIcon(toolbar_icon("circle", self.color.name(), 16, themed=False))
-        self.font.setToolTip(f"选择字体（当前：{self.font.currentFont().family()}）")
+        self.font.setToolTip(tr('选择字体（当前：{p0}）', p0=f'{self.font.currentFont().family()}'))
         self.error.hide()
         self.position()
 

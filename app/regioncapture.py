@@ -1,5 +1,6 @@
 """Copy a PDF region with its hover comments expanded below the page image."""
 from __future__ import annotations
+from app.i18n import tr
 
 import math
 import os
@@ -226,8 +227,8 @@ class CapturePreview(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        self.setAccessibleName('原文与批注说明图片预览')
-        self.setToolTip('Ctrl+滚轮缩放，拖动图片查看；复制和保存始终使用完整图片')
+        self.setAccessibleName(tr('原文与批注说明图片预览'))
+        self.setToolTip(tr('Ctrl+滚轮缩放，拖动图片查看；复制和保存始终使用完整图片'))
 
     def set_mode(self, mode):
         self.mode = mode
@@ -289,13 +290,13 @@ class CaptureDialog(QDialog):
     def __init__(self, host, image, count, page_index, source_path):
         super().__init__(host)
         self.host, self.image = host, image
-        self.setWindowTitle('区域图片预览')
+        self.setWindowTitle(tr('区域图片预览'))
         available = host.screen().availableGeometry()
         self.setMinimumSize(640, 480)
         self.resize(min(1100, available.width() - 64), min(820, available.height() - 64))
         layout = QVBoxLayout(self)
-        hint = QLabel(f'已整理 {count} 条有备注的批注，图片中的编号与下方说明对应。' if count else
-                      '选区内没有带备注的批注，将导出原文区域。', self)
+        hint = QLabel(tr('已整理 {p0} 条有备注的批注，图片中的编号与下方说明对应。', p0=f'{count}') if count else
+                      tr('选区内没有带备注的批注，将导出原文区域。'), self)
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.preview = CapturePreview(image, self)
@@ -319,27 +320,27 @@ class CaptureDialog(QDialog):
         zoom.addStretch()
         layout.addLayout(zoom)
         layout.addWidget(self.preview, 1)
-        detail = QLabel(f'{image.width()} × {image.height()} 像素 · Ctrl+滚轮缩放，拖动查看', self)
+        detail = QLabel(tr('{p0} × {p1} 像素 · Ctrl+滚轮缩放，拖动查看', p0=f'{image.width()}', p1=f'{image.height()}'), self)
         detail.setObjectName('hint')
         layout.addWidget(detail)
-        self.feedback = QLabel('可复制后粘贴到聊天窗口，或保存为 PNG 图片。', self)
+        self.feedback = QLabel(tr('可复制后粘贴到聊天窗口，或保存为 PNG 图片。'), self)
         self.feedback.setWordWrap(True)
         layout.addWidget(self.feedback)
         buttons = QHBoxLayout()
-        copy = QPushButton('复制图片', self)
+        copy = QPushButton(tr('复制图片'), self)
         copy.setDefault(True)
-        copy.setToolTip('复制整张图片，包括下方所有批注说明')
+        copy.setToolTip(tr('复制整张图片，包括下方所有批注说明'))
         copy.clicked.connect(self.copy)
         buttons.addWidget(copy)
-        save = QPushButton('保存图片…', self)
+        save = QPushButton(tr('保存图片…'), self)
         save.clicked.connect(self.save)
         buttons.addWidget(save)
         buttons.addStretch()
-        reselect = QPushButton('重新框选', self)
+        reselect = QPushButton(tr('重新框选'), self)
         reselect.setAutoDefault(False)
         reselect.clicked.connect(self.accept)
         buttons.addWidget(reselect)
-        close = QPushButton('关闭', self)
+        close = QPushButton(tr('关闭'), self)
         close.clicked.connect(self.reject)
         buttons.addWidget(close)
         layout.addLayout(buttons)
@@ -350,11 +351,11 @@ class CaptureDialog(QDialog):
 
     def copy(self):
         QApplication.clipboard().setImage(self.image)
-        self.feedback.setText('已复制整张图片，可直接粘贴到聊天窗口。')
+        self.feedback.setText(tr('已复制整张图片，可直接粘贴到聊天窗口。'))
 
     def save(self):
-        path, _ = QFileDialog.getSaveFileName(self, '保存区域图片', str(self.default_path),
-                                            'PNG 图片 (*.png)',
+        path, _ = QFileDialog.getSaveFileName(self, tr('保存区域图片'), str(self.default_path),
+                                            tr('PNG 图片 (*.png)'),
                                             options=QFileDialog.Option.DontConfirmOverwrite)
         if not path:
             return
@@ -365,15 +366,15 @@ class CaptureDialog(QDialog):
                 raise PdfError('不能覆盖已打开的原文件，请另选文件名。')
             expected = stamp(path)
             if expected is not None and QMessageBox.question(
-                    self, '替换图片？', '保存位置已有同名图片，是否替换？',
+                    self, tr('替换图片？'), tr('保存位置已有同名图片，是否替换？'),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                 return
             run_operation(self, '保存区域图片', lambda progress: save_capture(self.image, path, expected))
             self.default_path = path
-            self.feedback.setText(f'已保存：{path}')
+            self.feedback.setText(tr('已保存：{p0}', p0=f'{path}'))
         except (PdfError, OSError) as exc:
-            QMessageBox.warning(self, '图片未保存', str(exc))
+            QMessageBox.warning(self, tr('图片未保存'), str(exc))
 
 
 class RegionCapture(QObject):
@@ -402,7 +403,7 @@ class RegionCapture(QObject):
         self.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
         # Installed only during capture, ahead of text/image/hover event handlers.
         QApplication.instance().installEventFilter(self)
-        self.host.statusBar().showMessage('在一页内拖动框选区域，松开后预览并复制或保存图片；Esc 取消。')
+        self.host.statusBar().showMessage(tr('在一页内拖动框选区域，松开后预览并复制或保存图片；Esc 取消。'))
 
     def cancel(self):
         if self.overlay is not None and self.overlay.scene() is not None:
@@ -445,7 +446,7 @@ class RegionCapture(QObject):
                 return True
             if kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
                 self.cancel()
-                self.host.statusBar().showMessage('已取消框选。', 3000)
+                self.host.statusBar().showMessage(tr('已取消框选。'), 3000)
                 return True
             if kind in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and self.start is not None:
                 return True
@@ -508,6 +509,6 @@ class RegionCapture(QObject):
             if reselect:
                 QTimer.singleShot(0, self.begin)
         except OperationCancelled:
-            self.host.statusBar().showMessage('已取消生成区域图片。', 3500)
+            self.host.statusBar().showMessage(tr('已取消生成区域图片。'), 3500)
         except Exception as exc:
-            QMessageBox.warning(self.host, '区域图片未生成', str(exc))
+            QMessageBox.warning(self.host, tr('区域图片未生成'), str(exc))

@@ -1,4 +1,5 @@
 """Small standalone image actions for Explorer; no PDF reader window is created."""
+from app.i18n import tr
 from app.themes import set_theme_style
 from pathlib import Path
 import re
@@ -46,7 +47,7 @@ class ImageQuickDialog(QDialog):
         title = '图片转 PDF' if mode == 'pdf' else '压缩图片'
         if mode == 'pdf' and len(self.paths) > 1:
             title = '合并图片为 PDF'
-        self.setWindowTitle(f'{title} - 纸序 PDF')
+        self.setWindowTitle(tr('{p0} - 纸序 PDF', p0=f'{title}'))
         set_theme_style(self, STYLE)
         self.resize(520, 260)
         self.setMinimumWidth(440)
@@ -58,15 +59,15 @@ class ImageQuickDialog(QDialog):
         layout.addWidget(heading)
         self.filename = QLabel()
         self.filename.setTextFormat(Qt.TextFormat.PlainText)
-        self.filename.setText(Path(self.paths[0]).name if self.paths else '未收到图片')
+        self.filename.setText(Path(self.paths[0]).name if self.paths else tr('未收到图片'))
         self.filename.setWordWrap(True)
         layout.addWidget(self.filename)
         self.order_list = None
         self.order_buttons = []
         if mode == 'pdf' and len(self.paths) > 1:
-            self.filename.setText(f'已选择 {len(self.paths)} 张图片，按以下顺序合并：')
+            self.filename.setText(tr('已选择 {p0} 张图片，按以下顺序合并：', p0=f'{len(self.paths)}'))
             self.order_list = QListWidget()
-            self.order_list.setAccessibleName('合并图片顺序')
+            self.order_list.setAccessibleName(tr('合并图片顺序'))
             self.order_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
             self.order_list.setDefaultDropAction(Qt.DropAction.MoveAction)
             for path in self.paths:
@@ -84,13 +85,13 @@ class ImageQuickDialog(QDialog):
                 order_buttons.addWidget(button)
             layout.addLayout(order_buttons)
             self.resize(520, 480)
-        self.status = QLabel('按文件名自然排序，可拖动或用上移、下移调整。' if self.order_list is not None else '正在准备…')
+        self.status = QLabel(tr('按文件名自然排序，可拖动或用上移、下移调整。') if self.order_list is not None else tr('正在准备…'))
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.status)
-        self.detail = QLabel('结果保存到原图旁边；同名文件会自动避让。' if mode == 'pdf' else
-                             '保留尺寸，另存副本。PNG/BMP 自动比较无损 PNG 与 WebP；JPG/WebP 适度有损压缩。')
+        self.detail = QLabel(tr('结果保存到原图旁边；同名文件会自动避让。') if mode == 'pdf' else
+                             tr('保留尺寸，另存副本。PNG/BMP 自动比较无损 PNG 与 WebP；JPG/WebP 适度有损压缩。'))
         self.detail.setObjectName('detail')
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
@@ -100,22 +101,22 @@ class ImageQuickDialog(QDialog):
         self.progress.setVisible(self.order_list is None)
         layout.addWidget(self.progress)
         buttons = QHBoxLayout()
-        self.smaller = QPushButton('更小体积（有损）')
+        self.smaller = QPushButton(tr('更小体积（有损）'))
         self.smaller.setVisible(mode == 'compress')
         self.smaller.setEnabled(False)
-        self.smaller.setToolTip('从原图另存有损 WebP，尺寸不变；可能改变小字、颜色和纹理细节。')
+        self.smaller.setToolTip(tr('从原图另存有损 WebP，尺寸不变；可能改变小字、颜色和纹理细节。'))
         self.smaller.clicked.connect(self.make_smaller)
         buttons.addWidget(self.smaller)
         buttons.addStretch()
-        self.open_pdf = QPushButton('打开 PDF')
+        self.open_pdf = QPushButton(tr('打开 PDF'))
         self.open_pdf.setVisible(False)
         self.open_pdf.clicked.connect(self.show_pdf)
         buttons.addWidget(self.open_pdf)
-        self.open_folder = QPushButton('打开文件夹')
+        self.open_folder = QPushButton(tr('打开文件夹'))
         self.open_folder.setEnabled(False)
         self.open_folder.clicked.connect(self.show_output)
         buttons.addWidget(self.open_folder)
-        self.finish = QPushButton('合并并打开' if self.order_list is not None else '取消')
+        self.finish = QPushButton(tr('合并并打开') if self.order_list is not None else tr('取消'))
         self.finish.setDefault(self.order_list is not None)
         self.finish.setObjectName('primary')
         self.finish.clicked.connect(self.finish_clicked)
@@ -178,7 +179,7 @@ class ImageQuickDialog(QDialog):
             self.order_list.setEnabled(False)
             for button in self.order_buttons:
                 button.setEnabled(False)
-            self.finish.setText('取消')
+            self.finish.setText(tr('取消'))
             self.progress.show()
         self.worker = OperationThread(self.work, self, cancellable=True)
         self.worker.progress.connect(self.update_progress)
@@ -193,11 +194,11 @@ class ImageQuickDialog(QDialog):
         self.worker = None
         self.smaller.setEnabled(False)
         self.open_folder.setEnabled(False)
-        self.finish.setText('取消')
+        self.finish.setText(tr('取消'))
         self.progress.setRange(0, 0)
         self.progress.show()
-        self.status.setText('正在从原图生成更小的 WebP…')
-        self.detail.setText('本次使用有损压缩，可能改变细节；保留尺寸、原图和上一份结果。')
+        self.status.setText(tr('正在从原图生成更小的 WebP…'))
+        self.detail.setText(tr('本次使用有损压缩，可能改变细节；保留尺寸、原图和上一份结果。'))
         self.start()
 
     def update_progress(self, current, total, message):
@@ -209,34 +210,34 @@ class ImageQuickDialog(QDialog):
     def completed(self):
         self.worker.wait()
         self.progress.hide()
-        self.finish.setText('完成')
+        self.finish.setText(tr('完成'))
         self.finish.setEnabled(True)
         if self.closing:
             super().done(QDialog.DialogCode.Rejected)
             return
         error = self.worker.error
         if error:
-            self.status.setText('操作已取消，原图保留。' if isinstance(error, OperationCancelled) else f'未完成：{error}')
+            self.status.setText(tr('操作已取消，原图保留。') if isinstance(error, OperationCancelled) else tr('未完成：{p0}', p0=f'{error}'))
             if not isinstance(error, OperationCancelled):
-                self.detail.setText('请确认图片有效，且所在文件夹允许写入。原图未被覆盖。')
+                self.detail.setText(tr('请确认图片有效，且所在文件夹允许写入。原图未被覆盖。'))
             self.open_folder.setEnabled(bool(self.output))
             self.smaller.setEnabled(self.mode == 'compress' and self.compact and not isinstance(error, OperationCancelled))
             return
         result = self.worker.result
         if self.mode == 'pdf':
             self.output = result.path
-            self.status.setText(f'PDF 已生成：\n{result.path}')
+            self.status.setText(tr('PDF 已生成：\n{p0}', p0=f'{result.path}'))
         elif result.path:
             self.output, self.best_result = result.path, result
-            self.status.setText(f'{size_text(result.before)} → {size_text(result.after)}，减少 {(1-result.after/result.before)*100:.1f}%\n{Path(result.path).name}')
+            self.status.setText(tr('{p0} → {p1}，减少 {p2}%\n{p3}', p0=f'{size_text(result.before)}', p1=f'{size_text(result.after)}', p2=f'{(1 - result.after / result.before) * 100:.1f}', p3=f'{Path(result.path).name}'))
             self.status.setToolTip(result.path)
-            self.detail.setText(result.description + ('。原图和上一份结果均保留。' if self.compact else
-                                '。还想更小，可选“更小体积（有损）”另存 WebP。'))
+            self.detail.setText(result.description + (tr('。原图和上一份结果均保留。') if self.compact else
+                                tr('。还想更小，可选“更小体积（有损）”另存 WebP。')))
         elif self.compact and self.best_result:
-            self.status.setText(f'本次没有比已保存结果更小的版本，保留已有文件：\n{Path(self.output).name}')
-            self.detail.setText(self.best_result.description + '。原图保留。')
+            self.status.setText(tr('本次没有比已保存结果更小的版本，保留已有文件：\n{p0}', p0=f'{Path(self.output).name}'))
+            self.detail.setText(self.best_result.description + tr('。原图保留。'))
         else:
-            self.status.setText('图片已经比较紧凑，本次没有找到更小的结果，原图保留。')
+            self.status.setText(tr('图片已经比较紧凑，本次没有找到更小的结果，原图保留。'))
         self.smaller.setEnabled(self.mode == 'compress' and not self.compact)
         self.open_folder.setEnabled(bool(self.output))
         if self.mode == 'pdf':
@@ -245,7 +246,7 @@ class ImageQuickDialog(QDialog):
 
     def show_pdf(self):
         if self.output and not QDesktopServices.openUrl(QUrl.fromLocalFile(self.output)):
-            self.detail.setText('PDF 已保存，但暂时无法自动打开。可点“打开 PDF”重试，或打开文件夹查看。')
+            self.detail.setText(tr('PDF 已保存，但暂时无法自动打开。可点“打开 PDF”重试，或打开文件夹查看。'))
 
     def show_output(self):
         if self.output:
@@ -255,7 +256,7 @@ class ImageQuickDialog(QDialog):
         if self.worker is not None and self.worker.isRunning():
             self.closing = True
             self.worker.cancel_event.set()
-            self.status.setText('正在停止，原图保留…')
+            self.status.setText(tr('正在停止，原图保留…'))
             self.finish.setEnabled(False)
             return
         self.closing = True

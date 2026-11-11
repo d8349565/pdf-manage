@@ -1,4 +1,5 @@
 """Cached paper and watermark layers; pointer motion never calls the PDF engine."""
+from app.i18n import tr
 import math
 from threading import Event
 
@@ -56,8 +57,8 @@ class PagePreview(QWidget):
         self.setMinimumSize(220, 260)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName("水印页面预览，可拖动水印，方向键微调，Esc 撤销当前拖动")
-        self.setToolTip("拖动水印调整位置；方向键微调，Shift 加大步长。")
+        self.setAccessibleName(tr('水印页面预览，可拖动水印，方向键微调，Esc 撤销当前拖动'))
+        self.setToolTip(tr('拖动水印调整位置；方向键微调，Shift 加大步长。'))
 
     def setText(self, text):
         self.message = text

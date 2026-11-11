@@ -1,4 +1,5 @@
 """Confirm proposed paper corners in synchronized, continuous before/after previews."""
+from app.i18n import tr, mark_text
 from app.themes import set_theme_style
 from collections import OrderedDict
 from dataclasses import replace
@@ -73,7 +74,7 @@ class PaperPreview(ScrollablePagePreview):
         self.render_when_hidden=True
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
-        self.setAccessibleName('原页和纸张范围：拖动四角或框选；选中角点后可用方向键微调，Shift 加速')
+        self.setAccessibleName(tr('原页和纸张范围：拖动四角或框选；选中角点后可用方向键微调，Shift 加速'))
 
     def image_key(self,row):
         width,height=self.store.page_size(self.pages[row])
@@ -222,7 +223,7 @@ class WhiteningDialog(QDialog):
         self.generation,self.busy,self.closed=0,False,False
         self.coordinate_valid=True
         self.cancel=Event()
-        self.setWindowTitle('扫描件增强')
+        self.setWindowTitle(tr('扫描件增强'))
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint,True)
         screen=host.screen().availableGeometry()
         self.resize(min(1500,round(screen.width()*.94)),round(screen.height()*.92))
@@ -232,36 +233,36 @@ class WhiteningDialog(QDialog):
         body=QHBoxLayout();body.setSpacing(14)
         panel=QWidget();panel.setFixedWidth(235)
         controls=QVBoxLayout(panel);controls.setContentsMargins(0,0,0,0);controls.setSpacing(10)
-        heading=QLabel('扫描件增强');set_theme_style(heading, 'font-size: 20px; font-weight: 600;')
+        heading=QLabel(tr('扫描件增强'));set_theme_style(heading, 'font-size: 20px; font-weight: 600;')
         controls.addWidget(heading)
-        controls.addWidget(QLabel('效果'))
+        controls.addWidget(QLabel(tr('效果')))
         self.mode=ClearComboBox()
-        self.mode.addItem('保留彩色','color');self.mode.addItem('黑白打印','bw')
-        self.mode.setAccessibleName('增强效果')
-        self.mode.setToolTip('去除灰底与阴影，保留文字、彩章和笔迹；黑白打印保留浅灰笔迹。')
+        self.mode.addItem(tr('保留彩色'),'color');self.mode.addItem(tr('黑白打印'),'bw')
+        self.mode.setAccessibleName(tr('增强效果'))
+        self.mode.setToolTip(tr('去除灰底与阴影，保留文字、彩章和笔迹；黑白打印保留浅灰笔迹。'))
         controls.addWidget(self.mode)
-        controls.addWidget(QLabel('处理范围'))
+        controls.addWidget(QLabel(tr('处理范围')))
         self.scope=PageScope(self.pages,host.ws.target_indices())
         controls.addWidget(self.scope)
-        self.straighten=QCheckBox('自动拉正')
+        self.straighten=QCheckBox(tr('自动拉正'))
         self.straighten.setChecked(True)
-        self.straighten.setToolTip('根据检测到的文字行与横线校正局部倾斜，文字不足时保留原状；请核对效果。')
+        self.straighten.setToolTip(tr('根据检测到的文字行与横线校正局部倾斜，文字不足时保留原状；请核对效果。'))
         controls.addWidget(self.straighten)
-        self.advanced=QPushButton('更多调整');self.advanced.setCheckable(True)
+        self.advanced=QPushButton(tr('更多调整'));self.advanced.setCheckable(True)
         controls.addWidget(self.advanced)
         self.strength_panel=QWidget();advanced=QVBoxLayout(self.strength_panel)
         advanced.setContentsMargins(0,0,0,0);advanced.setSpacing(8)
-        advanced.addWidget(QLabel('去底色强度'))
+        advanced.addWidget(QLabel(tr('去底色强度')))
         self.strength=QSlider(Qt.Orientation.Horizontal)
         self.strength.setRange(0,100);self.strength.setValue(45)
-        self.strength.setAccessibleName('去底色强度')
-        self.strength.setToolTip('越强去除的浅色越多，请核对铅笔等浅色笔迹。')
+        self.strength.setAccessibleName(tr('去底色强度'))
+        self.strength.setToolTip(tr('越强去除的浅色越多，请核对铅笔等浅色笔迹。'))
         advanced.addWidget(self.strength)
-        self.detect=QPushButton('重新识别纸边');self.whole=QPushButton('保留整页')
-        self.trim=QPushButton('向内裁一点')
-        self.trim.setToolTip('四边向内收约 0.5%，可在原图中继续调整。')
+        self.detect=QPushButton(tr('重新识别纸边'));self.whole=QPushButton(tr('保留整页'))
+        self.trim=QPushButton(tr('向内裁一点'))
+        self.trim.setToolTip(tr('四边向内收约 0.5%，可在原图中继续调整。'))
         for button in (self.detect,self.whole,self.trim):advanced.addWidget(button)
-        self.coordinates=QPushButton('四角坐标');self.coordinates.setCheckable(True)
+        self.coordinates=QPushButton(tr('四角坐标'));self.coordinates.setCheckable(True)
         advanced.addWidget(self.coordinates)
         self.coordinate_panel=QWidget();grid=QGridLayout(self.coordinate_panel)
         grid.setContentsMargins(0,0,0,0);self.corner_inputs=[]
@@ -272,32 +273,32 @@ class WhiteningDialog(QDialog):
                 spin.setKeyboardTracking(False)
                 spin.setMaximumWidth(86)
                 set_theme_style(spin, 'QDoubleSpinBox {padding: 4px 3px; min-height: 28px;}')
-                spin.setAccessibleName(name+axis+'位置');spin.valueChanged.connect(self.coordinate_changed)
+                spin.setAccessibleName(name+axis+tr('位置'));spin.valueChanged.connect(self.coordinate_changed)
                 grid.addWidget(spin,i,j+1);pair.append(spin)
             self.corner_inputs.append(pair)
         self.coordinate_panel.hide();self.coordinates.toggled.connect(self.coordinate_panel.setVisible)
         advanced.addWidget(self.coordinate_panel)
         self.strength_panel.hide();self.advanced.toggled.connect(self.strength_panel.setVisible)
         controls.addWidget(self.strength_panel);controls.addStretch()
-        self.help_button=QPushButton('处理说明');self.help_button.clicked.connect(self.show_help)
+        self.help_button=QPushButton(tr('处理说明'));self.help_button.clicked.connect(self.show_help)
         controls.addWidget(self.help_button)
         sidebar=QScrollArea();sidebar.setWidgetResizable(True);sidebar.setFrameShape(QScrollArea.Shape.NoFrame)
         sidebar.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         sidebar.setFixedWidth(250);sidebar.setWidget(panel)
         body.addWidget(sidebar)
         canvas=QVBoxLayout();toolbar=QHBoxLayout()
-        self.status=QLabel('正在生成预览…');self.status.setWordWrap(True)
+        self.status=QLabel(tr('正在生成预览…'));self.status.setWordWrap(True)
         toolbar.addWidget(self.status,1)
-        self.compare=QPushButton('原图对比');self.compare.setCheckable(True)
-        self.crop_button=QPushButton('调整纸边');self.crop_button.setCheckable(True)
-        self.detail=QPushButton('放大检查');self.detail.setCheckable(True)
+        self.compare=QPushButton(tr('原图对比'));self.compare.setCheckable(True)
+        self.crop_button=QPushButton(tr('调整纸边'));self.crop_button.setCheckable(True)
+        self.detail=QPushButton(tr('放大检查'));self.detail.setCheckable(True)
         for button in (self.compare,self.crop_button,self.detail):toolbar.addWidget(button)
         canvas.addLayout(toolbar)
         preview_layout=QHBoxLayout()
         self.original_box=QWidget();before=QVBoxLayout(self.original_box);before.setContentsMargins(0,0,0,0)
-        before.addWidget(QLabel('原图'))
+        before.addWidget(QLabel(tr('原图')))
         self.cleaned_box=QWidget();after=QVBoxLayout(self.cleaned_box);after.setContentsMargins(0,0,0,0)
-        after.addWidget(QLabel('增强效果'))
+        after.addWidget(QLabel(tr('增强效果')))
         self.original=PaperPreview(host.store,self.pages,draw_content=self.draw_original)
         self.cleaned=ScrollablePagePreview(host.store,self.pages,draw_content=self.draw_cleaned,
             paper_size=lambda row:self.result_paper_size(row))
@@ -319,16 +320,16 @@ class WhiteningDialog(QDialog):
         self.detail.toggled.connect(self.preview_scale_changed)
         body.addLayout(canvas,1);layout.addLayout(body,1)
         footer=QHBoxLayout()
-        self.save_image=QPushButton('导出当前页 PNG');self.save_image.clicked.connect(self.export_image)
+        self.save_image=QPushButton(tr('导出当前页 PNG'));self.save_image.clicked.connect(self.export_image)
         footer.addWidget(self.save_image)
-        warning=QLabel('增强页转为图片，文字层不保留；原件保留，可撤销。')
+        warning=QLabel(tr('增强页转为图片，文字层不保留；原件保留，可撤销。'))
         warning.setWordWrap(True);set_theme_style(warning, 'color: #5d6f68; font-size: 12px;')
         footer.addWidget(warning,1)
         self.buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         apply=self.buttons.button(QDialogButtonBox.StandardButton.Ok)
-        apply.setText('应用到文档');apply.setDefault(True)
+        apply.setText(tr('应用到文档'));apply.setDefault(True)
         set_theme_style(apply, 'QPushButton {background: #0f766e; color: white; border-color: #0f766e; font-weight: 600;} QPushButton:disabled {background: #dbe7e0; color: #7e9187;}')
-        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         self.buttons.accepted.connect(self.accept);self.buttons.rejected.connect(self.reject)
         footer.addWidget(self.buttons);layout.addLayout(footer)
         self.signals=_Signals(); self.signals.ready.connect(self.finished_preview)
@@ -355,11 +356,11 @@ class WhiteningDialog(QDialog):
         return (image.width(),image.height()) if image is not None else self.host.store.page_size(self.pages[row])
 
     def show_help(self):
-        QMessageBox.information(self,'扫描件增强说明',
-            self.host.shortcut_manager.describe('适用于扫描 PDF 和拍照文档。先选择效果，再核对预览并应用。\n\n'
+        QMessageBox.information(self,tr('扫描件增强说明'),
+            self.host.shortcut_manager.describe(mark_text('适用于扫描 PDF 和拍照文档。先选择效果，再核对预览并应用。\n\n'
             '纸边不合适时点“调整纸边”，拖动四角或重新框选。整页模式滚轮换页；放大后滚动检查细节。\n\n'
             '未确认的页面保留整页范围。增强页转为图片，文字层与交互信息不保留；含批注、链接或表单的页不会直接处理。\n\n'
-            '原件保留，应用后可 Ctrl+Z 撤销，保存时另存 PDF。'))
+            '原件保留，应用后可 Ctrl+Z 撤销，保存时另存 PDF。')))
 
     def preview_mode_changed(self,*_):
         row=self.current_row()
@@ -367,11 +368,11 @@ class WhiteningDialog(QDialog):
         self.original.editing=editing
         self.original_box.setVisible(editing or self.compare.isChecked())
         self.cleaned_box.setVisible(not editing)
-        self.crop_button.setText('完成裁纸' if editing else '调整纸边')
+        self.crop_button.setText(tr('完成裁纸') if editing else tr('调整纸边'))
         self.original.setCursor(Qt.CursorShape.CrossCursor if editing else Qt.CursorShape.ArrowCursor)
         if editing:
             self.cancel.set();self.cancel=Event();self.generation+=1;self.pump.stop()
-            self.status.setText('拖动四角，或框选纸张')
+            self.status.setText(tr('拖动四角，或框选纸张'))
         else:
             self.schedule()
         self.update_buttons()
@@ -380,7 +381,7 @@ class WhiteningDialog(QDialog):
     def update_buttons(self):
         editing=self.crop_button.isChecked()
         button=self.buttons.button(QDialogButtonBox.StandardButton.Ok)
-        button.setText('完成裁纸' if editing else '应用到文档')
+        button.setText(tr('完成裁纸') if editing else tr('应用到文档'))
         button.setEnabled(self.coordinate_valid and bool(self.original.rows)
                           and (editing or any(value is not None for value in self.results.values())))
         self.save_image.setEnabled(not editing and self.results.get(self.current_row()) is not None and self.coordinate_valid)
@@ -409,7 +410,7 @@ class WhiteningDialog(QDialog):
                 preview.set_fit_page(not self.detail.isChecked())
         finally:
             for bar,value in zip(bars,blocked):bar.blockSignals(value)
-        self.detail.setText('整页显示' if self.detail.isChecked() else '放大检查')
+        self.detail.setText(tr('整页显示') if self.detail.isChecked() else tr('放大检查'))
         self.restore_preview_row(row)
 
     def sync_preview_scroll(self,source,target):
@@ -504,7 +505,7 @@ class WhiteningDialog(QDialog):
             self.coordinate_valid=False
             self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
             self.save_image.setEnabled(False)
-            self.status.setText('四角范围无效，请按左上、右上、右下、左下调整。')
+            self.status.setText(tr('四角范围无效，请按左上、右上、右下、左下调整。'))
 
     def process_next(self):
         if self.closed or self.busy or not self.isVisible() or self.crop_button.isChecked():
@@ -515,7 +516,7 @@ class WhiteningDialog(QDialog):
             if image is None or row in self.results:
                 continue
             self.busy=True
-            self.status.setText(f'正在生成第 {row+1} 页推荐范围和效果…')
+            self.status.setText(tr('正在生成第 {p0} 页推荐范围和效果…', p0=f'{row + 1}'))
             quad=self.manual.get(row,self.proposals[row].quad if row in self.proposals else None)
             QThreadPool.globalInstance().start(_Clean(self.generation,row,image.copy(),quad,
                 self.mode.currentData(),self.strength.value(),self.straighten.isChecked(),self.signals,self.cancel))
@@ -542,7 +543,7 @@ class WhiteningDialog(QDialog):
                 if row==self.current_row():
                     proposal=self.proposals.get(row)
                     message='纸边已调整' if row in self.manual else ('预览已更新' if proposal is not None and proposal.confidence else '保留整页')
-                    self.status.setText(f'第 {row+1} 页 · {message}')
+                    self.status.setText(tr('第 {p0} 页 · {p1}', p0=f'{row + 1}', p1=f'{message}'))
             self.update_buttons()
             self.original.refresh_pages(); self.cleaned.refresh_pages(layout=not self.cleaned.fit_page)
         self.schedule()
@@ -581,11 +582,11 @@ class WhiteningDialog(QDialog):
         if row is None or self.results.get(row) is None:
             return
         ref=self.pages[row]
-        dest,_=QFileDialog.getSaveFileName(self,'增强图片另存为',str(Path(ref.source_path).with_name(Path(ref.source_path).stem+'_增强.png')),'PNG (*.png)')
+        dest,_=QFileDialog.getSaveFileName(self,tr('增强图片另存为'),str(Path(ref.source_path).with_name(Path(ref.source_path).stem+tr('_增强.png'))),'PNG (*.png)')
         if not dest:
             return
         if self.host.store.is_source_destination(dest):
-            QMessageBox.warning(self,'请另存副本','不能覆盖已打开的原图或 PDF。'); return
+            QMessageBox.warning(self,tr('请另存副本'),tr('不能覆盖已打开的原图或 PDF。')); return
         expected=stamp(dest)
         mode,strength,quad=self.mode.currentData(),self.strength.value(),self.regions()[row]
         straighten=self.straighten.isChecked()
@@ -600,11 +601,11 @@ class WhiteningDialog(QDialog):
                 temporary.unlink(missing_ok=True)
         try:
             run_operation(self,'导出增强图片',work,cancellable=True)
-            self.status.setText('已另存完整清晰度的 PNG：'+Path(dest).name)
+            self.status.setText(tr('已另存完整清晰度的 PNG：')+Path(dest).name)
         except OperationCancelled:
-            self.status.setText('已取消另存，原件保留。')
+            self.status.setText(tr('已取消另存，原件保留。'))
         except (ValueError,PdfError,OSError) as exc:
-            QMessageBox.warning(self,'无法另存图片',str(exc))
+            QMessageBox.warning(self,tr('无法另存图片'),str(exc))
 
     def done(self,result):
         self.closed=True; self.cancel.set(); self.pump.stop()
@@ -639,10 +640,10 @@ def open_whitening(host):
             raise ValueError('工作区已改变，请重新操作。')
         host.ws.edit_pages(changes,'扫描件增强',as_copy=True,outline=outline)
         host.refresh()
-        host.statusBar().showMessage(host.shortcut_manager.describe(f'已增强 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存 PDF。'),6500)
+        host.statusBar().showMessage(host.shortcut_manager.describe(tr('已增强 {p0} 页；Ctrl+Z 可撤销，保存时另存 PDF。', p0=f'{len(changes)}')),6500)
     except OperationCancelled:
-        host.statusBar().showMessage('已取消增强，页面未修改。',5000)
+        host.statusBar().showMessage(tr('已取消增强，页面未修改。'),5000)
         host._release_unused_docs()
     except (ValueError,PdfError,OSError) as exc:
-        QMessageBox.warning(host,'无法增强扫描件',str(exc))
+        QMessageBox.warning(host,tr('无法增强扫描件'),str(exc))
         host._release_unused_docs()

@@ -1,5 +1,6 @@
 """Standalone Word batch window, separate from the PDF reading workspace."""
 from __future__ import annotations
+from app.i18n import tr
 from app.themes import set_theme_style, ui_color
 
 import os
@@ -113,7 +114,7 @@ class WordConverterWindow(QWidget):
         # 逐份手动指定的输出位置，切换统一目录时保留，不会被覆盖。
         self._manual_targets: dict[str, str] = {}
         self._message = ""
-        self.setWindowTitle(f"批量 {self.source_kind} 转 {self.target_kind} · {APP_NAME}")
+        self.setWindowTitle(tr('批量 {p0} 转 {p1} · {p2}', p0=f'{self.source_kind}', p1=f'{self.target_kind}', p2=tr(APP_NAME)))
         self.setWindowIcon(brand_icon())
         set_theme_style(self, STYLESHEET + MODE_QSS)
         self.resize(1030, 693)
@@ -144,14 +145,14 @@ class WordConverterWindow(QWidget):
 
         top_row = QHBoxLayout()
         top_row.setSpacing(10)
-        self.title = QLabel(f"批量 {self.source_kind} 转 {self.target_kind}")
+        self.title = QLabel(tr('批量 {p0} 转 {p1}', p0=f'{self.source_kind}', p1=f'{self.target_kind}'))
         set_theme_style(self.title, "font-size: 18px; font-weight: 700; color: #134E4A;")
         top_row.addWidget(self.title)
         top_row.addStretch()
 
         self.mode_group = QButtonGroup(self)
-        self.btn_word_to_pdf = QPushButton("Word 转 PDF")
-        self.btn_pdf_to_word = QPushButton("PDF 转 Word")
+        self.btn_word_to_pdf = QPushButton(tr('Word 转 PDF'))
+        self.btn_pdf_to_word = QPushButton(tr('PDF 转 Word'))
         for button in (self.btn_word_to_pdf, self.btn_pdf_to_word):
             button.setProperty("mode", True)
             button.setCheckable(True)
@@ -171,7 +172,7 @@ class WordConverterWindow(QWidget):
         seg_layout.addWidget(self.btn_word_to_pdf)
         seg_layout.addWidget(self.btn_pdf_to_word)
         top_row.addWidget(seg_frame)
-        self.ocr_install = QPushButton("安装识别组件…")
+        self.ocr_install = QPushButton(tr('安装识别组件…'))
         self.ocr_install.setFixedHeight(28)
         self.ocr_install.clicked.connect(self.install_ocr)
         top_row.addWidget(self.ocr_install)
@@ -190,24 +191,24 @@ class WordConverterWindow(QWidget):
         # 1. 标题行：标题 + 紧跟徽标在左侧，添加按钮在右侧
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        caption = QLabel("待转换文件")
+        caption = QLabel(tr('待转换文件'))
         set_theme_style(caption, "font-size: 15px; font-weight: 600; color: #134E4A;")
         caption.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         header_row.addWidget(caption)
 
-        self.count_label = QLabel("0 份")
+        self.count_label = QLabel(tr('0 份'))
         self.count_label.setObjectName("badge")
         self.count_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         header_row.addWidget(self.count_label)
         header_row.addStretch()
 
-        self.add_button = QPushButton(f"添加 {self.source_kind} 文件…")
+        self.add_button = QPushButton(tr('添加 {p0} 文件…', p0=f'{self.source_kind}'))
         self.add_button.setFixedHeight(30)
         self.add_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_button.clicked.connect(self.add_files)
         header_row.addWidget(self.add_button)
 
-        self.add_folder_button = QPushButton("添加文件夹…")
+        self.add_folder_button = QPushButton(tr('添加文件夹…'))
         self.add_folder_button.setFixedHeight(30)
         self.add_folder_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.add_folder_button.clicked.connect(self.add_folder)
@@ -220,8 +221,8 @@ class WordConverterWindow(QWidget):
         self.table.viewport().setAcceptDrops(True)
         self.table.installEventFilter(self)
         self.table.viewport().installEventFilter(self)
-        self.table.setHorizontalHeaderLabels([f"源 {self.source_kind} 文件", f"输出 {self.target_kind} 文件", "状态"])
-        self.table.setAccessibleName(f"{self.source_kind} 转换清单，双击第二列可选择输出位置")
+        self.table.setHorizontalHeaderLabels([tr('源 {p0} 文件', p0=f'{self.source_kind}'), tr('输出 {p0} 文件', p0=f'{self.target_kind}'), tr('状态')])
+        self.table.setAccessibleName(tr('{p0} 转换清单，双击第二列可选择输出位置', p0=f'{self.source_kind}'))
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setDragEnabled(False)
@@ -242,12 +243,12 @@ class WordConverterWindow(QWidget):
         # 3. 表格下方操作与提示
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        self.remove_button = QPushButton("移除所选")
+        self.remove_button = QPushButton(tr('移除所选'))
         self.remove_button.setFixedHeight(28)
         self.remove_button.setEnabled(False)
         self.remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.remove_button.clicked.connect(self.remove_selected)
-        self.clear_button = QPushButton("清空")
+        self.clear_button = QPushButton(tr('清空'))
         self.clear_button.setFixedHeight(28)
         self.clear_button.setEnabled(False)
         self.clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -256,7 +257,7 @@ class WordConverterWindow(QWidget):
         action_row.addWidget(self.clear_button)
         action_row.addStretch()
 
-        tip = QLabel("双击第二列可单独指定保存位置 · 选中按 Delete 移除")
+        tip = QLabel(tr('双击第二列可单独指定保存位置 · 选中按 Delete 移除'))
         tip.setObjectName("hint")
         set_theme_style(tip, "font-size: 12px; color: #64748B;")
         tip.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
@@ -272,7 +273,7 @@ class WordConverterWindow(QWidget):
         # 5. 输出位置控制行（融入卡片内，防止无节制横向拉伸）
         output_row = QHBoxLayout()
         output_row.setSpacing(10)
-        out_caption = QLabel("输出位置")
+        out_caption = QLabel(tr('输出位置'))
         set_theme_style(out_caption, "font-weight: 600; color: #134E4A; font-size: 13px;")
         out_caption.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         output_row.addWidget(out_caption)
@@ -280,17 +281,17 @@ class WordConverterWindow(QWidget):
         self.output_path = PathField("与源文件相同文件夹（默认）")
         output_row.addWidget(self.output_path)
 
-        self.btn_choose_dir = QPushButton("选择目录…")
+        self.btn_choose_dir = QPushButton(tr('选择目录…'))
         self.btn_choose_dir.setFixedHeight(30)
         self.btn_choose_dir.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_choose_dir.setToolTip("统一选择所有输出文件的保存目录")
+        self.btn_choose_dir.setToolTip(tr('统一选择所有输出文件的保存目录'))
         self.btn_choose_dir.clicked.connect(self.choose_output_dir)
         output_row.addWidget(self.btn_choose_dir)
 
-        self.btn_reset_dir = QPushButton("使用源目录")
+        self.btn_reset_dir = QPushButton(tr('使用源目录'))
         self.btn_reset_dir.setFixedHeight(30)
         self.btn_reset_dir.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_reset_dir.setToolTip("取消统一目录，并把单独指定过的位置也恢复成与源文件相同文件夹")
+        self.btn_reset_dir.setToolTip(tr('取消统一目录，并把单独指定过的位置也恢复成与源文件相同文件夹'))
         self.btn_reset_dir.clicked.connect(self.reset_output_dir)
         self.btn_reset_dir.setVisible(False)
         output_row.addWidget(self.btn_reset_dir)
@@ -302,7 +303,7 @@ class WordConverterWindow(QWidget):
         set_theme_style(self.output_hint, "font-size: 12px; color: #64748B;")
 
         # 6. 高级选项（收纳入卡片底部，消灭孤立控件）
-        self.advanced = QCheckBox("高级选项")
+        self.advanced = QCheckBox(tr('高级选项'))
         set_theme_style(self.advanced, "font-size: 13px; color: #4D6B67;")
         card_layout.addWidget(self.advanced)
 
@@ -310,18 +311,18 @@ class WordConverterWindow(QWidget):
         options_layout = QVBoxLayout(self.options)
         options_layout.setContentsMargins(18, 2, 0, 4)
         options_layout.setSpacing(6)
-        self.recursive = QCheckBox("文件夹包含子文件夹（默认仅当前层）")
-        self.overwrite = QCheckBox(f"明确覆盖已有 {self.target_kind}（源文件保留）")
+        self.recursive = QCheckBox(tr('文件夹包含子文件夹（默认仅当前层）'))
+        self.overwrite = QCheckBox(tr('明确覆盖已有 {p0}（源文件保留）', p0=f'{self.target_kind}'))
         options_layout.addWidget(self.recursive)
         options_layout.addWidget(self.overwrite)
         self.pdf_mode_row=QWidget()
         mode_layout=QHBoxLayout(self.pdf_mode_row)
         mode_layout.setContentsMargins(0,0,0,0)
-        mode_label=QLabel('Word 排版方式')
+        mode_label=QLabel(tr('Word 排版方式'))
         self.pdf_mode=QComboBox()
-        self.pdf_mode.addItem('保留原版式（推荐）','layout')
-        self.pdf_mode.addItem('Word 重排（适合大幅修改正文）','word')
-        self.pdf_mode.setAccessibleName('Word 排版方式')
+        self.pdf_mode.addItem(tr('保留原版式（推荐）'),'layout')
+        self.pdf_mode.addItem(tr('Word 重排（适合大幅修改正文）'),'word')
+        self.pdf_mode.setAccessibleName(tr('Word 排版方式'))
         mode_label.setBuddy(self.pdf_mode)
         mode_layout.addWidget(mode_label)
         mode_layout.addWidget(self.pdf_mode)
@@ -349,7 +350,7 @@ class WordConverterWindow(QWidget):
         self.summary.setWordWrap(True)
         set_theme_style(self.summary, "color: #134E4A; font-size: 13px; font-weight: 600;")
         self.summary.setMinimumWidth(360)
-        self.notice = QLabel("复杂排版和缺失字体请核对转换结果。已有同名输出默认跳过。")
+        self.notice = QLabel(tr('复杂排版和缺失字体请核对转换结果。已有同名输出默认跳过。'))
         self.notice.setObjectName("hint")
         self.notice.setWordWrap(True)
         set_theme_style(self.notice, "color: #64748B; font-size: 12px;")
@@ -358,11 +359,11 @@ class WordConverterWindow(QWidget):
         info_box.addWidget(self.notice)
         footer.addLayout(info_box, 1)
 
-        self.start = QPushButton("开始转换")
+        self.start = QPushButton(tr('开始转换'))
         self.start.setProperty("primary", True)
         self.start.setEnabled(False)
         self.start.setFixedHeight(36)
-        self.start.setFixedWidth(120)
+        self.start.setMinimumWidth(120)
         self.start.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start.clicked.connect(self.convert)
         footer.addWidget(self.start)
@@ -370,12 +371,12 @@ class WordConverterWindow(QWidget):
 
     # ------------------------------------------------------------ 方向与文案
     def _update_direction_labels(self):
-        self.setWindowTitle(f"{self.source_kind} 转 {self.target_kind} · {APP_NAME}")
-        self.title.setText(f"{self.source_kind} 转 {self.target_kind}")
-        self.add_button.setText(f"添加 {self.source_kind} 文件…")
-        self.table.setHorizontalHeaderLabels([f"源 {self.source_kind} 文件", f"输出 {self.target_kind} 文件", "状态"])
-        self.table.setAccessibleName(f"{self.source_kind} 转换清单，双击第二列可选择输出位置")
-        self.overwrite.setText(f"明确覆盖已有 {self.target_kind}（源文件保留）")
+        self.setWindowTitle(tr('{p0} 转 {p1} · {p2}', p0=f'{self.source_kind}', p1=f'{self.target_kind}', p2=tr(APP_NAME)))
+        self.title.setText(tr('{p0} 转 {p1}', p0=f'{self.source_kind}', p1=f'{self.target_kind}'))
+        self.add_button.setText(tr('添加 {p0} 文件…', p0=f'{self.source_kind}'))
+        self.table.setHorizontalHeaderLabels([tr('源 {p0} 文件', p0=f'{self.source_kind}'), tr('输出 {p0} 文件', p0=f'{self.target_kind}'), tr('状态')])
+        self.table.setAccessibleName(tr('{p0} 转换清单，双击第二列可选择输出位置', p0=f'{self.source_kind}'))
+        self.overwrite.setText(tr('明确覆盖已有 {p0}（源文件保留）', p0=f'{self.target_kind}'))
         self.ocr_install.setVisible(self.direction == "pdf_to_word")
         self.pdf_mode_row.setVisible(self.direction == "pdf_to_word")
         preserve_layout=self.pdf_mode.currentData()=='layout'
@@ -383,8 +384,8 @@ class WordConverterWindow(QWidget):
                   if preserve_layout else '普通 PDF 使用本机 Microsoft Word 重排，适合连续修改正文；已有 OCR 文字直接导出可编辑内容。')
         primary_hint = (pdf_hint
                         if self.direction == "pdf_to_word" else "使用本机 Microsoft Word 离线转换 · 已有同名输出默认跳过")
-        self.engine_hint.setText("扫描页需安装离线识别组件；缺失字体、竖排文字和复杂图文请核对。保留原版式按位置编辑，Word 重排需本机 Word，单份最多等待 180 秒。"
-                                 if self.direction == "pdf_to_word" else "单份超时 180 秒；失败继续下一份。源文件只读打开，禁用宏和外链自动更新。")
+        self.engine_hint.setText(tr('扫描页需安装离线识别组件；缺失字体、竖排文字和复杂图文请核对。保留原版式按位置编辑，Word 重排需本机 Word，单份最多等待 180 秒。')
+                                 if self.direction == "pdf_to_word" else tr('单份超时 180 秒；失败继续下一份。源文件只读打开，禁用宏和外链自动更新。'))
         sub_hint = f"可直接拖入 {self.source_kind} 文件或文件夹，重复文件自动忽略。"
         self.intro.setText(f"{primary_hint}\n{sub_hint}")
         self._update_output_field()
@@ -431,15 +432,15 @@ class WordConverterWindow(QWidget):
             manual_count = len(self._manual_targets)
             if manual_count:
                 self.output_hint.setText(
-                    f"未单独指定的文件统一保存在此文件夹（已单独指定 {manual_count} 份），已有同名文件默认跳过。"
+                    tr('未单独指定的文件统一保存在此文件夹（已单独指定 {p0} 份），已有同名文件默认跳过。', p0=f'{manual_count}')
                 )
             else:
-                self.output_hint.setText("所有输出文件统一保存在这个文件夹，已有同名文件默认跳过。")
+                self.output_hint.setText(tr('所有输出文件统一保存在这个文件夹，已有同名文件默认跳过。'))
         else:
             self.output_path.setFullText("与源文件相同文件夹")
             self.btn_reset_dir.setVisible(bool(self._manual_targets))
             self.output_hint.setText(
-                f"每份 {self.source_kind} 与生成的 {self.target_kind} 放在一起，文件名保持一致。"
+                tr('每份 {p0} 与生成的 {p1} 放在一起，文件名保持一致。', p0=f'{self.source_kind}', p1=f'{self.target_kind}')
             )
 
     def _refresh_targets(self):
@@ -454,7 +455,7 @@ class WordConverterWindow(QWidget):
     def choose_output_dir(self):
         if self._task_dialog is not None:
             return
-        path = QFileDialog.getExistingDirectory(self, f"选择 {self.target_kind} 输出目录")
+        path = QFileDialog.getExistingDirectory(self, tr('选择 {p0} 输出目录', p0=f'{self.target_kind}'))
         if not path:
             return
         self.custom_output_dir = Path(path)
@@ -477,7 +478,7 @@ class WordConverterWindow(QWidget):
         current = self.table.item(row, 1).text() if self.table.item(row, 1) else self._target_for(source)
         # 目录和文件名都已预填，用户最多点两下即可确认，不需要手动输入。
         path, _ = QFileDialog.getSaveFileName(
-            self, f"选择输出 {self.target_kind} 文件", current, f"{self.target_kind} 文件 (*{self.output_suffix})",
+            self, tr('选择输出 {p0} 文件', p0=f'{self.target_kind}'), current, tr('{p0} 文件 (*{p1})', p0=f'{self.target_kind}', p1=f'{self.output_suffix}'),
         )
         if not path:
             return
@@ -508,11 +509,11 @@ class WordConverterWindow(QWidget):
             return
         row = item.row()
         menu = QMenu(self)
-        act_change = menu.addAction(f"选择输出 {self.target_kind} 位置")
-        act_open_src = menu.addAction(f"打开源 {self.source_kind} 所在目录")
-        act_open_dest = menu.addAction(f"打开输出 {self.target_kind} 所在目录")
+        act_change = menu.addAction(tr('选择输出 {p0} 位置', p0=f'{self.target_kind}'))
+        act_open_src = menu.addAction(tr('打开源 {p0} 所在目录', p0=f'{self.source_kind}'))
+        act_open_dest = menu.addAction(tr('打开输出 {p0} 所在目录', p0=f'{self.target_kind}'))
         menu.addSeparator()
-        act_remove = menu.addAction("移除此项")
+        act_remove = menu.addAction(tr('移除此项'))
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == act_change:
             self.browse_row_target(row)
@@ -532,17 +533,17 @@ class WordConverterWindow(QWidget):
     # -------------------------------------------------------------------- 汇总
     def _update_summary(self):
         count = self.table.rowCount()
-        self.count_label.setText(f"{count} 份")
+        self.count_label.setText(tr('{p0} 份', p0=f'{count}'))
         self.clear_button.setEnabled(count > 0)
         if self._message:
             self.summary.setText(self._message)
         elif count == 0:
-            self.summary.setText(f"拖入 {self.source_kind} 文件或文件夹，或点击上方按钮添加。")
+            self.summary.setText(tr('拖入 {p0} 文件或文件夹，或点击上方按钮添加。', p0=f'{self.source_kind}'))
         else:
             manual = len([s for s in (self.table.item(r, 0).text() for r in range(count))
                           if s in self._manual_targets])
             extra = f"，其中 {manual} 份已单独指定位置" if manual else ""
-            self.summary.setText(f"已收集 {count} 份 {self.source_kind}{extra}，确认输出位置后点击“开始转换”。")
+            self.summary.setText(tr('已收集 {p0} 份 {p1}{p2}，确认输出位置后点击“开始转换”。', p0=f'{count}', p1=f'{self.source_kind}', p2=f'{extra}'))
 
     def _set_message(self, text: str):
         self._message = text
@@ -553,8 +554,8 @@ class WordConverterWindow(QWidget):
         if self._task_dialog is not None:
             return
         paths, _ = QFileDialog.getOpenFileNames(
-            self, f"添加 {self.source_kind} 文件", "",
-            "PDF 文档 (*.pdf)" if self.direction == "pdf_to_word" else "Word 文档 (*.doc *.docx)")
+            self, tr('添加 {p0} 文件', p0=f'{self.source_kind}'), "",
+            tr('PDF 文档 (*.pdf)') if self.direction == "pdf_to_word" else tr('Word 文档 (*.doc *.docx)'))
         if paths:
             self.inputs.extend(paths)
             self.rescan()
@@ -562,7 +563,7 @@ class WordConverterWindow(QWidget):
     def add_folder(self):
         if self._task_dialog is not None:
             return
-        path = QFileDialog.getExistingDirectory(self, "添加待转换文件夹")
+        path = QFileDialog.getExistingDirectory(self, tr('添加待转换文件夹'))
         if path:
             self.inputs.append(path)
             self.rescan()
@@ -663,7 +664,7 @@ class WordConverterWindow(QWidget):
         self._update_output_field()
         self._update_summary()
         if errors:
-            box = QMessageBox(QMessageBox.Icon.Warning, "部分路径未加入", f"{len(errors)} 个路径未能读取。", parent=self)
+            box = QMessageBox(QMessageBox.Icon.Warning, tr('部分路径未加入'), tr('{p0} 个路径未能读取。', p0=f'{len(errors)}'), parent=self)
             box.setDetailedText("\n".join(errors))
             box.exec()
 
@@ -711,7 +712,7 @@ class WordConverterWindow(QWidget):
         if self._task_dialog is not None:
             return
         if self.direction == "word_to_pdf" and not word_available():
-            QMessageBox.information(self, "需要 Microsoft Word", "未检测到本机 Microsoft Word。请安装并完成首次启动后再转换。")
+            QMessageBox.information(self, tr('需要 Microsoft Word'), tr('未检测到本机 Microsoft Word。请安装并完成首次启动后再转换。'))
             return
         items = [(self.table.item(i, 0).text(), self.table.item(i, 1).text().strip())
                  for i in range(self.table.rowCount())]
@@ -719,22 +720,21 @@ class WordConverterWindow(QWidget):
             return
         for source, target in items:
             if not target or Path(target).suffix.lower() != self.output_suffix or not Path(target).is_absolute():
-                QMessageBox.warning(self, "请调整输出位置",
-                    f"这份 {self.source_kind} 的输出位置不完整，请双击第二列重新选择：\n{target or source}")
+                QMessageBox.warning(self, tr('请调整输出位置'),
+                    tr('这份 {p0} 的输出位置不完整，请双击第二列重新选择：\n{p1}', p0=f'{self.source_kind}', p1=f'{target or source}'))
                 return
             if not Path(target).parent.is_dir():
-                QMessageBox.warning(self, "输出文件夹不存在", f"请选择已有文件夹：\n{Path(target).parent}")
+                QMessageBox.warning(self, tr('输出文件夹不存在'), tr('请选择已有文件夹：\n{p0}', p0=f'{Path(target).parent}'))
                 return
         keys = [os.path.normcase(os.path.realpath(target)) for _, target in items]
         counts = Counter(keys)
         collisions = [i for i, key in enumerate(keys) if counts[key] > 1]
         if collisions:
-            box = QMessageBox(QMessageBox.Icon.Warning, "输出文件名冲突",
-                f"多份 {self.source_kind} 会写入同一个 {self.target_kind} 文件。\n"
-                f"可采用带源扩展名的独立文件名，或返回后逐条调整输出位置。", parent=self)
+            box = QMessageBox(QMessageBox.Icon.Warning, tr('输出文件名冲突'),
+                tr('多份 {p0} 会写入同一个 {p1} 文件。\n可采用带源扩展名的独立文件名，或返回后逐条调整输出位置。', p0=f'{self.source_kind}', p1=f'{self.target_kind}'), parent=self)
             box.setDetailedText("\n".join(f"{items[i][0]} → {items[i][1]}" for i in collisions))
-            rename = box.addButton("采用独立文件名", QMessageBox.ButtonRole.AcceptRole)
-            box.addButton("返回调整", QMessageBox.ButtonRole.RejectRole)
+            rename = box.addButton(tr('采用独立文件名'), QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(tr('返回调整'), QMessageBox.ButtonRole.RejectRole)
             box.exec()
             if box.clickedButton() is not rename:
                 return
@@ -746,8 +746,8 @@ class WordConverterWindow(QWidget):
                 self._set_item(index, 1, target)
             keys = [os.path.normcase(os.path.realpath(target)) for _, target in items]
             if len(set(keys)) != len(keys):
-                QMessageBox.warning(self, "仍存在冲突",
-                    f"请为每份 {self.source_kind} 分别选择不同的 {self.target_kind} 保存位置。")
+                QMessageBox.warning(self, tr('仍存在冲突'),
+                    tr('请为每份 {p0} 分别选择不同的 {p1} 保存位置。', p0=f'{self.source_kind}', p1=f'{self.target_kind}'))
                 return
         needs_native_import = False
         pdf_mode=self.pdf_mode.currentData()
@@ -767,23 +767,22 @@ class WordConverterWindow(QWidget):
         if needs_native_import:
             try:
                 if pdf_import_needs_confirmation():
-                    accepted = QMessageBox.question(self, "首次启用 PDF 转 Word",
-                        "Word 的 PDF 导入确认会使后台转换等待。\n是否让 Word 不再重复显示这项确认？\n"
-                        "这与 Word 提示框中的“不再显示”选项相同，会记住此选择。",
+                    accepted = QMessageBox.question(self, tr('首次启用 PDF 转 Word'),
+                        tr('Word 的 PDF 导入确认会使后台转换等待。\n是否让 Word 不再重复显示这项确认？\n这与 Word 提示框中的“不再显示”选项相同，会记住此选择。'),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.No)
                     if accepted != QMessageBox.StandardButton.Yes:
                         return
                     allow_pdf_import()
             except (RuntimeError, OSError) as exc:
-                QMessageBox.information(self, "Word 尚未准备好", str(exc))
+                QMessageBox.information(self, tr('Word 尚未准备好'), str(exc))
                 return
         overwrite = self.overwrite.isChecked()
         try:
             results, cancelled, version = run_operation(self, f"批量 {self.source_kind} 转 {self.target_kind}", lambda progress, cancel:
                 convert_batch(items, overwrite, progress, cancel, direction=self.direction, pdf_mode=pdf_mode), cancellable=True)
         except Exception as exc:
-            QMessageBox.warning(self, "转换未启动", str(exc))
+            QMessageBox.warning(self, tr('转换未启动'), str(exc))
             return
         labels = {"success": "成功", "skipped": "跳过", "failed": "失败"}
         for row in range(self.table.rowCount()):
@@ -793,13 +792,13 @@ class WordConverterWindow(QWidget):
         counts = Counter(result["state"] for result in results)
         summary = f"{'已取消' if cancelled else '转换结束'} · 成功 {counts['success']} · 跳过 {counts['skipped']} · 失败 {counts['failed']}"
         self.summary.setText(summary)
-        box = QMessageBox(QMessageBox.Icon.Information, "转换清单", summary + "\n已完成的输出已保留。", parent=self)
+        box = QMessageBox(QMessageBox.Icon.Information, tr('转换清单'), summary + tr('\n已完成的输出已保留。'), parent=self)
         details = [f"{labels[r['state']]}：{r['source']} → {r['target']}\n{r['message']}" for r in results]
         if version:
             details.insert(0, "Microsoft Word 版本：" + version)
         box.setDetailedText("\n\n".join(details))
-        btn_open = box.addButton("打开输出目录", QMessageBox.ButtonRole.ActionRole)
-        box.addButton("完成", QMessageBox.ButtonRole.AcceptRole)
+        btn_open = box.addButton(tr('打开输出目录'), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(tr('完成'), QMessageBox.ButtonRole.AcceptRole)
         box.exec()
         if box.clickedButton() == btn_open:
             dest = self.custom_output_dir or (Path(items[0][1]).parent if items else None)

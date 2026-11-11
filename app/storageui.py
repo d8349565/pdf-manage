@@ -1,4 +1,5 @@
 """Storage settings reuse the application's existing dialogs and task progress."""
+from app.i18n import mark_text, tr
 from app.themes import set_theme_style
 from pathlib import Path
 import tempfile
@@ -71,44 +72,44 @@ def _path_field(path, name):
 def _pick_component_folder(parent, kind, current):
     name = 'OCR 组件' if kind == 'ocr' else '任务缓存'
     path = QFileDialog.getExistingDirectory(
-        parent, f'选择{name}所在文件夹（自动建立 ZhiXuPDF/{kind}）', str(current.parent))
+        parent, tr('选择{p0}所在文件夹（自动建立 ZhiXuPDF/{p1}）', p0=f'{name}', p1=f'{kind}'), str(current.parent))
     return Path(path) / 'ZhiXuPDF' / kind if path else None
 
 
 def _open_folder(parent, path):
     path = Path(path)
     if not path.is_dir():
-        QMessageBox.information(parent, '文件夹无法访问', f'此位置尚未创建、已清理或暂时不可访问：\n{path}')
+        QMessageBox.information(parent, tr('文件夹无法访问'), tr('此位置尚未创建、已清理或暂时不可访问：\n{p0}', p0=f'{path}'))
     elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
-        QMessageBox.warning(parent, '无法打开文件夹', f'请在文件资源管理器中打开：\n{path}')
+        QMessageBox.warning(parent, tr('无法打开文件夹'), tr('请在文件资源管理器中打开：\n{p0}', p0=f'{path}'))
 
 
 class RuntimeInstallDialog(QDialog):
     def __init__(self, archive, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('安装 OCR 增强包')
+        self.setWindowTitle(tr('安装 OCR 增强包'))
         self.setObjectName('ocrInstaller')
         set_theme_style(self, SETTINGS_QSS)
         self.setMinimumWidth(620)
         self.directory = storage.directory('ocr')
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        hint(layout, '完整校验后安装到以下位置；原 ZIP 保留，已有组件会保留一份备份。')
+        hint(layout, tr('完整校验后安装到以下位置；原 ZIP 保留，已有组件会保留一份备份。'))
         form = settings_form()
-        form.addRow('本地 ZIP', _path_field(archive, 'OCR 增强包 ZIP 路径'))
+        form.addRow(tr('本地 ZIP'), _path_field(archive, 'OCR 增强包 ZIP 路径'))
         self.target = _path_field(self.directory, 'OCR 组件安装目录')
         row = QHBoxLayout()
         row.setSpacing(8)
         row.addWidget(self.target, 1)
-        choose = QPushButton('选择位置…')
+        choose = QPushButton(tr('选择位置…'))
         choose.clicked.connect(self.choose_directory)
         row.addWidget(choose)
-        form.addRow('安装位置', row)
+        form.addRow(tr('安装位置'), row)
         layout.addLayout(form)
-        hint(layout, '旧组件备份保存在安装目录的上一级，可在“文件 → 存储管理”中查看和清理。')
+        hint(layout, tr('旧组件备份保存在安装目录的上一级，可在“文件 → 存储管理”中查看和清理。'))
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        box.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
-        start = box.addButton('安装到此位置', QDialogButtonBox.ButtonRole.AcceptRole)
+        box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
+        start = box.addButton(tr('安装到此位置'), QDialogButtonBox.ButtonRole.AcceptRole)
         start.setObjectName('primary')
         box.accepted.connect(self.accept)
         box.rejected.connect(self.reject)
@@ -126,7 +127,7 @@ class RuntimeInstallDialog(QDialog):
 class StorageDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('存储管理')
+        self.setWindowTitle(tr('存储管理'))
         self.setObjectName('storageSettings')
         available = self.screen().availableGeometry()
         width = min(780, available.width() - 48)
@@ -136,7 +137,7 @@ class StorageDialog(QDialog):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 16, 16, 16)
         outer.setSpacing(12)
-        hint(outer, '查看文件位置和占用空间。位置更改立即保存，新任务使用新位置。')
+        hint(outer, tr('查看文件位置和占用空间。位置更改立即保存，新任务使用新位置。'))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -146,103 +147,98 @@ class StorageDialog(QDialog):
         layout.setSpacing(12)
         self.paths = {}
         for kind, title, explanation in (
-            ('ocr', 'OCR 组件', '模型、字典与推理程序。迁移会复制并校验，原位置保留。'),
-            ('cache', '任务缓存', '识别图像、压缩预览和转换中间文件；任务结束或取消后自动清理。'),
-            ('output', '默认输出', '新导出任务使用此位置；每次导出仍可另选文件夹，已有文件按原有规则保护。'),
+            ('ocr', mark_text('OCR 组件'), mark_text('模型、字典与推理程序。迁移会复制并校验，原位置保留。')),
+            ('cache', mark_text('任务缓存'), mark_text('识别图像、压缩预览和转换中间文件；任务结束或取消后自动清理。')),
+            ('output', mark_text('默认输出'), mark_text('新导出任务使用此位置；每次导出仍可另选文件夹，已有文件按原有规则保护。')),
         ):
             card = QFrame()
             card.setObjectName('card')
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(10)
-            heading = QLabel(title)
+            heading = QLabel(tr(title))
             font = heading.font()
             font.setBold(True)
             heading.setFont(font)
             card_layout.addWidget(heading)
-            hint(card_layout, explanation)
-            field = _path_field('', title + '位置')
+            hint(card_layout, tr(explanation))
+            field = _path_field('', tr(title + '位置'))
             self.paths[kind] = field
             card_layout.addWidget(field)
             row = QHBoxLayout()
             row.setSpacing(8)
             for text, callback in (
-                ('选择位置…', lambda checked=False, k=kind: self.choose_directory(k)),
-                ('恢复默认', lambda checked=False, k=kind: self.restore_default(k)),
-                ('打开目录', lambda checked=False, k=kind: self.open_directory(k)),
+                (mark_text('选择位置…'), lambda checked=False, k=kind: self.choose_directory(k)),
+                (mark_text('恢复默认'), lambda checked=False, k=kind: self.restore_default(k)),
+                (mark_text('打开目录'), lambda checked=False, k=kind: self.open_directory(k)),
             ):
-                button = QPushButton(text)
+                button = QPushButton(tr(text))
                 button.setAutoDefault(False)
-                button.setAccessibleName(title + text)
+                button.setAccessibleName(tr(title + text))
                 button.clicked.connect(callback)
                 row.addWidget(button)
             row.addStretch()
             if kind == 'ocr':
-                install = QPushButton('安装增强包…')
+                install = QPushButton(tr('安装增强包…'))
                 install.setAutoDefault(False)
                 install.clicked.connect(self.install_package)
                 row.addWidget(install)
             if kind == 'cache':
-                clean = QPushButton('清理缓存…')
+                clean = QPushButton(tr('清理缓存…'))
                 clean.setAutoDefault(False)
                 clean.clicked.connect(lambda: self.clean('cache'))
                 row.addWidget(clean)
             card_layout.addLayout(row)
             layout.addWidget(card)
-        self.usage = hint(layout, '点击“统计用量”查看当前组件、可清理缓存和旧备份的占用空间。')
+        self.usage = hint(layout, tr('点击“统计用量”查看当前组件、可清理缓存和旧备份的占用空间。'))
         self.usage.setTextFormat(Qt.TextFormat.PlainText)
         usage_row = QHBoxLayout()
         usage_row.setSpacing(8)
-        count = QPushButton('统计用量')
+        count = QPushButton(tr('统计用量'))
         count.clicked.connect(self.refresh_usage)
         usage_row.addWidget(count)
-        backups = QPushButton('查看旧备份')
+        backups = QPushButton(tr('查看旧备份'))
         backups.clicked.connect(self.open_backups)
         usage_row.addWidget(backups)
-        clean = QPushButton('清理旧备份…')
+        clean = QPushButton(tr('清理旧备份…'))
         clean.clicked.connect(lambda: self.clean('backup'))
         usage_row.addWidget(clean)
         usage_row.addStretch()
         layout.addLayout(usage_row)
-        details = QPushButton('其他文件位置 ▸')
+        details = QPushButton(tr('其他文件位置 ▸'))
         details.setCheckable(True)
         details.setAutoDefault(False)
         layout.addWidget(details)
         self.details = QWidget()
         form = settings_form(self.details)
         form.setContentsMargins(0, 0, 0, 0)
-        form.addRow('程序目录', _path_field(storage.program_directory(), '程序所在目录'))
-        form.addRow('偏好设置', _path_field(storage.settings_location(), '偏好设置保存位置'))
+        form.addRow(tr('程序目录'), _path_field(storage.program_directory(), '程序所在目录'))
+        form.addRow(tr('偏好设置'), _path_field(storage.settings_location(), '偏好设置保存位置'))
         self.install_parent = _path_field('', '安装暂存与备份所在目录')
-        form.addRow('安装与备份', self.install_parent)
-        form.addRow('系统临时', _path_field(tempfile.gettempdir(), '系统临时文件夹'))
+        form.addRow(tr('安装与备份'), self.install_parent)
+        form.addRow(tr('系统临时'), _path_field(tempfile.gettempdir(), '系统临时文件夹'))
         self.previous = QComboBox()
         self.previous.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.previous.setMinimumContentsLength(24)
-        self.previous.setAccessibleName('保留的原组件及缓存位置')
+        self.previous.setAccessibleName(tr('保留的原组件及缓存位置'))
         history = QHBoxLayout()
         history.setSpacing(8)
         history.addWidget(self.previous, 1)
-        open_old = QPushButton('打开')
+        open_old = QPushButton(tr('打开'))
         open_old.clicked.connect(lambda: _open_folder(self, self.previous.currentData())
                                  if self.previous.currentData() else None)
         history.addWidget(open_old)
-        form.addRow('以前位置', history)
-        clean_previous = QPushButton('清理以前组件…')
+        form.addRow(tr('以前位置'), history)
+        clean_previous = QPushButton(tr('清理以前组件…'))
         clean_previous.setAutoDefault(False)
         clean_previous.clicked.connect(lambda: self.clean('previous-ocr'))
         form.addRow('', clean_previous)
-        note = QLabel('原 ZIP 保存在您选择文件时的位置，不另存一份。\n'
-                      'PDF、Word、Excel、TXT 和图片结果保存在各导出窗口显示的位置。\n'
-                      '输出校验临时文件跟随输出目录，正常结束会删除。页面预览和搜索缓存位于内存。\n'
-                      '安装暂存在安装目录上一级的 .ocr-install-*；正常结束会删除。\n'
-                      'Word 等外部程序可能使用系统临时文件夹，其临时文件按各自设置管理。\n'
-                      '迁移后原组件目录保留以便恢复；确认新组件可用后，可单独清理以前组件。')
+        note = QLabel(tr('原 ZIP 保存在您选择文件时的位置，不另存一份。\nPDF、Word、Excel、TXT 和图片结果保存在各导出窗口显示的位置。\n输出校验临时文件跟随输出目录，正常结束会删除。页面预览和搜索缓存位于内存。\n安装暂存在安装目录上一级的 .ocr-install-*；正常结束会删除。\nWord 等外部程序可能使用系统临时文件夹，其临时文件按各自设置管理。\n迁移后原组件目录保留以便恢复；确认新组件可用后，可单独清理以前组件。'))
         note.setWordWrap(True)
         form.addRow(note)
         self.details.hide()
         details.toggled.connect(self.details.setVisible)
-        details.toggled.connect(lambda checked: details.setText('其他文件位置 ▾' if checked else '其他文件位置 ▸'))
+        details.toggled.connect(lambda checked: details.setText(tr('其他文件位置 ▾') if checked else tr('其他文件位置 ▸')))
         layout.addWidget(self.details)
         layout.addStretch()
         scroll.setWidget(content)
@@ -250,7 +246,7 @@ class StorageDialog(QDialog):
         self.feedback = hint(outer, '')
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        box.button(QDialogButtonBox.StandardButton.Close).setText('关闭')
+        box.button(QDialogButtonBox.StandardButton.Close).setText(tr('关闭'))
         box.rejected.connect(self.reject)
         outer.addWidget(box)
         self.refresh_paths()
@@ -275,7 +271,7 @@ class StorageDialog(QDialog):
         if any(getattr(widget, '_task_dialog', None) is not None
                or (getattr(widget, '_conv_thread', None) is not None
                    and widget._conv_thread.isRunning()) for widget in QApplication.topLevelWidgets()):
-            self.feedback.setText('请等待当前文件任务结束，再更改位置或清理文件。')
+            self.feedback.setText(tr('请等待当前文件任务结束，再更改位置或清理文件。'))
             return True
         return False
 
@@ -283,7 +279,7 @@ class StorageDialog(QDialog):
         if self._busy():
             return
         if kind == 'output':
-            selected = QFileDialog.getExistingDirectory(self, '选择默认输出目录', str(storage.output_directory() or ''))
+            selected = QFileDialog.getExistingDirectory(self, tr('选择默认输出目录'), str(storage.output_directory() or ''))
             path = Path(selected) if selected else None
         else:
             path = _pick_component_folder(self, kind, storage.directory(kind))
@@ -304,10 +300,10 @@ class StorageDialog(QDialog):
                 storage.writable_directory(path)
             storage.save_directory(kind, path)
             self.refresh_paths()
-            self.feedback.setText('位置已保存。原组件目录保留；新任务将使用新位置。' if kind == 'ocr'
-                                  else '位置已保存，新任务将使用新位置。')
+            self.feedback.setText(tr('位置已保存。原组件目录保留；新任务将使用新位置。') if kind == 'ocr'
+                                  else tr('位置已保存，新任务将使用新位置。'))
         except OperationCancelled:
-            self.feedback.setText('迁移已取消，仍使用原位置。')
+            self.feedback.setText(tr('迁移已取消，仍使用原位置。'))
         except (OSError, OCRError) as exc:
             self.feedback.setText(str(exc))
 
@@ -316,7 +312,7 @@ class StorageDialog(QDialog):
         if path:
             _open_folder(self, path)
         else:
-            self.feedback.setText('尚未设置统一输出目录，可在每个导出窗口中查看并选择位置。')
+            self.feedback.setText(tr('尚未设置统一输出目录，可在每个导出窗口中查看并选择位置。'))
 
     def open_backups(self):
         parents = list(dict.fromkeys(str(path.parent) for path in
@@ -324,7 +320,7 @@ class StorageDialog(QDialog):
         if len(parents) == 1:
             _open_folder(self, parents[0])
             return
-        selected, accepted = QInputDialog.getItem(self, '查看旧备份', '选择安装或旧位置的上一级文件夹：',
+        selected, accepted = QInputDialog.getItem(self, tr('查看旧备份'), tr('选择安装或旧位置的上一级文件夹：'),
                                                   parents, 0, False)
         if accepted:
             _open_folder(self, selected)
@@ -335,19 +331,15 @@ class StorageDialog(QDialog):
         from app.ocrui import install_local_runtime
         if install_local_runtime(self):
             self.refresh_paths()
-            self.feedback.setText('OCR 增强包已安装。')
+            self.feedback.setText(tr('OCR 增强包已安装。'))
 
     def refresh_usage(self):
         try:
             result = run_operation(self, '统计存储用量', storage.inspect_storage, cancellable=True)
-            self.usage.setText(f"OCR 组件 {result['ocr_bytes'] / 1024 ** 2:.2f} MiB · "
-                               f"可清理缓存 {result['cache_bytes'] / 1024 ** 2:.2f} MiB（{result['cache_count']} 项）\n"
-                               f"可清理旧备份 {result['backup_bytes'] / 1024 ** 2:.2f} MiB（{result['backup_count']} 份） · "
-                               f"正在使用的缓存 {result['active']} 项，清理时跳过\n"
-                               f"以前位置的组件 {result['previous_bytes'] / 1024 ** 2:.2f} MiB（{result['previous_count']} 份）")
+            self.usage.setText(tr('OCR 组件 {p0} MiB · 可清理缓存 {p1} MiB（{p2} 项）\n可清理旧备份 {p3} MiB（{p4} 份） · 正在使用的缓存 {p5} 项，清理时跳过\n以前位置的组件 {p6} MiB（{p7} 份）', p0=f"{result['ocr_bytes'] / 1024 ** 2:.2f}", p1=f"{result['cache_bytes'] / 1024 ** 2:.2f}", p2=f"{result['cache_count']}", p3=f"{result['backup_bytes'] / 1024 ** 2:.2f}", p4=f"{result['backup_count']}", p5=f"{result['active']}", p6=f"{result['previous_bytes'] / 1024 ** 2:.2f}", p7=f"{result['previous_count']}"))
             self.feedback.setText('\n'.join(result['notes']))
         except OperationCancelled:
-            self.feedback.setText('用量统计已取消。')
+            self.feedback.setText(tr('用量统计已取消。'))
         except (OSError, OCRError) as exc:
             self.feedback.setText(str(exc))
 
@@ -359,11 +351,11 @@ class StorageDialog(QDialog):
         if kind == 'previous-ocr':
             paths = storage.previous_directories('ocr')
             if not paths:
-                self.feedback.setText('没有保留的以前组件位置。')
+                self.feedback.setText(tr('没有保留的以前组件位置。'))
                 return
             description = ('清理迁移前保留的所有旧组件目录。请先确认新位置能够正常识别。\n'
                            '仅删除完整且未使用的组件，包含其他文件的目录会跳过：\n' + '\n'.join(str(p) for p in paths))
-        if QMessageBox.question(self, '确认清理', description + '\n原文件、导出结果和当前 OCR 组件保留。',
+        if QMessageBox.question(self, tr('确认清理'), description + tr('\n原文件、导出结果和当前 OCR 组件保留。'),
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
@@ -371,9 +363,9 @@ class StorageDialog(QDialog):
             removed, skipped = run_operation(self, '清理缓存' if kind == 'cache' else '清理旧备份',
                                              lambda progress, cancel: storage.clean_storage(kind, progress, cancel),
                                              cancellable=True)
-            self.feedback.setText(f'已清理 {removed} 项。' + ('\n' + '\n'.join(skipped) if skipped else ''))
-            self.usage.setText('清理已完成，可重新统计用量。')
+            self.feedback.setText(tr('已清理 {p0} 项。', p0=f'{removed}') + ('\n' + '\n'.join(skipped) if skipped else ''))
+            self.usage.setText(tr('清理已完成，可重新统计用量。'))
         except OperationCancelled:
-            self.feedback.setText('清理已停止，尚未处理的文件保留，可重新统计用量。')
+            self.feedback.setText(tr('清理已停止，尚未处理的文件保留，可重新统计用量。'))
         except (OSError, OCRError) as exc:
             self.feedback.setText(str(exc))

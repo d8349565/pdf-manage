@@ -1,5 +1,6 @@
 """Product information and optional support, opened from the About menu."""
 from __future__ import annotations
+from app.i18n import tr
 from app.themes import set_theme_style
 
 from pathlib import Path
@@ -11,7 +12,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QToolButton, QVBoxLayout, QWidget,
 )
 
-from app import APP_NAME, APP_PROJECT_URL, APP_SLUG, APP_VERSION_DISPLAY
+from app import APP_IS_PRERELEASE, APP_NAME, APP_PROJECT_URL, APP_SLUG, __version__
 from app.icons import brand_icon, toolbar_icon
 from app.settingwidgets import SettingSwitch
 from app.updates import UpdateChecker
@@ -24,7 +25,7 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.updates = updates if updates is not None else UpdateChecker(preferences(QSettings), self)
         self.setObjectName("aboutDialog")
-        self.setWindowTitle(f"关于 {APP_NAME}")
+        self.setWindowTitle(tr('关于 {p0}', p0=tr(APP_NAME)))
         self.setWindowIcon(brand_icon())
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -85,14 +86,14 @@ class AboutDialog(QDialog):
 
         header = QHBoxLayout()
         header.setContentsMargins(24, 14, 18, 14)
-        title = QLabel("关于")
+        title = QLabel(tr('关于'))
         title.setObjectName("aboutTitle")
         header.addWidget(title, 1)
         close_icon = QToolButton()
         close_icon.setIcon(toolbar_icon("win-close", "#536762"))
         close_icon.setIconSize(QSize(20, 20))
-        close_icon.setToolTip("关闭")
-        close_icon.setAccessibleName("关闭关于窗口")
+        close_icon.setToolTip(tr('关闭'))
+        close_icon.setAccessibleName(tr('关闭关于窗口'))
         close_icon.clicked.connect(self.reject)
         header.addWidget(close_icon)
         layout.addLayout(header)
@@ -118,10 +119,10 @@ class AboutDialog(QDialog):
         brand.addWidget(logo)
         identity = QVBoxLayout()
         identity.setSpacing(4)
-        name = QLabel(f"{APP_NAME} · {APP_SLUG}")
+        name = QLabel(f"{tr(APP_NAME)} · {APP_SLUG}")
         name.setObjectName("aboutName")
         identity.addWidget(name)
-        tagline = QLabel("让散落的页面有处可归。")
+        tagline = QLabel(tr('让散落的页面有处可归。'))
         tagline.setObjectName("aboutMuted")
         identity.addWidget(tagline)
         brand.addLayout(identity, 1)
@@ -134,11 +135,11 @@ class AboutDialog(QDialog):
         details.setHorizontalSpacing(20)
         details.setVerticalSpacing(10)
         details.setColumnStretch(1, 1)
-        for row, caption in enumerate(("当前版本", "项目地址")):
+        for row, caption in enumerate((tr('当前版本'), tr('项目地址'))):
             label = QLabel(caption)
             label.setObjectName("aboutMuted")
             details.addWidget(label, row, 0)
-        version = QLabel(f"v{APP_VERSION_DISPLAY}")
+        version = QLabel(f"v{__version__}" + (tr('（预览版）') if APP_IS_PRERELEASE else ''))
         version.setObjectName("aboutVersion")
         details.addWidget(version, 0, 1, Qt.AlignmentFlag.AlignRight)
         project = QLabel(
@@ -152,7 +153,7 @@ class AboutDialog(QDialog):
         project.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         project.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         project.setToolTip(APP_PROJECT_URL)
-        project.setAccessibleName(f"打开{APP_NAME} 项目地址")
+        project.setAccessibleName(tr('打开{p0} 项目地址', p0=tr(APP_NAME)))
         details.addWidget(project, 1, 1)
         content.addWidget(info)
 
@@ -168,24 +169,24 @@ class AboutDialog(QDialog):
         updates_layout.addWidget(self.update_status)
         update_buttons = QHBoxLayout()
         update_buttons.setSpacing(8)
-        self.view_updates_button = QPushButton("查看更新内容")
+        self.view_updates_button = QPushButton(tr('查看更新内容'))
         self.view_updates_button.setObjectName("aboutViewUpdates")
         self.view_updates_button.clicked.connect(lambda: show_update_dialog(self, self.updates))
         update_buttons.addWidget(self.view_updates_button)
-        self.check_update_button = QPushButton("检查更新")
+        self.check_update_button = QPushButton(tr('检查更新'))
         self.check_update_button.setObjectName("aboutCheckUpdates")
         self.check_update_button.clicked.connect(self.updates.check)
         update_buttons.addWidget(self.check_update_button)
-        self.get_update_button = QPushButton("打开绿色版发布页" if portable_root() else "打开发布页")
+        self.get_update_button = QPushButton(tr('打开绿色版发布页') if portable_root() else tr('打开发布页'))
         self.get_update_button.setObjectName("aboutGetUpdate")
         self.get_update_button.clicked.connect(self.updates.open_release_page)
         update_buttons.addWidget(self.get_update_button)
-        self.lanzou_button = QPushButton("蓝奏云 ↗")
+        self.lanzou_button = QPushButton(tr('蓝奏云 ↗'))
         self.lanzou_button.setObjectName("aboutLanzouDownload")
         self.lanzou_button.setIcon(toolbar_icon("cloud-download", "#0F766E"))
         self.lanzou_button.setIconSize(QSize(16, 16))
-        self.lanzou_button.setToolTip(f"打开蓝奏云下载，自动复制密码 {LANZOU_PASSWORD}")
-        self.lanzou_button.setAccessibleName("蓝奏云下载，复制密码并打开网盘")
+        self.lanzou_button.setToolTip(tr('打开蓝奏云下载，自动复制密码 {p0}', p0=f'{LANZOU_PASSWORD}'))
+        self.lanzou_button.setAccessibleName(tr('蓝奏云下载，复制密码并打开网盘'))
         self.lanzou_button.clicked.connect(self._open_lanzou_download)
         update_buttons.addWidget(self.lanzou_button)
         for button in (self.view_updates_button, self.check_update_button,
@@ -193,7 +194,7 @@ class AboutDialog(QDialog):
             button.setProperty("aboutUpdateAction", True)
         update_buttons.addStretch()
         updates_layout.addLayout(update_buttons)
-        self.lanzou_status = QLabel(f"蓝奏云密码：{LANZOU_PASSWORD}（点击“蓝奏云”自动复制）")
+        self.lanzou_status = QLabel(tr('蓝奏云密码：{p0}（点击“蓝奏云”自动复制）', p0=f'{LANZOU_PASSWORD}'))
         self.lanzou_status.setObjectName("aboutUpdateHint")
         self.lanzou_status.setTextFormat(Qt.TextFormat.PlainText)
         self.lanzou_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
@@ -207,21 +208,21 @@ class AboutDialog(QDialog):
         updates_layout.addWidget(update_divider)
         settings_rows = QVBoxLayout()
         settings_rows.setSpacing(2)
-        settings_title = QLabel("更新设置")
+        settings_title = QLabel(tr('更新设置'))
         settings_title.setObjectName("aboutUpdateSettings")
         settings_rows.addWidget(settings_title)
-        self.auto_updates = SettingSwitch("自动检查更新", "后台检查，每天最多一次。")
+        self.auto_updates = SettingSwitch(tr('自动检查更新'), tr('后台检查，每天最多一次。'))
         self.auto_updates.setObjectName("aboutAutoUpdates")
         self.auto_updates.setChecked(self.updates.automatic)
         self.auto_updates.toggled.connect(self.updates.set_automatic)
         settings_rows.addWidget(self.auto_updates)
-        self.update_reminders = SettingSwitch("新版本提醒", "在主窗口显示「查看更新」，关闭后仍可手动检查。")
+        self.update_reminders = SettingSwitch(tr('新版本提醒'), tr('在主窗口显示「查看更新」，关闭后仍可手动检查。'))
         self.update_reminders.setObjectName("aboutUpdateReminders")
         self.update_reminders.setChecked(self.updates.reminders_enabled)
         self.update_reminders.toggled.connect(self.updates.set_reminders_enabled)
         settings_rows.addWidget(self.update_reminders)
         updates_layout.addLayout(settings_rows)
-        update_note = QLabel("仅向 GitHub 查询版本，不上传文档。运行安装包前请关闭软件。")
+        update_note = QLabel(tr('仅向 GitHub 查询版本，不上传文档。运行安装包前请关闭软件。'))
         update_note.setObjectName("aboutUpdateHint")
         update_note.setWordWrap(True)
         updates_layout.addWidget(update_note)
@@ -231,10 +232,10 @@ class AboutDialog(QDialog):
 
         support = QVBoxLayout()
         support.setSpacing(8)
-        heading = QLabel("♡  赞赏项目")
+        heading = QLabel(tr('♡  赞赏项目'))
         heading.setObjectName("aboutSection")
         support.addWidget(heading)
-        note = QLabel(f"如果{APP_NAME} 帮到了你，欢迎支持项目的持续维护。赞赏完全自愿。")
+        note = QLabel(tr('如果{p0} 帮到了你，欢迎支持项目的持续维护。赞赏完全自愿。', p0=tr(APP_NAME)))
         note.setWordWrap(True)
         note.setObjectName("aboutMuted")
         support.addWidget(note)
@@ -246,10 +247,10 @@ class AboutDialog(QDialog):
         donation_layout = QVBoxLayout(donation)
         donation_layout.setContentsMargins(20, 14, 20, 14)
         donation_layout.setSpacing(10)
-        donation_layout.addWidget(QLabel("微信赞赏"), 0, Qt.AlignmentFlag.AlignHCenter)
+        donation_layout.addWidget(QLabel(tr('微信赞赏')), 0, Qt.AlignmentFlag.AlignHCenter)
         code = QLabel()
         code.setObjectName("aboutDonationCode")
-        code.setAccessibleName("微信赞赏码，使用微信扫一扫")
+        code.setAccessibleName(tr('微信赞赏码，使用微信扫一扫'))
         pixmap = QPixmap(str(Path(__file__).resolve().parent / "assets" / "donation.png"))
         if not pixmap.isNull():
             ratio = self.devicePixelRatioF()
@@ -260,7 +261,7 @@ class AboutDialog(QDialog):
             pixmap.setDevicePixelRatio(ratio)
         code.setPixmap(pixmap)
         donation_layout.addWidget(code, 0, Qt.AlignmentFlag.AlignHCenter)
-        scan_hint = QLabel("使用微信扫一扫")
+        scan_hint = QLabel(tr('使用微信扫一扫'))
         scan_hint.setObjectName("aboutMuted")
         donation_layout.addWidget(scan_hint, 0, Qt.AlignmentFlag.AlignHCenter)
         content.addWidget(donation, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -279,7 +280,7 @@ class AboutDialog(QDialog):
         footer = QHBoxLayout()
         footer.setContentsMargins(24, 14, 24, 14)
         footer.addStretch()
-        close_button = QPushButton("关闭")
+        close_button = QPushButton(tr('关闭'))
         close_button.setObjectName("aboutClose")
         close_button.setDefault(True)
         close_button.clicked.connect(self.accept)
@@ -291,15 +292,15 @@ class AboutDialog(QDialog):
 
     def _refresh_updates(self) -> None:
         message = self.updates.message
-        if self.updates.update_available and not self.updates.busy and not message.startswith("发现新版本"):
-            message = f"可获取新版本 {self.updates.latest_tag}。\n{message}"
+        if self.updates.update_available and not self.updates.busy and not message.startswith(tr('发现新版本')):
+            message = tr('可获取新版本 {p0}。\n{p1}', p0=f'{self.updates.latest_tag}', p1=f'{message}')
         self.update_status.setText(message)
         self.check_update_button.setEnabled(not self.updates.busy)
-        self.check_update_button.setText("正在检查…" if self.updates.busy else "检查更新")
+        self.check_update_button.setText(tr('正在检查…') if self.updates.busy else tr('检查更新'))
         if portable_root():
-            self.get_update_button.setText("GitHub 绿色版下载 ↗" if self.updates.update_available else "GitHub 绿色版发布页 ↗")
+            self.get_update_button.setText(tr('GitHub 绿色版下载 ↗') if self.updates.update_available else tr('GitHub 绿色版发布页 ↗'))
         else:
-            self.get_update_button.setText("GitHub 下载 ↗" if self.updates.update_available else "GitHub 发布页 ↗")
+            self.get_update_button.setText(tr('GitHub 下载 ↗') if self.updates.update_available else tr('GitHub 发布页 ↗'))
 
     def _open_lanzou_download(self) -> None:
         self.lanzou_status.setText(open_lanzou_download())

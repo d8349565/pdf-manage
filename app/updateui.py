@@ -1,5 +1,6 @@
 """In-app release notes; remote text never loads HTML, images or local resources."""
 from __future__ import annotations
+from app.i18n import tr
 
 from datetime import datetime
 import re
@@ -25,11 +26,11 @@ def open_lanzou_download() -> str:
     clipboard = QApplication.clipboard()
     clipboard.setText(LANZOU_PASSWORD)
     if clipboard.text() == LANZOU_PASSWORD:
-        message = f"密码 {LANZOU_PASSWORD} 已复制，可在蓝奏云网页中粘贴。"
+        message = tr('密码 {p0} 已复制，可在蓝奏云网页中粘贴。', p0=f'{LANZOU_PASSWORD}')
     else:
-        message = f"未能复制密码，请手动输入：{LANZOU_PASSWORD}。"
+        message = tr('未能复制密码，请手动输入：{p0}。', p0=f'{LANZOU_PASSWORD}')
     if not QDesktopServices.openUrl(QUrl(LANZOU_URL)):
-        message += f"\n无法打开浏览器，请手动访问：{LANZOU_URL}"
+        message += tr('\n无法打开浏览器，请手动访问：{p0}', p0=f'{LANZOU_URL}')
     return message
 
 
@@ -41,7 +42,7 @@ def release_entries(notes: str) -> list[tuple[str, str]]:
         block = block.strip()
         if not block:
             continue
-        match = re.fullmatch(r"(?:[-*+]\s+)?(新增|优化|修复|说明)[：:]\s*(.*)", block, re.S)
+        match = re.fullmatch(r'(?:[-*+]\s+)?(新增|优化|修复|说明)[：:]\s*(.*)', block, re.S)
         if match:
             entries.append((match[1], match[2]))
         else:
@@ -63,7 +64,7 @@ class UpdateDialog(QDialog):
         self.updates = updates
         self._rendered_notes = None
         self.setObjectName("releaseDialog")
-        self.setWindowTitle(f"{APP_NAME} · 版本更新")
+        self.setWindowTitle(tr('{p0} · 版本更新', p0=tr(APP_NAME)))
         self.setWindowIcon(brand_icon())
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -140,20 +141,20 @@ class UpdateDialog(QDialog):
         logo = QLabel()
         logo.setPixmap(brand_icon().pixmap(QSize(24, 24), self.devicePixelRatioF()))
         header.addWidget(logo)
-        header.addWidget(self._label(APP_NAME, muted=True), 1)
+        header.addWidget(self._label(tr(APP_NAME), muted=True), 1)
         self.state_label = self._label("", "releaseState")
         header.addWidget(self.state_label)
         close = QToolButton()
         close.setIcon(toolbar_icon("win-close", colors["muted"]))
         close.setIconSize(QSize(18, 18))
-        close.setToolTip("关闭")
-        close.setAccessibleName("关闭版本更新窗口")
+        close.setToolTip(tr('关闭'))
+        close.setAccessibleName(tr('关闭版本更新窗口'))
         close.clicked.connect(self.reject)
         header.addWidget(close)
         layout.addLayout(header)
         layout.addSpacing(17)
         heading = QHBoxLayout()
-        self.title_label = self._label("正式版更新" if APP_IS_PRERELEASE else "更新内容", "releaseTitle")
+        self.title_label = self._label(tr('正式版更新') if APP_IS_PRERELEASE else tr('更新内容'), "releaseTitle")
         heading.addWidget(self.title_label, 1)
         self.date_label = self._label("", muted=True)
         heading.addWidget(self.date_label, 0, Qt.AlignmentFlag.AlignBottom)
@@ -161,7 +162,7 @@ class UpdateDialog(QDialog):
         layout.addSpacing(7)
         versions = QHBoxLayout()
         versions.setSpacing(12)
-        self.current_label = self._label(f"当前 v{__version__}", muted=True)
+        self.current_label = self._label(tr('当前 v{p0}', p0=f'{__version__}'), muted=True)
         versions.addWidget(self.current_label)
         self.version_arrow = self._label("→", muted=True)
         versions.addWidget(self.version_arrow)
@@ -172,7 +173,7 @@ class UpdateDialog(QDialog):
         self.refresh_button.clicked.connect(self.updates.check)
         versions.addWidget(self.refresh_button)
         full_notes = QToolButton()
-        full_notes.setText("完整发布说明")
+        full_notes.setText(tr('完整发布说明'))
         full_notes.clicked.connect(self.updates.open_release_page)
         versions.addWidget(full_notes)
         layout.addLayout(versions)
@@ -198,7 +199,7 @@ class UpdateDialog(QDialog):
         precautions_layout.setSpacing(6)
         self.precautions_button = QToolButton()
         self.precautions_button.setObjectName("releasePrecautionsToggle")
-        self.precautions_button.setText("使用前须知")
+        self.precautions_button.setText(tr('使用前须知'))
         self.precautions_button.setCheckable(True)
         self.precautions_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.precautions_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -237,24 +238,24 @@ class UpdateDialog(QDialog):
         self._divider(layout)
         layout.addSpacing(14)
         portable = portable_root() is not None
-        footer_note = ("绿色版 · 下载 ZIP，退出软件后解压到新文件夹。" if portable
-                       else "安装版 · 下载完成后，请关闭软件再运行安装包。")
+        footer_note = (tr('绿色版 · 下载 ZIP，退出软件后解压到新文件夹。') if portable
+                       else tr('安装版 · 下载完成后，请关闭软件再运行安装包。'))
         layout.addWidget(self._label(footer_note, muted=True))
         layout.addSpacing(12)
         actions = QHBoxLayout()
         actions.setSpacing(10)
-        later = QPushButton("稍后再说")
+        later = QPushButton(tr('稍后再说'))
         later.setObjectName("releaseLater")
         later.clicked.connect(self.reject)
         actions.addWidget(later)
         actions.addStretch()
-        github = QPushButton("GitHub 下载")
-        github.setAccessibleName("打开 GitHub 绿色版发布页" if portable else "打开 GitHub 安装版发布页")
+        github = QPushButton(tr('GitHub 下载'))
+        github.setAccessibleName(tr('打开 GitHub 绿色版发布页') if portable else tr('打开 GitHub 安装版发布页'))
         github.clicked.connect(self.updates.open_release_page)
         actions.addWidget(github)
-        self.lanzou_button = QPushButton("蓝奏云下载")
+        self.lanzou_button = QPushButton(tr('蓝奏云下载'))
         self.lanzou_button.setObjectName("releaseDownload")
-        self.lanzou_button.setToolTip(f"打开蓝奏云，自动复制密码 {LANZOU_PASSWORD}")
+        self.lanzou_button.setToolTip(tr('打开蓝奏云，自动复制密码 {p0}', p0=f'{LANZOU_PASSWORD}'))
         self.lanzou_button.clicked.connect(self._open_lanzou)
         actions.addWidget(self.lanzou_button)
         layout.addLayout(actions)
@@ -296,7 +297,7 @@ class UpdateDialog(QDialog):
                 if item.widget() is not None:
                     item.widget().deleteLater()
         precautions = []
-        groups = {kind: [] for kind in ("新增", "优化", "修复")}
+        groups = {kind: [] for kind in ('新增', '优化', '修复')}
         for kind, text in release_entries(notes):
             if kind == "说明":
                 precautions.append(text)
@@ -312,9 +313,10 @@ class UpdateDialog(QDialog):
             row_layout = QVBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(9)
-            badge = self._label(kind, "releaseBadge")
+            badge = self._label(tr(kind), "releaseBadge")
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            badge.setFixedSize(50, 28)
+            badge.setFixedHeight(28)
+            badge.setMinimumWidth(50)
             row_layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignLeft)
             for text in texts:
                 label = self._label(text, "releaseEntry")
@@ -334,13 +336,13 @@ class UpdateDialog(QDialog):
     def _refresh_badge_colors(self, *_args) -> None:
         dark = QColor(current_theme().colors["surface"]).lightness() < 128
         colors = {
-            "新增": ("#B3C7BE", "#2E3D37"),
-            "优化": ("#BCC6D8", "#313B4B"),
-            "修复": ("#CEBDB3", "#403731"),
+            tr('新增'): ("#B3C7BE", "#2E3D37"),
+            tr('优化'): ("#BCC6D8", "#313B4B"),
+            tr('修复'): ("#CEBDB3", "#403731"),
         } if dark else {
-            "新增": ("#4E6D63", "#EDF3F0"),
-            "优化": ("#5B6C88", "#EEF1F6"),
-            "修复": ("#786258", "#F4EFEC"),
+            tr('新增'): ("#4E6D63", "#EDF3F0"),
+            tr('优化'): ("#5B6C88", "#EEF1F6"),
+            tr('修复'): ("#786258", "#F4EFEC"),
         }
         for badge in self.findChildren(QLabel, "releaseBadge"):
             foreground, background = colors[badge.text()]
@@ -349,7 +351,7 @@ class UpdateDialog(QDialog):
 
     def _toggle_precautions(self, expanded: bool) -> None:
         self.precautions_button.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
-        self.precautions_button.setAccessibleDescription("收起使用说明" if expanded else "展开完整使用说明")
+        self.precautions_button.setAccessibleDescription(tr('收起使用说明') if expanded else tr('展开完整使用说明'))
         self.precautions_body.setVisible(expanded)
         self.precautions_preview.setVisible(not expanded)
 
@@ -357,22 +359,22 @@ class UpdateDialog(QDialog):
         updates = self.updates
         has_notes = bool(updates.release_notes)
         if updates.busy:
-            state = "正在检查更新…"
+            state = tr('正在检查更新…')
         elif updates.error:
-            state = "当前显示已保存的更新说明" if has_notes else "更新内容尚未获取"
+            state = tr('当前显示已保存的更新说明') if has_notes else tr('更新内容尚未获取')
         elif updates.update_available:
-            state = "有新版本可下载"
+            state = tr('有新版本可下载')
         elif APP_IS_PRERELEASE:
-            state = "预览版：仅检查正式版更新"
+            state = tr('预览版：仅检查正式版更新')
         elif updates.latest_tag:
-            state = "当前已是最新版本" if updates.last_check_succeeded else "已保存的发布说明"
+            state = tr('当前已是最新版本') if updates.last_check_succeeded else tr('已保存的发布说明')
         else:
-            state = "查看正式版更新"
+            state = tr('查看正式版更新')
         self.state_label.setText(state)
         self.current_label.setVisible(updates.update_available)
         self.version_arrow.setVisible(updates.update_available)
-        self.latest_label.setText(("新版 " if updates.update_available else "") + updates.latest_tag
-                                 if updates.latest_tag else f"当前 v{__version__}")
+        self.latest_label.setText((tr('新版 ') if updates.update_available else "") + updates.latest_tag
+                                 if updates.latest_tag else tr('当前 v{p0}', p0=f'{__version__}'))
         try:
             date = datetime.fromisoformat(updates.published_at.replace("Z", "+00:00"))
             self.date_label.setText(date.astimezone().strftime("%Y-%m-%d"))
@@ -380,23 +382,23 @@ class UpdateDialog(QDialog):
         except (ValueError, OverflowError, OSError):
             self.date_label.hide()
         self.refresh_button.setEnabled(not updates.busy)
-        self.refresh_button.setText("正在获取…" if updates.busy else
-                                    "检查更新" if has_notes and not updates.error else "重新获取")
+        self.refresh_button.setText(tr('正在获取…') if updates.busy else
+                                    tr('检查更新') if has_notes and not updates.error else tr('重新获取'))
         if self._rendered_notes != updates.release_notes:
             self._render_notes(updates.release_notes)
             self._rendered_notes = updates.release_notes
         self.scroll.setVisible(has_notes)
         self.empty.setVisible(not has_notes)
         if updates.busy:
-            self.empty_title.setText("正在获取更新内容")
-            self.empty_detail.setText("正在读取 GitHub 发布说明，请稍候。")
+            self.empty_title.setText(tr('正在获取更新内容'))
+            self.empty_detail.setText(tr('正在读取 GitHub 发布说明，请稍候。'))
         elif updates.error:
-            self.empty_title.setText("暂时无法获取更新内容")
+            self.empty_title.setText(tr('暂时无法获取更新内容'))
             self.empty_detail.setText(updates.error)
         else:
-            self.empty_title.setText("暂未获取到更新说明")
-            self.empty_detail.setText("可点击“重新获取”，或打开“完整发布说明”查看。")
-        self.error_label.setText(updates.error + "\n当前显示已保存的同版更新说明。" if updates.error and has_notes else "")
+            self.empty_title.setText(tr('暂未获取到更新说明'))
+            self.empty_detail.setText(tr('可点击“重新获取”，或打开“完整发布说明”查看。'))
+        self.error_label.setText(updates.error + tr('\n当前显示已保存的同版更新说明。') if updates.error and has_notes else "")
         self.error_label.setVisible(bool(updates.error and has_notes))
 
     def _open_lanzou(self) -> None:

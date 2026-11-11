@@ -1,5 +1,6 @@
 """Lazily created outline and review controls for the existing reader."""
 from __future__ import annotations
+from app.i18n import tr, mark_text
 from app.themes import set_theme_style, ui_color
 
 from dataclasses import replace
@@ -25,7 +26,7 @@ from app.workspace import OutlineEntry, PageEdit
 class NoteViewerDialog(QDialog):
     def __init__(self, parent, content: str, can_edit: bool = True):
         super().__init__(parent)
-        self.setWindowTitle("便签备注")
+        self.setWindowTitle(tr('便签备注'))
         self.resize(380, 260)
         set_theme_style(self, """
             QDialog { background: #FFFFFF; }
@@ -45,33 +46,33 @@ class NoteViewerDialog(QDialog):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
 
-        header = QLabel("📌 便签备注内容")
+        header = QLabel(tr('📌 便签备注内容'))
         header.setObjectName("noteHeader")
         layout.addWidget(header)
 
         self.editor = QTextEdit(content)
         self.editor.setReadOnly(not can_edit)
-        self.editor.setPlaceholderText("请输入便签内容…")
+        self.editor.setPlaceholderText(tr('请输入便签内容…'))
         layout.addWidget(self.editor, 1)
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(8)
         if can_edit:
-            self.delete_btn = QPushButton("删除便签")
+            self.delete_btn = QPushButton(tr('删除便签'))
             self.delete_btn.setObjectName("deleteBtn")
             self.delete_btn.clicked.connect(self._on_delete)
             btn_layout.addWidget(self.delete_btn)
 
             btn_layout.addStretch()
 
-            self.save_btn = QPushButton("保存修改")
+            self.save_btn = QPushButton(tr('保存修改'))
             self.save_btn.setObjectName("saveBtn")
             self.save_btn.clicked.connect(self._on_save)
             btn_layout.addWidget(self.save_btn)
         else:
             btn_layout.addStretch()
 
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(tr('关闭'))
         close_btn.setObjectName("closeBtn")
         close_btn.clicked.connect(self.reject)
         btn_layout.addWidget(close_btn)
@@ -98,9 +99,9 @@ class OutlinePanel(QWidget):
         self._chapters = {}
         self._following_item = None
         self._expansion_mode = None
-        self.expand_all_action = QAction("展开全部", self)
+        self.expand_all_action = QAction(tr('展开全部'), self)
         self.expand_all_action.triggered.connect(lambda: self.set_all_expanded(True))
-        self.collapse_all_action = QAction("折叠全部", self)
+        self.collapse_all_action = QAction(tr('折叠全部'), self)
         self.collapse_all_action.triggered.connect(lambda: self.set_all_expanded(False))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -108,20 +109,20 @@ class OutlinePanel(QWidget):
 
         row = QHBoxLayout()
         row.setSpacing(6)
-        self.add_button = QPushButton("添加书签")
+        self.add_button = QPushButton(tr('添加书签'))
         self.add_button.setProperty("primary", True)
         self.add_button.setFixedHeight(28)
         self.add_button.clicked.connect(self.add)
         self.host.shortcut_manager.watch_hint('outline.add', self.add_button, '在选中书签后添加同级书签，目标为当前阅读页')
         row.addWidget(self.add_button)
 
-        self.add_child_button = QPushButton("添加子书签")
+        self.add_child_button = QPushButton(tr('添加子书签'))
         self.add_child_button.setFixedHeight(28)
         self.add_child_button.clicked.connect(self.add_child)
         self.host.shortcut_manager.watch_hint('outline.add_child', self.add_child_button, '在选中书签下添加子书签，目标为当前阅读页')
         row.addWidget(self.add_child_button)
 
-        more = QPushButton("管理…")
+        more = QPushButton(tr('管理…'))
         more.setFixedHeight(28)
         more.clicked.connect(lambda: self.menu(more.mapToGlobal(more.rect().bottomLeft())))
         row.addWidget(more)
@@ -129,12 +130,12 @@ class OutlinePanel(QWidget):
 
         self.tree = QTreeWidget()
         self.tree.setFrameShape(QTreeWidget.Shape.NoFrame)
-        self.tree.setHeaderLabels(["目录", "页"])
+        self.tree.setHeaderLabels([tr('目录'), tr('页')])
         self.tree.header().setStretchLastSection(False)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self.tree.setColumnWidth(1, 44)
-        self.tree.setAccessibleName("文档大纲书签")
+        self.tree.setAccessibleName(tr('文档大纲书签'))
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
         self.tree.itemClicked.connect(self.jump)
@@ -148,7 +149,7 @@ class OutlinePanel(QWidget):
         self._follow_timer.timeout.connect(self.sync_position)
         layout.addWidget(self.tree, 1)
 
-        self.feedback = QLabel("在当前阅读页添加书签。")
+        self.feedback = QLabel(tr('在当前阅读页添加书签。'))
         self.feedback.setObjectName("hint")
         self.feedback.setWordWrap(True)
         layout.addWidget(self.feedback)
@@ -187,7 +188,7 @@ class OutlinePanel(QWidget):
             if target:
                 self._chapters.setdefault(target - 1, []).append(index)
             if entry.target_id is not None and target is None:
-                item.setToolTip(0, "目标页已删除；撤销删除可恢复跳转。")
+                item.setToolTip(0, tr('目标页已删除；撤销删除可恢复跳转。'))
                 item.setForeground(0, QColor(ui_color("warning")))
             if parents:
                 parents[-1].addChild(item)
@@ -196,7 +197,7 @@ class OutlinePanel(QWidget):
             parents.append(item)
         self.tree.expandToDepth(1)
         self._chapter_pages = sorted(self._chapters)
-        self.feedback.setText("选中书签后可添加同级或子书签；在“管理”中调整顺序。" if self.entries else "暂无大纲，可为关键页面添加书签。")
+        self.feedback.setText(tr('选中书签后可添加同级或子书签；在“管理”中调整顺序。') if self.entries else tr('暂无大纲，可为关键页面添加书签。'))
         self.sync_position()
         self.sync_actions()
 
@@ -294,7 +295,7 @@ class OutlinePanel(QWidget):
             if page.page_id == entry.target_id:
                 self.host.go_to_page(index + 1)
                 return
-        self.feedback.setText("此书签目标已删除，可修改或撤销页面删除。")
+        self.feedback.setText(tr('此书签目标已删除，可修改或撤销页面删除。'))
 
     def commit(self, entries, *, selected=None):
         if not self.host._allow_operation("outline"):
@@ -309,7 +310,7 @@ class OutlinePanel(QWidget):
                 self.tree.setCurrentItem(item)
                 self.tree.scrollToItem(item)
         except ValueError as exc:
-            QMessageBox.information(self, "大纲未修改", str(exc))
+            QMessageBox.information(self, tr('大纲未修改'), str(exc))
 
     def add(self, *, child=False):
         index = self.host.ws.preview_index()
@@ -317,12 +318,12 @@ class OutlinePanel(QWidget):
             return
         selected = self.selected()
         if child and selected is None:
-            self.feedback.setText("请先选择上级书签。")
+            self.feedback.setText(tr('请先选择上级书签。'))
             return
         at = self.subtree_end(selected) if selected is not None else len(self.entries)
         level = self.entries[selected].level + int(child) if selected is not None else 1
         target = self.host.ws.pages[index].page_id
-        title, accepted = QInputDialog.getText(self, "添加子书签" if child else "添加书签", "书签名称", text=f"第 {index + 1} 页")
+        title, accepted = QInputDialog.getText(self, tr('添加子书签') if child else tr('添加书签'), tr('书签名称'), text=tr('第 {p0} 页', p0=f'{index + 1}'))
         if accepted and title.strip():
             self.commit((*self.entries[:at], OutlineEntry(level, title.strip(), target), *self.entries[at:]), selected=at)
 
@@ -339,7 +340,7 @@ class OutlinePanel(QWidget):
         index = self.selected()
         if index is None:
             return
-        title, accepted = QInputDialog.getText(self, "重命名书签", "书签名称", text=self.entries[index].title)
+        title, accepted = QInputDialog.getText(self, tr('重命名书签'), tr('书签名称'), text=self.entries[index].title)
         if accepted and title.strip():
             entries = list(self.entries)
             entries[index] = replace(entries[index], title=title.strip())
@@ -377,7 +378,7 @@ class OutlinePanel(QWidget):
             return
         level = self.entries[index].level
         if level + delta < 1 or (delta > 0 and self.sibling(index, -1) is None):
-            self.feedback.setText("请选择可调整层级的书签。")
+            self.feedback.setText(tr('请选择可调整层级的书签。'))
             return
         end = self.subtree_end(index)
         shifted = tuple(replace(entry, level=entry.level + delta) for entry in self.entries[index:end])
@@ -445,7 +446,7 @@ class MoveHandleButton(QToolButton):
         self._drag_cancelled = False
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
-        self.setToolTip("按住拖动以移动批注，或点击后点选新位置")
+        self.setToolTip(tr('按住拖动以移动批注，或点击后点选新位置'))
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -589,7 +590,7 @@ class AnnotationHoverBar(QFrame):
         c_layout.setContentsMargins(0, 0, 0, 0)
         c_layout.setSpacing(4)
 
-        self.title_label = QLabel("便签备注", self.content_box)
+        self.title_label = QLabel(tr('便签备注'), self.content_box)
         self.title_label.setObjectName("hoverTitle")
         c_layout.addWidget(self.title_label)
 
@@ -619,7 +620,7 @@ class AnnotationHoverBar(QFrame):
 
         self.style_btn = QToolButton(self)
         self.style_btn.setObjectName("styleBtn")
-        self.style_btn.setToolTip("应用当前选择的颜色与线宽")
+        self.style_btn.setToolTip(tr('应用当前选择的颜色与线宽'))
         self.style_btn.clicked.connect(self._on_style)
         btn_layout.addWidget(self.style_btn)
 
@@ -678,22 +679,22 @@ class AnnotationHoverBar(QFrame):
 
         if content or kind == 0:
             self.content_box.show()
-            self.title_label.setText(f"{kind_name}备注")
-            self.content_label.setText(content if content else "（暂无备注内容，点击编辑添加）")
-            self.edit_btn.setToolTip("编辑备注")
+            self.title_label.setText(tr('{p0}备注', p0=f'{kind_name}'))
+            self.content_label.setText(content if content else tr('（暂无备注内容，点击编辑添加）'))
+            self.edit_btn.setToolTip(tr('编辑备注'))
         else:
             self.content_box.hide()
-            self.edit_btn.setToolTip("添加备注")
+            self.edit_btn.setToolTip(tr('添加备注'))
 
         self.move_btn.setVisible(kind in (0, 2, 4))
         if kind == 2:
-            self.title_label.setText("页面文本框")
-            self.edit_btn.setToolTip("编辑文本框")
-            self.style_btn.setToolTip("设置字体、字号与颜色")
+            self.title_label.setText(tr('页面文本框'))
+            self.edit_btn.setToolTip(tr('编辑文本框'))
+            self.style_btn.setToolTip(tr('设置字体、字号与颜色'))
         else:
-            self.style_btn.setToolTip("应用当前选择的颜色与线宽")
+            self.style_btn.setToolTip(tr('应用当前选择的颜色与线宽'))
         self.move_btn.setToolTip(self.tools.host.shortcut_manager.hint('annotation.move',
-            '拖动可实时预览位置；也可点击后选位置，Esc 取消'))
+            tr('拖动可实时预览位置；也可点击后选位置，Esc 取消')))
 
         self.adjustSize()
         self.layout().activate()
@@ -795,7 +796,7 @@ class AnnotationTools(QWidget):
         self.tool.hide()
         for kind, icon_name, name in self.TOOL_DEFS:
             self.tool.addItem(name, kind)
-        self.tool.setAccessibleName("审阅工具")
+        self.tool.setAccessibleName(tr('审阅工具'))
         self.tool.currentIndexChanged.connect(self._on_tool_combo_changed)
 
         # Native toolbar keeps one row and provides its own overflow menu.
@@ -804,7 +805,7 @@ class AnnotationTools(QWidget):
         self._toolbar_style = _ReviewToolbarStyle(QApplication.style().objectName())
         self._toolbar_style.setParent(self.tool_bar)
         self.tool_bar.setStyle(self._toolbar_style)
-        self.tool_bar.setAccessibleName('审阅工具')
+        self.tool_bar.setAccessibleName(tr('审阅工具'))
         self.tool_bar.setMovable(False)
         self.tool_bar.setFloatable(False)
         self.tool_bar.setIconSize(QSize(16, 16))
@@ -825,8 +826,8 @@ class AnnotationTools(QWidget):
             action.triggered.connect(lambda checked=False, i=idx: self.tool.setCurrentIndex(i))
             self.tool_group.addAction(action)
             self.tool_actions.append(action)
-        self.insert_image_action = QAction(toolbar_icon('image', '#526B63', 16), '图片', self)
-        self.insert_image_action.setToolTip('插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）')
+        self.insert_image_action = QAction(toolbar_icon('image', '#526B63', 16), tr('图片'), self)
+        self.insert_image_action.setToolTip(tr('插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）'))
         self.host.shortcut_manager.watch_hint('review.image', self.insert_image_action, '插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）')
         self.insert_image_action.triggered.connect(lambda: self.host.image_tools.choose_image())
         actions = {kind: action for (kind, _, _), action in zip(self.TOOL_DEFS, self.tool_actions)}
@@ -843,7 +844,7 @@ class AnnotationTools(QWidget):
         for button, (_, _, name) in zip(self.tool_buttons, self.TOOL_DEFS):
             button.setAccessibleName(name)
         self.insert_image_button = self.tool_bar.widgetForAction(self.insert_image_action)
-        self.insert_image_button.setAccessibleName("插入图片")
+        self.insert_image_button.setAccessibleName(tr('插入图片'))
         self.tool_actions[0].setChecked(True)
         bar_layout.addWidget(self.tool_bar, 1)
 
@@ -855,8 +856,8 @@ class AnnotationTools(QWidget):
 
         # Color picker swatch button
         self.color_button = QToolButton(self.bar)
-        self.color_button.setToolTip("选择批注颜色")
-        self.color_button.setAccessibleName("选择批注颜色")
+        self.color_button.setToolTip(tr('选择批注颜色'))
+        self.color_button.setAccessibleName(tr('选择批注颜色'))
         self.color_button.setFixedSize(36, 32)
         self.color_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.color_button.setIconSize(QSize(16, 16))
@@ -869,8 +870,8 @@ class AnnotationTools(QWidget):
         self.width.setDecimals(1)
         self.width.setSuffix(" pt")
         self.width.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.width.setAccessibleName("批注线宽")
-        self.width.setToolTip("批注线宽（pt）")
+        self.width.setAccessibleName(tr('批注线宽'))
+        self.width.setToolTip(tr('批注线宽（pt）'))
         self.width.setFixedSize(62, 32)
         bar_layout.addWidget(self.width)
 
@@ -882,8 +883,8 @@ class AnnotationTools(QWidget):
 
         # Annotation picker & actions (hidden to keep toolbar minimal; actions shown on hover)
         self.annotations = QComboBox(self.bar)
-        self.annotations.addItem("当前页批注", None)
-        self.annotations.setAccessibleName("当前页面批注")
+        self.annotations.addItem(tr('当前页批注'), None)
+        self.annotations.setAccessibleName(tr('当前页面批注'))
         self.annotations.setMinimumWidth(140)
         self.annotations.setFixedHeight(30)
         self.annotations.currentIndexChanged.connect(self.sync_annotation_actions)
@@ -896,12 +897,12 @@ class AnnotationTools(QWidget):
             button.setFixedHeight(30)
             button.clicked.connect(callback)
             button.setEnabled(False)
-            button.setToolTip("先在页面或下拉框中选中批注")
+            button.setToolTip(tr('先在页面或下拉框中选中批注'))
             button.hide()
             self.annotation_actions.append(button)
             bar_layout.addWidget(button)
 
-        self.feedback = QLabel("拖选或点击操作；Ctrl+Z 撤销", self.bar)
+        self.feedback = QLabel(tr('拖选或点击操作；Ctrl+Z 撤销'), self.bar)
         self._feedback_source = '拖选或点击操作；Ctrl+Z 撤销'
         self.host.shortcut_manager.changed.connect(self._refresh_shortcut_hints)
         self._refresh_shortcut_hints()
@@ -912,8 +913,8 @@ class AnnotationTools(QWidget):
         close.setFixedSize(32, 32)
         close.setIconSize(QSize(16, 16))
         close.setIcon(toolbar_icon("x", "#4D6B67", 16))
-        close.setToolTip("收起审阅工具")
-        close.setAccessibleName("收起审阅工具")
+        close.setToolTip(tr('收起审阅工具'))
+        close.setAccessibleName(tr('收起审阅工具'))
         close.clicked.connect(self.deactivate)
         bar_layout.addWidget(close)
 
@@ -942,8 +943,8 @@ class AnnotationTools(QWidget):
         if more is not None:
             more.setIcon(toolbar_icon('more-horizontal', '#526B63', 16))
             more.setIconSize(QSize(16, 16))
-            more.setToolTip('更多审阅工具')
-            more.setAccessibleName('更多审阅工具')
+            more.setToolTip(tr('更多审阅工具'))
+            more.setAccessibleName(tr('更多审阅工具'))
 
     def _set_feedback(self, text):
         self._feedback_source = text
@@ -1128,10 +1129,10 @@ class AnnotationTools(QWidget):
         annots = [item for item in snapshot.get("annotations", ())
                   if not item.get('image_settings') and not item.get("watermark")]
         if annots:
-            self.annotations.addItem("选择当前页批注…", None)
+            self.annotations.addItem(tr('选择当前页批注…'), None)
             self.annotations.setEnabled(True)
         else:
-            self.annotations.addItem("当前页暂无批注", None)
+            self.annotations.addItem(tr('当前页暂无批注'), None)
             self.annotations.setEnabled(False)
         for item in annots:
             names = {0: "便签", 2: "文本", 3: "线条／箭头", 4: "矩形", 5: "椭圆", 8: "高亮", 9: "下划线", 15: "画笔"}
@@ -1149,7 +1150,7 @@ class AnnotationTools(QWidget):
         selected = selected_id is not None
         for button in getattr(self, "annotation_actions", ()):
             button.setEnabled(selected)
-            button.setToolTip("" if selected else "先在页面中选中批注")
+            button.setToolTip("" if selected else tr('先在页面中选中批注'))
 
     def find_annotation_at(self, point):
         import pymupdf as p
@@ -1514,7 +1515,7 @@ class AnnotationTools(QWidget):
             try:
                 self.finish(kind, points, state)
             except (ValueError, PdfError) as exc:
-                QMessageBox.information(self, "本次操作未应用", str(exc))
+                QMessageBox.information(self, tr('本次操作未应用'), str(exc))
             except Exception as exc:
                 self._set_feedback(f"操作未完成：{exc}")
             return True
@@ -1691,8 +1692,8 @@ class AnnotationTools(QWidget):
 
         from app.replacementui import ReplacementInput
         edit_input = ReplacementInput(original, container)
-        edit_input.setAccessibleName("原处文字修改")
-        edit_input.setToolTip("Enter 应用修改 · Esc 取消")
+        edit_input.setAccessibleName(tr('原处文字修改'))
+        edit_input.setToolTip(tr('Enter 应用修改 · Esc 取消'))
         edit_input.installEventFilter(self)
         layout.addWidget(edit_input, 1)
 
@@ -1712,7 +1713,7 @@ class AnnotationTools(QWidget):
             "QComboBox:hover, QDoubleSpinBox:hover { border-color: #99B2AC; }"
             "QComboBox:focus, QDoubleSpinBox:focus, QToolButton:focus { border: 1px solid #0F766E; }"
         )
-        actions.setToolTip('样式设置作用于当前框选的已有文字；可直接应用，无需重新输入')
+        actions.setToolTip(tr('样式设置作用于当前框选的已有文字；可直接应用，无需重新输入'))
         controls = QVBoxLayout(actions)
         controls.setContentsMargins(6, 6, 6, 6)
         controls.setSpacing(4)
@@ -1745,11 +1746,11 @@ class AnnotationTools(QWidget):
         font_choice.setCurrentIndex(font_choice.findText(family))
         source_font_available = font_choice.findText(family) >= 0
         if not source_font_available:
-            font_choice.setPlaceholderText('沿用原字体')
+            font_choice.setPlaceholderText(tr('沿用原字体'))
             font_choice.setCurrentIndex(-1)
-            font_choice.lineEdit().setPlaceholderText('沿用原字体')
-        font_choice.setAccessibleName('原文字体')
-        font_choice.setToolTip('从本机字体中选择，应用于当前框选的文字')
+            font_choice.lineEdit().setPlaceholderText(tr('沿用原字体'))
+        font_choice.setAccessibleName(tr('原文字体'))
+        font_choice.setToolTip(tr('从本机字体中选择，应用于当前框选的文字'))
         font_row.addWidget(font_choice, 1)
         size_choice = FontSize(actions)
         size_choice.setObjectName('replacementSize')
@@ -1759,8 +1760,8 @@ class AnnotationTools(QWidget):
         size_choice.setSuffix(' pt')
         size_choice.setValue(span.get('size', 12))
         size_choice.setFixedSize(64, 30)
-        size_choice.setToolTip('字号（pt）')
-        size_choice.setAccessibleName('原文字号')
+        size_choice.setToolTip(tr('字号（pt）'))
+        size_choice.setAccessibleName(tr('原文字号'))
         font_row.addWidget(size_choice)
         format_group = QWidget(actions)
         format_group.setObjectName('replacementFormatGroup')
@@ -1770,13 +1771,13 @@ class AnnotationTools(QWidget):
         bold_choice = QToolButton(actions)
         italic_choice = QToolButton(actions)
         for button, name, label, checked in (
-                (bold_choice, 'replacementBold', '加粗', bold),
-                (italic_choice, 'replacementItalic', '斜体', italic)):
+                (bold_choice, 'replacementBold', mark_text('加粗'), bold),
+                (italic_choice, 'replacementItalic', mark_text('斜体'), italic)):
             button.setObjectName(name)
             button.setText('B' if label == '加粗' else 'I')
             button.setCheckable(True)
             button.setChecked(checked)
-            button.setToolTip(label)
+            button.setToolTip(tr(label))
             button.setAccessibleName(label)
             face = QFont(button.font())
             face.setBold(label == '加粗')
@@ -1786,11 +1787,11 @@ class AnnotationTools(QWidget):
         color_choice = TextColorButton(actions)
         color_choice.setObjectName('replacementColor')
         color_choice.setText('A')
-        color_choice.setToolTip('文字颜色')
+        color_choice.setToolTip(tr('文字颜色'))
         def show_color(color):
             color_choice.setColor(color)
         show_color(QColor.fromRgb(span.get('color', 0)).name())
-        color_choice.setAccessibleName('原文颜色')
+        color_choice.setAccessibleName(tr('原文颜色'))
         action_layout.addWidget(color_choice)
         command_group = QWidget(actions)
         command_group.setObjectName('replacementCommandGroup')
@@ -1800,24 +1801,24 @@ class AnnotationTools(QWidget):
         reset_choice = QToolButton(actions)
         reset_choice.setObjectName('replacementReset')
         reset_choice.setIcon(toolbar_icon('rotate-ccw', '#4D6B67', 16))
-        reset_choice.setToolTip('恢复原样式')
-        reset_choice.setAccessibleName('恢复原样式')
+        reset_choice.setToolTip(tr('恢复原样式'))
+        reset_choice.setAccessibleName(tr('恢复原样式'))
         reset_choice.setEnabled(False)
         command_layout.addWidget(reset_choice)
         apply_btn = QToolButton(actions)
         apply_btn.setObjectName("apply")
         apply_btn.setIcon(toolbar_icon("check", "#FFFFFF", 16))
         apply_btn.setIconSize(QSize(16, 16))
-        apply_btn.setAccessibleName("应用文字修改")
-        apply_btn.setToolTip("应用修改 (Enter)")
+        apply_btn.setAccessibleName(tr('应用文字修改'))
+        apply_btn.setToolTip(tr('应用修改 (Enter)'))
         command_layout.addWidget(apply_btn)
 
         cancel_btn = QToolButton(actions)
         cancel_btn.setObjectName("cancel")
         cancel_btn.setIcon(toolbar_icon("x", "#4D6B67", 16))
         cancel_btn.setIconSize(QSize(16, 16))
-        cancel_btn.setAccessibleName("取消文字修改")
-        cancel_btn.setToolTip("取消 (Esc)")
+        cancel_btn.setAccessibleName(tr('取消文字修改'))
+        cancel_btn.setToolTip(tr('取消 (Esc)'))
         command_layout.addWidget(cancel_btn)
         raw = raw or (self.snapshot or {}).get('raw', {})
         from app.pdfedits import selected_lines
@@ -1826,9 +1827,9 @@ class AnnotationTools(QWidget):
         if len({(source['font'], source['size'], source['color'], source.get('flags', 0)) for _, source in chars}) > 1:
             font_choice.setCurrentIndex(-1)
             font_choice.clearEditText()
-            font_choice.lineEdit().setPlaceholderText('保留混合样式')
-            font_choice.setToolTip('选区含不同样式；只调整需要改变的属性，其余保留')
-            size_choice.setToolTip('当前选区包含不同样式；调整字号将统一当前选区的字号（pt）')
+            font_choice.lineEdit().setPlaceholderText(tr('保留混合样式'))
+            font_choice.setToolTip(tr('选区含不同样式；只调整需要改变的属性，其余保留'))
+            size_choice.setToolTip(tr('当前选区包含不同样式；调整字号将统一当前选区的字号（pt）'))
         original_font_index = font_choice.currentIndex()
 
         self._inline_replace = {
@@ -1930,7 +1931,7 @@ class AnnotationTools(QWidget):
                     else:
                         self._set_feedback("文字修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。")
             except (ValueError, PdfError) as exc:
-                QMessageBox.information(self, "修改未应用", str(exc))
+                QMessageBox.information(self, tr('修改未应用'), str(exc))
                 edit_input.setFocus()
             except Exception as exc:
                 self._set_feedback(f"修改未应用：{exc}")
@@ -1985,7 +1986,7 @@ class AnnotationTools(QWidget):
             self.start_text_box(area, index, ref)
             return
         if kind == "note":
-            text, accepted = QInputDialog.getMultiLineText(self, "添加备注", "备注内容")
+            text, accepted = QInputDialog.getMultiLineText(self, tr('添加备注'), tr('备注内容'))
             if not accepted or not text.strip():
                 return
             edit = PageEdit("note", (tuple(canonical[0]),), text=text, color=color, annotation_id=identifier)
@@ -2057,12 +2058,12 @@ class AnnotationTools(QWidget):
                 duration_ms=round((perf_counter() - started) * 1000, 2), prepared=prepared_preview is not None)
             if confirm:
                 dialog = QDialog(self)
-                dialog.setWindowTitle("文字修正预览")
+                dialog.setWindowTitle(tr('文字修正预览'))
                 dialog.resize(640, 520)
                 layout = QVBoxLayout(dialog)
                 layout.setContentsMargins(20, 20, 20, 20)
                 layout.setSpacing(12)
-                label = QLabel("保存时会移除所选旧文字并写入新文字。请核对字体和位置。")
+                label = QLabel(tr('保存时会移除所选旧文字并写入新文字。请核对字体和位置。'))
                 label.setObjectName("hint")
                 label.setWordWrap(True)
                 layout.addWidget(label)
@@ -2079,9 +2080,9 @@ class AnnotationTools(QWidget):
 
                 box = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
                 apply_btn = box.button(QDialogButtonBox.StandardButton.Apply)
-                apply_btn.setText("应用修改")
+                apply_btn.setText(tr('应用修改'))
                 apply_btn.setProperty("primary", True)
-                box.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+                box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
                 apply_btn.clicked.connect(dialog.accept)
                 box.rejected.connect(dialog.reject)
                 layout.addWidget(box)
@@ -2110,7 +2111,7 @@ class AnnotationTools(QWidget):
             if on_error:
                 on_error(str(exc))
             else:
-                QMessageBox.information(self, "本次操作未应用", str(exc))
+                QMessageBox.information(self, tr('本次操作未应用'), str(exc))
             return False
 
     def delete_annot(self, identifier: str):

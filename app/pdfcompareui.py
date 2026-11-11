@@ -1,4 +1,5 @@
 """Opt-in version comparison tool. No work or imports on the ordinary reading path."""
+from app.i18n import tr, mark_text
 from pathlib import Path
 from collections import OrderedDict
 import os
@@ -46,8 +47,8 @@ QTableWidget#pairTable QSpinBox::up-button, QTableWidget#pairTable QSpinBox::dow
 '''
 
 
-STATUS = {'equal': '当前设置下未检出差异', 'changed': '有差异', 'inserted': '新版未配对（可能新增）',
-          'deleted': '旧版未配对（可能删除）'}
+STATUS = {'equal': mark_text('当前设置下未检出差异'), 'changed': mark_text('有差异'), 'inserted': mark_text('新版未配对（可能新增）'),
+          'deleted': mark_text('旧版未配对（可能删除）')}
 
 
 class PdfFileDrop(QObject):
@@ -121,15 +122,15 @@ class PdfFileDrop(QObject):
         except (OSError, ValueError):
             available = False
         if not available:
-            owner.status.setText('拖入的 PDF 不存在或不是文件，请重新选择。')
+            owner.status.setText(tr('拖入的 PDF 不存在或不是文件，请重新选择。'))
             return False
         if len(paths) == 1 and target is None:
             if any(field.text().strip() and self.key(field.text().strip()) == self.key(paths[0]) for field in owner.paths):
-                owner.status.setText('这份文件已填入。请拖入另一份 PDF；也可拖到指定版本框替换。')
+                owner.status.setText(tr('这份文件已填入。请拖入另一份 PDF；也可拖到指定版本框替换。'))
                 return False
             target = next((i for i, field in enumerate(owner.paths) if not field.text().strip()), None)
             if target is None:
-                owner.status.setText('两份文件已选齐，请拖到旧版或新版文件框替换对应文件。')
+                owner.status.setText(tr('两份文件已选齐，请拖到旧版或新版文件框替换对应文件。'))
                 return False
         assignments = list(enumerate(paths)) if len(paths) == 2 else [(target, paths[0])]
         for index, path in assignments:
@@ -151,23 +152,22 @@ class PairingDialog(QDialog):
     """A few ordered anchor pairs; unmatched pages are never discarded."""
     def __init__(self, summary, current, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('调整页面配对')
+        self.setWindowTitle(tr('调整页面配对'))
         self.setObjectName('comparePairing'); self.resize(520, 420)
         set_theme_style(self, COMPARE_STYLE)
         self.counts = [max(row[key] or 0 for row in summary['rows']) for key in ('old_page', 'new_page')]
         self.manual_pairs = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 16); layout.setSpacing(12)
-        title = QLabel('调整页面配对'); title.setObjectName('compareTitle'); layout.addWidget(title)
-        note = QLabel('把确认对应的两页填在同一行，其余页面自动在它们之间配对。\n'
-                      '两版页码须依次递增；移除全部指定可恢复原配对方式。')
+        title = QLabel(tr('调整页面配对')); title.setObjectName('compareTitle'); layout.addWidget(title)
+        note = QLabel(tr('把确认对应的两页填在同一行，其余页面自动在它们之间配对。\n两版页码须依次递增；移除全部指定可恢复原配对方式。'))
         note.setObjectName('compareHint')
-        note.setToolTip('使用当前完成结果的文件和比较设置，不读取标签页未保存的修改。')
+        note.setToolTip(tr('使用当前完成结果的文件和比较设置，不读取标签页未保存的修改。'))
         note.setWordWrap(True); layout.addWidget(note)
         self.table = QTableWidget(0, 2)
         self.table.setObjectName('pairTable'); self.table.setShowGrid(False)
         self.table.verticalHeader().hide(); self.table.verticalHeader().setDefaultSectionSize(44)
-        self.table.setHorizontalHeaderLabels(['旧版页码', '新版页码'])
+        self.table.setHorizontalHeaderLabels([tr('旧版页码'), tr('新版页码')])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table)
         self.current = current
@@ -176,14 +176,14 @@ class PairingDialog(QDialog):
         if not self.table.rowCount():
             self.add_pair()
         actions = QHBoxLayout()
-        add = QPushButton('添加对应页'); add.clicked.connect(lambda: self.add_pair())
-        remove = QPushButton('移除选中'); remove.clicked.connect(lambda: self.table.removeRow(self.table.currentRow()))
+        add = QPushButton(tr('添加对应页')); add.clicked.connect(lambda: self.add_pair())
+        remove = QPushButton(tr('移除选中')); remove.clicked.connect(lambda: self.table.removeRow(self.table.currentRow()))
         actions.addWidget(add); actions.addWidget(remove); actions.addStretch(); layout.addLayout(actions)
         self.error = QLabel(); self.error.setObjectName('compareError'); self.error.setWordWrap(True); layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText('重新比较')
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr('重新比较'))
         buttons.button(QDialogButtonBox.StandardButton.Ok).setObjectName('primary')
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
 
     def add_pair(self, pair=None):
@@ -191,7 +191,7 @@ class PairingDialog(QDialog):
         row = self.table.rowCount(); self.table.insertRow(row)
         for column, (value, maximum) in enumerate(zip(pair, self.counts)):
             spin = ClearSpinBox(); spin.setRange(1, maximum); spin.setValue(value)
-            spin.setAccessibleName(('旧版' if column == 0 else '新版') + '页码')
+            spin.setAccessibleName(tr('旧版页码') if column == 0 else tr('新版页码'))
             self.table.setCellWidget(row, column, spin)
         self.table.setCurrentCell(row, 0)
 
@@ -262,7 +262,7 @@ class CompareView(QGraphicsView):
 class PdfCompareDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('两份 PDF 对比 · 实验原型')
+        self.setWindowTitle(tr('两份 PDF 对比 · 实验原型'))
         self.setObjectName('pdfCompare')
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         self.setMinimumSize(900, 620)
@@ -275,51 +275,51 @@ class PdfCompareDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14); layout.setSpacing(12)
         heading = QHBoxLayout()
-        title = QLabel('两份 PDF 对比'); title.setObjectName('compareTitle'); heading.addWidget(title)
-        subtitle = QLabel('原色比较 · 原文件保留'); subtitle.setObjectName('compareHint')
+        title = QLabel(tr('两份 PDF 对比')); title.setObjectName('compareTitle'); heading.addWidget(title)
+        subtitle = QLabel(tr('原色比较 · 原文件保留')); subtitle.setObjectName('compareHint')
         heading.addSpacing(12); heading.addWidget(subtitle); heading.addStretch()
-        help_button = QPushButton('使用说明'); help_button.clicked.connect(self.show_help)
+        help_button = QPushButton(tr('使用说明')); help_button.clicked.connect(self.show_help)
         heading.addWidget(help_button); layout.addLayout(heading)
         sources = QFrame(); sources.setObjectName('workbench')
         source_layout = QVBoxLayout(sources); source_layout.setContentsMargins(14, 12, 14, 12); source_layout.setSpacing(10)
         files = QHBoxLayout(); files.setSpacing(20)
         self.paths, self.password_inputs, self.file_buttons, self.file_targets = [], [], [], []
-        for title in ('旧版', '新版'):
+        for title in (mark_text('旧版'), mark_text('新版')):
             target = QWidget(); target.setObjectName('pdfDropTarget')
             group = QVBoxLayout(target); group.setContentsMargins(0, 0, 0, 0); group.setSpacing(6)
             self.file_targets.append(target)
-            label = QLabel(title + ' PDF'); label.setObjectName('compareSection'); group.addWidget(label)
+            label = QLabel(tr(title) + ' PDF'); label.setObjectName('compareSection'); group.addWidget(label)
             row = QHBoxLayout(); row.setSpacing(8)
-            path = QLineEdit(); path.setPlaceholderText('选择或拖入' + title + ' PDF')
-            path.setToolTip('可拖入 PDF；一次拖两份时按旧版、新版顺序填入。只比较已保存文件。')
-            path.setAccessibleName(title + ' PDF 路径'); self.paths.append(path)
-            choose = QPushButton('选择文件'); choose.clicked.connect(lambda _, p=path: self.choose(p))
-            choose.setAccessibleName('选择' + title + ' PDF')
+            path = QLineEdit(); path.setPlaceholderText(tr('选择或拖入{p0} PDF', p0=tr(title)))
+            path.setToolTip(tr('可拖入 PDF；一次拖两份时按旧版、新版顺序填入。只比较已保存文件。'))
+            path.setAccessibleName(tr('{p0} PDF 路径', p0=tr(title))); self.paths.append(path)
+            choose = QPushButton(tr('选择文件')); choose.clicked.connect(lambda _, p=path: self.choose(p))
+            choose.setAccessibleName(tr('选择{p0} PDF', p0=tr(title)))
             self.file_buttons.append(choose)
             password = QLineEdit(); password.setEchoMode(QLineEdit.EchoMode.Password)
-            password.setPlaceholderText(title + '密码（如有）')
-            password.setAccessibleName(title + '密码'); self.password_inputs.append(password)
+            password.setPlaceholderText(tr('{p0}密码（如有）', p0=tr(title)))
+            password.setAccessibleName(tr('{p0}密码', p0=tr(title))); self.password_inputs.append(password)
             row.addWidget(path, 1); row.addWidget(choose); group.addLayout(row); files.addWidget(target, 1)
         source_layout.addLayout(files)
         settings = QHBoxLayout()
-        self.advanced = QPushButton('更多设置'); self.advanced.setCheckable(True); self.advanced.setObjectName('compareMore')
+        self.advanced = QPushButton(tr('更多设置')); self.advanced.setCheckable(True); self.advanced.setObjectName('compareMore')
         self.options_panel = QWidget(); self.options_panel.setObjectName('compareOptions')
         advanced_layout = QGridLayout(self.options_panel)
         advanced_layout.setContentsMargins(0, 4, 0, 0); advanced_layout.setHorizontalSpacing(16); advanced_layout.setVerticalSpacing(10)
-        self.pairing = ClearComboBox(); self.pairing.addItems(['自动顺序配对', '按页号配对'])
-        self.pairing.setAccessibleName('页面配对方式')
-        self.strict = QCheckBox('严格像素比较')
-        self.strict.setToolTip('关闭噪声过滤，但不提高比较分辨率；重要细节仍需核对原文件')
-        self.align = QCheckBox('容忍 2px 整页平移')
-        self.align.setToolTip('可减少扫描错位误报，也可能忽略真实整页移动；默认关闭')
-        self.annotations = QCheckBox('包含批注'); self.annotations.setChecked(True)
-        self.start = QPushButton('开始比较'); self.start.setObjectName('primary'); self.start.clicked.connect(self.compare)
+        self.pairing = ClearComboBox(); self.pairing.addItems([tr('自动顺序配对'), tr('按页号配对')])
+        self.pairing.setAccessibleName(tr('页面配对方式'))
+        self.strict = QCheckBox(tr('严格像素比较'))
+        self.strict.setToolTip(tr('关闭噪声过滤，但不提高比较分辨率；重要细节仍需核对原文件'))
+        self.align = QCheckBox(tr('容忍 2px 整页平移'))
+        self.align.setToolTip(tr('可减少扫描错位误报，也可能忽略真实整页移动；默认关闭'))
+        self.annotations = QCheckBox(tr('包含批注')); self.annotations.setChecked(True)
+        self.start = QPushButton(tr('开始比较')); self.start.setObjectName('primary'); self.start.clicked.connect(self.compare)
         for column, widget in enumerate((self.pairing, self.strict, self.align, self.annotations)):
             advanced_layout.addWidget(widget, 0, column)
         advanced_layout.addWidget(self.password_inputs[0], 1, 0, 1, 2)
         advanced_layout.addWidget(self.password_inputs[1], 1, 2, 1, 2)
         settings.addWidget(self.advanced)
-        limits = QLabel('每份最多 200 页 · 仅比较已保存文件'); limits.setObjectName('compareHint')
+        limits = QLabel(tr('每份最多 200 页 · 仅比较已保存文件')); limits.setObjectName('compareHint')
         settings.addWidget(limits); settings.addStretch(); settings.addWidget(self.start); source_layout.addLayout(settings)
         source_layout.addWidget(self.options_panel); self.options_panel.hide(); layout.addWidget(sources)
         self.advanced.toggled.connect(self.options_panel.setVisible)
@@ -327,29 +327,29 @@ class PdfCompareDialog(QDialog):
         splitter.setChildrenCollapsible(False); splitter.setHandleWidth(12)
         page_panel = QFrame(); page_panel.setObjectName('comparePages'); page_panel.setMinimumWidth(225)
         page_layout = QVBoxLayout(page_panel); page_layout.setContentsMargins(12, 12, 12, 12); page_layout.setSpacing(10)
-        section = QLabel('页面配对'); section.setObjectName('compareSection'); page_layout.addWidget(section)
-        self.result_summary = QLabel('比较后在这里查看结果'); self.result_summary.setObjectName('compareHint')
+        section = QLabel(tr('页面配对')); section.setObjectName('compareSection'); page_layout.addWidget(section)
+        self.result_summary = QLabel(tr('比较后在这里查看结果')); self.result_summary.setObjectName('compareHint')
         self.result_summary.setWordWrap(True); page_layout.addWidget(self.result_summary)
         self.rows = QListWidget(); self.rows.setObjectName('compareList'); self.rows.setSpacing(3)
-        self.rows.setAccessibleName('页面配对与未配对页面')
+        self.rows.setAccessibleName(tr('页面配对与未配对页面'))
         self.rows.currentRowChanged.connect(self.select_row); page_layout.addWidget(self.rows)
-        self.adjust_pairs = QPushButton('调整页面配对'); self.adjust_pairs.setEnabled(False)
+        self.adjust_pairs = QPushButton(tr('调整页面配对')); self.adjust_pairs.setEnabled(False)
         self.adjust_pairs.clicked.connect(self.edit_pairing); page_layout.addWidget(self.adjust_pairs)
         splitter.addWidget(page_panel)
         viewer = QFrame(); viewer.setObjectName('workbench'); vlayout = QVBoxLayout(viewer)
         vlayout.setContentsMargins(12, 12, 12, 12); vlayout.setSpacing(10)
         display = QHBoxLayout(); self.mode = ClearComboBox()
-        self.mode.addItems(['差异叠加', '旧版原页', '新版原页', '旧版差异框', '新版差异框'])
-        self.mode.setFixedWidth(160); self.mode.setAccessibleName('预览内容')
+        self.mode.addItems([tr('差异叠加'), tr('旧版原页'), tr('新版原页'), tr('旧版差异框'), tr('新版差异框')])
+        self.mode.setFixedWidth(160); self.mode.setAccessibleName(tr('预览内容'))
         self.mode.currentIndexChanged.connect(self.display_image)
-        fit = QPushButton('适合整页'); fit.clicked.connect(lambda: self.view.fit_page())
+        fit = QPushButton(tr('适合整页')); fit.clicked.connect(lambda: self.view.fit_page())
         display.addWidget(self.mode); display.addWidget(fit); display.addStretch()
-        gestures = QLabel('Ctrl+滚轮缩放'); gestures.setObjectName('compareHint'); display.addWidget(gestures)
+        gestures = QLabel(tr('Ctrl+滚轮缩放')); gestures.setObjectName('compareHint'); display.addWidget(gestures)
         vlayout.addLayout(display)
-        self.identity = QLabel('文档预览'); self.identity.setObjectName('compareHint'); self.identity.setWordWrap(True)
+        self.identity = QLabel(tr('文档预览')); self.identity.setObjectName('compareHint'); self.identity.setWordWrap(True)
         vlayout.addWidget(self.identity)
         self.view = CompareView(); vlayout.addWidget(self.view, 1)
-        self.preview_empty = QLabel('选择旧版和新版 PDF\n点击“开始比较”查看差异')
+        self.preview_empty = QLabel(tr('选择旧版和新版 PDF\n点击“开始比较”查看差异'))
         self.preview_empty.setObjectName('compareHint'); self.preview_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         vlayout.addWidget(self.preview_empty, 1); self.view.hide()
         legend = QHBoxLayout(); legend.setSpacing(8)
@@ -358,9 +358,9 @@ class PdfCompareDialog(QDialog):
             label = QLabel(text); label.setObjectName('compareHint')
             legend.addWidget(swatch); legend.addWidget(label); legend.addSpacing(8)
         legend.addStretch(); vlayout.addLayout(legend)
-        self.regions = ClearComboBox(); self.regions.setAccessibleName('差异位置')
+        self.regions = ClearComboBox(); self.regions.setAccessibleName(tr('差异位置'))
         self.regions.currentIndexChanged.connect(self.focus_region)
-        nav = QHBoxLayout(); prev = QPushButton('上一处差异'); nxt = QPushButton('下一处差异')
+        nav = QHBoxLayout(); prev = QPushButton(tr('上一处差异')); nxt = QPushButton(tr('下一处差异'))
         prev.clicked.connect(lambda: self.navigate(-1)); nxt.clicked.connect(lambda: self.navigate(1))
         nav.addWidget(prev); nav.addWidget(self.regions, 1); nav.addWidget(nxt); vlayout.addLayout(nav)
         self.preview_controls = (self.mode, fit, self.regions, prev, nxt)
@@ -368,7 +368,7 @@ class PdfCompareDialog(QDialog):
             widget.setEnabled(False)
         splitter.addWidget(viewer); splitter.setStretchFactor(1, 1); layout.addWidget(splitter, 1)
         splitter.setSizes([250, 850])
-        self.status = QLabel('未检出差异不代表内容完全相同，请核对重要细节。')
+        self.status = QLabel(tr('未检出差异不代表内容完全相同，请核对重要细节。'))
         self.status.setObjectName('compareHint'); self.status.setWordWrap(True); layout.addWidget(self.status)
         self.file_drop = PdfFileDrop(self)
         for path in self.paths:
@@ -379,18 +379,11 @@ class PdfCompareDialog(QDialog):
         self.start.setEnabled(not self.busy and all(path.text().strip() for path in self.paths))
 
     def show_help(self):
-        QMessageBox.information(self, 'PDF 对比说明',
-            '选择或拖入磁盘上的旧版与新版 PDF，点击“开始比较”。一次拖入两份时请核对版本顺序。'
-            '原文件只读，不包含标签页未保存的修改。\n\n'
-            '每份最多 200 页、512 MiB。红色表示旧版独有像素，青色表示新版独有像素，橙色表示其他变化；'
-            '颜色不是文字增删或业务含义的判断。未配对页只表示可能新增或删除。\n\n'
-            '页面对应不正确时，可在“调整页面配对”中指定有序页对。使用“上一处／下一处差异”逐项核对，'
-            '也可切换原页；Ctrl+滚轮缩放，拖动画布平移。\n\n'
-            '更多设置可调整配对方式、批注范围、严格模式和文件密码。默认过滤噪点可能漏掉细小变化；'
-            '严格模式关闭过滤但不提高比较分辨率，缩放也不会增加检测精度。重要细节请核对原文件。')
+        QMessageBox.information(self, tr('PDF 对比说明'),
+            tr('选择或拖入磁盘上的旧版与新版 PDF，点击“开始比较”。一次拖入两份时请核对版本顺序。原文件只读，不包含标签页未保存的修改。\n\n每份最多 200 页、512 MiB。红色表示旧版独有像素，青色表示新版独有像素，橙色表示其他变化；颜色不是文字增删或业务含义的判断。未配对页只表示可能新增或删除。\n\n页面对应不正确时，可在“调整页面配对”中指定有序页对。使用“上一处／下一处差异”逐项核对，也可切换原页；Ctrl+滚轮缩放，拖动画布平移。\n\n更多设置可调整配对方式、批注范围、严格模式和文件密码。默认过滤噪点可能漏掉细小变化；严格模式关闭过滤但不提高比较分辨率，缩放也不会增加检测精度。重要细节请核对原文件。'))
 
     def choose(self, target):
-        path, _ = QFileDialog.getOpenFileName(self, '选择 PDF', '', 'PDF (*.pdf)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('选择 PDF'), '', 'PDF (*.pdf)')
         if path:
             target.setText(path)
 
@@ -454,24 +447,21 @@ class PdfCompareDialog(QDialog):
             self.summary, self.passwords = summary, passwords
             self.preview_cache.clear()
             self.images = None; self.view.scene().clear(); self.view.marker = None
-            self.identity.setText('比较已完成，选择页面查看'); self.regions.clear()
+            self.identity.setText(tr('比较已完成，选择页面查看')); self.regions.clear()
             self.row = -1
             self.rows.blockSignals(True); self.rows.clear()
             for row in summary['rows']:
-                manual = ' · 手工指定' if [row['old_page'], row['new_page']] in summary['manual_pairs'] else ''
-                self.rows.addItem(f"旧 {row['old_page'] or '无'} / 新 {row['new_page'] or '无'}{manual}\n{STATUS[row['status']]}")
+                manual = tr(' · 手工指定') if [row['old_page'], row['new_page']] in summary['manual_pairs'] else ''
+                self.rows.addItem(tr('旧 {p0} / 新 {p1}{p2}\n{p3}', p0=row['old_page'] or tr('无'), p1=row['new_page'] or tr('无'), p2=manual, p3=tr(STATUS[row['status']])))
                 self.rows.item(self.rows.count() - 1).setSizeHint(QSize(0, 64))
             self.rows.blockSignals(False)
             counts = summary['counts']
-            self.result_summary.setText(f"{len(summary['rows'])} 组页面 · {counts.get('changed', 0)} 组有差异\n"
-                f"{counts.get('inserted', 0) + counts.get('deleted', 0)} 页未配对")
-            self.status.setText(f"完成，用时 {summary['seconds']} 秒；有差异 {counts.get('changed', 0)} 组，"
-                f"未检出差异 {counts.get('equal', 0)} 组，"
-                f"未配对 {counts.get('inserted', 0) + counts.get('deleted', 0)} 页。")
+            self.result_summary.setText(tr('{p0} 组页面 · {p1} 组有差异\n{p2} 页未配对', p0=f"{len(summary['rows'])}", p1=f"{counts.get('changed', 0)}", p2=f"{counts.get('inserted', 0) + counts.get('deleted', 0)}"))
+            self.status.setText(tr('完成，用时 {p0} 秒；有差异 {p1} 组，未检出差异 {p2} 组，未配对 {p3} 页。', p0=f"{summary['seconds']}", p1=f"{counts.get('changed', 0)}", p2=f"{counts.get('equal', 0)}", p3=f"{counts.get('inserted', 0) + counts.get('deleted', 0)}"))
         except OperationCancelled:
-            self.status.setText('比较已取消；保留上次完成的结果，来源文件未修改。')
+            self.status.setText(tr('比较已取消；保留上次完成的结果，来源文件未修改。'))
         except Exception as exc:
-            QMessageBox.warning(self, '无法比较', str(exc))
+            QMessageBox.warning(self, tr('无法比较'), str(exc))
         finally:
             self._set_busy(False)
         if self.summary is not None and self.row == -1:
@@ -487,24 +477,23 @@ class PdfCompareDialog(QDialog):
                 self._load_preview(index, progress, cancel), cancellable=True)
             self.row, self.images = index, images
             self.preview_empty.hide(); self.view.show()
-            self.identity.setText(f"旧版：{Path(self.summary['paths'][0]).name} 第 {row['old_page'] or '无'} 页　｜　"
-                f"新版：{Path(self.summary['paths'][1]).name} 第 {row['new_page'] or '无'} 页　｜　{STATUS[row['status']]}")
+            self.identity.setText(tr('旧版：{p0} 第 {p1} 页\u3000｜\u3000新版：{p2} 第 {p3} 页\u3000｜\u3000{p4}', p0=f"{Path(self.summary['paths'][0]).name}", p1=row['old_page'] or tr('无'), p2=f"{Path(self.summary['paths'][1]).name}", p3=row['new_page'] or tr('无'), p4=tr(STATUS[row['status']])))
             self.regions.blockSignals(True); self.regions.clear()
             for i, box in enumerate(row['regions']):
-                self.regions.addItem(f'差异 {i + 1}', box)
+                self.regions.addItem(tr('差异 {p0}', p0=f'{i + 1}'), box)
             self.regions.setCurrentIndex(-1)
             self.regions.blockSignals(False)
             self.display_image()
             notices = list(row['warnings'])
             if self.summary.get('manual_pairs_reset'):
-                notices.insert(0, '来源文件已变化，旧手工配对已清除，请重新核对')
+                notices.insert(0, tr('来源文件已变化，旧手工配对已清除，请重新核对'))
             self.status.setText('；'.join(notices) or
-                f"{len(row['regions'])} 处差异区域；缩放仅放大预览，重要细节请核对原文件。")
+                tr('{p0} 处差异区域；缩放仅放大预览，重要细节请核对原文件。', p0=f"{len(row['regions'])}"))
         except OperationCancelled:
-            self.status.setText('页面加载已取消')
+            self.status.setText(tr('页面加载已取消'))
             self._restore_row(previous)
         except Exception as exc:
-            QMessageBox.warning(self, '无法加载差异页', str(exc)); self._restore_row(previous)
+            QMessageBox.warning(self, tr('无法加载差异页'), str(exc)); self._restore_row(previous)
         finally:
             self._set_busy(False)
 

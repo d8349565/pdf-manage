@@ -1,4 +1,5 @@
 """Image-only PDF settings and a recovery route for uncertain signatures."""
+from app.i18n import tr
 from app.themes import set_theme_style
 from pathlib import Path
 
@@ -32,48 +33,48 @@ class RasterDialog(QDialog):
     def __init__(self, count, current, selected, source, parent=None, *, recovery=False):
         super().__init__(parent)
         self.count, self.current, self.selected = count, current, tuple(selected)
-        self.setWindowTitle('制作影像副本' if recovery else 'PDF 转图片版')
+        self.setWindowTitle(tr('制作影像副本') if recovery else tr('PDF 转图片版'))
         self.setObjectName('ocrSettings')
         set_theme_style(self, SETTINGS_QSS)
         self.setMinimumWidth(580)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
-        hint(layout, '将当前页面另存为图片版 PDF，保留页面显示效果。原文件保持不变。')
+        hint(layout, tr('将当前页面另存为图片版 PDF，保留页面显示效果。原文件保持不变。'))
         if recovery:
-            hint(layout, '原件签名结构无法确认。副本只保存页面影像，不保留数字签名效力。')
+            hint(layout, tr('原件签名结构无法确认。副本只保存页面影像，不保留数字签名效力。'))
         form = settings_form()
         self.scope = QComboBox()
-        self.scope.addItems(['全部页面', '当前页', '所选页面', '指定页码'])
-        self.scope.setAccessibleName('影像副本页面范围')
-        form.addRow('转换范围', self.scope)
+        self.scope.addItems([tr('全部页面'), tr('当前页'), tr('所选页面'), tr('指定页码')])
+        self.scope.setAccessibleName(tr('影像副本页面范围'))
+        form.addRow(tr('转换范围'), self.scope)
         self.range = QLineEdit()
-        self.range.setPlaceholderText('例如 1-3,5,8')
-        self.range.setAccessibleName('影像副本指定页码')
-        form.addRow('指定页码', self.range)
+        self.range.setPlaceholderText(tr('例如 1-3,5,8'))
+        self.range.setAccessibleName(tr('影像副本指定页码'))
+        form.addRow(tr('指定页码'), self.range)
         self.quality = QComboBox()
-        self.quality.addItems(['清晰 · 200 DPI，JPEG（推荐）', '更清晰 · 300 DPI，无损图片（文件较大）',
-                               '较小文件 · 150 DPI，JPEG', '无损图片 · 200 DPI（文件较大）'])
-        self.quality.setAccessibleName('影像副本清晰度')
-        form.addRow('清晰程度', self.quality)
+        self.quality.addItems([tr('清晰 · 200 DPI，JPEG（推荐）'), tr('更清晰 · 300 DPI，无损图片（文件较大）'),
+                               tr('较小文件 · 150 DPI，JPEG'), tr('无损图片 · 200 DPI（文件较大）')])
+        self.quality.setAccessibleName(tr('影像副本清晰度'))
+        form.addRow(tr('清晰程度'), self.quality)
         layout.addLayout(form)
-        hint(layout, '推荐档位适度压缩图片以兼顾清晰度与体积；无损图片可能使文件明显变大。')
+        hint(layout, tr('推荐档位适度压缩图片以兼顾清晰度与体积；无损图片可能使文件明显变大。'))
         self.output = QLineEdit(unused_path(source))
-        self.output.setAccessibleName('影像副本 PDF 保存路径')
+        self.output.setAccessibleName(tr('影像副本 PDF 保存路径'))
         self.output.setCursorPosition(0)
         row = QHBoxLayout()
         row.setSpacing(8)
         row.addWidget(self.output, 1)
-        choose = QPushButton('选择位置…')
+        choose = QPushButton(tr('选择位置…'))
         choose.clicked.connect(self.choose_output)
         row.addWidget(choose)
         layout.addLayout(row)
-        hint(layout, '文字、批注和表单外观固化；链接、附件与可填写表单不保留。需要搜索和复制文字时，可对副本使用 OCR。')
+        hint(layout, tr('文字、批注和表单外观固化；链接、附件与可填写表单不保留。需要搜索和复制文字时，可对副本使用 OCR。'))
         self.feedback = hint(layout, '')
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        box.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
-        self.start = box.addButton('生成影像副本', QDialogButtonBox.ButtonRole.AcceptRole)
+        box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
+        self.start = box.addButton(tr('生成影像副本'), QDialogButtonBox.ButtonRole.AcceptRole)
         self.start.setObjectName('primary')
         box.accepted.connect(self.accept)
         box.rejected.connect(self.reject)
@@ -120,7 +121,7 @@ class RasterDialog(QDialog):
             self.start.setEnabled(False)
 
     def choose_output(self):
-        path, _ = QFileDialog.getSaveFileName(self, '保存影像副本', self.output.text(), 'PDF (*.pdf)',
+        path, _ = QFileDialog.getSaveFileName(self, tr('保存影像副本'), self.output.text(), 'PDF (*.pdf)',
                                              options=QFileDialog.Option.DontConfirmOverwrite)
         if path:
             self.output.setText(path if path.lower().endswith('.pdf') else path + '.pdf')
@@ -134,7 +135,7 @@ class RasterDialog(QDialog):
 
 def open_raster(host, *, recovery=False):
     if not host.ws.pages:
-        QMessageBox.information(host, '影像副本', '请先打开 PDF。')
+        QMessageBox.information(host, tr('影像副本'), tr('请先打开 PDF。'))
         return
     if not host._allow_operation('raster_copy'):
         return
@@ -164,21 +165,21 @@ def open_raster(host, *, recovery=False):
                                              progress, cancel, outline=outline), cancellable=True)
         show_result(host, result)
     except OperationCancelled:
-        host.statusBar().showMessage('影像副本已取消，原件保留。', 6000)
+        host.statusBar().showMessage(tr('影像副本已取消，原件保留。'), 6000)
     except (PdfError, OSError, RuntimeError, ValueError) as exc:
-        QMessageBox.warning(host, '影像副本未生成', str(exc))
+        QMessageBox.warning(host, tr('影像副本未生成'), str(exc))
     finally:
         dialog.deleteLater()
 
 
 def show_result(host, result):
     box = QMessageBox(host)
-    box.setWindowTitle('影像副本已生成')
-    box.setText(f'文件已保存到：\n{result.path}')
+    box.setWindowTitle(tr('影像副本已生成'))
+    box.setText(tr('文件已保存到：\n{p0}', p0=f'{result.path}'))
     box.setInformativeText('\n'.join(result.warnings))
-    open_pdf = box.addButton('打开影像副本', QMessageBox.ButtonRole.AcceptRole)
-    folder = box.addButton('打开文件夹', QMessageBox.ButtonRole.ActionRole)
-    box.addButton('关闭', QMessageBox.ButtonRole.RejectRole)
+    open_pdf = box.addButton(tr('打开影像副本'), QMessageBox.ButtonRole.AcceptRole)
+    folder = box.addButton(tr('打开文件夹'), QMessageBox.ButtonRole.ActionRole)
+    box.addButton(tr('关闭'), QMessageBox.ButtonRole.RejectRole)
     box.exec()
     if box.clickedButton() is open_pdf:
         host._ingest([result.path], replace=True)

@@ -1,4 +1,5 @@
 """A focused cleanup workbench; draft marks never change the source workspace."""
+from app.i18n import tr
 from dataclasses import replace
 import math
 from pathlib import Path
@@ -54,7 +55,7 @@ class CleanupCanvas(QWidget):
         self.setMinimumSize(1, 1)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName('清理画布，可移动、擦除或标记保留；Ctrl 加滚轮缩放')
+        self.setAccessibleName(tr('清理画布，可移动、擦除或标记保留；Ctrl 加滚轮缩放'))
 
     def area(self):
         width, height = (value * self.scale for value in self.page_size)
@@ -341,7 +342,7 @@ class ColorCleanupDialog(QDialog):
         self.zoom_mode, self.zoom_percent, self.render_width = 'page', 100., 1100
         self._zoom_only = False
         self.setObjectName('colorCleanup')
-        self.setWindowTitle('去除彩色笔迹 - 纸序 PDF')
+        self.setWindowTitle(tr('去除彩色笔迹 - 纸序 PDF'))
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         screen = host.screen().availableGeometry()
         self.resize(min(1480, round(screen.width() * .94)), round(screen.height() * .92))
@@ -358,8 +359,8 @@ class ColorCleanupDialog(QDialog):
         layout.setSpacing(10)
         heading = QHBoxLayout()
         text = QVBoxLayout()
-        title = QLabel('去除彩色笔迹'); title.setObjectName('cleanupTitle')
-        subtitle = QLabel('先自动清理，再用橡皮擦补一补'); subtitle.setObjectName('cleanupHint')
+        title = QLabel(tr('去除彩色笔迹')); title.setObjectName('cleanupTitle')
+        subtitle = QLabel(tr('先自动清理，再用橡皮擦补一补')); subtitle.setObjectName('cleanupHint')
         text.addWidget(title); text.addWidget(subtitle)
         heading.addLayout(text); heading.addStretch()
         self.previous = self.button('上一页', 'chevron-left', lambda: self.navigate(-1))
@@ -368,14 +369,14 @@ class ColorCleanupDialog(QDialog):
             button.setToolTip(button.text()); button.setText(''); button.setFixedWidth(34)
         self.page_label = QLabel()
         for widget in (self.previous, self.page_label, self.next): heading.addWidget(widget)
-        heading.addSpacing(14); heading.addWidget(QLabel('处理页码'))
+        heading.addSpacing(14); heading.addWidget(QLabel(tr('处理页码')))
         self.scope = _Scope(self.pages, host.ws.target_indices(), self.current)
         heading.addWidget(self.scope)
         layout.addLayout(heading)
         bar = self.toolbar = QFrame(); bar.setObjectName('cleanupBar')
         bar_layout = QVBoxLayout(bar); bar_layout.setContentsMargins(10, 8, 10, 8); bar_layout.setSpacing(7)
         choices = QHBoxLayout()
-        choices.addWidget(QLabel('笔迹颜色'))
+        choices.addWidget(QLabel(tr('笔迹颜色')))
         self.red = self.button('红色', '', lambda: self.choose_color((210, 25, 45)), checkable=True)
         self.blue = self.button('蓝色', '', lambda: self.choose_color((30, 65, 210)), checkable=True)
         for button, color in ((self.red, '#d2192d'), (self.blue, '#1e41d2')):
@@ -393,8 +394,8 @@ class ColorCleanupDialog(QDialog):
             self.view_buttons[key] = button; group.addButton(button); choices.addWidget(button)
         self.view_buttons['cleaned'].setChecked(True)
         self.fit = ClearComboBox()
-        self.fit.addItem('适合页面', 'page'); self.fit.addItem('适合宽度', 'width'); self.fit.addItem('实际大小', 'actual')
-        self.fit.setAccessibleName('页面适配方式')
+        self.fit.addItem(tr('适合页面'), 'page'); self.fit.addItem(tr('适合宽度'), 'width'); self.fit.addItem(tr('实际大小'), 'actual')
+        self.fit.setAccessibleName(tr('页面适配方式'))
         self.zoom_out = self.button('缩小', 'zoom-out', lambda: self.set_zoom(self.zoom_percent / 1.25))
         self.zoom_label = QLabel('100%'); self.zoom_label.setMinimumWidth(46); self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.zoom_in = self.button('放大', 'zoom-in', lambda: self.set_zoom(self.zoom_percent * 1.25))
@@ -412,31 +413,31 @@ class ColorCleanupDialog(QDialog):
         self.redo_zone = self.button('重做', 'redo', self.redo_zones)
         tools.addWidget(self.undo_zone); tools.addWidget(self.redo_zone); tools.addStretch()
         for widget in (self.fit, self.zoom_out, self.zoom_label, self.zoom_in): tools.addWidget(widget)
-        self.tool_hint = QLabel('可放大后检查细节'); self.tool_hint.setObjectName('cleanupHint')
+        self.tool_hint = QLabel(tr('可放大后检查细节')); self.tool_hint.setObjectName('cleanupHint')
         self.tool_hint.setMinimumWidth(0)
         self.tool_hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         bar_layout.addLayout(tools)
         self.context = QWidget(); self.context.setObjectName('cleanupContext')
         set_theme_style(self.context, 'QWidget#cleanupContext {background: transparent; border: none;}')
         contextual = QHBoxLayout(self.context); contextual.setContentsMargins(0, 0, 0, 0)
-        self.shape_label = QLabel('擦除方式'); contextual.addWidget(self.shape_label)
+        self.shape_label = QLabel(tr('擦除方式')); contextual.addWidget(self.shape_label)
         self.shape_buttons = {}; shapes = QButtonGroup(self)
         for key, label, icon in (('brush', '画笔', 'pen'), ('rect', '矩形', 'square'), ('ellipse', '圆形', 'circle')):
             button = self.button(label, icon, lambda checked=False, key=key: self.set_shape(key), checkable=True)
             self.shape_buttons[key] = button; shapes.addButton(button); contextual.addWidget(button)
         self.shape_buttons['brush'].setChecked(True)
-        self.size_label = QLabel('大小'); contextual.addWidget(self.size_label)
+        self.size_label = QLabel(tr('大小')); contextual.addWidget(self.size_label)
         self.brush = QSlider(Qt.Orientation.Horizontal); self.brush.setRange(3, 200); self.brush.setValue(20)
-        self.brush.setMaximumWidth(150); self.brush.setAccessibleName('笔刷直径，单位十分之一毫米')
+        self.brush.setMaximumWidth(150); self.brush.setAccessibleName(tr('笔刷直径，单位十分之一毫米'))
         self.brush_value = QLabel('2 mm'); self.brush_value.setMinimumWidth(48)
         contextual.addWidget(self.brush); contextual.addWidget(self.brush_value)
-        self.fill = ClearComboBox(); self.fill.addItem('白色', 'white'); self.fill.addItem('匹配纸面', 'paper')
-        self.fill.setAccessibleName('手工擦除填充'); contextual.addWidget(self.fill); contextual.addStretch()
+        self.fill = ClearComboBox(); self.fill.addItem(tr('白色'), 'white'); self.fill.addItem(tr('匹配纸面'), 'paper')
+        self.fill.setAccessibleName(tr('手工擦除填充')); contextual.addWidget(self.fill); contextual.addStretch()
         contextual.addWidget(self.tool_hint)
         bar_layout.addWidget(self.context); self.context.hide()
         layout.addWidget(bar)
         self.adjustments = QDialog(self, Qt.WindowType.Popup)
-        self.adjustments.setWindowTitle('调整清理效果')
+        self.adjustments.setWindowTitle(tr('调整清理效果'))
         panel_layout = QVBoxLayout(self.adjustments)
         advanced_scroll = QScrollArea(); advanced_scroll.setWidgetResizable(True)
         advanced_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -444,16 +445,16 @@ class ColorCleanupDialog(QDialog):
         self.method = ClearComboBox()
         for name, key in (('自动选择（推荐）', 'auto'), ('只清理扫描图片', 'images'), ('只清理彩色批注', 'annotations'),
                           ('转图片处理（原生文字将转为图像）', 'raster')): self.method.addItem(name, key)
-        advanced.addWidget(QLabel('处理内容')); advanced.addWidget(self.method)
+        advanced.addWidget(QLabel(tr('处理内容'))); advanced.addWidget(self.method)
         self.tolerance, self.faint = QSlider(Qt.Orientation.Horizontal), QSlider(Qt.Orientation.Horizontal)
         for slider, name, value in ((self.tolerance, '颜色容差', 30), (self.faint, '浅色笔迹识别强度', 45)):
             slider.setRange(0, 100); slider.setValue(value); slider.setAccessibleName(name)
             label = QLabel(f'{name}：{value}')
             slider.valueChanged.connect(lambda v, label=label, name=name: label.setText(f'{name}：{v}'))
             advanced.addWidget(label); advanced.addWidget(slider)
-        self.fringe = QCheckBox('清除边缘残影（白纸打印）'); self.fringe.setChecked(True)
-        self.smooth = QCheckBox('平滑估计邻近背景')
-        self.show_mask = QCheckBox('显示清除范围（粉色高亮）')
+        self.fringe = QCheckBox(tr('清除边缘残影（白纸打印）')); self.fringe.setChecked(True)
+        self.smooth = QCheckBox(tr('平滑估计邻近背景'))
+        self.show_mask = QCheckBox(tr('显示清除范围（粉色高亮）'))
         for widget in (self.fringe, self.smooth, self.show_mask): advanced.addWidget(widget)
         self.region_button = self.button('只清理框选区域', 'square', lambda: self.set_tool('region'))
         self.whole = self.button('恢复整页清理范围', '', lambda: self.change_zones(replace(self.page_zones(), region=(0., 0., 1., 1.))))
@@ -466,8 +467,8 @@ class ColorCleanupDialog(QDialog):
         self.adjustments.resize(380, min(600, round(screen.height() * .72)))
         self.annotation_panel = QWidget(); annotation_layout = QVBoxLayout(self.annotation_panel)
         annotation_layout.setContentsMargins(0, 0, 0, 0)
-        row = QHBoxLayout(); row.addWidget(QLabel('本页可删除的彩色批注：勾选后预览'))
-        self.annotation_type = ClearComboBox(); self.annotation_type.addItem('全部类型', '')
+        row = QHBoxLayout(); row.addWidget(QLabel(tr('本页可删除的彩色批注：勾选后预览')))
+        self.annotation_type = ClearComboBox(); self.annotation_type.addItem(tr('全部类型'), '')
         for kind in dict.fromkeys(ANNOT_TYPES.values()): self.annotation_type.addItem(kind, kind)
         row.addWidget(self.annotation_type)
         self.select_annotations = self.button('勾选筛选结果', '', lambda: self.check_annotations(True))
@@ -475,7 +476,7 @@ class ColorCleanupDialog(QDialog):
         row.addWidget(self.select_annotations); row.addWidget(self.clear_annotations); row.addStretch()
         annotation_layout.addLayout(row)
         self.annotations = QListWidget(); self.annotations.setMaximumHeight(100)
-        self.annotations.setAccessibleName('本页待删除的彩色批注，默认不勾选')
+        self.annotations.setAccessibleName(tr('本页待删除的彩色批注，默认不勾选'))
         annotation_layout.addWidget(self.annotations); layout.addWidget(self.annotation_panel); self.annotation_panel.hide()
         self.scroll = QScrollArea(); self.scroll.setWidgetResizable(False); self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -484,21 +485,21 @@ class ColorCleanupDialog(QDialog):
         self.scroll.viewport().installEventFilter(self); self.canvas.installEventFilter(self)
         layout.addWidget(self.scroll, 1)
         self.ocr_box = QWidget(); ocr_row = QHBoxLayout(self.ocr_box); ocr_row.setContentsMargins(0, 0, 0, 0)
-        ocr_label = QLabel('检测到旧识别文字；清理后，旧答案仍可能被搜索。'); ocr_label.setWordWrap(True)
+        ocr_label = QLabel(tr('检测到旧识别文字；清理后，旧答案仍可能被搜索。')); ocr_label.setWordWrap(True)
         ocr_row.addWidget(ocr_label, 1)
-        self.ocr = ClearComboBox(); self.ocr.addItem('请选择文字层处理方式', 'ask')
-        self.ocr.addItem('移除旧识别文字（保留可见正文）', 'remove')
-        self.ocr.addItem('保留旧识别文字（旧答案可能仍可搜索）', 'keep')
-        self.ocr.setToolTip('移除后原 OCR 不能再搜索；此处不会自动重做识别。与可见正文重叠时会停止处理。')
+        self.ocr = ClearComboBox(); self.ocr.addItem(tr('请选择文字层处理方式'), 'ask')
+        self.ocr.addItem(tr('移除旧识别文字（保留可见正文）'), 'remove')
+        self.ocr.addItem(tr('保留旧识别文字（旧答案可能仍可搜索）'), 'keep')
+        self.ocr.setToolTip(tr('移除后原 OCR 不能再搜索；此处不会自动重做识别。与可见正文重叠时会停止处理。'))
         ocr_row.addWidget(self.ocr); layout.addWidget(self.ocr_box); self.ocr_box.hide()
         self.risk = QLabel(); self.risk.setWordWrap(True); self.risk.setObjectName('cleanupHint')
         layout.addWidget(self.risk); self.risk.hide()
         bottom = QHBoxLayout()
-        self.status = QLabel('正在生成清理预览…'); self.status.setWordWrap(True); self.status.setObjectName('cleanupHint')
+        self.status = QLabel(tr('正在生成清理预览…')); self.status.setWordWrap(True); self.status.setObjectName('cleanupHint')
         bottom.addWidget(self.status, 1)
         self.fallback = self.button('选择转图片处理', '', self.choose_raster)
         bottom.addWidget(self.fallback); self.fallback.hide()
-        reassurance = QLabel('原文件保留，另存为新的 PDF'); reassurance.setObjectName('cleanupHint')
+        reassurance = QLabel(tr('原文件保留，另存为新的 PDF')); reassurance.setObjectName('cleanupHint')
         bottom.addWidget(reassurance)
         self.cancel_button = self.button('取消', '', self.reject)
         self.apply = self.button('另存清理副本', '', self.accept)
@@ -551,7 +552,7 @@ class ColorCleanupDialog(QDialog):
         self.color = color
         (self.red if color == (210, 25, 45) else self.blue).setChecked(True)
         if self.current_tool == 'pick': self.set_tool('move')
-        self.pick.setText('取色')
+        self.pick.setText(tr('取色'))
         self.invalidate()
 
     def pick_color(self, color):
@@ -561,7 +562,7 @@ class ColorCleanupDialog(QDialog):
             self.status.setText(str(exc)); return
         self.color = tuple(color)
         self.colors.setExclusive(False); self.red.setChecked(False); self.blue.setChecked(False); self.colors.setExclusive(True)
-        self.pick.setText('取色 #' + ''.join(f'{c:02X}' for c in color))
+        self.pick.setText(tr('取色 #') + ''.join(f'{c:02X}' for c in color))
         self.set_tool('move')
         self.invalidate()
 
@@ -611,7 +612,7 @@ class ColorCleanupDialog(QDialog):
         self.tool_group.setExclusive(True)
         self.pick.setChecked(tool == 'pick')
         self.context.setVisible(tool in ('erase', 'keep'))
-        self.shape_label.setText('保留方式' if tool == 'keep' else '擦除方式')
+        self.shape_label.setText(tr('保留方式') if tool == 'keep' else tr('擦除方式'))
         self.fill.setVisible(tool == 'erase')
         hints = {'move': '拖动查看，Ctrl 加滚轮缩放', 'erase': '涂到的内容会被擦除，每一笔都可撤销',
                  'keep': '在原图上标记要保留的内容，保护区优先', 'pick': '点击原图中的彩色笔迹取色',
@@ -665,17 +666,17 @@ class ColorCleanupDialog(QDialog):
         self.canvas.zones = self.page_zones()
         self.canvas.page_size = self.host.store.page_size(self.pages[self.current])
         self.update_brush()
-        self.status.setText('正在更新清理预览…')
+        self.status.setText(tr('正在更新清理预览…'))
         self.update_navigation()
         self.timer.start(180)
 
     def update_navigation(self):
         self.scope.current = self.current
-        self.scope.mode.setItemText(self.scope.mode.findData('current'), f'当前页（第 {self.current + 1} 页）')
+        self.scope.mode.setItemText(self.scope.mode.findData('current'), tr('当前页（第 {p0} 页）', p0=f'{self.current + 1}'))
         try:
             rows = self.scope.indices()
             index = rows.index(self.current)
-            self.page_label.setText(f'第 {self.current + 1} / {len(self.pages)} 页')
+            self.page_label.setText(tr('第 {p0} / {p1} 页', p0=f'{self.current + 1}', p1=f'{len(self.pages)}'))
             self.previous.setEnabled(index > 0 and not self.saving)
             self.next.setEnabled(index < len(rows) - 1 and not self.saving)
         except ValueError:
@@ -720,13 +721,13 @@ class ColorCleanupDialog(QDialog):
         self.ocr_box.setVisible(not native and (result.get('hidden', False) or self.force_ocr))
         raster = self.method.currentData() == 'raster'
         self.risk.setVisible(raster)
-        self.risk.setText('所选页将转为图片，原生文字和矢量不保留；请核对细线与符号。其他页保持原样。')
+        self.risk.setText(tr('所选页将转为图片，原生文字和矢量不保留；请核对细线与符号。其他页保持原样。'))
         self.fallback.setVisible(bool(error) and not raster and ('图片' in error or '矢量' in error))
         self.fill_annotations()
         self.show_result()
         if error: self.status.setText(error)
-        elif native: self.status.setText(f"本页可选 {len(result.get('candidates', ()))} 条批注，已勾选 {len(self.selected.get(self.current, ()))} 条")
-        else: self.status.setText('本页预览已更新' if result.get('changed') else '未发现所选颜色的笔迹，可手工补擦或直接另存')
+        elif native: self.status.setText(tr('本页可选 {p0} 条批注，已勾选 {p1} 条', p0=f"{len(result.get('candidates', ()))}", p1=f'{len(self.selected.get(self.current, ()))}'))
+        else: self.status.setText(tr('本页预览已更新') if result.get('changed') else tr('未发现所选颜色的笔迹，可手工补擦或直接另存'))
         self.update_apply()
 
     def update_apply(self):
@@ -884,16 +885,8 @@ class ColorCleanupDialog(QDialog):
         super().resizeEvent(event)
 
     def show_help(self):
-        QMessageBox.information(self, '清理与补擦',
-            '先选红色、蓝色或取色，程序会生成清理预览。可对比原图，放大后检查细节。\n\n'
-            '擦除：画笔可直接涂抹，矩形或圆形拖出范围后填补形状内部；大小按纸面毫米计算。'
-            '默认涂白，也可匹配纸面。保留内容：在原图上标记不允许改动的内容。保护区始终优先。'
-            '每一笔可撤销、重做，换页保留修改。手工擦除只作用于当前页，不复制到其他页。\n\n'
-            '调整效果中可改颜色容差、浅色识别、清除残影和局部范围。原生批注须逐项勾选，链接和表单保留。'
-            '复杂图片/矢量页可能不支持，转图片须明确选择，会失去处理页的原生正文和矢量，其他页保留。\n\n'
-            '有旧 OCR 文字时必须选择保留或移除；保留可能仍能搜索旧答案，移除不会自动重做 OCR。'
-            '近黑笔尾与正文无法可靠区分，可手工补擦。被完全遮挡的内容无法恢复，同色印刷字和印章需保护。\n\n'
-            '全程本机处理，另存新的 PDF。取消或保存失败时修改仍留在窗口，原件不变。此功能不是安全脱敏工具。')
+        QMessageBox.information(self, tr('清理与补擦'),
+            tr('先选红色、蓝色或取色，程序会生成清理预览。可对比原图，放大后检查细节。\n\n擦除：画笔可直接涂抹，矩形或圆形拖出范围后填补形状内部；大小按纸面毫米计算。默认涂白，也可匹配纸面。保留内容：在原图上标记不允许改动的内容。保护区始终优先。每一笔可撤销、重做，换页保留修改。手工擦除只作用于当前页，不复制到其他页。\n\n调整效果中可改颜色容差、浅色识别、清除残影和局部范围。原生批注须逐项勾选，链接和表单保留。复杂图片/矢量页可能不支持，转图片须明确选择，会失去处理页的原生正文和矢量，其他页保留。\n\n有旧 OCR 文字时必须选择保留或移除；保留可能仍能搜索旧答案，移除不会自动重做 OCR。近黑笔尾与正文无法可靠区分，可手工补擦。被完全遮挡的内容无法恢复，同色印刷字和印章需保护。\n\n全程本机处理，另存新的 PDF。取消或保存失败时修改仍留在窗口，原件不变。此功能不是安全脱敏工具。'))
 
     def snapshot_valid(self):
         return self.host.ws is self.workspace and tuple(self.workspace.pages) == self.pages and self.workspace.outline == self.outline
@@ -901,11 +894,11 @@ class ColorCleanupDialog(QDialog):
     def accept(self):
         if not self.sample_ready or not self.apply.isEnabled() or self.saving: return
         if not self.snapshot_valid():
-            self.status.setText('原工作区已改变，请关闭后重新打开清理工具。'); return
+            self.status.setText(tr('原工作区已改变，请关闭后重新打开清理工具。')); return
         from app.exportdialogs import new_pdf_path
         self.adjustments.hide()
         suggested = Path(self.workspace.path or self.pages[0].source_path or '文档.pdf').stem + '_清理副本.pdf'
-        path = new_pdf_path(self, self.host.store, '另存清理副本', suggested)
+        path = new_pdf_path(self, self.host.store, tr('另存清理副本'), suggested)
         if not path: return
         self.saving = True; self.cancel.set(); self.timer.stop(); self.zoom_timer.stop(); self.generation += 1
         self.apply.setEnabled(False); self.canvas.editable = False
@@ -927,16 +920,16 @@ class ColorCleanupDialog(QDialog):
             pages = [changes.get(row, ref) for row, ref in enumerate(self.pages)]
             result = self.host._write_pdf(pages, path, '另存清理副本', options=WriteOptions(outline=self.outline))
             if result is None:
-                self.status.setText('保存已取消，修改仍保留，可继续编辑。'); return
+                self.status.setText(tr('保存已取消，修改仍保留，可继续编辑。')); return
             self.saved_result = result
             super().accept()
         except OperationCancelled:
-            self.status.setText('已取消保存，修改仍保留，可继续编辑。')
+            self.status.setText(tr('已取消保存，修改仍保留，可继续编辑。'))
         except (ValueError, PdfError, OSError, RuntimeError) as exc:
             if '隐藏文字层' in str(exc):
                 self.force_ocr = True; self.ocr_box.show()
             self.status.setText(str(exc))
-            QMessageBox.warning(self, '清理副本未保存', str(exc) + '\n修改仍保留在当前窗口，原件未改动。')
+            QMessageBox.warning(self, tr('清理副本未保存'), str(exc) + tr('\n修改仍保留在当前窗口，原件未改动。'))
         finally:
             self.saving = False
             self.canvas.editable = self.sample_ready
@@ -960,6 +953,6 @@ def open_color_cleanup(host):
         result = dialog.saved_result
         host._show_write_notes((result,))
         host.open_files_in_tabs([result.path])
-        host.statusBar().showMessage('清理副本已保存，原文件与原工作区保留。', 7000)
+        host.statusBar().showMessage(tr('清理副本已保存，原文件与原工作区保留。'), 7000)
     finally:
         dialog.deleteLater()

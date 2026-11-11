@@ -1,4 +1,5 @@
 """Small OCR setup/result dialogs using the existing task runner."""
+from app.i18n import tr
 from app.themes import set_theme_style
 from pathlib import Path
 
@@ -28,7 +29,7 @@ def unused_output(source):
 
 
 def install_local_runtime(parent):
-    archive,_=QFileDialog.getOpenFileName(parent,'选择可信来源的离线 OCR 增强包','','OCR 增强包 (*.zip)')
+    archive,_=QFileDialog.getOpenFileName(parent,tr('选择可信来源的离线 OCR 增强包'),'',tr('OCR 增强包 (*.zip)'))
     if not archive:
         return False
     from app.storageui import RuntimeInstallDialog
@@ -41,12 +42,12 @@ def install_local_runtime(parent):
         installed = run_operation(parent,'安装 OCR 增强包',
                       lambda progress,cancel:install_runtime(archive,directory=target,progress=progress,cancel=cancel),cancellable=True)
         save_directory('ocr', target)
-        QMessageBox.information(parent, 'OCR 增强包已安装', f'组件保存到：\n{installed}\n\n原 ZIP 保留；旧组件备份可在存储管理中查看。')
+        QMessageBox.information(parent, tr('OCR 增强包已安装'), tr('组件保存到：\n{p0}\n\n原 ZIP 保留；旧组件备份可在存储管理中查看。', p0=f'{installed}'))
         return True
     except OperationCancelled:
-        QMessageBox.information(parent,'安装已取消','原有 OCR 组件保留。')
+        QMessageBox.information(parent,tr('安装已取消'),tr('原有 OCR 组件保留。'))
     except (OCRError,OSError) as exc:
-        QMessageBox.warning(parent,'OCR 增强包未安装',str(exc))
+        QMessageBox.warning(parent,tr('OCR 增强包未安装'),str(exc))
     finally:
         dialog.deleteLater()
     return False
@@ -56,53 +57,53 @@ class OCRDialog(QDialog):
     def __init__(self, source, count, current, parent=None):
         super().__init__(parent)
         self.count, self.current = count, current
-        self.setWindowTitle('OCR 文字识别')
+        self.setWindowTitle(tr('OCR 文字识别'))
         from app.storageui import SETTINGS_QSS, settings_form
         self.setObjectName('ocrSettings')
         set_theme_style(self, SETTINGS_QSS)
         self.setMinimumWidth(520)
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
-        hint(layout, '识别扫描件中的中英文文字，生成可搜索、可复制的 PDF 副本。')
+        hint(layout, tr('识别扫描件中的中英文文字，生成可搜索、可复制的 PDF 副本。'))
         self.environment = QLabel()
         self.environment.setWordWrap(True)
         self.environment.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self.environment)
-        self.install_button = QPushButton('安装本地 OCR 增强包…')
+        self.install_button = QPushButton(tr('安装本地 OCR 增强包…'))
         self.install_button.clicked.connect(self.install_package)
         row = QHBoxLayout()
         row.addWidget(self.install_button, 1)
-        locations = QPushButton('存储位置…')
+        locations = QPushButton(tr('存储位置…'))
         locations.clicked.connect(self.manage_storage)
         row.addWidget(locations)
         layout.addLayout(row)
         form = settings_form()
         self.scope = QComboBox()
-        self.scope.addItems(['当前页', '全部页面', '指定页码'])
+        self.scope.addItems([tr('当前页'), tr('全部页面'), tr('指定页码')])
         self.scope.setCurrentIndex(1)
-        self.scope.setAccessibleName('识别范围')
-        form.addRow('识别范围', self.scope)
+        self.scope.setAccessibleName(tr('识别范围'))
+        form.addRow(tr('识别范围'), self.scope)
         self.range = QLineEdit()
-        self.range.setPlaceholderText('例如 1-3,5,8')
-        self.range.setAccessibleName('指定识别页码')
-        form.addRow('指定页码', self.range)
+        self.range.setPlaceholderText(tr('例如 1-3,5,8'))
+        self.range.setAccessibleName(tr('指定识别页码'))
+        form.addRow(tr('指定页码'), self.range)
         layout.addLayout(form)
-        self.skip = QCheckBox('跳过已有文字的页面')
+        self.skip = QCheckBox(tr('跳过已有文字的页面'))
         self.skip.setChecked(True)
         layout.addWidget(self.skip)
         output_row = QHBoxLayout()
         self.output = QLineEdit(unused_output(source))
-        self.output.setAccessibleName('OCR 输出 PDF 路径')
+        self.output.setAccessibleName(tr('OCR 输出 PDF 路径'))
         output_row.addWidget(self.output, 1)
-        choose = QPushButton('选择位置…')
+        choose = QPushButton(tr('选择位置…'))
         choose.clicked.connect(self.choose_output)
         output_row.addWidget(choose)
         layout.addLayout(output_row)
         self.feedback = hint(layout, '')
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
-        hint(layout, '全部处理在本机完成。原 PDF 保留；金额和编号请核对原件。')
+        hint(layout, tr('全部处理在本机完成。原 PDF 保留；金额和编号请核对原件。'))
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        self.start = box.addButton('开始识别', QDialogButtonBox.ButtonRole.AcceptRole)
+        self.start = box.addButton(tr('开始识别'), QDialogButtonBox.ButtonRole.AcceptRole)
         self.start.setObjectName('primary')
         box.accepted.connect(self.accept)
         box.rejected.connect(self.reject)
@@ -129,9 +130,9 @@ class OCRDialog(QDialog):
         except OCRError:
             self.runtime_ready = False
             location = ''
-        self.environment.setText(('OCR 增强包已安装 · 开始前自动检查完整性' if self.runtime_ready
-                                 else '尚未安装 OCR 增强包，请先安装本地离线 ZIP。') + location)
-        self.install_button.setText('重新安装本地 OCR 增强包…' if self.runtime_ready else '安装本地 OCR 增强包…')
+        self.environment.setText((tr('OCR 增强包已安装 · 开始前自动检查完整性') if self.runtime_ready
+                                 else tr('尚未安装 OCR 增强包，请先安装本地离线 ZIP。')) + location)
+        self.install_button.setText(tr('重新安装本地 OCR 增强包…') if self.runtime_ready else tr('安装本地 OCR 增强包…'))
 
     def validate(self):
         specified = self.scope.currentIndex() == 2
@@ -152,7 +153,7 @@ class OCRDialog(QDialog):
             self.start.setEnabled(False)
 
     def choose_output(self):
-        path, _ = QFileDialog.getSaveFileName(self, '保存 OCR 副本', self.output.text(), 'PDF 文件 (*.pdf)',
+        path, _ = QFileDialog.getSaveFileName(self, tr('保存 OCR 副本'), self.output.text(), tr('PDF 文件 (*.pdf)'),
                                              options=QFileDialog.Option.DontConfirmOverwrite)
         if path:
             self.output.setText(path if Path(path).suffix.lower() == '.pdf' else path + '.pdf')
@@ -178,7 +179,7 @@ class OCRDialog(QDialog):
 
 def show_result(host, result):
     dialog = QDialog(host)
-    dialog.setWindowTitle('OCR 识别完成')
+    dialog.setWindowTitle(tr('OCR 识别完成'))
     dialog.setMinimumWidth(520)
     layout = QVBoxLayout(dialog)
     total = len(result.processed_pages) + len(result.skipped_pages) + len(result.failed_pages)
@@ -196,8 +197,8 @@ def show_result(host, result):
         detail.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(detail)
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-    open_pdf = buttons.addButton('打开识别后的 PDF', QDialogButtonBox.ButtonRole.ActionRole)
-    folder = buttons.addButton('打开文件夹', QDialogButtonBox.ButtonRole.ActionRole)
+    open_pdf = buttons.addButton(tr('打开识别后的 PDF'), QDialogButtonBox.ButtonRole.ActionRole)
+    folder = buttons.addButton(tr('打开文件夹'), QDialogButtonBox.ButtonRole.ActionRole)
     def open_output():
         dialog.accept()
         host._ingest([result.output_path], replace=True)
@@ -211,19 +212,19 @@ def show_result(host, result):
 
 def open_ocr(host):
     if not host.ws.pages:
-        QMessageBox.information(host, 'OCR 文字识别', '请先打开要识别的 PDF。')
+        QMessageBox.information(host, tr('OCR 文字识别'), tr('请先打开要识别的 PDF。'))
         return
     if host.ws.path and host.ws.path.lower().endswith('.ofd') and not host.save(True):
         return
     if host.ws.dirty or not host.ws.path:
-        QMessageBox.information(host, '先保存当前文档', '当前工作区有未保存的修改，请先保存或另存 PDF，再开始 OCR。')
+        QMessageBox.information(host, tr('先保存当前文档'), tr('当前工作区有未保存的修改，请先保存或另存 PDF，再开始 OCR。'))
         return
     if not host._allow_operation('content_edit') or not host._allow_operation('copy'):
         return
     # Only immutable metadata is read here; the worker opens its own Document.
     source = host.store._source(host.ws.pages[0].source_id)
     if stamp(source.path) != source.disk_stamp:
-        QMessageBox.warning(host, '原文件已变化', '磁盘文件与当前工作区不一致，请重新打开或另存当前文档后再识别。')
+        QMessageBox.warning(host, tr('原文件已变化'), tr('磁盘文件与当前工作区不一致，请重新打开或另存当前文档后再识别。'))
         return
     dialog = OCRDialog(host.ws.path, len(host.ws.pages), host.ws.preview_index() or 0, host)
     try:
@@ -237,8 +238,8 @@ def open_ocr(host):
                                cancellable=True)
         show_result(host, result)
     except OperationCancelled:
-        host.statusBar().showMessage('OCR 已取消，原 PDF 保留，临时文件已清理。', 6000)
+        host.statusBar().showMessage(tr('OCR 已取消，原 PDF 保留，临时文件已清理。'), 6000)
     except OCRError as exc:
-        QMessageBox.warning(host, 'OCR 未完成', str(exc))
+        QMessageBox.warning(host, tr('OCR 未完成'), str(exc))
     finally:
         dialog.deleteLater()

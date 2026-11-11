@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.i18n import tr
 from app.themes import (
     THEMES, current_theme, initialize_theme, set_theme_style, theme_manager, theme_swatch, ui_color,
 )
@@ -903,7 +904,7 @@ class PageListView(QListView):
         self.setUniformItemSizes(False)
         self.setIconSize(QSize(THUMB_W, int(THUMB_W * THUMB_RATIO_DEFAULT)))
         self.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
-        self.setToolTip('单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。拖动调整顺序，Ctrl+拖动复制页面。')
+        self.setToolTip(tr('单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。拖动调整顺序，Ctrl+拖动复制页面。'))
         self.setItemDelegate(PageThumbDelegate(self))
         self.setMovement(QListView.Movement.Static)
         if arrange:
@@ -975,8 +976,8 @@ class PageListView(QListView):
         self._paste_anchor=(self.model().ws.pages,position,frozenset(self.model().ws.selected))
         self.viewport().update()
         if self._host is not None:
-            caption=f'第 {position+1} 页前' if position<self.model().rowCount() else '文档末尾'
-            self._host.statusBar().showMessage(self._host.shortcut_manager.hint('edit.paste_pages', f'粘贴位置：{caption} · 粘贴为页面'),5000)
+            caption=tr('第 {p0} 页前', p0=f'{position + 1}') if position<self.model().rowCount() else tr('文档末尾')
+            self._host.statusBar().showMessage(self._host.shortcut_manager.hint('edit.paste_pages', tr('粘贴位置：{p0} · 粘贴为页面', p0=f'{caption}')),5000)
 
     def mousePressEvent(self,event):
         self._pending_paste_gap=None
@@ -1015,7 +1016,7 @@ class PageListView(QListView):
             position=max(rows)+1 if hit.row() in rows else hit.row()+1
         else:
             position=self._gap_at(point)
-        caption=f'在第 {position} 页后粘贴为页面' if position else '在文档开头粘贴为页面'
+        caption=tr('在第 {p0} 页后粘贴为页面', p0=f'{position}') if position else tr('在文档开头粘贴为页面')
         binding=self._host.shortcut_manager.label('edit.paste_pages')
         action=menu.addAction(caption+('\t'+binding if binding else ''))
         action.setEnabled(self._host.paste_pages_action.isEnabled())
@@ -1729,7 +1730,7 @@ class ConversionThread(QThread):
             if source_pdf is None or is_encrypted_file(source_pdf):
                 if self.store is None or not self.pages:
                     raise PdfError("缺少转换所需的页面")
-                p_cb(0, 0, "正在准备转换页面...")
+                p_cb(0, 0, tr('正在准备转换页面...'))
                 scratch = TemporaryWorkspace('excel')
                 tmp_pdf = str(Path(scratch.name) / 'workspace.pdf')
                 self.store.require_operation(self.pages, "copy")
@@ -1749,9 +1750,9 @@ class ConversionThread(QThread):
                 include_all_content=self.include_all_content,
             )
         except (InterruptedError, OperationCancelled):
-            self.error_message = "转换已被取消"
+            self.error_message = tr('转换已被取消')
         except Exception as exc:
-            self.error_message = f"转换失败：{exc}"
+            self.error_message = tr('转换失败：{p0}', p0=f'{exc}')
         finally:
             if scratch:
                 try:
@@ -1809,8 +1810,8 @@ class PageListModel(QAbstractListModel):
                 source_rotation = self.store.source_rotation(page)
             except PdfError:
                 source_rotation = 0
-            note = f" · 源文件已旋转 {source_rotation}°" if source_rotation else ""
-            return f"{name} 原第 {page.source_page + 1} 页 · 本次旋转 {page.rotation}°{note}"
+            note = tr(' · 源文件已旋转 {p0}°', p0=f'{source_rotation}') if source_rotation else ""
+            return tr('{p0} 原第 {p1} 页 · 本次旋转 {p2}°{p3}', p0=f'{name}', p1=f'{page.source_page + 1}', p2=f'{page.rotation}', p3=f'{note}')
         if role == Qt.ItemDataRole.SizeHintRole:
             return QSize(self._thumb_box(page).width() + THUMB_ITEM_W_PAD, self.item_height(page))
         return None
@@ -2122,19 +2123,19 @@ class TitleBar(QWidget):
         host._menubar.setNativeMenuBar(False)
         host._menubar.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         lay.addWidget(host._menubar)
-        host.title_label = ElidedTitleLabel("未命名", self)
+        host.title_label = ElidedTitleLabel(tr('未命名'), self)
         host.title_label.setObjectName("windowTitle")
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         lay.addWidget(host.title_label, 1)
-        host.btn_min = self._win_btn("win-min", "最小化", host.showMinimized)
-        host.btn_max = self._win_btn("win-max", "最大化", host._toggle_max)
+        host.btn_min = self._win_btn("win-min", tr('最小化'), host.showMinimized)
+        host.btn_max = self._win_btn("win-max", tr('最大化'), host._toggle_max)
         host.btn_close = _HoverIconButton("win-close", "#134E4A", "#FFFFFF", self)
         host.btn_close.setObjectName("winClose")
         host.btn_close.setFixedSize(46, 40)
-        host.btn_close.setToolTip("关闭")
-        host.btn_close.setStatusTip("关闭")
-        host.btn_close.setAccessibleName("关闭")
+        host.btn_close.setToolTip(tr('关闭'))
+        host.btn_close.setStatusTip(tr('关闭'))
+        host.btn_close.setAccessibleName(tr('关闭'))
         host.btn_close.clicked.connect(host.close)
         lay.addWidget(host.btn_min)
         lay.addWidget(host.btn_max)
@@ -2222,8 +2223,8 @@ class _TabPill(QFrame):
         self.close_button.setFixedSize(18, 18)
         self.close_button.setIconSize(QSize(11, 11))
         self.close_button.setIcon(toolbar_icon("win-close", "#5E7B73", 11))
-        self.close_button.setToolTip("关闭此标签页")
-        self.close_button.setAccessibleName("关闭此标签页")
+        self.close_button.setToolTip(tr('关闭此标签页'))
+        self.close_button.setAccessibleName(tr('关闭此标签页'))
         self.close_button.clicked.connect(lambda: self._bar._host.close_tab(self.tab_id))
         row.addWidget(self.close_button)
 
@@ -2240,14 +2241,14 @@ class _TabPill(QFrame):
             self.update_content(tab.ws, tab.tab_id == self._bar._host._active_tab_id)
 
     def update_content(self, ws: Workspace, active: bool) -> None:
-        raw_name = os.path.basename(ws.path) if ws.path else ("未命名文档" if ws.pages or ws.dirty else "新标签页")
+        raw_name = os.path.basename(ws.path) if ws.path else (tr('未命名文档') if ws.pages or ws.dirty else tr('新标签页'))
         text = f"● {raw_name}" if ws.dirty else raw_name
         elided = self.title_label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideMiddle, 152)
         if not self.property("dropTarget"):
             self.title_label.setText(elided)
         tip = ws.path or raw_name
         if ws.dirty:
-            tip = f"{tip}（有未保存修改）"
+            tip = tr('{p0}（有未保存修改）', p0=f'{tip}')
         self.setToolTip(tip)
         self.setAccessibleName(raw_name)
         if bool(self.property("active")) != active:
@@ -2280,7 +2281,7 @@ class _TabPill(QFrame):
                 count = len([row for row in bytes(mime.data(MIME)).decode("utf-8").split(",") if row])
             except (ValueError, UnicodeDecodeError):
                 count = 1
-            self.title_label.setText(f"+{max(1, count)}页到此文件")
+            self.title_label.setText(tr('+{p0}页到此文件', p0=f'{max(1, count)}'))
             if self._bar._host._active_tab_id != self.tab_id:
                 self._hover_timer.start()
             event.acceptProposedAction()
@@ -2355,8 +2356,8 @@ class DocumentTabBar(QFrame):
         self.new_tab_button.setFixedSize(24, 24)
         self.new_tab_button.setIconSize(QSize(14, 14))
         self.new_tab_button.setIcon(toolbar_icon("plus", "#0F766E", 14))
-        self.new_tab_button.setToolTip('打开新 PDF 标签页')
-        self.new_tab_button.setAccessibleName("打开新 PDF 标签页")
+        self.new_tab_button.setToolTip(tr('打开新 PDF 标签页'))
+        self.new_tab_button.setAccessibleName(tr('打开新 PDF 标签页'))
         self.new_tab_button.clicked.connect(self._host.open_files)
         row.addWidget(self.new_tab_button)
         row.addStretch(1)
@@ -2633,7 +2634,7 @@ class MainWindow(QMainWindow):
         manager = self.shortcut_manager
         if not self._closing and manager.notices and not getattr(manager, '_recovery_notified', False):
             manager._recovery_notified = True
-            self.statusBar().showMessage('部分快捷键设置需要检查，请打开“文件 → 应用设置 → 快捷键管理”查看说明。', 15000)
+            self.statusBar().showMessage(tr('部分快捷键设置需要检查，请打开“文件 → 应用设置 → 快捷键管理”查看说明。'), 15000)
 
     def _continue_last_reading(self):
         if (not self._closing and not self._opening_paths and not self.ws.pages
@@ -2694,7 +2695,7 @@ class MainWindow(QMainWindow):
         from app.shortcutui import ShortcutDialog
         dialog = ShortcutDialog(self.shortcut_manager, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.statusBar().showMessage('快捷键已保存，当前窗口立即生效。', 4000)
+            self.statusBar().showMessage(tr('快捷键已保存，当前窗口立即生效。'), 4000)
         dialog.deleteLater()
 
     def toggle_reading_mode(self):
@@ -2738,22 +2739,22 @@ class MainWindow(QMainWindow):
             self.first_painted.emit()
 
     def _chrome_actions(self) -> None:
-        self.find_action = self._act("全文搜索", self.open_search)
+        self.find_action = self._act(tr('全文搜索'), self.open_search)
         self.find_action.setIcon(toolbar_icon("search"))
-        self.find_action.setToolTip('全文搜索')
-        self.act_pages = QAction("页面栏", self)
+        self.find_action.setToolTip(tr('全文搜索'))
+        self.act_pages = QAction(tr('页面栏'), self)
         self.act_pages.setCheckable(True)
         self.act_pages.setChecked(False)
         self.act_pages.setIcon(toolbar_icon("panel-left"))
-        self.act_pages.setToolTip('页面栏')
-        self.act_pages.setStatusTip('显示或隐藏左侧页面栏')
+        self.act_pages.setToolTip(tr('页面栏'))
+        self.act_pages.setStatusTip(tr('显示或隐藏左侧页面栏'))
         self.act_pages.toggled.connect(self._set_pages_visible)
-        self.act_tools = QAction("工具面板", self)
+        self.act_tools = QAction(tr('工具面板'), self)
         self.act_tools.setCheckable(True)
         self.act_tools.setChecked(False)
         self.act_tools.setIcon(toolbar_icon("panel-right"))
-        self.act_tools.setToolTip('工具面板')
-        self.act_tools.setStatusTip('显示或隐藏右侧工具面板')
+        self.act_tools.setToolTip(tr('工具面板'))
+        self.act_tools.setStatusTip(tr('显示或隐藏右侧工具面板'))
         self.act_tools.toggled.connect(self._set_tools_visible)
 
     def _set_pages_visible(self, on: bool) -> None:
@@ -2843,7 +2844,7 @@ class MainWindow(QMainWindow):
         self._window_settings.sync()
         layout = self.reading_layout_actions[self._reading_layout].text()
         zoom = self.reading_zoom_actions[self._zoom_mode].text()
-        self.statusBar().showMessage(f'默认视图已设为：{layout} · {zoom}；新打开的文档将使用此设置。', 6000)
+        self.statusBar().showMessage(tr('默认视图已设为：{p0} · {p1}；新打开的文档将使用此设置。', p0=f'{layout}', p1=f'{zoom}'), 6000)
 
     def reset_ui_preferences(self):
         self.immersive.auto_action.setChecked(True)
@@ -2860,7 +2861,7 @@ class MainWindow(QMainWindow):
         self._set_zoom_mode('page')
         self.reading_orb.restore()
         self._save_ui_preferences()
-        self.statusBar().showMessage('界面已恢复默认，文档与存储设置保留。', 5000)
+        self.statusBar().showMessage(tr('界面已恢复默认，文档与存储设置保留。'), 5000)
 
     def _build(self) -> None:
         self._chrome_actions()
@@ -2890,11 +2891,11 @@ class MainWindow(QMainWindow):
         set_theme_style(self.render_progress,
             "QProgressBar { border: none; background: #DDEBE5; border-radius: 2px; }"
             "QProgressBar::chunk { background: #149587; border-radius: 2px; }")
-        self.render_label = QLabel("正在渲染页面", status_widgets)
+        self.render_label = QLabel(tr('正在渲染页面'), status_widgets)
         # Match the status message height so rendering does not resize the reader.
         set_theme_style(self.render_label, "font-size: 13px;")
         self.render_label.ensurePolished()
-        messages = ("正在打开 PDF", "正在渲染页面", "正在生成缩略图")
+        messages = (tr('正在打开 PDF'), tr('正在渲染页面'), tr('正在生成缩略图'))
         self.render_label.setFixedSize(
             max(self.render_label.fontMetrics().horizontalAdvance(text) for text in messages) + 2,
             self.render_label.sizeHint().height())
@@ -2913,8 +2914,8 @@ class MainWindow(QMainWindow):
         self.protection_label.setWordWrap(True)
         self.protection_label.hide()
         status_layout.addWidget(self.protection_label)
-        self.protection_copy_button = QPushButton('制作影像副本…', status_widgets)
-        self.protection_copy_button.setAccessibleName('为无法确认签名结构的原件制作影像副本')
+        self.protection_copy_button = QPushButton(tr('制作影像副本…'), status_widgets)
+        self.protection_copy_button.setAccessibleName(tr('为无法确认签名结构的原件制作影像副本'))
         set_theme_style(self.protection_copy_button, 'min-height: 0px; padding: 4px 8px;')
         self.protection_copy_button.setMinimumWidth(self.protection_copy_button.sizeHint().width())
         self.protection_copy_button.clicked.connect(lambda: self.rasterize_document(recovery=True))
@@ -2930,8 +2931,8 @@ class MainWindow(QMainWindow):
             QToolButton#updateNotice:hover { background: #DCEDE2; }
             QToolButton#updateNotice:focus { border: 2px solid #0F766E; }
         ''')
-        self.update_notice_button.setAccessibleName("查看新版本的更新内容")
-        self.update_notice_button.setToolTip("在软件内查看本次更新内容与下载入口")
+        self.update_notice_button.setAccessibleName(tr('查看新版本的更新内容'))
+        self.update_notice_button.setToolTip(tr('在软件内查看本次更新内容与下载入口'))
         self.update_notice_button.clicked.connect(self.show_updates)
         self.update_notice_button.hide()
         self.statusBar().addPermanentWidget(self.update_notice_button)
@@ -2949,132 +2950,133 @@ class MainWindow(QMainWindow):
         self._render_hide_timer.timeout.connect(self._hide_render_progress)
         self.model.busy.connect(self._note_render_busy)
         self.setMenuWidget(TitleBar(self))
-        file_menu = self._menubar.addMenu("文件")
-        self.open_action = self._act("打开 PDF / OFD / 图片", self.open_files)
+        file_menu = self._menubar.addMenu(tr('文件'))
+        self.open_action = self._act(tr('打开 PDF / OFD / 图片'), self.open_files)
         file_menu.addAction(self.open_action)
-        file_menu.addAction(self._act('最近阅读记录…', self.manage_reading_history))
+        file_menu.addAction(self._act(tr('最近阅读记录…'), self.manage_reading_history))
         file_menu.addSeparator()
-        self.save_action = self._act("保存", self.save)
-        self.save_as_action = self._act("另存为", lambda: self.save(True))
-        self.close_file_action = self._act("关闭当前文件", self.close_current_file)
-        self.close_file_action.setStatusTip("关闭当前文件并返回首页")
+        self.save_action = self._act(tr('保存'), self.save)
+        self.save_as_action = self._act(tr('另存为'), lambda: self.save(True))
+        self.close_file_action = self._act(tr('关闭当前文件'), self.close_current_file)
+        self.close_file_action.setStatusTip(tr('关闭当前文件并返回首页'))
         for action in (self.save_action, self.save_as_action, self.close_file_action):
             file_menu.addAction(action)
         file_menu.addSeparator()
-        self.print_action = self._act("打印", self.print_document)
+        self.print_action = self._act(tr('打印'), self.print_document)
         file_menu.addAction(self.print_action)
         file_menu.addSeparator()
-        self.storage_action = self._act('存储管理…', self.manage_storage)
-        self.storage_action.setStatusTip('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件')
-        settings_menu=file_menu.addMenu("应用设置")
-        settings_menu.addAction(self._act('保存设置', self.configure_save_settings))
+        self.storage_action = self._act(tr('存储管理…'), self.manage_storage)
+        self.storage_action.setStatusTip(tr('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件'))
+        settings_menu=file_menu.addMenu(tr('应用设置'))
+        settings_menu.addAction(self._act(tr('界面语言 / Language'), self.configure_language))
+        settings_menu.addAction(self._act(tr('保存设置'), self.configure_save_settings))
         settings_menu.addAction(self.storage_action)
-        settings_menu.addAction(self._act('快捷键管理', self.configure_shortcuts))
+        settings_menu.addAction(self._act(tr('快捷键管理'), self.configure_shortcuts))
         if sys.platform == "win32":
             if portable_root() is not None:
-                settings_menu.addAction(self._act('右键快捷工具…', self.manage_context_menus))
-            settings_menu.addAction(self._act("设为默认 PDF 应用…", self.choose_default_application))
+                settings_menu.addAction(self._act(tr('右键快捷工具…'), self.manage_context_menus))
+            settings_menu.addAction(self._act(tr('设为默认 PDF 应用…'), self.choose_default_application))
         file_menu.addSeparator()
-        file_menu.addAction(self._act("退出", self.close))
-        edit = self._menubar.addMenu("编辑")
-        self.undo_action = self.undo_group.createUndoAction(self, "撤销")
-        self.redo_action = self.undo_group.createRedoAction(self, "重做")
+        file_menu.addAction(self._act(tr('退出'), self.close))
+        edit = self._menubar.addMenu(tr('编辑'))
+        self.undo_action = self.undo_group.createUndoAction(self, tr('撤销'))
+        self.redo_action = self.undo_group.createRedoAction(self, tr('重做'))
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
-        self.copy_pages_action = self._act('复制页面', self.copy_pages)
+        self.copy_pages_action = self._act(tr('复制页面'), self.copy_pages)
         self.copy_pages_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        self.copy_pages_action.setStatusTip('复制所选页面，可粘贴到本文件或本窗口的其他标签页。')
+        self.copy_pages_action.setStatusTip(tr('复制所选页面，可粘贴到本文件或本窗口的其他标签页。'))
         for page_view in (self.left_view,self.arrange_view):
             page_view.addAction(self.copy_pages_action)
         edit.addAction(self.copy_pages_action)
-        self.paste_pages_action = self._act('粘贴为页面', self.paste_pages)
-        self.paste_pages_action.setStatusTip('将复制的 PDF、图片文件或截图粘贴为新页面；可先点击缩略图或页面间隙。')
+        self.paste_pages_action = self._act(tr('粘贴为页面'), self.paste_pages)
+        self.paste_pages_action.setStatusTip(tr('将复制的 PDF、图片文件或截图粘贴为新页面；可先点击缩略图或页面间隙。'))
         edit.addAction(self.paste_pages_action)
         edit.addSeparator()
-        edit.addAction(self._act("全选", self.select_all_pages))
+        edit.addAction(self._act(tr('全选'), self.select_all_pages))
         edit.addAction(self.find_action)
         edit.addSeparator()
-        edit.addAction(self._act("审阅与文字修正…", self.open_annotation_tools))
-        self.capture_action = self._act("框选导出图片…", lambda: self.region_capture.begin())
+        edit.addAction(self._act(tr('审阅与文字修正…'), self.open_annotation_tools))
+        self.capture_action = self._act(tr('框选导出图片…'), lambda: self.region_capture.begin())
         self.capture_action.setIcon(toolbar_icon('annotation-select'))
-        self.capture_action.setToolTip('框选原文，连同批注说明复制或保存为图片')
+        self.capture_action.setToolTip(tr('框选原文，连同批注说明复制或保存为图片'))
         edit.addAction(self.capture_action)
         edit.addSeparator()
-        self.insert_action = self._act("插入页面…", self.insert_files)
-        self.append_action = self._act("合并文件…", self.append_files)
-        self.merge_open_action = self._act('合并已打开文件', self.merge_open_files)
+        self.insert_action = self._act(tr('插入页面…'), self.insert_files)
+        self.append_action = self._act(tr('合并文件…'), self.append_files)
+        self.merge_open_action = self._act(tr('合并已打开文件'), self.merge_open_files)
         self.merge_open_action.setIcon(toolbar_icon('merge'))
-        self.merge_open_action.setToolTip('勾选已打开的 PDF，默认合并另存，也可覆盖指定文件')
+        self.merge_open_action.setToolTip(tr('勾选已打开的 PDF，默认合并另存，也可覆盖指定文件'))
         self.merge_open_action.setEnabled(False)
-        self.delete_action = self._act("删除页面", self.delete_pages)
-        tools = self._menubar.addMenu("页面")
+        self.delete_action = self._act(tr('删除页面'), self.delete_pages)
+        tools = self._menubar.addMenu(tr('页面'))
         tools.addActions([self.insert_action,self.append_action,self.merge_open_action])
         tools.addSeparator()
-        self.extract_action = self._act("提取页面…", lambda: self.open_export_tool(0))
-        self.split_action = self._act("拆分文件…", lambda: self.open_export_tool(1))
-        self.split_page_action = self._act("分割单页…", self.split_selected_page)
+        self.extract_action = self._act(tr('提取页面…'), lambda: self.open_export_tool(0))
+        self.split_action = self._act(tr('拆分文件…'), lambda: self.open_export_tool(1))
+        self.split_page_action = self._act(tr('分割单页…'), self.split_selected_page)
         tools.addActions([self.extract_action,self.split_action,self.split_page_action])
         tools.addSeparator()
-        self.page_size_action = self._act('调整页面大小…', self.resize_pages)
+        self.page_size_action = self._act(tr('调整页面大小…'), self.resize_pages)
         tools.addAction(self.page_size_action)
-        rotation=tools.addMenu('旋转页面')
-        self.page_rotate_actions=[self._act('向左旋转 90°',lambda:self.rotate(-90)),
-                                  self._act('向右旋转 90°',lambda:self.rotate(90))]
+        rotation=tools.addMenu(tr('旋转页面'))
+        self.page_rotate_actions=[self._act(tr('向左旋转 90°'),lambda:self.rotate(-90)),
+                                  self._act(tr('向右旋转 90°'),lambda:self.rotate(90))]
         rotation.addActions(self.page_rotate_actions)
         tools.addAction(self.delete_action)
-        document = self._menubar.addMenu('文档')
-        document.addAction(self._act('两份 PDF 对比（实验）…', self.open_pdf_compare))
-        self.signature_info_action = self._act('签名与保护信息…', self.show_signature_info)
+        document = self._menubar.addMenu(tr('文档'))
+        document.addAction(self._act(tr('两份 PDF 对比（实验）…'), self.open_pdf_compare))
+        self.signature_info_action = self._act(tr('签名与保护信息…'), self.show_signature_info)
         document.addAction(self.signature_info_action)
         document.addSeparator()
-        self.page_numbers_action=self._act('页码处理…',self.open_page_numbers)
-        self.watermark_action = self._act("水印…", self.open_watermarks)
-        self.seam_stamp_action = self._act('骑缝章…', self.open_seam_stamps)
-        self.annot_crop_action = self._act('区域摘录…', self.open_annotation_crop)
+        self.page_numbers_action=self._act(tr('页码处理…'),self.open_page_numbers)
+        self.watermark_action = self._act(tr('水印…'), self.open_watermarks)
+        self.seam_stamp_action = self._act(tr('骑缝章…'), self.open_seam_stamps)
+        self.annot_crop_action = self._act(tr('区域摘录…'), self.open_annotation_crop)
         document.addActions([self.page_numbers_action,self.watermark_action,
                              self.seam_stamp_action,self.annot_crop_action])
         document.addSeparator()
-        compression=document.addMenu('压缩')
-        self.compress_action = self._act("压缩 PDF…", lambda: self.open_export_tool(3))
-        self.image_compress_action=self._act('压缩图片…',self.compress_image_file)
+        compression=document.addMenu(tr('压缩'))
+        self.compress_action = self._act(tr('压缩 PDF…'), lambda: self.open_export_tool(3))
+        self.image_compress_action=self._act(tr('压缩图片…'),self.compress_image_file)
         compression.addActions([self.compress_action,self.image_compress_action])
-        security=document.addMenu('安全与副本')
-        self.encrypt_action = self._act("加密另存…", self.encrypt_copy)
-        self.decrypt_action = self._act("解密另存…", self.decrypt_copy)
-        self.editable_action = self._act("制作可编辑副本…", self.editable_copy)
+        security=document.addMenu(tr('安全与副本'))
+        self.encrypt_action = self._act(tr('加密另存…'), self.encrypt_copy)
+        self.decrypt_action = self._act(tr('解密另存…'), self.decrypt_copy)
+        self.editable_action = self._act(tr('制作可编辑副本…'), self.editable_copy)
         security.addActions([self.encrypt_action,self.decrypt_action,self.editable_action])
-        scans=self._menubar.addMenu('扫描')
-        self.whiten_action = self._act('扫描件增强…', self.open_whitening)
-        self.deskew_action = self._act('扫描纠偏…', self.open_deskew)
-        self.color_cleanup_action = self._act('去除彩色笔迹…', self.open_color_cleanup)
-        self.ocr_action = self._act("文字识别（OCR）…", self.open_ocr)
+        scans=self._menubar.addMenu(tr('扫描'))
+        self.whiten_action = self._act(tr('扫描件增强…'), self.open_whitening)
+        self.deskew_action = self._act(tr('扫描纠偏…'), self.open_deskew)
+        self.color_cleanup_action = self._act(tr('去除彩色笔迹…'), self.open_color_cleanup)
+        self.ocr_action = self._act(tr('文字识别（OCR）…'), self.open_ocr)
         scans.addActions([self.color_cleanup_action,self.whiten_action,self.deskew_action,self.ocr_action])
-        convert = self._menubar.addMenu("转换")
-        convert.addAction(self._act("Word 转 PDF…", self.open_word_converter))
-        convert.addAction(self._act("图片转 PDF…", self.images_to_pdf))
-        convert.addAction(self._act("Markdown 转 PDF…", self.convert_markdown))
+        convert = self._menubar.addMenu(tr('转换'))
+        convert.addAction(self._act(tr('Word 转 PDF…'), self.open_word_converter))
+        convert.addAction(self._act(tr('图片转 PDF…'), self.images_to_pdf))
+        convert.addAction(self._act(tr('Markdown 转 PDF…'), self.convert_markdown))
         convert.addSeparator()
-        convert.addAction(self._act("PDF 转 Word…", lambda: self.open_word_converter(direction="pdf_to_word")))
-        self.convert_action = self._act("PDF 转 Excel…", lambda: self.open_export_tool(2))
-        self.image_export_action = self._act("PDF 转图片…", lambda: self.open_export_tool(5))
-        self.raster_action = self._act('PDF 转图片版…', self.rasterize_document)
+        convert.addAction(self._act(tr('PDF 转 Word…'), lambda: self.open_word_converter(direction="pdf_to_word")))
+        self.convert_action = self._act(tr('PDF 转 Excel…'), lambda: self.open_export_tool(2))
+        self.image_export_action = self._act(tr('PDF 转图片…'), lambda: self.open_export_tool(5))
+        self.raster_action = self._act(tr('PDF 转图片版…'), self.rasterize_document)
         convert.addAction(self.convert_action)
-        convert.addAction(self._act("PDF 转 TXT…", self.export_text))
+        convert.addAction(self._act(tr('PDF 转 TXT…'), self.export_text))
         convert.addAction(self.image_export_action)
         convert.addAction(self.raster_action)
-        view = self._menubar.addMenu("视图")
-        self.reading_mode_action = self._act("阅读", lambda: self.set_work_mode(0))
-        self.arrange_mode_action = self._act("整理页面", lambda: self.set_work_mode(1))
+        view = self._menubar.addMenu(tr('视图'))
+        self.reading_mode_action = self._act(tr('阅读'), lambda: self.set_work_mode(0))
+        self.arrange_mode_action = self._act(tr('整理页面'), lambda: self.set_work_mode(1))
         view.addActions([self.reading_mode_action, self.arrange_mode_action])
         self.addActions([self.reading_mode_action, self.arrange_mode_action])
-        self.toggle_mode_action = self._act('切换阅读／整理页面', self.toggle_reading_mode)
+        self.toggle_mode_action = self._act(tr('切换阅读／整理页面'), self.toggle_reading_mode)
         view.addAction(self.toggle_mode_action)
         self.addAction(self.toggle_mode_action)
-        self.outline_action = self._act("大纲书签", self.open_outline)
+        self.outline_action = self._act(tr('大纲书签'), self.open_outline)
         view.addAction(self.outline_action)
         view.addSeparator()
         view.addMenu(self.reading_settings_menu)
-        self.theme_menu = view.addMenu("界面主题")
+        self.theme_menu = view.addMenu(tr('界面主题'))
         self.theme_menu.setObjectName("themeMenu")
         self.theme_menu.setToolTipsVisible(True)
         set_theme_style(self.theme_menu, '''
@@ -3086,12 +3088,12 @@ class MainWindow(QMainWindow):
         self.theme_group.setExclusive(True)
         self.theme_actions = {}
         for theme in THEMES:
-            label = theme.name + ("（默认）" if theme.key == "graphite" else "（深色）" if theme.key == "night" else "")
+            label = tr(theme.name + ('（默认）' if theme.key == "graphite" else '（深色）' if theme.key == "night" else ''))
             action = QAction(theme_swatch(theme), label, self)
             action.setCheckable(True)
             action.setData(theme.key)
-            action.setToolTip(theme.description)
-            action.setStatusTip(theme.description + "，点击立即切换并自动保存。")
+            action.setToolTip(tr(theme.description))
+            action.setStatusTip(tr(theme.description) + tr('，点击立即切换并自动保存。'))
             action.triggered.connect(lambda checked=False, key=theme.key: self.change_theme(key))
             self.theme_group.addAction(action)
             self.theme_menu.addAction(action)
@@ -3100,18 +3102,18 @@ class MainWindow(QMainWindow):
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
         view.addSeparator()
-        zoom_menu=view.addMenu('缩放')
-        zoom_menu.addAction(self._act("放大", self.zoom_in))
-        zoom_menu.addAction(self._act("缩小", self.zoom_out))
-        zoom_menu.addAction(self._act("适合宽度", self.zoom_fit))
-        restore=view.addMenu('界面恢复')
+        zoom_menu=view.addMenu(tr('缩放'))
+        zoom_menu.addAction(self._act(tr('放大'), self.zoom_in))
+        zoom_menu.addAction(self._act(tr('缩小'), self.zoom_out))
+        zoom_menu.addAction(self._act(tr('适合宽度'), self.zoom_fit))
+        restore=view.addMenu(tr('界面恢复'))
         restore.addAction(self.reading_orb.restore_action)
-        restore.addAction(self._act('恢复界面布局',self.reset_ui_preferences))
-        help_menu = self._menubar.addMenu('帮助')
-        self.quick_start_action = self._act('操作指南', self.show_quick_start)
-        self.quick_start_action.setStatusTip('查看拖入文件、缩放、移动页面与侧栏的常用操作')
-        self.about_action = self._act(f"关于{APP_NAME}", self.show_about)
-        self.about_action.setStatusTip("查看版本、检查更新、项目地址与赞赏信息")
+        restore.addAction(self._act(tr('恢复界面布局'),self.reset_ui_preferences))
+        help_menu = self._menubar.addMenu(tr('帮助'))
+        self.quick_start_action = self._act(tr('操作指南'), self.show_quick_start)
+        self.quick_start_action.setStatusTip(tr('查看拖入文件、缩放、移动页面与侧栏的常用操作'))
+        self.about_action = self._act(tr('关于{p0}', p0=tr(APP_NAME)), self.show_about)
+        self.about_action.setStatusTip(tr('查看版本、检查更新、项目地址与赞赏信息'))
         help_menu.addActions([self.quick_start_action, self.about_action])
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -3171,10 +3173,16 @@ class MainWindow(QMainWindow):
         dialog.exec()
         dialog.deleteLater()
 
+    def configure_language(self):
+        from app.languageui import LanguageDialog
+        dialog = LanguageDialog(self, preferences(QSettings))
+        dialog.exec()
+        dialog.deleteLater()
+
     def change_theme(self, key: str) -> None:
         saved = theme_manager().apply(key, self._window_settings)
         theme = current_theme()
-        message = f"已切换为“{theme.name}”主题，下次打开时继续使用。" if saved else f"已切换为“{theme.name}”主题，但无法保存设置，本次运行有效。"
+        message = tr('已切换为“{p0}”主题，下次打开时继续使用。', p0=tr(theme.name)) if saved else tr('已切换为“{p0}”主题，但无法保存设置，本次运行有效。', p0=tr(theme.name))
         self.statusBar().showMessage(message, 5000)
 
     def _sync_theme_controls(self, *_args) -> None:
@@ -3182,8 +3190,8 @@ class MainWindow(QMainWindow):
         for key, action in self.theme_actions.items():
             action.setChecked(key == theme.key)
         self.theme_button.setIcon(theme_swatch(theme))
-        self.theme_button.setToolTip(f"界面主题：{theme.name}，点击切换")
-        self.theme_button.setAccessibleName(f"界面主题，当前为{theme.name}")
+        self.theme_button.setToolTip(tr('界面主题：{p0}，点击切换', p0=tr(theme.name)))
+        self.theme_button.setAccessibleName(tr('界面主题，当前为{p0}', p0=tr(theme.name)))
         self.preview_view.set_reading_colors(self._reading_colors)
 
     def configure_reading_colors(self):
@@ -3203,7 +3211,7 @@ class MainWindow(QMainWindow):
         self._reading_colors.save(self._window_settings)
         self.preview_view.set_reading_colors(self._reading_colors)
         self.restore_reading_colors_action.setEnabled(False)
-        self.statusBar().showMessage('已恢复文档原色。', 4000)
+        self.statusBar().showMessage(tr('已恢复文档原色。'), 4000)
 
     def show_updates(self) -> None:
         from app.updateui import show_update_dialog
@@ -3212,10 +3220,10 @@ class MainWindow(QMainWindow):
     def _update_release_notice(self) -> None:
         show_notice = self.updates.reminders_enabled and self.updates.update_available
         tag = self.updates.latest_tag
-        self.update_notice_button.setText(f"查看更新 {tag}")
+        self.update_notice_button.setText(tr('查看更新 {p0}', p0=f'{tag}'))
         self.update_notice_button.setVisible(show_notice)
 
-        message = f"发现新版本 {tag}，点击“查看更新”了解更新内容。" if show_notice else ""
+        message = tr('发现新版本 {p0}，点击“查看更新”了解更新内容。', p0=f'{tag}') if show_notice else ""
         if message == self._notified_update_message:
             return
         status_bar = self.statusBar()
@@ -3232,7 +3240,7 @@ class MainWindow(QMainWindow):
             dialog.exec()
             dialog.deleteLater()
         except OSError as exc:
-            QMessageBox.warning(self, '存储管理', str(exc))
+            QMessageBox.warning(self, tr('存储管理'), str(exc))
 
     def manage_context_menus(self) -> None:
         from app.contextmenuui import ContextMenuDialog
@@ -3241,7 +3249,7 @@ class MainWindow(QMainWindow):
             dialog.exec()
             dialog.deleteLater()
         except OSError as exc:
-            QMessageBox.warning(self, '右键快捷工具', str(exc))
+            QMessageBox.warning(self, tr('右键快捷工具'), str(exc))
 
     def _workbench_bar(self) -> QWidget:
         bar = QFrame()
@@ -3272,7 +3280,7 @@ class MainWindow(QMainWindow):
         layout.addSpacing(6)
         self.mode_switch = QFrame(bar)
         self.mode_switch.setObjectName('modeSwitch')
-        self.mode_switch.setAccessibleName('工作模式')
+        self.mode_switch.setAccessibleName(tr('工作模式'))
         self.mode_switch.setFixedHeight(32)
         modes = QHBoxLayout(self.mode_switch)
         modes.setContentsMargins(2, 1, 2, 1)
@@ -3281,12 +3289,12 @@ class MainWindow(QMainWindow):
         document.setSpacing(2)
         self.mode_group = QButtonGroup(self)
         self.mode_buttons = []
-        for index, (label, icon) in enumerate((("阅读", "book-open"), ("整理页面", "layout-grid"))):
+        for index, (label, icon) in enumerate(((tr('阅读'), "book-open"), (tr('整理页面'), "layout-grid"))):
             button = self._icon_btn(icon, label, lambda checked=False, i=index: self.stack.setCurrentIndex(i))
             button.setFixedSize(28, 28)
             button.setCheckable(True)
             button.setIcon(toolbar_icon(icon, '#4D6B67'))
-            button.setToolTip(f'{label}模式')
+            button.setToolTip(tr('{p0}模式', p0=f'{label}'))
             button.toggled.connect(lambda checked, b=button, name=icon:
                                    b.setIcon(toolbar_icon(name, '#FFFFFF' if checked else '#4D6B67')))
             self.mode_group.addButton(button, index)
@@ -3295,7 +3303,7 @@ class MainWindow(QMainWindow):
         self.mode_buttons[0].setChecked(True)
         layout.addWidget(self.mode_switch)
         layout.addSpacing(6)
-        self.review_button = self._icon_btn("pen", "审阅与文字修正", self.toggle_annotation_tools)
+        self.review_button = self._icon_btn("pen", tr('审阅与文字修正'), self.toggle_annotation_tools)
         self.review_button.setFixedSize(28, 28)
         self.review_button.setCheckable(True)
         document.addWidget(self.review_button)
@@ -3313,17 +3321,17 @@ class MainWindow(QMainWindow):
         layout.addLayout(document)
         layout.addSpacing(6)
         for icon, label, slot in (
-            ("rotate-ccw", "左转所选页", lambda: self.rotate(-90)),
-            ("rotate-cw", "右转所选页", lambda: self.rotate(90)),
-            ("trash", "删除所选页", self.delete_pages),
-            ("scissors", "提取所选页", self.extract_selected),
+            ("rotate-ccw", tr('左转所选页'), lambda: self.rotate(-90)),
+            ("rotate-cw", tr('右转所选页'), lambda: self.rotate(90)),
+            ("trash", tr('删除所选页'), self.delete_pages),
+            ("scissors", tr('提取所选页'), self.extract_selected),
         ):
             button = self._icon_btn(icon, label, slot, danger=icon == "trash")
             button.setFixedSize(28, 28)
             self._selection_buttons.append(button)
             layout.addWidget(button)
-        self.split_tool_button = self._icon_btn("split", "拆分文件", lambda: self.open_export_tool(1))
-        self.convert_tool_button = self._icon_btn("table", "PDF 转 Excel", lambda: self.open_export_tool(2))
+        self.split_tool_button = self._icon_btn("split", tr('拆分文件'), lambda: self.open_export_tool(1))
+        self.convert_tool_button = self._icon_btn("table", tr('PDF 转 Excel'), lambda: self.open_export_tool(2))
         for button in (self.split_tool_button, self.convert_tool_button):
             button.setFixedSize(28, 28)
             layout.addWidget(button)
@@ -3339,10 +3347,11 @@ class MainWindow(QMainWindow):
             layout.addWidget(button)
         self.theme_button = QToolButton(bar)
         self.theme_button.setObjectName("themeSwitch")
-        self.theme_button.setText("主题")
+        self.theme_button.setText(tr('主题'))
         self.theme_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.theme_button.setIconSize(QSize(28, 14))
-        self.theme_button.setFixedSize(84, 28)
+        self.theme_button.setFixedHeight(28)
+        self.theme_button.setMinimumWidth(84)
         self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.theme_button.setMenu(self.theme_menu)
@@ -3400,7 +3409,7 @@ class MainWindow(QMainWindow):
         protection = read_only or copy_reason or self.store.operation_reason(self.ws.pages, "print")
         ofd_copy = any(ref.source_path.lower().endswith('.ofd') for ref in self.ws.pages)
         if ofd_copy and not protection:
-            protection = 'OFD 工作副本 · 原文件保留 · 保存时另存为 PDF'
+            protection = tr('OFD 工作副本 · 原文件保留 · 保存时另存为 PDF')
         self.protection_label.setText(protection)
         self.protection_label.setVisible(bool(protection))
         self.signature_info_action.setEnabled(bool(count))
@@ -3408,7 +3417,7 @@ class MainWindow(QMainWindow):
         raster_reason = self.store.operation_reason(self.ws.pages, 'raster_copy')
         self.protection_copy_button.setVisible(unknown_signature)
         self.protection_copy_button.setEnabled(bool(count) and not raster_reason)
-        self.protection_copy_button.setToolTip(raster_reason or '仅复制页面影像；原件不变，副本不保留签名效力。')
+        self.protection_copy_button.setToolTip(raster_reason or tr('仅复制页面影像；原件不变，副本不保留签名效力。'))
         self._sync_page_navigation()
         save_reason = read_only
         if read_only and any(page.edits for page in self.ws.pages):
@@ -3429,16 +3438,16 @@ class MainWindow(QMainWindow):
         encrypted = any(source.safety.encrypted for source in sources)
         signature_reason = next((source.safety.read_only_reason for source in sources
                                  if source.safety.signature != "none"), "")
-        decrypt_hint = ("请先打开加密 PDF。" if not count else
-                        signature_reason or ("另存未加密副本；有权限限制时需输入管理密码。" if encrypted
-                                             else "当前文档未加密，无需解密。"))
+        decrypt_hint = (tr('请先打开加密 PDF。') if not count else
+                        signature_reason or (tr('另存未加密副本；有权限限制时需输入管理密码。') if encrypted
+                                             else tr('当前文档未加密，无需解密。')))
         self.decrypt_action.setEnabled(encrypted and not signature_reason)
         self.decrypt_action.setToolTip(decrypt_hint)
-        self.editable_action.setText('制作影像副本' if unknown_signature else '制作可编辑副本')
+        self.editable_action.setText(tr('制作影像副本') if unknown_signature else tr('制作可编辑副本'))
         self.editable_action.setEnabled(bool(count) and not (raster_reason if unknown_signature
                                         else self.store.operation_reason(self.ws.pages, 'editable_copy')))
         if self._tools_ready:
-            self.editable_button.setText('制作影像副本' if unknown_signature else '制作可编辑副本')
+            self.editable_button.setText(tr('制作影像副本') if unknown_signature else tr('制作可编辑副本'))
             for button, action in ((self.compress_button, self.compress_action),
                                    (self.image_export_button, self.image_export_action),
                                    (self.encrypt_button, self.encrypt_action),
@@ -3464,7 +3473,7 @@ class MainWindow(QMainWindow):
         for button in self._selection_buttons:
             button.setEnabled(selected and not read_only)
         if self._tools_ready:
-            self.tool_selection.setText(read_only or self._selection_caption() or "选择页面后可旋转或删除")
+            self.tool_selection.setText(read_only or self._selection_caption() or tr('选择页面后可旋转或删除'))
             self._export_tools.setEnabled(bool(count))
             self.select_pages_button.setEnabled(bool(count) and len(self.ws.target_indices()) < count)
         self.extract_action.setEnabled(bool(count) and not read_only and not copy_reason)
@@ -3503,26 +3512,26 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'outline_panel'):
             self.outline_panel.sync_actions()
         self._update_export_controls()
-        name = os.path.basename(self.ws.path) if self.ws.path else ("未命名文档" if count or self.ws.dirty else
-            os.path.basename(self._opening_paths[0]) if self._opening_paths else "尚未打开文档")
+        name = os.path.basename(self.ws.path) if self.ws.path else (tr('未命名文档') if count or self.ws.dirty else
+            os.path.basename(self._opening_paths[0]) if self._opening_paths else tr('尚未打开文档'))
         self.document_name.setText(name)
-        self.document_name.setToolTip(self.ws.path or "保存时选择新文件位置")
-        state = "未保存 · 保存为新文件" if self.ws.dirty and not self.ws.path else (
-            "有未保存的修改" if self.ws.dirty else ("已保存" if self.ws.path else "本机处理"))
+        self.document_name.setToolTip(self.ws.path or tr('保存时选择新文件位置'))
+        state = tr('未保存 · 保存为新文件') if self.ws.dirty and not self.ws.path else (
+            tr('有未保存的修改') if self.ws.dirty else (tr('已保存') if self.ws.path else tr('本机处理')))
         if self.ws.dirty and not self.ws.path and (self.ws.last_saved_path
                 or self._window_settings.value('saving/default_mode', 'copy') == 'overwrite'):
-            state = '有未保存的修改'
+            state = tr('有未保存的修改')
         if read_only:
-            state = "只读"
+            state = tr('只读')
         elif self._opening_paths and not count:
-            state = "正在打开…"
+            state = tr('正在打开…')
         self.save_state.setText(state)
         is_ofd = bool(self.ws.path and self.ws.path.lower().endswith('.ofd'))
         if is_ofd:
-            self.save_state.setText('OFD 工作副本 · 原件保留')
-        self.save_action.setText('另存为 PDF' if is_ofd else '保存')
-        self.save_state.setToolTip('当前显示为转换后的 PDF，不提供 OFD 原件签名验证。' if ofd_copy
-                                  else read_only or self.ws.path or "文件仅在本机处理")
+            self.save_state.setText(tr('OFD 工作副本 · 原件保留'))
+        self.save_action.setText(tr('另存为 PDF') if is_ofd else tr('保存'))
+        self.save_state.setToolTip(tr('当前显示为转换后的 PDF，不提供 OFD 原件签名验证。') if ofd_copy
+                                  else read_only or self.ws.path or tr('文件仅在本机处理'))
         if self.immersive.borderless:
             self.immersive.sync()
 
@@ -3539,19 +3548,21 @@ class MainWindow(QMainWindow):
         self.page_number.blockSignals(False)
         self.page_number.setEnabled(bool(count))
         paired = first is not None and last != first
-        self.page_total.setText(f"–{last + 1} / {count} 页" if paired else f"/ {count} 页")
+        self.page_total.setText(tr('–{p0} / {p1} 页', p0=f'{last + 1}', p1=f'{count}') if paired else tr('/ {p0} 页', p0=f'{count}'))
         self.previous_page.setEnabled(first is not None and first > 0)
         self.next_page.setEnabled(last is not None and last < count - 1)
         self.first_page.setEnabled(first is not None and first > 0)
         self.last_page.setEnabled(last is not None and last < count - 1)
-        for button, label in ((self.previous_page, "上一"), (self.next_page, "下一")):
-            name = label + ("组页面" if self.preview_view.spread else "页")
+        for button, name in (
+            (self.previous_page, tr('上一组页面') if self.preview_view.spread else tr('上一页')),
+            (self.next_page, tr('下一组页面') if self.preview_view.spread else tr('下一页')),
+        ):
             button.setAccessibleName(name)
             key = 'reader.previous' if button is self.previous_page else 'reader.next'
             binding = self.shortcut_manager.label(key)
             button.setToolTip(f'{name} ({binding})' if binding else name)
-        self.page_number.setToolTip("输入任意页码，按 Enter 跳转到所在页面组" if self.preview_view.spread
-                                    else "输入页码，按 Enter 跳转")
+        self.page_number.setToolTip(tr('输入任意页码，按 Enter 跳转到所在页面组') if self.preview_view.spread
+                                    else tr('输入页码，按 Enter 跳转'))
         if hasattr(self, 'outline_panel'):
             self.outline_panel.sync_position()
 
@@ -3629,7 +3640,7 @@ class MainWindow(QMainWindow):
                     else:
                         step = self.split_count.value() if self.split_every.isChecked() else 1
                         outputs = (count + step - 1) // step
-                    summary = f"预计输出 {outputs} 个文件"
+                    summary = tr('预计输出 {p0} 个文件', p0=f'{outputs}')
                 elif kind == "convert":
                     if self.convert_range_mode.isChecked():
                         parse_page_range(self.convert_range.text(), count)
@@ -3658,12 +3669,12 @@ class MainWindow(QMainWindow):
         self.left_panel.setMinimumWidth(138)
         left_l = QVBoxLayout(self.left_panel)
         left_l.setContentsMargins(10, 10, 10, 10)
-        cap = QLabel("页面")
+        cap = QLabel(tr('页面'))
         cap.setObjectName("caption")
         self.left_view = self._list_view(False)
         self.sidebar_mode = QComboBox()
-        self.sidebar_mode.addItems(["页面缩略图", "大纲书签"])
-        self.sidebar_mode.setAccessibleName("侧栏视图")
+        self.sidebar_mode.addItems([tr('页面缩略图'), tr('大纲书签')])
+        self.sidebar_mode.setAccessibleName(tr('侧栏视图'))
         left_l.addWidget(self.sidebar_mode)
         self.sidebar_stack = QStackedWidget()
         self.sidebar_stack.addWidget(self.left_view)
@@ -3684,13 +3695,13 @@ class MainWindow(QMainWindow):
         page_bar = QHBoxLayout(page_controls)
         page_bar.setContentsMargins(0, 0, 0, 0)
         page_bar.setSpacing(4)
-        self.first_page = self._icon_btn("skip-back", "第一页", lambda: self.go_to_page(1))
+        self.first_page = self._icon_btn("skip-back", tr('第一页'), lambda: self.go_to_page(1))
         page_bar.addWidget(self.first_page)
-        self.previous_page = self._icon_btn("chevron-left", "上一页", lambda: self.step_page(-1))
+        self.previous_page = self._icon_btn("chevron-left", tr('上一页'), lambda: self.step_page(-1))
         page_bar.addWidget(self.previous_page)
         self.page_number = QSpinBox()
-        self.page_number.setAccessibleName("跳转到页码")
-        self.page_number.setToolTip("输入页码，按 Enter 跳转")
+        self.page_number.setAccessibleName(tr('跳转到页码'))
+        self.page_number.setToolTip(tr('输入页码，按 Enter 跳转'))
         self.page_number.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         self.page_number.setKeyboardTracking(False)
         self.page_number.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -3700,11 +3711,11 @@ class MainWindow(QMainWindow):
         set_theme_style(self.page_number, "padding: 1px 2px; min-height: 22px;")
         self.page_number.valueChanged.connect(self.go_to_page)
         page_bar.addWidget(self.page_number)
-        self.page_total = QLabel("/ 0 页")
+        self.page_total = QLabel(tr('/ 0 页'))
         page_bar.addWidget(self.page_total)
-        self.next_page = self._icon_btn("chevron-right", "下一页", lambda: self.step_page(1))
+        self.next_page = self._icon_btn("chevron-right", tr('下一页'), lambda: self.step_page(1))
         page_bar.addWidget(self.next_page)
-        self.last_page = self._icon_btn("skip-forward", "最后一页", lambda: self.go_to_page(len(self.ws.pages)))
+        self.last_page = self._icon_btn("skip-forward", tr('最后一页'), lambda: self.go_to_page(len(self.ws.pages)))
         page_bar.addWidget(self.last_page)
         page_bar.addStretch()
         self._reader_zoom_controls = QWidget()
@@ -3712,16 +3723,16 @@ class MainWindow(QMainWindow):
         zoom_bar.setContentsMargins(0, 0, 0, 0)
         zoom_bar.setSpacing(4)
         zoom_bar.addStretch()
-        zoom_out_button = self._icon_btn("zoom-out", "缩小", self.zoom_out)
+        zoom_out_button = self._icon_btn("zoom-out", tr('缩小'), self.zoom_out)
         zoom_bar.addWidget(zoom_out_button)
         self.zoom_label = QLabel("100%")
         self.zoom_label.setObjectName("hint")
         self.zoom_label.setMinimumWidth(48)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_bar.addWidget(self.zoom_label)
-        zoom_in_button = self._icon_btn("zoom-in", "放大", self.zoom_in)
+        zoom_in_button = self._icon_btn("zoom-in", tr('放大'), self.zoom_in)
         zoom_bar.addWidget(zoom_in_button)
-        zoom_fit_button = self._icon_btn("fit-width", "适合宽度", self.zoom_fit)
+        zoom_fit_button = self._icon_btn("fit-width", tr('适合宽度'), self.zoom_fit)
         zoom_bar.addWidget(zoom_fit_button)
         from app.recentui import ReadingHome
         self.preview_empty = ReadingHome(self)
@@ -3736,7 +3747,7 @@ class MainWindow(QMainWindow):
         self.preview_stack = QStackedWidget()
         self.preview_stack.addWidget(self.preview_empty)
         self.preview_stack.addWidget(self.preview_view)
-        self.preview_loading = QLabel("正在打开 PDF…")
+        self.preview_loading = QLabel(tr('正在打开 PDF…'))
         self.preview_loading.setObjectName("hint")
         self.preview_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_loading.setTextFormat(Qt.TextFormat.PlainText)
@@ -3760,7 +3771,7 @@ class MainWindow(QMainWindow):
         navigation.addWidget(page_controls)
         self.reader_tool_group = QActionGroup(self)
         self.reader_tool_actions = {}
-        for mode, label, icon in (('select', '选择文字', 'mouse-pointer'), ('hand', '手形拖动', 'hand')):
+        for mode, label, icon in (('select', tr('选择文字'), 'mouse-pointer'), ('hand', tr('手形拖动'), 'hand')):
             action = QAction(toolbar_icon(icon, '#526B63', 16), label, self)
             action.setCheckable(True)
             action.setChecked(self._reading_tool == mode)
@@ -3769,9 +3780,9 @@ class MainWindow(QMainWindow):
             self.reader_tool_actions[mode] = action
         navigation.addWidget(self._reader_zoom_controls)
         self.navigation_bar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.reading_settings_menu = layout_menu = QMenu('阅读设置', self)
+        self.reading_settings_menu = layout_menu = QMenu(tr('阅读设置'), self)
         layout_menu.setObjectName('readingSettingsMenu')
-        layout_menu.setAccessibleName('阅读设置')
+        layout_menu.setAccessibleName(tr('阅读设置'))
         layout_menu.setToolTipsVisible(True)
         set_theme_style(layout_menu, '''
             QMenu#readingSettingsMenu {
@@ -3783,18 +3794,18 @@ class MainWindow(QMainWindow):
             QMenu#readingSettingsMenu::item:checked { background: #E3F1E9; color: #0F6557; font-weight: 600; }
             QMenu#readingSettingsMenu::separator { background: #E0EAE5; height: 1px; margin: 5px 7px; }
         ''')
-        self.reading_fallback_notice = QAction('阅读区较窄，当前暂用单页', layout_menu)
+        self.reading_fallback_notice = QAction(tr('阅读区较窄，当前暂用单页'), layout_menu)
         self.reading_fallback_notice.setEnabled(False)
         self.reading_fallback_notice.setVisible(False)
         layout_menu.addAction(self.reading_fallback_notice)
-        layout_menu.addSection('阅读工具')
+        layout_menu.addSection(tr('阅读工具'))
         layout_menu.addActions(list(self.reader_tool_actions.values()))
-        layout_menu.addSection('页面布局')
+        layout_menu.addSection(tr('页面布局'))
         self.reading_layout_group = QActionGroup(self)
         self.reading_layout_actions = {}
-        for mode, label, icon in (('single', '单页连续', 'page-single'),
-                                  ('spread', '双页对开', 'page-spread'),
-                                  ('four', '四页预览（2×2）', 'layout-grid')):
+        for mode, label, icon in (('single', tr('单页连续'), 'page-single'),
+                                  ('spread', tr('双页对开'), 'page-spread'),
+                                  ('four', tr('四页预览（2×2）'), 'layout-grid')):
             action = self._act(label, lambda checked=False, m=mode: self._set_reading_layout(m))
             action.setIcon(toolbar_icon(icon, '#526B63', 18))
             action.setCheckable(True)
@@ -3803,27 +3814,27 @@ class MainWindow(QMainWindow):
             self.reading_layout_actions[mode] = action
             self.addAction(action)
             layout_menu.addAction(action)
-        layout_menu.addSection('页面适配')
+        layout_menu.addSection(tr('页面适配'))
         self.reading_zoom_group = QActionGroup(self)
         self.reading_zoom_actions = {}
-        for mode, label, icon in (('page', '适合页面', 'page-single'),
-                                   ('width', '适合宽度', 'fit-width'),
-                                   ('custom', '手动缩放', 'zoom-in')):
+        for mode, label, icon in (('page', tr('适合页面'), 'page-single'),
+                                   ('width', tr('适合宽度'), 'fit-width'),
+                                   ('custom', tr('手动缩放'), 'zoom-in')):
             action = self._act(label, lambda checked=False, m=mode: self._set_zoom_mode(m, animate=True))
             action.setIcon(toolbar_icon(icon, '#526B63', 18))
             action.setCheckable(True)
             action.setChecked(mode == self._zoom_mode)
-            action.setToolTip('使用顶部加减或 Ctrl+滚轮调整' if mode == 'custom' else label)
+            action.setToolTip(tr('使用顶部加减或 Ctrl+滚轮调整') if mode == 'custom' else label)
             self.reading_zoom_group.addAction(action)
             self.reading_zoom_actions[mode] = action
             layout_menu.addAction(action)
         layout_menu.addSeparator()
-        self.default_reading_view_action = self._act('将当前视图设为默认', self.save_default_reading_view)
-        self.default_reading_view_action.setToolTip('保存当前页面布局和适配方式，新打开的文档使用此设置')
+        self.default_reading_view_action = self._act(tr('将当前视图设为默认'), self.save_default_reading_view)
+        self.default_reading_view_action.setToolTip(tr('保存当前页面布局和适配方式，新打开的文档使用此设置'))
         layout_menu.addAction(self.default_reading_view_action)
         layout_menu.addSeparator()
-        self.reading_colors_action = self._act('阅读配色', self.configure_reading_colors)
-        self.restore_reading_colors_action = self._act('恢复文档原色', self.restore_reading_colors)
+        self.reading_colors_action = self._act(tr('阅读配色'), self.configure_reading_colors)
+        self.restore_reading_colors_action = self._act(tr('恢复文档原色'), self.restore_reading_colors)
         self.restore_reading_colors_action.setEnabled(self._reading_colors.enabled)
         layout_menu.addActions([self.reading_colors_action, self.restore_reading_colors_action])
         self.preview_view.set_reading_colors(self._reading_colors)
@@ -3869,40 +3880,40 @@ class MainWindow(QMainWindow):
         bar = QHBoxLayout()
         bar.setSpacing(4)
         for icon, label, slot in (
-            ("rotate-ccw", "左转", lambda: self.rotate(-90)),
-            ("rotate-cw", "右转", lambda: self.rotate(90)),
-            ("trash", "删除页面", self.delete_pages),
+            ("rotate-ccw", tr('左转'), lambda: self.rotate(-90)),
+            ("rotate-cw", tr('右转'), lambda: self.rotate(90)),
+            ("trash", tr('删除页面'), self.delete_pages),
         ):
             button = self._btn(label, slot, icon=icon, danger=icon == "trash")
             self._selection_buttons.append(button)
             bar.addWidget(button)
-        self.insert_button = self._btn("插入页面…", self.insert_files, icon="folder-plus")
-        self.insert_button.setToolTip("插入 PDF 页面（已选页面后或末尾）")
+        self.insert_button = self._btn(tr('插入页面…'), self.insert_files, icon="folder-plus")
+        self.insert_button.setToolTip(tr('插入 PDF 页面（已选页面后或末尾）'))
         bar.addWidget(self.insert_button)
-        self.arrange_split_button = self._btn("分割单页…", self.split_selected_page, icon="split")
-        self.arrange_split_button.setToolTip("将选中页沿分割线切成 2 或 3 页，可撤销")
+        self.arrange_split_button = self._btn(tr('分割单页…'), self.split_selected_page, icon="split")
+        self.arrange_split_button.setToolTip(tr('将选中页沿分割线切成 2 或 3 页，可撤销'))
         bar.addWidget(self.arrange_split_button)
         self.arrange_size_button = QToolButton()
         self.arrange_size_button.setDefaultAction(self.page_size_action)
-        self.arrange_size_button.setText('页面大小')
+        self.arrange_size_button.setText(tr('页面大小'))
         bar.addWidget(self.arrange_size_button)
-        bar.addWidget(self._btn("全选", self.select_all_pages, icon="select-all"))
-        selected_export = self._btn("提取所选页…", self.extract_selected, icon="scissors")
+        bar.addWidget(self._btn(tr('全选'), self.select_all_pages, icon="select-all"))
+        selected_export = self._btn(tr('提取所选页…'), self.extract_selected, icon="scissors")
         self._selection_buttons.append(selected_export)
         bar.addWidget(selected_export)
         self.arrange_sel = QLabel("")
         self.arrange_sel.setObjectName("hint")
         bar.addWidget(self.arrange_sel)
         bar.addStretch()
-        bar.addWidget(self._icon_btn("zoom-out", "缩小", self.arrange_zoom_out))
+        bar.addWidget(self._icon_btn("zoom-out", tr('缩小'), self.arrange_zoom_out))
         self.arrange_zoom_label.setObjectName("hint")
         self.arrange_zoom_label.setMinimumWidth(48)
         self.arrange_zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bar.addWidget(self.arrange_zoom_label)
         self.arrange_zoom_label.show()
-        bar.addWidget(self._icon_btn("zoom-in", "放大", self.arrange_zoom_in))
-        bar.addWidget(self._icon_btn("fit-width", "适合窗口", self.arrange_zoom_fit))
-        hint = QLabel("拖动排序，双击阅读。按住 Alt 悬停可放大，或右键选择放大预览。Ctrl 加选，Shift 连选；Ctrl + 滚轮缩放。")
+        bar.addWidget(self._icon_btn("zoom-in", tr('放大'), self.arrange_zoom_in))
+        bar.addWidget(self._icon_btn("fit-width", tr('适合窗口'), self.arrange_zoom_fit))
+        hint = QLabel(tr('拖动排序，双击阅读。按住 Alt 悬停可放大，或右键选择放大预览。Ctrl 加选，Shift 连选；Ctrl + 滚轮缩放。'))
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         card = QFrame()
@@ -3946,20 +3957,20 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(box)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(8)
-        self.tool_selection = self._caption("选择页面后可旋转或删除")
+        self.tool_selection = self._caption(tr('选择页面后可旋转或删除'))
         self.tool_selection.setWordWrap(True)
         selection = QHBoxLayout()
         selection.addWidget(self.tool_selection, 1)
-        self.select_pages_button = self._btn("全选", self.select_all_pages)
+        self.select_pages_button = self._btn(tr('全选'), self.select_all_pages)
         self.select_pages_button.setObjectName("selectPages")
         selection.addWidget(self.select_pages_button)
         lay.addLayout(selection)
         page = QHBoxLayout()
         page.setSpacing(8)
         for icon, label, slot in (
-            ("rotate-ccw", "左转", lambda: self.rotate(-90)),
-            ("rotate-cw", "右转", lambda: self.rotate(90)),
-            ("trash", "删除", self.delete_pages),
+            ("rotate-ccw", tr('左转'), lambda: self.rotate(-90)),
+            ("rotate-cw", tr('右转'), lambda: self.rotate(90)),
+            ("trash", tr('删除'), self.delete_pages),
         ):
             button = self._btn(label, slot, icon=icon, danger=icon == "trash")
             button.setProperty("pageAction", True)
@@ -3967,9 +3978,9 @@ class MainWindow(QMainWindow):
             page.addWidget(button)
         lay.addLayout(page)
         lay.addWidget(self._sep())
-        lay.addWidget(self._caption("快捷工具"))
+        lay.addWidget(self._caption(tr('快捷工具')))
         self._export_tools = _ExportTools()
-        self._export_tools.setAccessibleName("快捷工具面板")
+        self._export_tools.setAccessibleName(tr('快捷工具面板'))
         lay.addWidget(self._export_tools, 1)
 
         def section(title):
@@ -3982,38 +3993,38 @@ class MainWindow(QMainWindow):
             self._export_tools.addItem(content, title)
             return inner
 
-        extract = section("提取页面")
-        hint = QLabel("留空使用所选页面，或输入页码范围。")
+        extract = section(tr('提取页面'))
+        hint = QLabel(tr('留空使用所选页面，或输入页码范围。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         extract.addWidget(hint)
         self.extract_range = QLineEdit()
-        self.extract_range.setPlaceholderText("例如 1-3,5")
-        self.extract_range.setAccessibleName("提取页码范围")
+        self.extract_range.setPlaceholderText(tr('例如 1-3,5'))
+        self.extract_range.setAccessibleName(tr('提取页码范围'))
         hint.setBuddy(self.extract_range)
         extract.addWidget(self.extract_range)
         self.extract_feedback = QLabel("")
         self.extract_feedback.setObjectName("exportFeedback")
         self.extract_feedback.setWordWrap(True)
         extract.addWidget(self.extract_feedback)
-        self.extract_button = self._btn("提取到新 PDF…", self.extract, primary=True)
+        self.extract_button = self._btn(tr('提取到新 PDF…'), self.extract, primary=True)
         extract.addWidget(self.extract_button)
-        split = section("拆分文件")
+        split = section(tr('拆分文件'))
         split.setSpacing(8)
-        self.split_each = QRadioButton("每页一个文件")
-        self.split_every = QRadioButton("每几页一个文件")
+        self.split_each = QRadioButton(tr('每页一个文件'))
+        self.split_every = QRadioButton(tr('每几页一个文件'))
         self.split_count = ClearSpinBox()
         self.split_count.setRange(1, 1_000_000)
         self.split_count.setValue(5)
-        self.split_count.setSuffix(" 页")
-        self.split_count.setAccessibleName("每个拆分文件的页数")
+        self.split_count.setSuffix(tr(' 页'))
+        self.split_count.setAccessibleName(tr('每个拆分文件的页数'))
         self.split_count.setFixedWidth(88)
         self.split_count.setFixedHeight(36)
         self.split_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.split_count.hide()
         self.split_every.toggled.connect(self.split_count.setVisible)
         self.split_count.valueChanged.connect(self._update_export_controls)
-        self.split_range_mode = QRadioButton("按页码范围")
+        self.split_range_mode = QRadioButton(tr('按页码范围'))
         self.split_mode_group = QButtonGroup(self)
         self.split_mode_group.addButton(self.split_each)
         self.split_mode_group.addButton(self.split_every)
@@ -4028,8 +4039,8 @@ class MainWindow(QMainWindow):
         split.addLayout(interval)
         split.addWidget(self.split_range_mode)
         self.split_range = QLineEdit()
-        self.split_range.setPlaceholderText("如 1-3,5,7-9，每段一个文件")
-        self.split_range.setAccessibleName("拆分页码范围")
+        self.split_range.setPlaceholderText(tr('如 1-3,5,7-9，每段一个文件'))
+        self.split_range.setAccessibleName(tr('拆分页码范围'))
         self.split_range.setVisible(False)
         self.split_range_mode.toggled.connect(self.split_range.setVisible)
         split.addWidget(self.split_range)
@@ -4038,20 +4049,20 @@ class MainWindow(QMainWindow):
         self.split_feedback.setObjectName("exportFeedback")
         self.split_feedback.setWordWrap(True)
         split.addWidget(self.split_feedback)
-        self.split_button = self._btn("拆分到文件夹…", self.split, primary=True)
+        self.split_button = self._btn(tr('拆分到文件夹…'), self.split, primary=True)
         split.addWidget(self.split_button)
-        convert = section("PDF 转 Excel")
-        content_label = QLabel("导出内容")
+        convert = section(tr('PDF 转 Excel'))
+        content_label = QLabel(tr('导出内容'))
         self.convert_content = ClearComboBox()
-        self.convert_content.addItem("全部内容（按页导出）", True)
-        self.convert_content.addItem("仅表格", False)
-        self.convert_content.setAccessibleName("Excel 导出内容")
+        self.convert_content.addItem(tr('全部内容（按页导出）'), True)
+        self.convert_content.addItem(tr('仅表格'), False)
+        self.convert_content.setAccessibleName(tr('Excel 导出内容'))
         content_label.setBuddy(self.convert_content)
         convert.addWidget(content_label)
         convert.addWidget(self.convert_content)
-        self.convert_all = QRadioButton("全部页面")
-        self.convert_selected = QRadioButton("所选页面")
-        self.convert_range_mode = QRadioButton("按页码范围")
+        self.convert_all = QRadioButton(tr('全部页面'))
+        self.convert_selected = QRadioButton(tr('所选页面'))
+        self.convert_range_mode = QRadioButton(tr('按页码范围'))
         self.convert_mode_group = QButtonGroup(self)
         for radio in (self.convert_all, self.convert_selected, self.convert_range_mode):
             self.convert_mode_group.addButton(radio)
@@ -4060,12 +4071,12 @@ class MainWindow(QMainWindow):
         convert.addWidget(self.convert_selected)
         convert.addWidget(self.convert_range_mode)
         self.convert_range = QLineEdit()
-        self.convert_range.setPlaceholderText("如 1-3,5；默认全部")
-        self.convert_range.setAccessibleName("转换页码范围")
+        self.convert_range.setPlaceholderText(tr('如 1-3,5；默认全部'))
+        self.convert_range.setAccessibleName(tr('转换页码范围'))
         self.convert_range.setVisible(False)
         self.convert_range_mode.toggled.connect(self.convert_range.setVisible)
         convert.addWidget(self.convert_range)
-        hint = QLabel("全部内容按页保留文字、表格和图片。扫描文字需先完成 OCR；金额与行列请核对原件。")
+        hint = QLabel(tr('全部内容按页保留文字、表格和图片。扫描文字需先完成 OCR；金额与行列请核对原件。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         convert.addWidget(hint)
@@ -4073,40 +4084,40 @@ class MainWindow(QMainWindow):
         self.convert_feedback.setObjectName("exportFeedback")
         self.convert_feedback.setWordWrap(True)
         convert.addWidget(self.convert_feedback)
-        self.convert_button = self._btn("转换为 Excel…", self.convert_to_excel, primary=True)
+        self.convert_button = self._btn(tr('转换为 Excel…'), self.convert_to_excel, primary=True)
         convert.addWidget(self.convert_button)
-        compress = section("压缩 PDF")
-        hint = QLabel("无损、高质量、均衡或自定义压缩；查看大小与页面预览后另存。")
+        compress = section(tr('压缩 PDF'))
+        hint = QLabel(tr('无损、高质量、均衡或自定义压缩；查看大小与页面预览后另存。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         compress.addWidget(hint)
-        self.compress_button = self._btn("压缩并预览…", self.compress_pdf, primary=True)
+        self.compress_button = self._btn(tr('压缩并预览…'), self.compress_pdf, primary=True)
         compress.addWidget(self.compress_button)
-        images = section("图片转 PDF")
-        hint = QLabel("按列表顺序生成页面，多帧 TIFF 按帧展开。")
+        images = section(tr('图片转 PDF'))
+        hint = QLabel(tr('按列表顺序生成页面，多帧 TIFF 按帧展开。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         images.addWidget(hint)
-        images.addWidget(self._btn("选择与排列图片…", self.images_to_pdf, primary=True))
-        export_images = section("PDF 转图片")
-        hint = QLabel("当前页、所选页或页码范围；PNG / JPEG，150 / 300 DPI。")
+        images.addWidget(self._btn(tr('选择与排列图片…'), self.images_to_pdf, primary=True))
+        export_images = section(tr('PDF 转图片'))
+        hint = QLabel(tr('当前页、所选页或页码范围；PNG / JPEG，150 / 300 DPI。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         export_images.addWidget(hint)
-        self.image_export_button = self._btn("选择范围并导出…", self.pdf_to_images, primary=True)
+        self.image_export_button = self._btn(tr('选择范围并导出…'), self.pdf_to_images, primary=True)
         export_images.addWidget(self.image_export_button)
-        security = section("安全与副本")
-        self.encrypt_button = self._btn("加密另存…", self.encrypt_copy)
-        self.decrypt_button = self._btn("解密另存…", self.decrypt_copy)
-        self.editable_button = self._btn("制作可编辑副本…", self.editable_copy)
+        security = section(tr('安全与副本'))
+        self.encrypt_button = self._btn(tr('加密另存…'), self.encrypt_copy)
+        self.decrypt_button = self._btn(tr('解密另存…'), self.decrypt_copy)
+        self.editable_button = self._btn(tr('制作可编辑副本…'), self.editable_copy)
         security.addWidget(self.encrypt_button)
         security.addWidget(self.decrypt_button)
         security.addWidget(self.editable_button)
-        hint = QLabel("解密后另存为无需密码的副本，原加密文件保留；解除权限限制需要管理密码。")
+        hint = QLabel(tr('解密后另存为无需密码的副本，原加密文件保留；解除权限限制需要管理密码。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         security.addWidget(hint)
-        hint = QLabel("签名原件只读。可编辑副本保留签名外观，原数字签名效力不会保留。")
+        hint = QLabel(tr('签名原件只读。可编辑副本保留签名外观，原数字签名效力不会保留。'))
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         security.addWidget(hint)
@@ -4231,7 +4242,7 @@ class MainWindow(QMainWindow):
         self.text_selection.sync_shortcut_hint()
         self.search_bar.sync_shortcut_hints()
         self.immersive.sync_shortcut_hints()
-        self.tab_bar.new_tab_button.setToolTip(self.shortcut_manager.hint('file.open', '打开新 PDF 标签页'))
+        self.tab_bar.new_tab_button.setToolTip(self.shortcut_manager.hint('file.open', tr('打开新 PDF 标签页')))
         self._sync_controls()
 
     def focus_page_number(self) -> None:
@@ -4256,7 +4267,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, "outline_panel") and self.sidebar_mode.currentIndex() == 1:
                 self.outline_panel.refresh()
             name = os.path.basename(self.ws.path) if self.ws.path else (
-                os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else "未命名")
+                os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else tr('未命名'))
             star = " *" if self.ws.dirty else ""
             self.setWindowTitle(f"{name}{star}")
             self.statusBar().showMessage(self._status_line())
@@ -4266,14 +4277,14 @@ class MainWindow(QMainWindow):
 
     def _status_line(self) -> str:
         if self._opening_paths and not self.ws.pages:
-            return f"正在打开 · {os.path.basename(self._opening_paths[0])}"
+            return tr('正在打开 · {p0}', p0=f'{os.path.basename(self._opening_paths[0])}')
         n = len(self.ws.pages)
         sel = len(self.ws.target_indices())
-        parts = [f"{n} 页"]
+        parts = [tr('{p0} 页', p0=f'{n}')]
         if sel:
-            parts.append(f"已选 {sel} 页")
+            parts.append(tr('已选 {p0} 页', p0=f'{sel}'))
         if self.ws.dirty:
-            parts.append("未保存")
+            parts.append(tr('未保存'))
         if self.ws.last_error:
             parts.append(self.ws.last_error)
         reason = self.store.operation_reason(self.ws.pages, "modify")
@@ -4287,11 +4298,11 @@ class MainWindow(QMainWindow):
         if n == 0 or sel == 0:
             return ""
         if sel == n:
-            return f"已选全部 {n} 页"
+            return tr('已选全部 {p0} 页', p0=f'{n}')
         if sel == 1:
             row = next(iter(self.ws.target_indices()))
-            return f"已选第 {row + 1} 页"
-        return f"已选 {sel} 页"
+            return tr('已选第 {p0} 页', p0=f'{row + 1}')
+        return tr('已选 {p0} 页', p0=f'{sel}')
 
     def _sync_selection(self, *, reading_only=False, origin=None) -> None:
         n = len(self.ws.pages)
@@ -4498,7 +4509,7 @@ class MainWindow(QMainWindow):
         btn = getattr(self, "btn_max", None)
         if btn is not None:
             name = "win-restore" if maximized else "win-max"
-            label = "还原" if maximized else "最大化"
+            label = tr('还原') if maximized else tr('最大化')
             btn.setIcon(toolbar_icon(name, "#134E4A", CAPTION_PX))
             btn.setToolTip(label)
             btn.setStatusTip(label)
@@ -4909,7 +4920,7 @@ class MainWindow(QMainWindow):
             self.preview_view.clear_photo()
             if self._opening_paths:
                 name = os.path.basename(self._opening_paths[0])
-                self.preview_loading.setText(f"正在打开 PDF…\n{name}")
+                self.preview_loading.setText(tr('正在打开 PDF…\n{p0}', p0=f'{name}'))
                 self.preview_stack.setCurrentWidget(self.preview_loading)
             else:
                 self.preview_stack.setCurrentIndex(0)
@@ -4920,7 +4931,7 @@ class MainWindow(QMainWindow):
             return
         self.preview_stack.setCurrentIndex(1)
         if caption:
-            self.banner.setText(f"{caption}。旋转、删除、抽取作用于已选页面。")
+            self.banner.setText(tr('{p0}。旋转、删除、抽取作用于已选页面。', p0=f'{caption}'))
         else:
             self.banner.setText("")
         if not lightweight:
@@ -4940,17 +4951,15 @@ class MainWindow(QMainWindow):
         try:
             wpt, hpt = self.store.page_size(page)
             source_rotation = self.store.source_rotation(page)
-            note = f" · 源文件已旋转 {source_rotation}°" if source_rotation else ""
+            note = tr(' · 源文件已旋转 {p0}°', p0=f'{source_rotation}') if source_rotation else ""
             label = self.store.page_label(page)
             if label is not None:
-                note += f" · 阅读器标签：{label or '未编号'}"
+                note += tr(' · 阅读器标签：{p0}', p0=f"{label or '未编号'}")
             self.details.setText(
-                f"工作区第 {idx + 1} / {len(self.ws.pages)} 页 · "
-                f"来自 {os.path.basename(page.source_path)} 原第 {page.source_page + 1} 页 · "
-                f"{wpt:.0f}×{hpt:.0f} pt · 本次旋转 {page.rotation}°{note}"
+                tr('工作区第 {p0} / {p1} 页 · 来自 {p2} 原第 {p3} 页 · {p4}×{p5} pt · 本次旋转 {p6}°{p7}', p0=f'{idx + 1}', p1=f'{len(self.ws.pages)}', p2=f'{os.path.basename(page.source_path)}', p3=f'{page.source_page + 1}', p4=f'{wpt:.0f}', p5=f'{hpt:.0f}', p6=f'{page.rotation}', p7=f'{note}')
             )
         except Exception:
-            self.details.setText(f"工作区第 {idx + 1} 页")
+            self.details.setText(tr('工作区第 {p0} 页', p0=f'{idx + 1}'))
         self._request_preview(page)
         if (layout_changed or changed) and self._preview_image is not None:
             self._show_preview_image()
@@ -5325,7 +5334,7 @@ class MainWindow(QMainWindow):
             return
         if image is None or image.isNull():
             if error:
-                self.statusBar().showMessage("页面暂时无法加载，请重新选择该页重试。", 5000)
+                self.statusBar().showMessage(tr('页面暂时无法加载，请重新选择该页重试。'), 5000)
             return
         self._preview_image = image
         self._cache_page_image(key[:3], image, preferred_width=self._preview_render_width())
@@ -5458,14 +5467,14 @@ class MainWindow(QMainWindow):
 
     def _render_busy_message(self) -> str:
         if self._opening_paths and not self.ws.pages:
-            return "正在打开 PDF"
+            return tr('正在打开 PDF')
         if not self.ws.pages:
             return ""
         if self._in_arrange():
             view = self.arrange_view
             if any(view.visualRect(self.model.index(row)).intersects(view.viewport().rect())
                    for key in self.model.inflight for row in self.model._rows_by_key.get(key, ())):
-                return "正在生成缩略图"
+                return tr('正在生成缩略图')
             return ""
         index = self.ws.preview_index()
         if index is None:
@@ -5473,13 +5482,13 @@ class MainWindow(QMainWindow):
         key = self.ws.pages[index].render_key
         if ((self._preview_busy and self._preview_key is not None and self._preview_key[:3] == key)
                 or (self._detail_busy and self._detail_key is not None and self._detail_key[:3] == key)):
-            return "正在渲染页面"
+            return tr('正在渲染页面')
         if self.preview_view.spread:
             visible = set(self.preview_view.visible_pages(
                 self.preview_view.mapToScene(self.preview_view.viewport().rect()).boundingRect()))
             if (self._other_detail_pending & visible or any(k[0] == self.preview_view.layout_generation
                     and k[1] in visible for k in self._neighbor_pending)):
-                return "正在渲染页面"
+                return tr('正在渲染页面')
         return ""
 
     def _update_render_progress(self) -> None:
@@ -5702,7 +5711,7 @@ class MainWindow(QMainWindow):
         if not self._allow_operation("modify"):
             return
         if not self.ws.target_indices():
-            self.statusBar().showMessage("请先选择页面")
+            self.statusBar().showMessage(tr('请先选择页面'))
             return
         self.ws.rotate(delta)
 
@@ -5710,7 +5719,7 @@ class MainWindow(QMainWindow):
         if not self._allow_operation("modify"):
             return
         if not self.ws.target_indices():
-            self.statusBar().showMessage("请先选择页面")
+            self.statusBar().showMessage(tr('请先选择页面'))
             return
         self.ws.delete_selected()
 
@@ -5725,12 +5734,12 @@ class MainWindow(QMainWindow):
             if not self.ws.dirty:
                 return True
             box = QMessageBox(self)
-            box.setWindowTitle("未保存的更改")
-            box.setText("当前工作区有未保存的更改。")
-            box.setInformativeText("关闭或打开其他文件前，选择是否写入当前文档。")
-            save_btn = box.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
-            discard_btn = box.addButton("不保存", QMessageBox.ButtonRole.DestructiveRole)
-            cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+            box.setWindowTitle(tr('未保存的更改'))
+            box.setText(tr('当前工作区有未保存的更改。'))
+            box.setInformativeText(tr('关闭或打开其他文件前，选择是否写入当前文档。'))
+            save_btn = box.addButton(tr('保存'), QMessageBox.ButtonRole.AcceptRole)
+            discard_btn = box.addButton(tr('不保存'), QMessageBox.ButtonRole.DestructiveRole)
+            cancel = box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
             box.setDefaultButton(save_btn)
             box.setEscapeButton(cancel)
             box.exec()
@@ -5800,7 +5809,7 @@ class MainWindow(QMainWindow):
 
     def _allow_document_switch(self) -> bool:
         if self._saving:
-            self.statusBar().showMessage("正在保存，请在保存结束后切换或打开文档。", 5000)
+            self.statusBar().showMessage(tr('正在保存，请在保存结束后切换或打开文档。'), 5000)
             return False
         return True
 
@@ -5879,7 +5888,7 @@ class MainWindow(QMainWindow):
         if self._saving or self._confirming_leave or getattr(self, "_task_dialog", None) is not None:
             return False
         if getattr(self, "_conv_thread", None) is not None:
-            self.statusBar().showMessage("请结束或取消转换后再关闭当前文件", 5000)
+            self.statusBar().showMessage(tr('请结束或取消转换后再关闭当前文件'), 5000)
             return False
         tab = self._get_tab(tab_id)
         if tab is None:
@@ -5913,7 +5922,7 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentIndex(0)
             self._release_unused_docs()
             self.welcome_open.setFocus()
-            self.statusBar().showMessage("已关闭当前文件，返回首页", 5000)
+            self.statusBar().showMessage(tr('已关闭当前文件，返回首页'), 5000)
             return True
 
         idx = self._tabs.index(tab)
@@ -5925,7 +5934,7 @@ class MainWindow(QMainWindow):
         else:
             self._sync_tab_bar()
         self._release_unused_docs()
-        self.statusBar().showMessage("已关闭标签页", 4000)
+        self.statusBar().showMessage(tr('已关闭标签页'), 4000)
         return True
 
     def close_current_file(self) -> None:
@@ -5934,8 +5943,8 @@ class MainWindow(QMainWindow):
     def open_files(self) -> None:
         if not self._allow_document_switch():
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, "打开 PDF / OFD / 图片", "",
-            "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('打开 PDF / OFD / 图片'), "",
+            tr('PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)'))
         if paths:
             self.open_files_in_tabs(paths)
 
@@ -5968,7 +5977,7 @@ class MainWindow(QMainWindow):
                         break
                     if self.ws.dirty:
                         self.statusBar().showMessage(
-                            '磁盘文件已有变化；当前标签保留未保存修改。请先另存副本，再关闭并重新打开文件。', 10000)
+                            tr('磁盘文件已有变化；当前标签保留未保存修改。请先另存副本，再关闭并重新打开文件。'), 10000)
                     else:
                         pages = self._try_load(path, index, len(valid_paths), defer_safety=True)
                         if pages is None:
@@ -5978,7 +5987,7 @@ class MainWindow(QMainWindow):
                         self.ws.open_replace(pages, path)
                         self.refresh()
                         self.go_to_page(page_index + 1)
-                        self.statusBar().showMessage('已重新读取磁盘上的最新文件', 5000)
+                        self.statusBar().showMessage(tr('已重新读取磁盘上的最新文件'), 5000)
                 self.reading_history.touch(path)
                 opened_any = True
                 continue
@@ -6035,7 +6044,7 @@ class MainWindow(QMainWindow):
         self.ws.select_index(0)
         self.refresh()
         self._sync_tab_bar()
-        self.statusBar().showMessage('图片已作为页面加入；可继续拖入 PDF 或图片，保存时另存 PDF。', 6500)
+        self.statusBar().showMessage(tr('图片已作为页面加入；可继续拖入 PDF 或图片，保存时另存 PDF。'), 6500)
         return True
 
     def insert_dropped_files(
@@ -6069,7 +6078,7 @@ class MainWindow(QMainWindow):
             incoming.extend(pages)
         if self.ws is not target_workspace or tuple(self.ws.pages)!=before:
             self._release_unused_docs()
-            self.statusBar().showMessage('工作区已改变，请重新选择插入位置。',5000)
+            self.statusBar().showMessage(tr('工作区已改变，请重新选择插入位置。'),5000)
             return False
         return self.insert_prepared_pages(incoming,at_index=base_pos,target_view=target_view)
 
@@ -6088,13 +6097,13 @@ class MainWindow(QMainWindow):
             view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
             view.scrollTo(self.model.index(base_pos, 0))
             view._show_landing(base_pos)
-            self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f"已插入 {inserted_count} 页 · 可拖动调整顺序或撤销"), 4000)
+            self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', tr('已插入 {p0} 页 · 可拖动调整顺序或撤销', p0=f'{inserted_count}')), 4000)
             return True
         return False
 
     def paste_pages(self,checked=False,*,at_index=None,target_view=None):
         if self._saving or getattr(self,'_task_dialog',None) is not None:
-            self.statusBar().showMessage('请等待当前任务结束后再粘贴页面。',5000)
+            self.statusBar().showMessage(tr('请等待当前任务结束后再粘贴页面。'),5000)
             return False
         if self.ws.pages and not self._allow_operation('modify'):
             return False
@@ -6126,21 +6135,21 @@ class MainWindow(QMainWindow):
             else:
                 self._page_copy=None
                 target_workspace,before=self.ws,tuple(self.ws.pages)
-                pages=run_operation(self,'粘贴图片为页面',lambda progress,cancel:
+                pages=run_operation(self,tr('粘贴图片为页面'),lambda progress,cancel:
                     self.store.load_clipboard_image(image,progress_callback=progress,cancel=cancel),cancellable=True)
                 if self.ws is not target_workspace or tuple(self.ws.pages)!=before:
                     self._release_unused_docs()
-                    self.statusBar().showMessage('工作区已改变，请重新选择粘贴位置。',5000)
+                    self.statusBar().showMessage(tr('工作区已改变，请重新选择粘贴位置。'),5000)
                     return False
                 inserted=self.insert_prepared_pages(pages,at_index=at_index,target_view=target_view)
             if inserted:
                 target_view.setFocus()
-                self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f'已粘贴 {len(self.ws.pages)-count} 页 · 可撤销，原文件保留。'),6000)
+                self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', tr('已粘贴 {p0} 页 · 可撤销，原文件保留。', p0=f'{len(self.ws.pages) - count}')),6000)
             else:
                 self._release_unused_docs()
             return inserted
         except OperationCancelled:
-            self.statusBar().showMessage('粘贴已取消，页面未改变。',5000)
+            self.statusBar().showMessage(tr('粘贴已取消，页面未改变。'),5000)
         except (ValueError,PdfError,OSError) as exc:
             self.statusBar().showMessage(str(exc),6500)
         self._release_unused_docs()
@@ -6172,7 +6181,7 @@ class MainWindow(QMainWindow):
             from app.pageclipboard import write_pages
             self._page_copy=write_pages(pages,on_replaced=self._invalidate_page_copy)
             self._release_unused_docs()
-            self.statusBar().showMessage(self.shortcut_manager.hint('edit.paste_pages', f'已复制 {len(pages)} 页 · 可粘贴到本文件或其他标签页'),6500)
+            self.statusBar().showMessage(self.shortcut_manager.hint('edit.paste_pages', tr('已复制 {p0} 页 · 可粘贴到本文件或其他标签页', p0=f'{len(pages)}')),6500)
             return True
         except (ValueError,PdfError,OSError) as exc:
             self.statusBar().showMessage(str(exc),6500)
@@ -6198,7 +6207,7 @@ class MainWindow(QMainWindow):
         reason = (self.store.operation_reason(source_pages, "copy")
                   or self.store.operation_reason(source_pages, "modify"))
         if reason:
-            self._warn_merge_readonly(source_ws.path or "来源文档", source_pages, reason)
+            self._warn_merge_readonly(source_ws.path or tr('来源文档'), source_pages, reason)
             return False
         incoming = Workspace._unique_pages(source_pages, source_pages)
         incoming_outline = (
@@ -6213,7 +6222,7 @@ class MainWindow(QMainWindow):
         view = target_view or (self.arrange_view if self._in_arrange() else self.left_view)
         view.scrollTo(self.model.index(base_pos, 0))
         view._show_landing(base_pos)
-        self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f"已复制 {len(incoming)} 页 · 可撤销"), 4000)
+        self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', tr('已复制 {p0} 页 · 可撤销', p0=f'{len(incoming)}')), 4000)
         return True
 
     def drop_pages_onto_tab(self, target_tab_id: int, source_ws: Workspace, sources: list[int]) -> bool:
@@ -6225,8 +6234,8 @@ class MainWindow(QMainWindow):
         return self.insert_pages_from_workspace(source_ws, sources, at_index=len(self.ws.pages))
 
     def append_files(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "合并 PDF / 图片", "",
-            "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('合并 PDF / 图片'), "",
+            tr('PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)'))
         if paths:
             if self.ws.pages or any(_is_image_path(path) for path in paths):
                 self.insert_dropped_files(paths)
@@ -6252,15 +6261,15 @@ class MainWindow(QMainWindow):
 
     def open_shell_files(self, paths: list[str], mode: str) -> bool:
         if mode not in ("split", "merge"):
-            QMessageBox.warning(self, "无法打开右键入口", "无法识别此操作，请重新选择拆分或合并。")
+            QMessageBox.warning(self, tr('无法打开右键入口'), tr('无法识别此操作，请重新选择拆分或合并。'))
             return False
         paths = [os.path.abspath(path) for path in paths]
         invalid = [path for path in paths if not path.lower().endswith(".pdf") or not os.path.isfile(path)]
         if not paths or invalid or (mode == "split" and len(paths) != 1):
-            message = "请选择一个 PDF 进行拆分。" if mode == "split" else "请选择有效的 PDF 文件进行合并。"
+            message = tr('请选择一个 PDF 进行拆分。') if mode == "split" else tr('请选择有效的 PDF 文件进行合并。')
             if invalid:
-                message += "\n无法打开：" + "、".join(os.path.basename(path) for path in invalid[:4])
-            QMessageBox.warning(self, "无法打开右键入口", message)
+                message += tr('\n无法打开：') + "、".join(os.path.basename(path) for path in invalid[:4])
+            QMessageBox.warning(self, tr('无法打开右键入口'), message)
             return False
         if not self._ingest(paths, replace=True):
             return False
@@ -6270,14 +6279,14 @@ class MainWindow(QMainWindow):
             self.open_export_tool(1)
         else:
             self.stack.setCurrentIndex(1)
-            self.statusBar().showMessage(f"已载入 {len(paths)} 个 PDF，共 {len(self.ws.pages)} 页 · 检查顺序后保存", 8000)
+            self.statusBar().showMessage(tr('已载入 {p0} 个 PDF，共 {p1} 页 · 检查顺序后保存', p0=f'{len(paths)}', p1=f'{len(self.ws.pages)}'), 8000)
         return True
 
     def insert_files(self) -> None:
         if self.ws.pages and not self._allow_operation("modify"):
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, "插入 PDF / 图片", "",
-            "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('插入 PDF / 图片'), "",
+            tr('PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)'))
         if not paths:
             return
         selected = self.ws.target_indices()
@@ -6291,9 +6300,9 @@ class MainWindow(QMainWindow):
         if self.insert_dropped_files(paths, at_index=base_pos):
             inserted_count = len(self.ws.pages) - before_count
             if has_selection:
-                self.statusBar().showMessage(f"已在第 {max(selected) + 1} 页后插入 {inserted_count} 页 · 可拖动排序，或在「页面工具」中匹配尺寸", 6500)
+                self.statusBar().showMessage(tr('已在第 {p0} 页后插入 {p1} 页 · 可拖动排序，或在「页面工具」中匹配尺寸', p0=f'{max(selected) + 1}', p1=f'{inserted_count}'), 6500)
             else:
-                self.statusBar().showMessage(f"已在末尾插入 {inserted_count} 页 · 可拖动调整顺序", 4000)
+                self.statusBar().showMessage(tr('已在末尾插入 {p0} 页 · 可拖动调整顺序', p0=f'{inserted_count}'), 4000)
 
     def _ingest(self, paths: list[str], replace: bool) -> bool:
         if not paths:
@@ -6341,9 +6350,9 @@ class MainWindow(QMainWindow):
         is_ofd = path.lower().endswith('.ofd')
         is_image = _is_image_path(path)
         # 多选打开时把批次信息放进标题，否则用户不知道进度条管的是第几个文件。
-        title = "导入图片" if is_image else ("打开 OFD" if is_ofd else "打开 PDF")
+        title = tr('导入图片') if is_image else (tr('打开 OFD') if is_ofd else tr('打开 PDF'))
         if total > 1:
-            title += f" · 文件 {index} / {total}"
+            title += tr(' · 文件 {p0} / {p1}', p0=f'{index}', p1=f'{total}')
         while True:
             try:
                 if is_ofd or is_image:
@@ -6351,18 +6360,18 @@ class MainWindow(QMainWindow):
                         self.store.load(path, progress_callback=progress, cancel=cancel), cancellable=True)
                     warnings = self.store._source(pages[0].source_id).import_warnings
                     if warnings:
-                        QMessageBox.information(self, 'OFD 转换提示', '\n'.join(warnings))
+                        QMessageBox.information(self, tr('OFD 转换提示'), '\n'.join(warnings))
                     return pages
                 return run_operation(self, title, lambda progress:
                     self.store.load(path, password, progress_callback=progress, defer_safety=defer_safety))
             except OperationCancelled:
-                self.statusBar().showMessage('已取消打开，原文件未修改', 5000)
+                self.statusBar().showMessage(tr('已取消打开，原文件未修改'), 5000)
                 return None
             except NeedPassword:
                 text, ok = QInputDialog.getText(
                     self,
-                    "加密 PDF",
-                    f"{os.path.basename(path)} 需要密码",
+                    tr('加密 PDF'),
+                    tr('{p0} 需要密码', p0=f'{os.path.basename(path)}'),
                     QLineEdit.EchoMode.Password,
                 )
                 if not ok:
@@ -6370,10 +6379,10 @@ class MainWindow(QMainWindow):
                 password = text
             except PdfError as exc:
                 if "密码不正确" in str(exc):
-                    QMessageBox.warning(self, "无法打开", str(exc))
+                    QMessageBox.warning(self, tr('无法打开'), str(exc))
                     password = None
                     continue
-                QMessageBox.warning(self, "无法打开", str(exc))
+                QMessageBox.warning(self, tr('无法打开'), str(exc))
                 return None
 
     def _load_one(self, path: str, index: int = 1, total: int = 1, insert_at: int | None = None) -> list | None:
@@ -6401,10 +6410,10 @@ class MainWindow(QMainWindow):
         return pages
 
     def _warn_merge_readonly(self, path, pages, reason) -> None:
-        message = f"{os.path.basename(path)}\n{reason}\n\n请单独打开阅读。"
+        message = tr('{p0}\n{p1}\n\n请单独打开阅读。', p0=f'{os.path.basename(path)}', p1=f'{reason}')
         if not self.store.operation_reason(pages, "editable_copy"):
-            message += "符合条件时，可在单独打开后制作可编辑副本，再合并副本。"
-        QMessageBox.warning(self, "不能合并只读文档", message)
+            message += tr('符合条件时，可在单独打开后制作可编辑副本，再合并副本。')
+        QMessageBox.warning(self, tr('不能合并只读文档'), message)
 
     def _release_unused_docs(self) -> None:
         self._reading_cache.retain(self._live_render_keys())
@@ -6416,7 +6425,7 @@ class MainWindow(QMainWindow):
             keep |= tab.ws.live_sources()
         if set(self.store._sources) <= keep:
             return
-        run_operation(self, "整理工作区", lambda progress: self.store.close_except(keep))
+        run_operation(self, tr('整理工作区'), lambda progress: self.store.close_except(keep))
 
     def _finish_document_checks(self, pages):
         if any(self.store._source(ref.source_id).safety.signature == 'pending' for ref in pages):
@@ -6424,8 +6433,8 @@ class MainWindow(QMainWindow):
             def finish_checks(progress):
                 for ref in refs:
                     while not self.store.prepare_safety_step(ref):
-                        progress(0, 0, '正在检查原文件保护信息')
-            run_operation(self, '准备编辑功能', finish_checks)
+                        progress(0, 0, tr('正在检查原文件保护信息'))
+            run_operation(self, tr('准备编辑功能'), finish_checks)
             self._sync_controls()
 
     def _allow_operation(self, operation: str) -> bool:
@@ -6433,7 +6442,7 @@ class MainWindow(QMainWindow):
             self._finish_document_checks(self.ws.pages)
         reason = self.store.operation_reason(self.ws.pages, operation)
         if reason:
-            QMessageBox.information(self, "文件保护", reason)
+            QMessageBox.information(self, tr('文件保护'), reason)
             return False
         return True
 
@@ -6465,14 +6474,14 @@ class MainWindow(QMainWindow):
                     options = replace(options, allow_tag_loss=True)
                     if source_target and choice != 'overwrite':
                         from app.exportdialogs import new_pdf_path
-                        path = new_pdf_path(self, self.store, '另存副本', os.path.splitext(path)[0] + '_副本.pdf')
+                        path = new_pdf_path(self, self.store, tr('另存副本'), os.path.splitext(path)[0] + tr('_副本.pdf'))
                         if not path:
                             return None
                     continue
                 elif exc.kind == "encryption":
                     from app.exportdialogs import EncryptionDialog
                     dialog = EncryptionDialog(self, allow_plain=True)
-                    dialog.setWindowTitle("原加密不能沿用 · 请选择输出保护")
+                    dialog.setWindowTitle(tr('原加密不能沿用 · 请选择输出保护'))
                     if dialog.exec() != QDialog.DialogCode.Accepted:
                         return None
                     setting = dialog.setting
@@ -6480,9 +6489,9 @@ class MainWindow(QMainWindow):
                     dialog.deleteLater()
                     options = replace(options, preserve_encryption=False, encryption=setting)
                 else:
-                    box = QMessageBox(QMessageBox.Icon.Warning, "另存副本前确认", str(exc), parent=self)
-                    proceed = box.addButton("确认并另存副本", QMessageBox.ButtonRole.AcceptRole)
-                    cancel_button = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+                    box = QMessageBox(QMessageBox.Icon.Warning, tr('另存副本前确认'), str(exc), parent=self)
+                    proceed = box.addButton(tr('确认并另存副本'), QMessageBox.ButtonRole.AcceptRole)
+                    cancel_button = box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
                     box.setDefaultButton(cancel_button)
                     box.exec()
                     if box.clickedButton() is not proceed:
@@ -6490,7 +6499,7 @@ class MainWindow(QMainWindow):
                     options = replace(options, allow_structure_loss=True)
                 if groups is None and self.store.is_source_destination(path):
                     from app.exportdialogs import new_pdf_path
-                    path = new_pdf_path(self, self.store, "另存副本", os.path.splitext(path)[0] + "_副本.pdf")
+                    path = new_pdf_path(self, self.store, tr('另存副本'), os.path.splitext(path)[0] + tr('_副本.pdf'))
                     if not path:
                         return None
 
@@ -6501,7 +6510,7 @@ class MainWindow(QMainWindow):
         try:
             dialog = CompressionDialog(self)
         except OSError as exc:
-            QMessageBox.warning(self, '无法创建压缩缓存', str(exc))
+            QMessageBox.warning(self, tr('无法创建压缩缓存'), str(exc))
             return
         dialog.exec()
         dialog.deleteLater()
@@ -6524,23 +6533,23 @@ class MainWindow(QMainWindow):
         if self.ws.path and self.ws.path.lower().endswith('.ofd') and not self.save(True):
             return
         if self.ws.dirty or not self.ws.path:
-            QMessageBox.information(self, '先保存当前文档', '请先保存或另存当前 PDF，再导出文字。')
+            QMessageBox.information(self, tr('先保存当前文档'), tr('请先保存或另存当前 PDF，再导出文字。'))
             return
         from app.documentlayout import pdf_to_text
-        path, _ = QFileDialog.getSaveFileName(self, '导出 TXT', export_path(os.path.splitext(self.ws.path)[0]+'.txt'),
-                                             '文本文件 (*.txt)', options=QFileDialog.Option.DontConfirmOverwrite)
+        path, _ = QFileDialog.getSaveFileName(self, tr('导出 TXT'), export_path(os.path.splitext(self.ws.path)[0]+'.txt'),
+                                             tr('文本文件 (*.txt)'), options=QFileDialog.Option.DontConfirmOverwrite)
         if not path:
             return
         if not path.lower().endswith('.txt'):
             path += '.txt'
         try:
-            result = run_operation(self, '导出文字', lambda progress,cancel:
+            result = run_operation(self, tr('导出文字'), lambda progress,cancel:
                 pdf_to_text(self.ws.path,path,progress,cancel), cancellable=True)
-            self.statusBar().showMessage(f'文字已导出：{result}', 6000)
+            self.statusBar().showMessage(tr('文字已导出：{p0}', p0=f'{result}'), 6000)
         except OperationCancelled:
-            self.statusBar().showMessage('文字导出已取消。', 4000)
+            self.statusBar().showMessage(tr('文字导出已取消。'), 4000)
         except (ValueError, OSError) as exc:
-            QMessageBox.warning(self, '文字未导出', str(exc))
+            QMessageBox.warning(self, tr('文字未导出'), str(exc))
 
     def images_to_pdf(self):
         from app.exportdialogs import ImageImportDialog, new_pdf_path
@@ -6551,22 +6560,22 @@ class MainWindow(QMainWindow):
             return
         paths = dialog.paths()
         dialog.deleteLater()
-        path = new_pdf_path(self, self.store, "图片另存为 PDF", "图片合并.pdf")
+        path = new_pdf_path(self, self.store, tr('图片另存为 PDF'), tr('图片合并.pdf'))
         if not path:
             return
         try:
-            result = run_operation(self, "图片转 PDF", lambda progress, cancel:
+            result = run_operation(self, tr('图片转 PDF'), lambda progress, cancel:
                 images_to_pdf(paths, path, self.store, progress, cancel), cancellable=True)
-            QMessageBox.information(self, "已完成", f"已完整导出 1 个 PDF：\n{result.path}")
+            QMessageBox.information(self, tr('已完成'), tr('已完整导出 1 个 PDF：\n{p0}', p0=f'{result.path}'))
         except OperationCancelled:
-            QMessageBox.information(self, "已取消", "已取消，完成 0 个导出文件，原件保留。")
+            QMessageBox.information(self, tr('已取消'), tr('已取消，完成 0 个导出文件，原件保留。'))
         except (PdfError, OSError) as exc:
-            QMessageBox.warning(self, "图片转换未完成", str(exc))
+            QMessageBox.warning(self, tr('图片转换未完成'), str(exc))
 
     def compress_image_file(self):
         from app.imagequick import ImageQuickDialog
         from app.imaging import IMAGE_FILTER
-        path, _ = QFileDialog.getOpenFileName(self, '选择要压缩的图片', '', IMAGE_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, tr('选择要压缩的图片'), '', IMAGE_FILTER)
         if path:
             dialog = ImageQuickDialog([path], 'compress', self)
             dialog.exec()
@@ -6587,20 +6596,20 @@ class MainWindow(QMainWindow):
         dpi = 150 if dialog.dpi.currentIndex() == 0 else 300
         overwrite = dialog.overwrite.isChecked()
         dialog.deleteLater()
-        folder = QFileDialog.getExistingDirectory(self, "选择图片输出文件夹", str(output_directory() or ''))
+        folder = QFileDialog.getExistingDirectory(self, tr('选择图片输出文件夹'), str(output_directory() or ''))
         if not folder:
             return
-        prefix = Path(self.ws.path or "文档.pdf").stem
+        prefix = Path(self.ws.path or tr('文档.pdf')).stem
         try:
-            done, skipped, failed, cancelled = run_operation(self, "PDF 转图片", lambda progress, cancel:
+            done, skipped, failed, cancelled = run_operation(self, tr('PDF 转图片'), lambda progress, cancel:
                 pdf_to_images(self.store, [self.ws.pages[i] for i in indices], indices, folder, prefix,
                               fmt, dpi, overwrite, progress, cancel), cancellable=True)
-            box = QMessageBox(QMessageBox.Icon.Information, "已取消" if cancelled else "导出结束",
-                f"已完整输出 {len(done)} 张图片，跳过 {len(skipped)} 张，失败 {len(failed)} 张。\n{folder}", parent=self)
-            box.setDetailedText("\n".join([*("成功：" + p for p in done), *("跳过：" + p for p in skipped), *failed]))
+            box = QMessageBox(QMessageBox.Icon.Information, tr('已取消') if cancelled else tr('导出结束'),
+                tr('已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}', p0=f'{len(done)}', p1=f'{len(skipped)}', p2=f'{len(failed)}', p3=f'{folder}'), parent=self)
+            box.setDetailedText("\n".join([*(tr('成功：') + p for p in done), *(tr('跳过：') + p for p in skipped), *failed]))
             box.exec()
         except PdfError as exc:
-            QMessageBox.warning(self, "导出未完成", str(exc))
+            QMessageBox.warning(self, tr('导出未完成'), str(exc))
 
     def encrypt_copy(self):
         if not self._allow_operation("modify") or not self.ws.pages:
@@ -6613,62 +6622,62 @@ class MainWindow(QMainWindow):
         setting = dialog.setting
         dialog.setting = None
         dialog.deleteLater()
-        path = new_pdf_path(self, self.store, "加密另存", Path(self.ws.path or "文档.pdf").stem + "_加密.pdf")
+        path = new_pdf_path(self, self.store, tr('加密另存'), Path(self.ws.path or tr('文档.pdf')).stem + tr('_加密.pdf'))
         if not path:
             return
         try:
-            result = self._write_pdf(list(self.ws.pages), path, "加密另存", cancellable=True,
+            result = self._write_pdf(list(self.ws.pages), path, tr('加密另存'), cancellable=True,
                                      options=WriteOptions(preserve_encryption=False, encryption=setting))
             if result is not None:
-                QMessageBox.information(self, "加密另存完成", f"已使用 {setting.label} 加密，原件保留：\n{result.path}")
+                QMessageBox.information(self, tr('加密另存完成'), tr('已使用 {p0} 加密，原件保留：\n{p1}', p0=f'{setting.label}', p1=f'{result.path}'))
                 self._show_write_notes((result,))
         except OperationCancelled:
-            QMessageBox.information(self, "已取消", "已取消，完成 0 个输出文件。")
+            QMessageBox.information(self, tr('已取消'), tr('已取消，完成 0 个输出文件。'))
         except PdfError as exc:
-            QMessageBox.warning(self, "加密未完成", str(exc))
+            QMessageBox.warning(self, tr('加密未完成'), str(exc))
 
     def decrypt_copy(self):
         if not self.ws.pages:
             return
         sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
         if not any(source.safety.encrypted for source in sources):
-            QMessageBox.information(self, "无需解密", "当前文档未加密。")
+            QMessageBox.information(self, tr('无需解密'), tr('当前文档未加密。'))
             return
         for source in sources:
             if source.safety.signature != "none":
-                QMessageBox.information(self, "文件保护", source.safety.read_only_reason)
+                QMessageBox.information(self, tr('文件保护'), source.safety.read_only_reason)
                 return
         for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages):
             source = self.store._source(sid)
             while source.safety.needs_owner_for_decryption:
-                password, ok = QInputDialog.getText(self, "解密需要管理密码",
-                    f"{Path(source.path).name} 限制了文档权限，请输入管理密码：", QLineEdit.EchoMode.Password)
+                password, ok = QInputDialog.getText(self, tr('解密需要管理密码'),
+                    tr('{p0} 限制了文档权限，请输入管理密码：', p0=f'{Path(source.path).name}'), QLineEdit.EchoMode.Password)
                 if not ok:
                     return
                 try:
-                    run_operation(self, "验证管理密码", lambda progress:
+                    run_operation(self, tr('验证管理密码'), lambda progress:
                                   self.store.authenticate_owner(sid, password))
                 except PdfError as exc:
-                    QMessageBox.warning(self, "密码验证未通过", str(exc))
+                    QMessageBox.warning(self, tr('密码验证未通过'), str(exc))
                 finally:
                     password = None
                 self.refresh()
         if not self._allow_operation("decrypt"):
             return
         from app.exportdialogs import new_pdf_path
-        path = new_pdf_path(self, self.store, "解密另存", Path(self.ws.path or "文档.pdf").stem + "_解密.pdf")
+        path = new_pdf_path(self, self.store, tr('解密另存'), Path(self.ws.path or tr('文档.pdf')).stem + tr('_解密.pdf'))
         if not path:
             return
         try:
-            result = self._write_pdf(list(self.ws.pages), path, "解密另存", cancellable=True,
+            result = self._write_pdf(list(self.ws.pages), path, tr('解密另存'), cancellable=True,
                                      options=WriteOptions(preserve_encryption=False, operation="decrypt"))
             if result is not None:
-                QMessageBox.information(self, "解密另存完成", f"已保存无需密码的 PDF 副本，原加密文件保留：\n{result.path}")
+                QMessageBox.information(self, tr('解密另存完成'), tr('已保存无需密码的 PDF 副本，原加密文件保留：\n{p0}', p0=f'{result.path}'))
                 self._show_write_notes((result,))
         except OperationCancelled:
-            QMessageBox.information(self, "已取消", "已取消解密，原加密文件保留。")
+            QMessageBox.information(self, tr('已取消'), tr('已取消解密，原加密文件保留。'))
         except PdfError as exc:
-            QMessageBox.warning(self, "解密未完成", str(exc))
+            QMessageBox.warning(self, tr('解密未完成'), str(exc))
 
     def show_signature_info(self):
         from app.signatureui import open_signature_info
@@ -6682,17 +6691,16 @@ class MainWindow(QMainWindow):
             return
         if not self.confirm_leave():
             return
-        if QMessageBox.warning(self, "制作可编辑副本", "副本将冻结签名外观并移除签名验证结构。\n"
-                "原数字签名效力不会保留；其他表单仍可填写。原件不会覆盖。",
+        if QMessageBox.warning(self, tr('制作可编辑副本'), tr('副本将冻结签名外观并移除签名验证结构。\n原数字签名效力不会保留；其他表单仍可填写。原件不会覆盖。'),
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Ok:
             return
         from app.exportdialogs import new_pdf_path
-        path = new_pdf_path(self, self.store, "另存可编辑副本", Path(self.ws.path or "文档.pdf").stem + "_可编辑副本.pdf")
+        path = new_pdf_path(self, self.store, tr('另存可编辑副本'), Path(self.ws.path or tr('文档.pdf')).stem + tr('_可编辑副本.pdf'))
         if not path:
             return
         try:
-            result = self._write_pdf(list(self.ws.pages), path, "制作可编辑副本", register_result=True,
+            result = self._write_pdf(list(self.ws.pages), path, tr('制作可编辑副本'), register_result=True,
                 options=WriteOptions(operation="editable_copy", editable_copy=True), cancellable=True)
             if result is None:
                 return
@@ -6703,11 +6711,11 @@ class MainWindow(QMainWindow):
                 self._release_unused_docs()
                 self._show_write_notes((result,))
             except Exception:
-                QMessageBox.warning(self, "副本已保存", f"副本已保存到：\n{result.path}\n界面更新未完成，请重新打开。")
+                QMessageBox.warning(self, tr('副本已保存'), tr('副本已保存到：\n{p0}\n界面更新未完成，请重新打开。', p0=f'{result.path}'))
         except OperationCancelled:
-            QMessageBox.information(self, "已取消", "已取消，完成 0 个输出文件。")
+            QMessageBox.information(self, tr('已取消'), tr('已取消，完成 0 个输出文件。'))
         except PdfError as exc:
-            QMessageBox.warning(self, "副本未完成", str(exc))
+            QMessageBox.warning(self, tr('副本未完成'), str(exc))
 
     def open_word_converter(self, *, direction="word_to_pdf"):
         from app.wordui import WordConverterWindow
@@ -6782,7 +6790,7 @@ class MainWindow(QMainWindow):
 
     def open_annotation_tools(self):
         if not self.ws.pages:
-            QMessageBox.information(self, "请先打开 PDF", "打开 PDF 后即可高亮、备注、绘图或修正文字。")
+            QMessageBox.information(self, tr('请先打开 PDF'), tr('打开 PDF 后即可高亮、备注、绘图或修正文字。'))
             return
         self.stack.setCurrentIndex(0)
         tools = self._ensure_annotation_tools()
@@ -6793,7 +6801,7 @@ class MainWindow(QMainWindow):
     def _show_write_notes(self, results):
         warnings = list(dict.fromkeys(note for result in results for note in result.warnings))
         if warnings:
-            box = QMessageBox(QMessageBox.Icon.Information, "文件已写出", "保存完成，请留意以下信息：\n" +
+            box = QMessageBox(QMessageBox.Icon.Information, tr('文件已写出'), tr('保存完成，请留意以下信息：\n') +
                               "\n".join(warnings[:5]), parent=self)
             if len(warnings) > 5:
                 box.setDetailedText("\n".join(warnings))
@@ -6805,7 +6813,7 @@ class MainWindow(QMainWindow):
 
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(folder))):
             saved = self.statusBar().currentMessage()
-            self.statusBar().showMessage(f"{saved}\n无法自动打开文件夹：{folder}", 10000)
+            self.statusBar().showMessage(tr('{p0}\n无法自动打开文件夹：{p1}', p0=f'{saved}', p1=f'{folder}'), 10000)
 
     def configure_save_settings(self):
         from app.savesettings import SaveSettingsDialog
@@ -6838,7 +6846,7 @@ class MainWindow(QMainWindow):
         if not self._allow_operation(operation):
             return False
         if not workspace.can_save():
-            QMessageBox.information(self, "无法保存", "至少保留 1 页才能保存。")
+            QMessageBox.information(self, tr('无法保存'), tr('至少保留 1 页才能保存。'))
             return False
         merged_output = workspace.path is None and bool(workspace.protected_paths)
         page_tool_copy = any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup')
@@ -6863,8 +6871,8 @@ class MainWindow(QMainWindow):
             use_save_target = bool(path) and not (save_as or requires_copy or is_ofd)
             if not use_save_target:
                 suggested = (os.path.splitext(original)[0] + '.pdf' if is_ofd else
-                             os.path.splitext(original)[0] + '_副本.pdf' if original else "未命名.pdf")
-                path, _ = QFileDialog.getSaveFileName(self, "另存为 PDF" if is_ofd else "保存 PDF", export_path(suggested), "PDF (*.pdf)")
+                             os.path.splitext(original)[0] + tr('_副本.pdf') if original else tr('未命名.pdf'))
+                path, _ = QFileDialog.getSaveFileName(self, tr('另存为 PDF') if is_ofd else tr('保存 PDF'), export_path(suggested), "PDF (*.pdf)")
                 if not path:
                     return False
                 if not path.lower().endswith(".pdf"):
@@ -6872,7 +6880,7 @@ class MainWindow(QMainWindow):
             initial_copy = mode == 'copy' and not workspace.last_saved_path and not save_as
             if (workspace.blocks_save_to(path) and not use_save_target
                     or (requires_copy or initial_copy) and self.store.is_source_destination(path)):
-                QMessageBox.warning(self, "不能覆盖原件", "请另选一个新文件，以保留本次用过的原件。")
+                QMessageBox.warning(self, tr('不能覆盖原件'), tr('请另选一个新文件，以保留本次用过的原件。'))
                 return False
             # A successful save establishes this workspace's current destination.
             # Keep checking permissions and external changes, but do not ask again.
@@ -6886,15 +6894,15 @@ class MainWindow(QMainWindow):
             try:
                 snapshot = workspace._fingerprint()
                 pages_to_save, _, outline_to_save = snapshot
-                result = self._write_pdf(list(pages_to_save), path, "保存 PDF", register_result=True, allow_tag_overwrite=True)
+                result = self._write_pdf(list(pages_to_save), path, tr('保存 PDF'), register_result=True, allow_tag_overwrite=True)
                 break
             except PdfError as exc:
                 workspace.last_error = str(exc)
                 self.refresh()
-                box = QMessageBox(QMessageBox.Icon.Warning, "保存失败", str(exc), parent=self)
-                box.setInformativeText("修改仍保留在当前窗口，可另存到其他位置，或取消后继续编辑。")
-                copy_btn = box.addButton("另存为…", QMessageBox.ButtonRole.AcceptRole)
-                cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+                box = QMessageBox(QMessageBox.Icon.Warning, tr('保存失败'), str(exc), parent=self)
+                box.setInformativeText(tr('修改仍保留在当前窗口，可另存到其他位置，或取消后继续编辑。'))
+                copy_btn = box.addButton(tr('另存为…'), QMessageBox.ButtonRole.AcceptRole)
+                cancel = box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
                 box.setDefaultButton(cancel)
                 box.setEscapeButton(cancel)
                 box.exec()
@@ -6923,13 +6931,13 @@ class MainWindow(QMainWindow):
             self._remember_reading_state()
             self.refresh()
             self._release_unused_docs()
-            message = f"已保存到 {result.path}"
+            message = tr('已保存到 {p0}', p0=f'{result.path}')
             if not saved_current:
-                message += " · 保存期间的修改仍待保存"
+                message += tr(' · 保存期间的修改仍待保存')
             self.statusBar().showMessage(message, 8000)
             self._show_write_notes((result,))
         except Exception:
-            QMessageBox.warning(self, "文件已保存", f"文件已成功保存到：\n{result.path}\n界面刷新未完成，请重新打开该文件查看。")
+            QMessageBox.warning(self, tr('文件已保存'), tr('文件已成功保存到：\n{p0}\n界面刷新未完成，请重新打开该文件查看。', p0=f'{result.path}'))
         if merged_output:
             self._open_output_folder(os.path.dirname(result.path))
         return saved_current
@@ -6938,18 +6946,18 @@ class MainWindow(QMainWindow):
         if not self._allow_operation("print"):
             return
         if not self.ws.pages:
-            self.statusBar().showMessage("工作区没有页面可供打印")
+            self.statusBar().showMessage(tr('工作区没有页面可供打印'))
             return
         # 打印模块包含系统打印支持，按需加载可明显缩短日常双击打开 PDF 的启动时间。
         from app.printing import PrintDialog
 
         dlg = PrintDialog(self, self.ws, self.store)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.statusBar().showMessage("已发送打印任务")
+            self.statusBar().showMessage(tr('已发送打印任务'))
 
     def choose_default_application(self) -> None:
         if not getattr(sys, "frozen", False):
-            QMessageBox.information(self, "默认 PDF 应用", f"请运行打包后的 {APP_EXE_NAME}，再从此菜单设置默认应用。")
+            QMessageBox.information(self, tr('默认 PDF 应用'), tr('请运行打包后的 {p0}，再从此菜单设置默认应用。', p0=f'{APP_EXE_NAME}'))
             return
         from PyQt6.QtCore import QUrl
         from PyQt6.QtGui import QDesktopServices
@@ -6959,9 +6967,9 @@ class MainWindow(QMainWindow):
             register_pdf_application(sys.executable)
             if not QDesktopServices.openUrl(QUrl(default_apps_url(sys.executable))):
                 raise OSError(f"无法打开 Windows 设置，请在系统设置的「默认应用」中选择{APP_NAME}。")
-            self.statusBar().showMessage(f"请在 Windows 设置中将 .pdf 的默认应用选择为「{APP_NAME}」", 12000)
+            self.statusBar().showMessage(tr('请在 Windows 设置中将 .pdf 的默认应用选择为「{p0}」', p0=tr(APP_NAME)), 12000)
         except OSError as exc:
-            QMessageBox.warning(self, "默认应用设置", str(exc))
+            QMessageBox.warning(self, tr('默认应用设置'), str(exc))
 
     def extract(self) -> None:
         self._ensure_tools()
@@ -6970,9 +6978,9 @@ class MainWindow(QMainWindow):
         try:
             indices = self.ws.extract_indices(self.extract_range.text())
         except ValueError as exc:
-            QMessageBox.information(self, "抽取", str(exc))
+            QMessageBox.information(self, tr('抽取'), str(exc))
             return
-        path, _ = QFileDialog.getSaveFileName(self, "抽取为", export_path("抽取.pdf"), "PDF (*.pdf)")
+        path, _ = QFileDialog.getSaveFileName(self, tr('抽取为'), export_path(tr('抽取.pdf')), "PDF (*.pdf)")
         if not path:
             return
         if not path.lower().endswith(".pdf"):
@@ -6980,18 +6988,18 @@ class MainWindow(QMainWindow):
         if self.ws.blocks_export_to(path):
             QMessageBox.warning(
                 self,
-                "不能覆盖来源",
-                "抽取写出的是另一个文件，不能覆盖当前文档或本次用过的源文件。请另选位置。",
+                tr('不能覆盖来源'),
+                tr('抽取写出的是另一个文件，不能覆盖当前文档或本次用过的源文件。请另选位置。'),
             )
             return
         try:
             pages = [self.ws.pages[i] for i in indices]
-            result = self._write_pdf(pages, path, "抽取页面")
+            result = self._write_pdf(pages, path, tr('抽取页面'))
             if result is not None:
-                self.statusBar().showMessage(f"已抽取到 {os.path.basename(result.path)}")
+                self.statusBar().showMessage(tr('已抽取到 {p0}', p0=f'{os.path.basename(result.path)}'))
                 self._show_write_notes((result,))
         except PdfError as exc:
-            QMessageBox.warning(self, "抽取失败", str(exc))
+            QMessageBox.warning(self, tr('抽取失败'), str(exc))
 
     def _split_groups(self) -> list[list[int]]:
         self._ensure_tools()
@@ -7006,17 +7014,17 @@ class MainWindow(QMainWindow):
             return
         targets = self.ws.target_indices()
         if len(targets) != 1:
-            QMessageBox.information(self, "分割单页", "请先选择一页。")
+            QMessageBox.information(self, tr('分割单页'), tr('请先选择一页。'))
             return
         from app.pagesplitui import PageSplitDialog
 
         index = targets[0]
         ref = self.ws.pages[index]
         try:
-            image = run_operation(self, "准备分割预览",
+            image = run_operation(self, tr('准备分割预览'),
                                   lambda progress: self.store.render_qimage(ref, 520))
         except (PdfError, ValueError) as exc:
-            QMessageBox.warning(self, "无法预览页面", str(exc))
+            QMessageBox.warning(self, tr('无法预览页面'), str(exc))
             return
         dialog = PageSplitDialog(self, image, self.store.page_size(ref))
         accepted = dialog.exec() == QDialog.DialogCode.Accepted
@@ -7032,14 +7040,14 @@ class MainWindow(QMainWindow):
                 return self.store.split_page(ref, direction, cuts, target_size=target_size,
                                              auto_orient=auto_orient), outline
 
-            incoming, outline = run_operation(self, "分割页面", work)
+            incoming, outline = run_operation(self, tr('分割页面'), work)
             if self.ws.pages[index] is not ref:
                 raise ValueError("工作区已改变，请重新选择页面。")
             self.ws.replace_page_with(index, incoming, outline=outline)
             self.refresh()
-            self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', f"已分割为 {len(incoming)} 页；可撤销。"), 6000)
+            self.statusBar().showMessage(self.shortcut_manager.hint('edit.undo', tr('已分割为 {p0} 页；可撤销。', p0=f'{len(incoming)}')), 6000)
         except (PdfError, ValueError) as exc:
-            QMessageBox.warning(self, "分割失败", str(exc))
+            QMessageBox.warning(self, tr('分割失败'), str(exc))
 
     def resize_pages(self):
         from app.pagetoolsui import resize_pages
@@ -7069,25 +7077,25 @@ class MainWindow(QMainWindow):
         if not self._allow_operation("modify") or not self._allow_operation("copy"):
             return
         if not self.ws.pages:
-            QMessageBox.information(self, "拆分", "工作区没有页面")
+            QMessageBox.information(self, tr('拆分'), tr('工作区没有页面'))
             return
         try:
             groups = self._split_groups()
         except ValueError as exc:
-            QMessageBox.information(self, "拆分", str(exc))
+            QMessageBox.information(self, tr('拆分'), str(exc))
             return
-        folder = QFileDialog.getExistingDirectory(self, "选择输出目录", str(output_directory() or ''))
+        folder = QFileDialog.getExistingDirectory(self, tr('选择输出目录'), str(output_directory() or ''))
         if not folder:
             return
-        stem = os.path.splitext(os.path.basename(self.ws.path or "拆分"))[0]
+        stem = os.path.splitext(os.path.basename(self.ws.path or tr('拆分')))[0]
         dests = [os.path.join(folder, f"{stem}_{i}.pdf") for i in range(1, len(groups) + 1)]
         blocked = [d for d in dests if self.ws.blocks_export_to(d)]
         if blocked:
             names = "、".join(os.path.basename(p) for p in blocked[:4])
             QMessageBox.warning(
                 self,
-                "不能覆盖来源",
-                f"拆分写出的是新文件，不能覆盖当前文档或本次用过的源文件。\n受阻：{names}",
+                tr('不能覆盖来源'),
+                tr('拆分写出的是新文件，不能覆盖当前文档或本次用过的源文件。\n受阻：{p0}', p0=f'{names}'),
             )
             return
         existing = [d for d in dests if os.path.exists(d)]
@@ -7099,25 +7107,25 @@ class MainWindow(QMainWindow):
             groups, dests = planned
         try:
             pages = list(self.ws.pages)
-            results = self._write_pdf(pages, None, "拆分 PDF", groups=groups, dests=dests)
+            results = self._write_pdf(pages, None, tr('拆分 PDF'), groups=groups, dests=dests)
             if results is not None:
-                self.statusBar().showMessage(f"已写出 {len(results)} 个文件，工作区未改动")
+                self.statusBar().showMessage(tr('已写出 {p0} 个文件，工作区未改动', p0=f'{len(results)}'))
                 self._show_write_notes(results)
                 if results:
                     self._open_output_folder(os.path.dirname(results[0].path))
         except PdfError as exc:
-            QMessageBox.warning(self, "拆分失败", str(exc) + "\n已完整写出的文件会保留。")
+            QMessageBox.warning(self, tr('拆分失败'), str(exc) + tr('\n已完整写出的文件会保留。'))
 
     def _ask_split_conflicts(self, existing: list[str]) -> str:
         box = QMessageBox(self)
-        box.setWindowTitle("文件已存在")
+        box.setWindowTitle(tr('文件已存在'))
         names = "、".join(os.path.basename(p) for p in existing[:6])
         extra = "…" if len(existing) > 6 else ""
-        box.setText(f"目标位置已有 {len(existing)} 个同名文件。")
-        box.setInformativeText(f"{names}{extra}\n覆盖会替换这些文件；签名与权限检查不通过的目标不会覆盖。")
-        overwrite = box.addButton("覆盖", QMessageBox.ButtonRole.AcceptRole)
-        skip = box.addButton("跳过", QMessageBox.ButtonRole.ActionRole)
-        box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        box.setText(tr('目标位置已有 {p0} 个同名文件。', p0=f'{len(existing)}'))
+        box.setInformativeText(tr('{p0}{p1}\n覆盖会替换这些文件；签名与权限检查不通过的目标不会覆盖。', p0=f'{names}', p1=f'{extra}'))
+        overwrite = box.addButton(tr('覆盖'), QMessageBox.ButtonRole.AcceptRole)
+        skip = box.addButton(tr('跳过'), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
         box.setDefaultButton(skip)
         box.exec()
         clicked = box.clickedButton()
@@ -7134,44 +7142,44 @@ class MainWindow(QMainWindow):
         if getattr(self, "_conv_thread", None) is not None:
             return
         if not self.ws.pages:
-            QMessageBox.information(self, "转换为 Excel", "工作区没有页面，请先打开或拖入 PDF。")
+            QMessageBox.information(self, tr('转换为 Excel'), tr('工作区没有页面，请先打开或拖入 PDF。'))
             return
 
         # 确定要转换的页码索引 (0-based)
         if self.convert_selected.isChecked():
             indices = self.ws.target_indices()
             if not indices:
-                QMessageBox.information(self, "转换为 Excel", "请先在页面列表中选择需要转换的页面。")
+                QMessageBox.information(self, tr('转换为 Excel'), tr('请先在页面列表中选择需要转换的页面。'))
                 return
         elif self.convert_range_mode.isChecked():
             text = self.convert_range.text().strip()
             if not text:
-                QMessageBox.information(self, "转换为 Excel", "请输入要转换的页码范围。")
+                QMessageBox.information(self, tr('转换为 Excel'), tr('请输入要转换的页码范围。'))
                 return
             try:
                 indices = parse_page_range(text, len(self.ws.pages))
             except ValueError as exc:
-                QMessageBox.warning(self, "页码错误", str(exc))
+                QMessageBox.warning(self, tr('页码错误'), str(exc))
                 return
         else:
             indices = list(range(len(self.ws.pages)))
 
         # 建议的输出文件名
         include_all_content = bool(self.convert_content.currentData())
-        default_name = "内容导出.xlsx" if include_all_content else "表格导出.xlsx"
+        default_name = tr('内容导出.xlsx') if include_all_content else tr('表格导出.xlsx')
         if self.ws.path:
             base = os.path.splitext(os.path.basename(self.ws.path))[0]
             default_name = f"{base}.xlsx"
 
         out_path, _ = QFileDialog.getSaveFileName(
-            self, "导出 Excel", export_path(default_name), "Excel 工作簿 (*.xlsx)",
+            self, tr('导出 Excel'), export_path(default_name), tr('Excel 工作簿 (*.xlsx)'),
         )
         if not out_path:
             return
         if not out_path.lower().endswith(".xlsx"):
             out_path += ".xlsx"
             if os.path.exists(out_path) and QMessageBox.question(
-                    self, "覆盖现有 Excel？", "补全扩展名后的 Excel 文件已存在，是否覆盖？",
+                    self, tr('覆盖现有 Excel？'), tr('补全扩展名后的 Excel 文件已存在，是否覆盖？'),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                 return
@@ -7192,7 +7200,7 @@ class MainWindow(QMainWindow):
             source_pdf = self.ws.path
         target_pages = [self.ws.pages[i] for i in indices]
 
-        prog = TaskProgressDialog("PDF 转 Excel", self, cancellable=True)
+        prog = TaskProgressDialog(tr('PDF 转 Excel'), self, cancellable=True)
         prog.show()
 
         thread = ConversionThread(source_pdf, out_path, None, self,
@@ -7219,39 +7227,33 @@ class MainWindow(QMainWindow):
             error_message = thread.error_message
             cleanup()
             if error_message:
-                QMessageBox.warning(self, "转换提示", error_message)
+                QMessageBox.warning(self, tr('转换提示'), error_message)
                 return
             if not result.tables and not result.pages_exported:
                 QMessageBox.warning(
                     self,
-                    "未检测到表格",
-                    f"所选页面中未检测到可提取的表格，未生成或覆盖 Excel 文件。\n"
-                    f"跳过页面：{result.pages_skipped}。\n"
-                    f"可选择“全部内容”保留正文与图片；扫描文字需先完成 OCR。",
+                    tr('未检测到表格'),
+                    tr('所选页面中未检测到可提取的表格，未生成或覆盖 Excel 文件。\n跳过页面：{p0}。\n可选择“全部内容”保留正文与图片；扫描文字需先完成 OCR。', p0=f'{result.pages_skipped}'),
                 )
                 return
 
-            page_summary = f"共导出页面：{result.pages_exported} 页\n" if result.include_all_content else ""
+            page_summary = tr('共导出页面：{p0} 页\n', p0=f'{result.pages_exported}') if result.include_all_content else ""
             msg = (
-                f"转换完成！\n"
-                f"已生成：{os.path.basename(out_path)}\n"
-                f"{page_summary}"
-                f"共提取表格：{len(result.tables)} 个\n"
-                f"转换摘要：{report.summary_text}"
+                tr('转换完成！\n已生成：{p0}\n{p1}共提取表格：{p2} 个\n转换摘要：{p3}', p0=f'{os.path.basename(out_path)}', p1=f'{page_summary}', p2=f'{len(result.tables)}', p3=f'{report.summary_text}')
             )
             if report.warning_count > 0:
-                msg += f"\n提示：有 {report.warning_count} 条提示，可展开详细信息查看。"
-            box = QMessageBox(QMessageBox.Icon.Information, "转换成功", msg, parent=self)
+                msg += tr('\n提示：有 {p0} 条提示，可展开详细信息查看。', p0=f'{report.warning_count}')
+            box = QMessageBox(QMessageBox.Icon.Information, tr('转换成功'), msg, parent=self)
             details = list(result.warnings)
             for table_report in report.tables:
                 details.extend(
-                    f"第 {table_report.page_no} 页 / 表格 {table_report.table_index + 1}：{warning}"
+                    tr('第 {p0} 页 / 表格 {p1}：{p2}', p0=f'{table_report.page_no}', p1=f'{table_report.table_index + 1}', p2=f'{warning}')
                     for warning in table_report.warnings
                 )
             if details:
                 box.setDetailedText("\n".join(details))
             box.exec()
-            self.statusBar().showMessage(f"已导出 Excel: {os.path.basename(out_path)}")
+            self.statusBar().showMessage(tr('已导出 Excel: {p0}', p0=f'{os.path.basename(out_path)}'))
 
         def on_cancel():
             thread.cancel()
@@ -7284,7 +7286,7 @@ class MainWindow(QMainWindow):
             return
         if getattr(self, "_conv_thread", None) is not None:
             self._conv_prog.request_cancel()
-            self.statusBar().showMessage("正在取消转换，结束后可关闭窗口")
+            self.statusBar().showMessage(tr('正在取消转换，结束后可关闭窗口'))
             event.ignore()
             return
         reading_tab = self._active_tab()
@@ -7335,7 +7337,7 @@ class MainWindow(QMainWindow):
                 self.annotation_tools.deactivate()
                 self.annotation_tools.remove_view_filters()
             QThreadPool.globalInstance().waitForDone(1000)
-            run_operation(self, "关闭文档", lambda progress: self.store.close_all())
+            run_operation(self, tr('关闭文档'), lambda progress: self.store.close_all())
             self._window_settings.setValue("mainWindow/geometry", self.immersive._geometry
                 if self.immersive.fullscreen else self.saveGeometry())
             self._window_settings.sync()

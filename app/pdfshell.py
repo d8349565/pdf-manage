@@ -1,5 +1,6 @@
 """资源管理器多选入口：进程外 COM 接收完整文件列表，不加载进 Explorer。"""
 from __future__ import annotations
+from app.i18n import tr
 
 import pythoncom
 import win32con
@@ -97,7 +98,7 @@ class _ShellController(QObject):
             self.idle_timer.start()
 
     def show_error(self, message):
-        QMessageBox.warning(None, "无法打开合并入口", message)
+        QMessageBox.warning(None, tr('无法打开合并入口'), message)
         if not self.windows:
             self.idle_timer.start()
 

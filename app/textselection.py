@@ -1,4 +1,5 @@
 """Read-only text-flow selection for visible and invisible PDF text layers."""
+from app.i18n import tr
 from time import perf_counter
 
 from PyQt6.QtCore import QEvent, QObject, QPointF, Qt
@@ -38,8 +39,8 @@ class TextSelection(QObject):
 
     def sync_shortcut_hint(self):
         manager = self.host.shortcut_manager
-        drag = 'Alt＋拖动页面' if manager.uses_reader_space() else '按住空格拖动页面（也可 Alt＋拖动）'
-        self.view.setAccessibleDescription('点击链接跳转；拖动选择文字；' + manager.hint('reader.copy_text', '复制文字') + '；' + drag)
+        drag = tr('Alt＋拖动页面') if manager.uses_reader_space() else tr('按住空格拖动页面（也可 Alt＋拖动）')
+        self.view.setAccessibleDescription(tr('点击链接跳转；拖动选择文字；') + manager.hint('reader.copy_text', tr('复制文字')) + '；' + drag)
 
     def clear(self):
         self._pending = None
@@ -103,7 +104,7 @@ class TextSelection(QObject):
                            started=perf_counter())
             self._pending = pending
             self.view.setFocus(Qt.FocusReason.MouseFocusReason)
-            self.host.statusBar().showMessage('正在准备当前页文字…')
+            self.host.statusBar().showMessage(tr('正在准备当前页文字…'))
             self.host.rendering.request(ref, None, key, self.signals,
                 lambda: self._pending is not pending or not self._pending_current(pending), 50, kind='text')
             return True
@@ -148,22 +149,22 @@ class TextSelection(QObject):
         self.host.rendering.diagnostics.record('text_selection_snapshot',
             duration_ms=round((perf_counter() - pending['started']) * 1000, 2), failed=bool(result.error))
         if result.error or result.value is None:
-            self.host.statusBar().showMessage('当前页文字暂时无法读取，请重试。', 5000)
+            self.host.statusBar().showMessage(tr('当前页文字暂时无法读取，请重试。'), 5000)
             return
         if not self._begin(result.value, pending['ref'], pending['index'], pending['start'], pending['generation']):
-            self.host.statusBar().showMessage('当前页没有可选择的文字层。', 5000)
+            self.host.statusBar().showMessage(tr('当前页没有可选择的文字层。'), 5000)
             return
         self.select(pending['end'])
         if pending['released']:
             self._finish()
         else:
-            self.host.statusBar().showMessage('当前页文字已准备好，可继续拖动选择。', 3500)
+            self.host.statusBar().showMessage(tr('当前页文字已准备好，可继续拖动选择。'), 3500)
 
     def _finish(self):
         self.start = None
         if self.text:
             self.host.statusBar().showMessage(self.host.shortcut_manager.hint('reader.copy_text',
-                f'已选取 {len(self.text)} 字 · 可右键复制'), 5000)
+                tr('已选取 {p0} 字 · 可右键复制', p0=f'{len(self.text)}')), 5000)
 
     def select(self, point):
         import pymupdf as p
@@ -226,7 +227,7 @@ class TextSelection(QObject):
             return
         QApplication.clipboard().setText(self.text)
         self.host.statusBar().showMessage(
-            '表格排版无法读取，已按普通文字复制。' if plain_fallback else f'已复制 {len(self.text)} 字', 5000 if plain_fallback else 3500)
+            tr('表格排版无法读取，已按普通文字复制。') if plain_fallback else tr('已复制 {p0} 字', p0=f'{len(self.text)}'), 5000 if plain_fallback else 3500)
 
     def menu(self, position):
         self.sync()
@@ -234,8 +235,8 @@ class TextSelection(QObject):
             return
         menu = QMenu(self.view)
         binding = self.host.shortcut_manager.label('reader.copy_text')
-        copy = menu.addAction('复制文字' + ('\t' + binding if binding else ''))
+        copy = menu.addAction(tr('复制文字') + ('\t' + binding if binding else ''))
         copy.triggered.connect(self.copy)
-        clear = menu.addAction('取消选择')
+        clear = menu.addAction(tr('取消选择'))
         clear.triggered.connect(self.clear)
         menu.exec(self.view.viewport().mapToGlobal(position))

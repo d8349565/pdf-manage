@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.shortcutcommands import COMMANDS, scope_label
+from app.i18n import tr
 from app.shortcuts import NATIVE, PORTABLE, canonical, conflicts
 from app.themes import set_theme_style
 
@@ -52,7 +53,7 @@ class ShortcutEdit(QKeySequenceEdit):
     def _sync_placeholder(self, *_):
         line = self.findChild(QLineEdit)
         if line is not None:
-            line.setPlaceholderText('点击后按下快捷键')
+            line.setPlaceholderText(tr('点击后按下快捷键'))
 
     def focusInEvent(self, event):
         self._before = self.keySequence()
@@ -89,7 +90,7 @@ class ShortcutDialog(QDialog):
         self._editors = []
         self._row_by_id = {}
         self._last_binding = None
-        self.setWindowTitle('快捷键管理')
+        self.setWindowTitle(tr('快捷键管理'))
         self.setObjectName('shortcutManager')
         set_theme_style(self, f'''
             QLineEdit#shortcutSearch, QComboBox#shortcutFilter {{
@@ -115,7 +116,7 @@ class ShortcutDialog(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 16, 18, 14)
         root.setSpacing(10)
-        intro = QLabel('集中查看和修改按键；所有改动在点击“保存”后生效。')
+        intro = QLabel(tr('集中查看和修改按键；所有改动在点击“保存”后生效。'))
         intro.setObjectName('hint')
         intro.setWordWrap(True)
         root.addWidget(intro)
@@ -124,25 +125,25 @@ class ShortcutDialog(QDialog):
             notice.setTextFormat(Qt.TextFormat.PlainText)
             notice.setWordWrap(True)
             notice.setToolTip('\n'.join(manager.notices))
-            notice.setAccessibleName('快捷键配置恢复提示')
+            notice.setAccessibleName(tr('快捷键配置恢复提示'))
             root.addWidget(notice)
         tools = QHBoxLayout()
         self.search = QLineEdit(self)
         self.search.setObjectName('shortcutSearch')
-        self.search.setPlaceholderText('搜索操作、菜单路径或快捷键')
+        self.search.setPlaceholderText(tr('搜索操作、菜单路径或快捷键'))
         self.search.setClearButtonEnabled(True)
-        self.search.setAccessibleName('搜索快捷键命令')
+        self.search.setAccessibleName(tr('搜索快捷键命令'))
         tools.addWidget(self.search, 1)
         self.key_search = ShortcutEdit(parent=self)
-        self.key_search.setAccessibleName('按下快捷键查找占用')
-        self.key_search.setToolTip('按下一个组合，查找使用它的所有操作；点清除恢复列表。')
+        self.key_search.setAccessibleName(tr('按下快捷键查找占用'))
+        self.key_search.setToolTip(tr('按下一个组合，查找使用它的所有操作；点清除恢复列表。'))
         self.key_search.setFixedWidth(190)
-        tools.addWidget(QLabel('按键查找'))
+        tools.addWidget(QLabel(tr('按键查找')))
         tools.addWidget(self.key_search)
         self.filter = QComboBox(self)
         self.filter.setObjectName('shortcutFilter')
-        self.filter.addItems(['全部命令', '已设置', '已修改', '未设置', '有冲突'])
-        self.filter.setAccessibleName('快捷键状态筛选')
+        self.filter.addItems([tr('全部命令'), tr('已设置'), tr('已修改'), tr('未设置'), tr('有冲突')])
+        self.filter.setAccessibleName(tr('快捷键状态筛选'))
         for control in (self.search, self.key_search, self.filter):
             control.ensurePolished()
             control.setFixedHeight(CONTROL_HEIGHT)
@@ -151,10 +152,10 @@ class ShortcutDialog(QDialog):
         splitter = QSplitter()
         self.categories = QTreeWidget()
         self.categories.setHeaderHidden(True)
-        self.categories.setAccessibleName('快捷键功能分类')
+        self.categories.setAccessibleName(tr('快捷键功能分类'))
         self.categories.setMinimumWidth(115)
         self.categories.setMaximumWidth(240)
-        all_item = QTreeWidgetItem(['全部功能'])
+        all_item = QTreeWidgetItem([tr('全部功能')])
         all_item.setData(0, Qt.ItemDataRole.UserRole, '')
         self.categories.addTopLevelItem(all_item)
         tool_root = None
@@ -163,11 +164,11 @@ class ShortcutDialog(QDialog):
             if command.category in seen:
                 continue
             seen.add(command.category)
-            item = QTreeWidgetItem([command.category])
+            item = QTreeWidgetItem([tr(command.category)])
             item.setData(0, Qt.ItemDataRole.UserRole, command.category)
             if command.owner:
                 if tool_root is None:
-                    tool_root = QTreeWidgetItem(['工具窗口'])
+                    tool_root = QTreeWidgetItem([tr('工具窗口')])
                     tool_root.setData(0, Qt.ItemDataRole.UserRole, '@windows')
                     self.categories.addTopLevelItem(tool_root)
                 tool_root.addChild(item)
@@ -176,8 +177,8 @@ class ShortcutDialog(QDialog):
         self.categories.setCurrentItem(all_item)
         splitter.addWidget(self.categories)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(['操作', '当前快捷键', '默认快捷键', '生效位置'])
-        self.table.setAccessibleName('全部可自定义快捷键')
+        self.table.setHorizontalHeaderLabels([tr('操作'), tr('当前快捷键'), tr('默认快捷键'), tr('生效位置')])
+        self.table.setAccessibleName(tr('全部可自定义快捷键'))
         self.table.verticalHeader().hide()
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -199,7 +200,7 @@ class ShortcutDialog(QDialog):
         detail = QVBoxLayout(self.detail)
         detail.setContentsMargins(0, 4, 0, 0)
         detail.setSpacing(6)
-        self.detail_label = QLabel('选择操作后修改快捷键')
+        self.detail_label = QLabel(tr('选择操作后修改快捷键'))
         self.detail_label.setWordWrap(True)
         detail.addWidget(self.detail_label)
         self.editor_host = QWidget()
@@ -217,9 +218,9 @@ class ShortcutDialog(QDialog):
         editor_scroll.setWidget(self.editor_host)
         detail.addWidget(editor_scroll)
         actions = QHBoxLayout()
-        self.add_binding = QPushButton('添加备用快捷键')
+        self.add_binding = QPushButton(tr('添加备用快捷键'))
         self.add_binding.clicked.connect(self.add_alternative)
-        self.reset_one = QPushButton('恢复此操作默认')
+        self.reset_one = QPushButton(tr('恢复此操作默认'))
         self.reset_one.clicked.connect(self.restore_selected)
         actions.addWidget(self.add_binding)
         actions.addWidget(self.reset_one)
@@ -229,21 +230,21 @@ class ShortcutDialog(QDialog):
         self.feedback = QLabel()
         self.feedback.setWordWrap(True)
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
-        self.feedback.setAccessibleName('快捷键冲突及保存提示')
+        self.feedback.setAccessibleName(tr('快捷键冲突及保存提示'))
         root.addWidget(self.feedback)
         collision_actions = QHBoxLayout()
-        self.locate_button = QPushButton('定位冲突操作')
+        self.locate_button = QPushButton(tr('定位冲突操作'))
         self.locate_button.clicked.connect(self.locate_conflict)
-        self.transfer_button = QPushButton('将此按键用于当前操作')
+        self.transfer_button = QPushButton(tr('将此按键用于当前操作'))
         self.transfer_button.clicked.connect(self.transfer_binding)
         collision_actions.addWidget(self.locate_button)
         collision_actions.addWidget(self.transfer_button)
         collision_actions.addStretch()
         root.addLayout(collision_actions)
         bottom = QHBoxLayout()
-        self.more_button = more = QPushButton('更多操作', self)
+        self.more_button = more = QPushButton(tr('更多操作'), self)
         more.setObjectName('shortcutMore')
-        more.setAccessibleName('更多快捷键操作')
+        more.setAccessibleName(tr('更多快捷键操作'))
         menu = QMenu(more)
         for label, callback in (
             ('恢复当前分类默认', lambda: self.batch(reset=True, category=True)),
@@ -253,10 +254,10 @@ class ShortcutDialog(QDialog):
         ):
             menu.addAction(label).triggered.connect(callback)
         menu.addSeparator()
-        menu.addAction('导入快捷键配置').triggered.connect(self.import_file)
-        menu.addAction('导出已保存的快捷键配置').triggered.connect(self.export_file)
+        menu.addAction(tr('导入快捷键配置')).triggered.connect(self.import_file)
+        menu.addAction(tr('导出已保存的快捷键配置')).triggered.connect(self.export_file)
         menu.addSeparator()
-        menu.addAction('基础按键说明').triggered.connect(self.show_basics)
+        menu.addAction(tr('基础按键说明')).triggered.connect(self.show_basics)
         more.setMenu(menu)
         more.ensurePolished()
         more.setFixedHeight(CONTROL_HEIGHT)
@@ -264,9 +265,9 @@ class ShortcutDialog(QDialog):
         bottom.addStretch()
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         self.save_button = box.button(QDialogButtonBox.StandardButton.Save)
-        self.save_button.setText('保存')
+        self.save_button.setText(tr('保存'))
         self.save_button.setProperty('primary', True)
-        box.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         box.accepted.connect(self.save)
         box.rejected.connect(self.reject)
         bottom.addWidget(box)
@@ -298,7 +299,7 @@ class ShortcutDialog(QDialog):
         identifiers = []
         for key in self.category_ids():
             command, bindings = COMMANDS[key], self.draft[key]
-            text = ' '.join((command.label, ' → '.join(command.menu), command.category,
+            text = ' '.join((tr(command.label), ' → '.join(tr(part) for part in command.menu), tr(command.category),
                              self.display(bindings), self.display(self.manager.defaults[key])))
             if query and query not in text.casefold():
                 continue
@@ -314,11 +315,11 @@ class ShortcutDialog(QDialog):
         self._row_by_id = {key: row for row, key in enumerate(identifiers)}
         for row, key in enumerate(identifiers):
             command = COMMANDS[key]
-            for column, text in enumerate((command.label, self.display(self.draft[key]),
-                    self.display(self.manager.defaults[key]), scope_label(command))):
+            for column, text in enumerate((tr(command.label), self.display(self.draft[key]),
+                    self.display(self.manager.defaults[key]), tr(scope_label(command)))):
                 item = QTableWidgetItem(text)
                 item.setData(Qt.ItemDataRole.UserRole, key)
-                item.setToolTip((' → '.join(command.menu) or f'{command.category} → {command.label}')
+                item.setToolTip((' → '.join(tr(part) for part in command.menu) or f'{tr(command.category)} → {tr(command.label)}')
                                 if column == 0 else text)
                 self.table.setItem(row, column, item)
             self.table.setRowHeight(row, 36)
@@ -354,35 +355,35 @@ class ShortcutDialog(QDialog):
         self.add_binding.setEnabled(identifier is not None)
         self.reset_one.setEnabled(identifier is not None)
         if identifier is None:
-            self.detail_label.setText('没有匹配的操作，请调整搜索或筛选。')
+            self.detail_label.setText(tr('没有匹配的操作，请调整搜索或筛选。'))
             self.editor_scroll.hide()
         else:
             self.editor_scroll.show()
             command = COMMANDS[identifier]
-            self.detail_label.setText(f'{command.label} · {scope_label(command)}')
+            self.detail_label.setText(f'{tr(command.label)} · {tr(scope_label(command))}')
             for value in self.draft[identifier] or ['']:
                 self.append_editor(value)
         self._building = False
 
     def append_editor(self, value=''):
         index = len(self._editors)
-        label = QLabel('主快捷键' if index == 0 else '备用快捷键')
+        label = QLabel(tr('主快捷键') if index == 0 else tr('备用快捷键'))
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.editor_layout.addWidget(label, index, 0)
         label.ensurePolished()
-        self.editor_layout.setColumnMinimumWidth(0, label.fontMetrics().horizontalAdvance('备用快捷键'))
+        self.editor_layout.setColumnMinimumWidth(0, label.fontMetrics().horizontalAdvance(tr('备用快捷键')))
         editor = ShortcutEdit(QKeySequence(value, PORTABLE))
-        editor.setAccessibleName(COMMANDS[self._selected].label + ('主快捷键' if index == 0 else '备用快捷键'))
+        editor.setAccessibleName(tr(COMMANDS[self._selected].label) + ' · ' + tr('主快捷键' if index == 0 else '备用快捷键'))
         label.setBuddy(editor)
         editor.setMinimumWidth(180)
         editor.setMaximumWidth(300)
         self.editor_layout.addWidget(editor, index, 1)
         if index:
-            primary = QPushButton('设为主键')
+            primary = QPushButton(tr('设为主键'))
             primary.setProperty('shortcutBindingAction', True)
             primary.clicked.connect(lambda checked=False, position=index: self.make_primary(position))
             self.editor_layout.addWidget(primary, index, 2)
-        remove = QPushButton('清空' if index == 0 else '移除')
+        remove = QPushButton(tr('清空') if index == 0 else tr('移除'))
         remove.setProperty('shortcutBindingAction', True)
         remove.clicked.connect(lambda checked=False, position=index: self.remove_binding(position))
         self.editor_layout.addWidget(remove, index, 3 if index else 2)
@@ -460,7 +461,7 @@ class ShortcutDialog(QDialog):
         self.locate_button.setVisible(bool(collisions))
         self.transfer_button.setVisible(bool(self.selected_conflicts()))
         modified = sum(values != self.manager.defaults[key] for key, values in self.draft.items())
-        self.summary.setText(f'显示 {self.table.rowCount()} 项，共 {len(COMMANDS)} 项 · {modified} 项已自定义')
+        self.summary.setText(tr('显示 {p0} 项，共 {p1} 项 · {p2} 项已自定义', p0=f'{self.table.rowCount()}', p1=f'{len(COMMANDS)}', p2=f'{modified}'))
 
     def selected_conflicts(self):
         return [(left, right, key) for left, right, key in conflicts(self.draft)
@@ -491,9 +492,8 @@ class ShortcutDialog(QDialog):
     def batch(self, *, reset=False, category=False):
         identifiers = self.category_ids() if category else list(COMMANDS)
         affected = sum(bool(self.draft[key]) for key in identifiers)
-        if not reset and QMessageBox.question(self, '清空快捷键',
-                f'将清空此范围内 {affected} 项操作的快捷键。菜单和基础按键仍可使用。\n'
-                '点击“保存”后生效；保存前可以取消。',
+        if not reset and QMessageBox.question(self, tr('清空快捷键'),
+                tr('将清空此范围内 {p0} 项操作的快捷键。菜单和基础按键仍可使用。\n点击“保存”后生效；保存前可以取消。', p0=f'{affected}'),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
@@ -504,7 +504,7 @@ class ShortcutDialog(QDialog):
         self.validate()
 
     def import_file(self):
-        filename, _ = QFileDialog.getOpenFileName(self, '导入快捷键配置', '', '快捷键配置 (*.json)')
+        filename, _ = QFileDialog.getOpenFileName(self, tr('导入快捷键配置'), '', tr('快捷键配置 (*.json)'))
         if not filename:
             return
         try:
@@ -513,7 +513,7 @@ class ShortcutDialog(QDialog):
                 raise ValueError('配置文件过大，请选择导出的快捷键配置文件。')
             values, unknown = self.manager.import_config(path.read_text(encoding='utf-8-sig'))
         except (OSError, UnicodeError, ValueError) as error:
-            QMessageBox.warning(self, '未导入', str(error))
+            QMessageBox.warning(self, tr('未导入'), str(error))
             return
         changed = sum(values[key] != self.draft[key] for key in values)
         self.draft = values
@@ -524,35 +524,30 @@ class ShortcutDialog(QDialog):
             detail += '\n已跳过无法识别的命令：' + '、'.join(unknown)
         if self.manager.error(values):
             detail += '\n请先解决列表中的快捷键冲突。'
-        message = QMessageBox(QMessageBox.Icon.Information, '导入预览', detail,
+        message = QMessageBox(QMessageBox.Icon.Information, tr('导入预览'), detail,
                               QMessageBox.StandardButton.Ok, self)
         message.setTextFormat(Qt.TextFormat.PlainText)
         message.exec()
 
     def export_file(self):
-        filename, _ = QFileDialog.getSaveFileName(self, '导出已保存的快捷键配置',
-                                                 '纸序PDF-快捷键.json', '快捷键配置 (*.json)')
+        filename, _ = QFileDialog.getSaveFileName(self, tr('导出已保存的快捷键配置'),
+                                                 tr('纸序PDF-快捷键.json'), tr('快捷键配置 (*.json)'))
         if not filename:
             return
         output = QSaveFile(filename)
         data = self.manager.encode().encode('utf-8')
         if not output.open(QIODevice.OpenModeFlag.WriteOnly):
-            QMessageBox.warning(self, '未导出', output.errorString())
+            QMessageBox.warning(self, tr('未导出'), output.errorString())
             return
         if output.write(data) != len(data) or not output.commit():
             output.cancelWriting()
-            QMessageBox.warning(self, '未导出', output.errorString())
+            QMessageBox.warning(self, tr('未导出'), output.errorString())
             return
-        self.feedback.setText('已导出保存过的设置；本窗口尚未保存的改动不在导出文件中。')
+        self.feedback.setText(tr('已导出保存过的设置；本窗口尚未保存的改动不在导出文件中。'))
 
     def show_basics(self):
-        QMessageBox.information(self, '基础按键说明',
-            'Esc：取消当前操作或关闭弹窗。\nTab / Shift+Tab：移动输入焦点。\n'
-            'Enter：确认输入或对话框默认操作；搜索框的确认按键可单独设置。\n'
-            '输入框中的复制、粘贴、撤销、文字选择及中文输入继续使用原生行为。\n'
-            'Windows 系统快捷键和鼠标组合手势不在此处更改。\n'
-            '阅读区空格绑定给命令后，该按法不再临时拖动；仍可使用 Alt＋拖动。\n'
-            '工具窗口内的快捷键只在对应窗口生效。')
+        QMessageBox.information(self, tr('基础按键说明'),
+            tr('Esc：取消当前操作或关闭弹窗。\nTab / Shift+Tab：移动输入焦点。\nEnter：确认输入或对话框默认操作；搜索框的确认按键可单独设置。\n输入框中的复制、粘贴、撤销、文字选择及中文输入继续使用原生行为。\nWindows 系统快捷键和鼠标组合手势不在此处更改。\n阅读区空格绑定给命令后，该按法不再临时拖动；仍可使用 Alt＋拖动。\n工具窗口内的快捷键只在对应窗口生效。'))
 
     def save(self):
         error = self.manager.apply(self.draft)
@@ -566,7 +561,7 @@ class ShortcutDialog(QDialog):
 
     def closeEvent(self, event):
         if self.draft != self._saved:
-            answer = QMessageBox.question(self, '保存快捷键修改', '快捷键有未保存的修改。',
+            answer = QMessageBox.question(self, tr('保存快捷键修改'), tr('快捷键有未保存的修改。'),
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel)
             if answer == QMessageBox.StandardButton.Cancel:

@@ -1,4 +1,5 @@
 """Reader sidebar overlay and reversible full-screen presentation."""
+from app.i18n import tr, mark_text
 from PyQt6.QtCore import QEvent, QObject, QPoint, QPropertyAnimation, QEasingCurve, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QCursor, QRegion
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QStyle, QToolButton, QWidget
@@ -28,8 +29,8 @@ class ImmersiveReading(QObject):
         self.overlay.hide()
         self.edge = QToolButton(self.surface)
         self.edge.setObjectName('readerSidebarHandle')
-        self.edge.setAccessibleName('展开页面与大纲侧栏')
-        self.edge.setToolTip(host.shortcut_manager.hint('view.pages', '页面与大纲侧栏'))
+        self.edge.setAccessibleName(tr('展开页面与大纲侧栏'))
+        self.edge.setToolTip(host.shortcut_manager.hint('view.pages', tr('页面与大纲侧栏')))
         self.edge.setFixedSize(28, 42)
         self.edge.setIconSize(QSize(16, 16))
         self.edge.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -46,10 +47,10 @@ class ImmersiveReading(QObject):
             QToolButton#readerSidebarHandle:focus { border-color: #0F766E; }
         ''')
         self.edge.clicked.connect(lambda: self._toggle())
-        self.auto_action = QAction('侧栏自动隐藏', host)
+        self.auto_action = QAction(tr('侧栏自动隐藏'), host)
         self.auto_action.setCheckable(True)
         self.auto_action.setChecked(True)
-        self.auto_action.setToolTip('触碰左侧边缘展开；取消勾选可固定侧栏，下次打开沿用选择')
+        self.auto_action.setToolTip(tr('触碰左侧边缘展开；取消勾选可固定侧栏，下次打开沿用选择'))
         self.auto_action.toggled.connect(self._change_auto)
         header = QWidget(self.panel)
         header_layout = QHBoxLayout(header)
@@ -60,10 +61,10 @@ class ImmersiveReading(QObject):
         header_layout.addWidget(host.sidebar_mode, 1)
         self.pin = QToolButton(header)
         self.pin.setObjectName('readerSidebarPin')
-        self.pin.setText('固定')
+        self.pin.setText(tr('固定'))
         self.pin.setCheckable(True)
         self.pin.setFixedSize(44, 28)
-        self.pin.setAccessibleName('固定页面与大纲侧栏')
+        self.pin.setAccessibleName(tr('固定页面与大纲侧栏'))
         self.pin.setCursor(Qt.CursorShape.PointingHandCursor)
         set_theme_style(self.pin, '''
             QToolButton#readerSidebarPin {
@@ -77,18 +78,18 @@ class ImmersiveReading(QObject):
         self.pin.toggled.connect(lambda fixed: self.auto_action.setChecked(not fixed))
         header_layout.addWidget(self.pin)
         self.panel.layout().insertWidget(0, header)
-        self.fullscreen_action = QAction('全屏阅读', host)
+        self.fullscreen_action = QAction(tr('全屏阅读'), host)
         self.fullscreen_action.setCheckable(True)
         self.fullscreen_action.toggled.connect(self.set_fullscreen)
         host.addAction(self.fullscreen_action)
-        self.borderless_action = QAction('无边框模式', host)
+        self.borderless_action = QAction(tr('无边框模式'), host)
         self.borderless_action.setCheckable(True)
-        self.borderless_action.setToolTip('只显示页面，页面外背景跟随纸面颜色；按 Esc 退出')
+        self.borderless_action.setToolTip(tr('只显示页面，页面外背景跟随纸面颜色；按 Esc 退出'))
         self.borderless_action.toggled.connect(self.set_borderless)
         host.addAction(self.borderless_action)
         self.exit_button = QToolButton(self.surface)
-        self.exit_button.setText(host.shortcut_manager.hint('view.fullscreen', '退出全屏'))
-        self.exit_button.setAccessibleName('退出全屏阅读')
+        self.exit_button.setText(host.shortcut_manager.hint('view.fullscreen', tr('退出全屏')))
+        self.exit_button.setAccessibleName(tr('退出全屏阅读'))
         self.exit_button.clicked.connect(lambda: self.fullscreen_action.setChecked(False))
         self.exit_button.hide()
         self.animation = QPropertyAnimation(self.panel, b'pos', self)
@@ -132,8 +133,8 @@ class ImmersiveReading(QObject):
         self.pin.blockSignals(True)
         self.pin.setChecked(not enabled)
         self.pin.blockSignals(False)
-        self.pin.setToolTip('取消固定，回到正文后自动收起；下次打开沿用选择' if not enabled
-                            else '固定侧栏，阅读时保持展开；下次打开沿用选择')
+        self.pin.setToolTip(tr('取消固定，回到正文后自动收起；下次打开沿用选择') if not enabled
+                            else tr('固定侧栏，阅读时保持展开；下次打开沿用选择'))
         if enabled:
             self._split_sizes = self.host.reader_split.sizes()
             self.panel.setParent(self.overlay)
@@ -243,13 +244,13 @@ class ImmersiveReading(QObject):
 
     def _edge_icon(self):
         self.edge.setIcon(toolbar_icon('chevron-left' if self.expanded else 'panel-left', size=16))
-        self.edge.setAccessibleName('收起页面与大纲侧栏' if self.expanded else '展开页面与大纲侧栏')
+        self.edge.setAccessibleName(tr('收起页面与大纲侧栏') if self.expanded else tr('展开页面与大纲侧栏'))
         self.sync_shortcut_hints()
 
     def sync_shortcut_hints(self):
         manager = self.host.shortcut_manager
-        self.edge.setToolTip(manager.hint('view.pages', '收起侧栏' if self.expanded else '页面与大纲侧栏'))
-        self.exit_button.setText(manager.hint('view.fullscreen', '退出全屏'))
+        self.edge.setToolTip(manager.hint('view.pages', tr('收起侧栏') if self.expanded else tr('页面与大纲侧栏')))
+        self.exit_button.setText(manager.hint('view.fullscreen', tr('退出全屏')))
 
     def _toggle(self, *, keyboard=False):
         self.collapse() if self.expanded else self.reveal(keyboard=keyboard)

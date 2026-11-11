@@ -1,4 +1,5 @@
 """Compact watermark controls with asynchronous page preview."""
+from app.i18n import tr, mark_text
 from app.themes import set_theme_style
 import base64
 import uuid
@@ -76,7 +77,7 @@ class WatermarkDialog(QDialog):
         self._asset_error = ""
         self._background_size = (1, 1)
         self.setObjectName("watermarkDialog")
-        self.setWindowTitle("水印 · 纸序 PDF")
+        self.setWindowTitle(tr('水印 · 纸序 PDF'))
         set_theme_style(self, STYLE)
         self.setMinimumSize(700, 500)
         available = host.screen().availableGeometry()
@@ -85,7 +86,7 @@ class WatermarkDialog(QDialog):
         root.setContentsMargins(20, 16, 20, 14)
         root.setSpacing(14)
         header = QHBoxLayout()
-        title = QLabel("水印")
+        title = QLabel(tr('水印'))
         title.setObjectName("watermarkTitle")
         header.addWidget(title)
         header.addStretch()
@@ -113,50 +114,50 @@ class WatermarkDialog(QDialog):
         self.kind.hide()
         _, selection = self.group("选择水印", left)
         self.watermark = QListWidget()
-        self.watermark.addItem("＋ 新增水印")
+        self.watermark.addItem(tr('＋ 新增水印'))
         self.watermark.setCurrentRow(0)
-        self.watermark.setAccessibleName("选择已有水印或新增水印")
+        self.watermark.setAccessibleName(tr('选择已有水印或新增水印'))
         self.watermark.setMinimumHeight(90)
         self.watermark.setMaximumHeight(150)
         self.watermark.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         selection.addRow(self.watermark)
         self.delete_button = QToolButton()
-        self.delete_button.setText("删除所选水印")
+        self.delete_button.setText(tr('删除所选水印'))
         self.delete_button.setEnabled(False)
         self.delete_button.clicked.connect(lambda: self.apply(remove=True))
         selection.addRow(self.delete_button)
-        self.selection_hint = QLabel("选择已有水印后调整或删除；新增水印直接设置后添加。")
+        self.selection_hint = QLabel(tr('选择已有水印后调整或删除；新增水印直接设置后添加。'))
         self.selection_hint.setObjectName("watermarkHint")
         self.selection_hint.setWordWrap(True)
         selection.addRow(self.selection_hint)
         content, form = self.group("水印内容", left)
         self.text = QLineEdit("仅供参考")
         self.text.setMaxLength(1000)
-        self.text.setAccessibleName("水印文字")
-        form.addRow("文字", self.text)
+        self.text.setAccessibleName(tr('水印文字'))
+        form.addRow(tr('文字'), self.text)
         self.image_button = QToolButton()
-        self.image_button.setText("选择 PNG / JPG 图片…")
+        self.image_button.setText(tr('选择 PNG / JPG 图片…'))
         self.image_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.image_button.clicked.connect(self.choose_image)
-        form.addRow("图片", self.image_button)
+        form.addRow(tr('图片'), self.image_button)
         self.content_form = form
         self.appearance_group, appearance = self.group("外观", left)
         self.size = QSpinBox()
         self.size.setRange(10, 90)
         self.size.setValue(50)
         self.size.setSuffix("%")
-        self.size.setToolTip("水印宽度占页面宽度的比例")
-        appearance.addRow("大小", self.slider_row(self.size))
+        self.size.setToolTip(tr('水印宽度占页面宽度的比例'))
+        appearance.addRow(tr('大小'), self.slider_row(self.size))
         self.opacity = QSpinBox()
         self.opacity.setRange(5, 100)
         self.opacity.setValue(15)
         self.opacity.setSuffix("%")
-        self.opacity.setToolTip("数值越小，水印越淡")
-        appearance.addRow("不透明度", self.slider_row(self.opacity))
+        self.opacity.setToolTip(tr('数值越小，水印越淡'))
+        appearance.addRow(tr('不透明度'), self.slider_row(self.opacity))
         self.color_button = QToolButton()
         self.color_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.color_button.clicked.connect(self.choose_color)
-        appearance.addRow("颜色", self.color_button)
+        appearance.addRow(tr('颜色'), self.color_button)
         self.appearance_form = appearance
         self.layout_group, placement = self.group("布局", left)
         self.position = QComboBox()
@@ -165,23 +166,23 @@ class WatermarkDialog(QDialog):
             for h in ("left", "center", "right"):
                 self.position.addItem(names[self.position.count()], f"{v}-{h}")
         self.position.setCurrentIndex(4)
-        self.position.addItem("自定义（拖动）", "custom")
+        self.position.addItem(tr('自定义（拖动）'), "custom")
         position_row = QWidget()
         position_layout = QHBoxLayout(position_row)
         position_layout.setContentsMargins(0, 0, 0, 0)
         position_layout.addWidget(self.position, 1)
         self.reset_button = QToolButton()
-        self.reset_button.setText("复位")
-        self.reset_button.setToolTip("恢复居中位置与平铺起点")
+        self.reset_button.setText(tr('复位'))
+        self.reset_button.setToolTip(tr('恢复居中位置与平铺起点'))
         self.reset_button.clicked.connect(self.reset_position)
         position_layout.addWidget(self.reset_button)
-        placement.addRow("位置", position_row)
+        placement.addRow(tr('位置'), position_row)
         self.angle = QSpinBox()
         self.angle.setRange(-180, 180)
         self.angle.setValue(self._angles["text"])
         self.angle.setSuffix("°")
-        placement.addRow("旋转", self.angle)
-        self.tile = QCheckBox("整页平铺（重复多个水印）")
+        placement.addRow(tr('旋转'), self.angle)
+        self.tile = QCheckBox(tr('整页平铺（重复多个水印）'))
         placement.addRow(self.tile)
         self.tile_rows = QSpinBox()
         self.tile_columns = QSpinBox()
@@ -189,9 +190,9 @@ class WatermarkDialog(QDialog):
             spin.setRange(0, 200)
             spin.setSpecialValueText("自动")
             spin.setAccessibleName(label)
-            spin.setToolTip("自动随水印大小调整；手动设置只改变数量，不改变水印大小。")
-        placement.addRow("行数", self.tile_rows)
-        placement.addRow("每行个数", self.tile_columns)
+            spin.setToolTip(tr('自动随水印大小调整；手动设置只改变数量，不改变水印大小。'))
+        placement.addRow(tr('行数'), self.tile_rows)
+        placement.addRow(tr('每行个数'), self.tile_columns)
         self.layout_hint = QLabel()
         self.layout_hint.setObjectName("watermarkHint")
         self.layout_hint.setWordWrap(True)
@@ -199,14 +200,14 @@ class WatermarkDialog(QDialog):
         self.placement_form = placement
         _, ranges = self.group("应用范围", left)
         self.range_mode = QComboBox()
-        self.range_mode.addItem("所选水印所在页面", "watermark")
+        self.range_mode.addItem(tr('所选水印所在页面'), "watermark")
         for label, value in (("全部页面", "all"), ("所选页面", "selected"), ("当前页面", "current"), ("指定页码", "custom")):
             self.range_mode.addItem(label, value)
-        ranges.addRow("范围", self.range_mode)
+        ranges.addRow(tr('范围'), self.range_mode)
         self.range_text = QLineEdit()
-        self.range_text.setPlaceholderText("例如 1-3,5")
-        self.range_text.setAccessibleName("水印页码范围")
-        ranges.addRow("页码", self.range_text)
+        self.range_text.setPlaceholderText(tr('例如 1-3,5'))
+        self.range_text.setAccessibleName(tr('水印页码范围'))
+        ranges.addRow(tr('页码'), self.range_text)
         self.range_form = ranges
         left.addStretch()
         self.scroll.setWidget(self.settings_panel)
@@ -214,11 +215,11 @@ class WatermarkDialog(QDialog):
         right = QVBoxLayout()
         right.setSpacing(8)
         preview_header = QHBoxLayout()
-        self.preview_caption = QLabel("页面预览")
+        self.preview_caption = QLabel(tr('页面预览'))
         preview_header.addWidget(self.preview_caption)
         preview_header.addStretch()
         self.preview_button = QToolButton()
-        self.preview_button.setText("刷新预览")
+        self.preview_button.setText(tr('刷新预览'))
         self.preview_button.clicked.connect(self.force_preview)
         preview_header.addWidget(self.preview_button)
         right.addLayout(preview_header)
@@ -232,24 +233,24 @@ class WatermarkDialog(QDialog):
         self.preview_label.drag_cancelled.connect(self.restore_drag_position)
         canvas_layout.addWidget(self.preview_label)
         right.addWidget(canvas, 1)
-        self.status = QLabel("设置变化后自动更新预览")
+        self.status = QLabel(tr('设置变化后自动更新预览'))
         self.status.setObjectName("watermarkStatus")
         self.status.setWordWrap(True)
         right.addWidget(self.status)
         body.addLayout(right, 1)
         root.addLayout(body, 1)
         footer = QHBoxLayout()
-        hint = QLabel(self.host.shortcut_manager.describe("应用后可 Ctrl+Z 撤销，保存后写入文件。\n移除范围仅限纸序添加的水印。"))
+        hint = QLabel(self.host.shortcut_manager.describe(mark_text("应用后可 Ctrl+Z 撤销，保存后写入文件。\n移除范围仅限纸序添加的水印。")))
         hint.setObjectName("watermarkHint")
         hint.setWordWrap(True)
         footer.addWidget(hint, 1)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
         self.apply_button = self.buttons.button(QDialogButtonBox.StandardButton.Apply)
         self.apply_button.setObjectName("watermarkApply")
-        self.apply_button.setText("应用水印")
+        self.apply_button.setText(tr('应用水印'))
         self.apply_button.setEnabled(False)
         self.apply_button.clicked.connect(self.apply)
-        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("关闭")
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('关闭'))
         self.buttons.rejected.connect(self.reject)
         footer.addWidget(self.buttons)
         root.addLayout(footer)
@@ -308,14 +309,14 @@ class WatermarkDialog(QDialog):
                 location = f"第 {indices[0] + 1} 页" if len(indices) == 1 else f"共 {len(indices)} 页"
                 item = QListWidgetItem(f"{kind} · {name} · {location}")
                 item.setData(Qt.ItemDataRole.UserRole, identifier)
-                item.setToolTip(f"{kind} · {entry['text']}\n{location}；点击选择后可修改或删除。")
+                item.setToolTip(tr('{p0} · {p1}\n{p2}；点击选择后可修改或删除。', p0=f'{kind}', p1=f"{entry['text']}", p2=f'{location}'))
                 self.watermark.addItem(item)
             if groups:
-                self.selection_hint.setText(f"找到 {len(groups)} 组水印。点击列表中的已有水印，再修改或删除。")
+                self.selection_hint.setText(tr('找到 {p0} 组水印。点击列表中的已有水印，再修改或删除。', p0=f'{len(groups)}'))
             else:
-                self.selection_hint.setText("未找到可管理的水印。已合并进正文或图片的水印无法在此单独删除。")
+                self.selection_hint.setText(tr('未找到可管理的水印。已合并进正文或图片的水印无法在此单独删除。'))
         except Exception as exc:
-            self.selection_hint.setText("已有水印未能读取，可关闭后重新打开设置重试。")
+            self.selection_hint.setText(tr('已有水印未能读取，可关闭后重新打开设置重试。'))
             self.selection_hint.setToolTip(str(exc))
         self.range_mode.setCurrentIndex(self.range_mode.findData("all"))
         self.range_mode.model().item(0).setEnabled(False)
@@ -359,7 +360,7 @@ class WatermarkDialog(QDialog):
                 self.tile_columns.setValue(options.get("tile_columns", 0))
                 self.custom_position = tuple(options.get("offset", (.5, .5)))
                 self.tile_offset = tuple(options.get("tile_offset", (.5, .5)))
-                self.image_button.setText("更换水印图片…" if self.image else "选择 PNG / JPG 图片…")
+                self.image_button.setText(tr('更换水印图片…') if self.image else tr('选择 PNG / JPG 图片…'))
                 self.image_button.setToolTip("")
                 self.update_color()
         finally:
@@ -443,10 +444,10 @@ class WatermarkDialog(QDialog):
         self.position.setEnabled(not self.tile.isChecked())
         for widget in (self.tile_rows, self.tile_columns):
             self.placement_form.setRowVisible(widget, self.tile.isChecked())
-        self.layout_hint.setText("可调整行数和每行个数；单页最多 200 个，数量多时可能重叠。"
-                                 if self.tile.isChecked() else "当前为单个水印；勾选整页平铺可重复多个。")
+        self.layout_hint.setText(tr('可调整行数和每行个数；单页最多 200 个，数量多时可能重叠。')
+                                 if self.tile.isChecked() else tr('当前为单个水印；勾选整页平铺可重复多个。'))
         self.range_form.setRowVisible(self.range_text, self.range_mode.currentData() == "custom")
-        self.apply_button.setText("保存修改" if self.selected_watermark_id() else "添加水印")
+        self.apply_button.setText(tr('保存修改') if self.selected_watermark_id() else tr('添加水印'))
         self.invalidate_preview()
 
     def content_changed(self, *_):
@@ -459,7 +460,7 @@ class WatermarkDialog(QDialog):
             self._asset_job.cancel_event.set()
         self.apply_button.setEnabled(False)
         self.content_timer.start()
-        self.set_status("正在更新水印内容…")
+        self.set_status(tr("正在更新水印内容…"))
 
     def content_settled(self):
         self._content_pending = False
@@ -501,7 +502,7 @@ class WatermarkDialog(QDialog):
                     tile_rows=self.tile_rows.value(), tile_columns=self.tile_columns.value())
 
     def choose_image(self):
-        path, _ = QFileDialog.getOpenFileName(self, "选择水印图片", "", "图片 (*.png *.jpg *.jpeg)")
+        path, _ = QFileDialog.getOpenFileName(self, tr('选择水印图片'), "", tr('图片 (*.png *.jpg *.jpeg)'))
         if not path:
             return
         try:
@@ -588,7 +589,7 @@ class WatermarkDialog(QDialog):
                 self._background_size = self.host.store.page_size(ref)
                 self.preview_label.image = None
                 self.preview_label.update_geometry()
-                self.preview_caption.setText(f"页面预览 · 第 {index + 1} 页")
+                self.preview_caption.setText(tr('页面预览 · 第 {p0} 页', p0=f'{index + 1}'))
                 cached = None if identifier else getattr(self.host, "_page_images", {}).get(ref.render_key)
                 if cached is not None:
                     self.preview_label.set_image(cached, self.host.store.page_size(ref))
@@ -626,7 +627,7 @@ class WatermarkDialog(QDialog):
         if result.cancelled:
             return
         if result.error or result.value is None:
-            self.set_status("此页无法生成预览，请尝试其他页或稍后重试。", error=True)
+            self.set_status(tr("此页无法生成预览，请尝试其他页或稍后重试。"), error=True)
             return
         self.preview_label.set_image(result.value, self._background_size)
         self._background_ready = True
@@ -696,7 +697,7 @@ class WatermarkDialog(QDialog):
         if selected and selected["settings"] is None:
             self.preview_label.set_options({})
             self.apply_button.setEnabled(False)
-            self.set_status("此水印的原始参数无法读取，可删除后重新添加。", error=True)
+            self.set_status(tr("此水印的原始参数无法读取，可删除后重新添加。"), error=True)
             return
         if not self._settings_valid:
             self.preview_label.set_options({})
@@ -714,26 +715,26 @@ class WatermarkDialog(QDialog):
         self._ready_version = self._version if ready else None
         self.apply_button.setEnabled(ready)
         if ready:
-            count = f"本页 {len(self.preview_label.marks)} 个水印（含边缘部分） · " if self.tile.isChecked() else ""
-            self.set_status(f"预览已更新 · {count}可拖动定位，方向键微调")
+            count = tr('本页 {p0} 个水印（含边缘部分） · ', p0=len(self.preview_label.marks)) if self.tile.isChecked() else ""
+            self.set_status(tr('预览已更新 · {p0}可拖动定位，方向键微调', p0=f'{count}'))
         elif not self._background_ready:
-            self.set_status("正在准备页面底图…")
+            self.set_status(tr("正在准备页面底图…"))
         elif self._asset_error:
             self.set_status(self._asset_error, error=True)
         else:
-            self.set_status("正在更新水印内容…")
+            self.set_status(tr("正在更新水印内容…"))
 
     def apply(self, *, remove=False):
         if self._closed or self._applying or (not remove and not self.apply_button.isEnabled()):
             return
         try:
             if self.host.ws.pages is not self._document_pages:
-                self.set_status("文档已改变，请关闭后重新打开水印设置。", error=True)
+                self.set_status(tr("文档已改变，请关闭后重新打开水印设置。"), error=True)
                 return
             indices = self.indices()
             before = self.host.ws.pages
             edits = {i: self.edit(before[i], remove=remove) for i in indices}
-            action = "删除水印" if remove else "调整水印" if self.selected_watermark_id() else "添加水印"
+            action = mark_text("删除水印") if remove else mark_text("调整水印") if self.selected_watermark_id() else mark_text("添加水印")
             self._applying = True
             self.timer.stop()
             self.content_timer.stop()
@@ -765,11 +766,11 @@ class WatermarkDialog(QDialog):
             if self.host.ws.pages is not before:
                 raise ValueError("工作区已改变，请重新应用。")
             if not changes:
-                self.set_status("所选范围未找到纸序添加的水印。")
+                self.set_status(tr("所选范围未找到纸序添加的水印。"))
                 return
             self.host.ws.edit_pages(changes, action)
             self.host.refresh()
-            self.host.statusBar().showMessage(self.host.shortcut_manager.describe(f"{action}已完成；Ctrl+Z 撤销，Ctrl+S 保存。"), 8000)
+            self.host.statusBar().showMessage(self.host.shortcut_manager.describe(tr('{p0}已完成；Ctrl+Z 撤销，Ctrl+S 保存。', p0=tr(action))), 8000)
             self._applying = False
             self.accept()
         except OperationCancelled as exc:

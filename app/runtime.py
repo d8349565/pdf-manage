@@ -25,7 +25,8 @@ def portable_data():
 
 
 def display_name():
-    return APP_NAME + ('（绿色版）' if portable_root() else '') + ('（预览版）' if APP_IS_PRERELEASE else '')
+    from app.i18n import tr
+    return tr(APP_NAME) + (tr('（绿色版）') if portable_root() else '') + (tr('（预览版）') if APP_IS_PRERELEASE else '')
 
 
 def prepare_profile():

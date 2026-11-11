@@ -1,5 +1,6 @@
 """Independent region extraction; selections never become document edits."""
 from __future__ import annotations
+from app.i18n import tr
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPen
@@ -27,7 +28,7 @@ class RegionPreview(ScrollablePagePreview):
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
         self.viewport().setCursor(Qt.CursorShape.CrossCursor)
-        self.setAccessibleName('区域摘录预览，拖动或点击两个角画框；拖动框内移动，拖动角点调整大小')
+        self.setAccessibleName(tr('区域摘录预览，拖动或点击两个角画框；拖动框内移动，拖动角点调整大小'))
         self.verticalScrollBar().valueChanged.connect(self.cancel_drag)
 
     def shown_regions(self):
@@ -191,12 +192,12 @@ class AnnotationCropDialog(QDialog):
         super().__init__(host)
         self.host, self.pages = host, tuple(host.ws.pages)
         self.loaded, self.annotation_regions = None, {}
-        self.setWindowTitle('区域摘录')
+        self.setWindowTitle(tr('区域摘录'))
         self.setMinimumSize(820, 540)
         screen = QApplication.primaryScreen().availableGeometry()
         self.resize(min(1120, round(screen.width() * .9)), min(800, round(screen.height() * .9)))
         outer = QVBoxLayout(self)
-        instructions = QLabel('在右侧逐页画框，摘出需要的内容。拖动或点击两个角画框；拖动框内可移动，拖动角点可调整大小。')
+        instructions = QLabel(tr('在右侧逐页画框，摘出需要的内容。拖动或点击两个角画框；拖动框内可移动，拖动角点可调整大小。'))
         instructions.setWordWrap(True)
         outer.addWidget(instructions)
         body = QHBoxLayout()
@@ -207,32 +208,32 @@ class AnnotationCropDialog(QDialog):
         self.scope = PageScope(self.pages, sorted(host.ws.selected), self)
         self.scope.mode.setCurrentIndex(self.scope.mode.findData('all'))
         form = QFormLayout()
-        form.addRow('页面范围', self.scope)
+        form.addRow(tr('页面范围'), self.scope)
         self.source = ClearComboBox()
         for label, value in (('手动画框', 'regions'), ('已有矩形批注', 'annot'), ('页边距（每边 12.7 mm）', 'margin')):
             self.source.addItem(label, value)
-        self.source.setAccessibleName('摘录选区来源')
-        form.addRow('选区来源', self.source)
+        self.source.setAccessibleName(tr('摘录选区来源'))
+        form.addRow(tr('选区来源'), self.source)
         self.layout_mode = ClearComboBox()
-        self.layout_mode.addItem('拼到 A4 上，便于打印', 'flow')
-        self.layout_mode.addItem('每个区域单独一页', 'per')
-        self.layout_mode.setAccessibleName('新 PDF 的排版方式')
-        form.addRow('输出排版', self.layout_mode)
+        self.layout_mode.addItem(tr('拼到 A4 上，便于打印'), 'flow')
+        self.layout_mode.addItem(tr('每个区域单独一页'), 'per')
+        self.layout_mode.setAccessibleName(tr('新 PDF 的排版方式'))
+        form.addRow(tr('输出排版'), self.layout_mode)
         sidebar.addLayout(form)
-        self.expand = QCheckBox('合并同页选区')
-        self.expand.setToolTip('同页的多个框合并为一个区域，会包含框之间的内容。')
+        self.expand = QCheckBox(tr('合并同页选区'))
+        self.expand.setToolTip(tr('同页的多个框合并为一个区域，会包含框之间的内容。'))
         sidebar.addWidget(self.expand)
-        sidebar.addWidget(QLabel('已选区域'))
+        sidebar.addWidget(QLabel(tr('已选区域')))
         self.region_list = QListWidget()
-        self.region_list.setAccessibleName('已选区域，选择后可删除或调整')
+        self.region_list.setAccessibleName(tr('已选区域，选择后可删除或调整'))
         sidebar.addWidget(self.region_list, 1)
         actions = QHBoxLayout()
-        self.delete = QPushButton('删除所选')
-        self.undo_button = QPushButton('撤销选区操作')
+        self.delete = QPushButton(tr('删除所选'))
+        self.undo_button = QPushButton(tr('撤销选区操作'))
         actions.addWidget(self.delete)
         actions.addWidget(self.undo_button)
         sidebar.addLayout(actions)
-        note = QLabel('选区仅用于本次导出；没画框的页面会跳过，原 PDF 保留。')
+        note = QLabel(tr('选区仅用于本次导出；没画框的页面会跳过，原 PDF 保留。'))
         note.setWordWrap(True)
         sidebar.addWidget(note)
         self.preview = RegionPreview(host.store, self.pages, self)
@@ -244,8 +245,8 @@ class AnnotationCropDialog(QDialog):
         outer.addWidget(self.feedback)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         self.start = buttons.button(QDialogButtonBox.StandardButton.Save)
-        self.start.setText('导出新 PDF…')
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        self.start.setText(tr('导出新 PDF…'))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
@@ -318,7 +319,7 @@ class AnnotationCropDialog(QDialog):
         for row in self.preview.rows:
             areas = shown.get(row, ())
             for number, area in enumerate(areas):
-                item = QListWidgetItem(f'第 {row + 1} 页 · 区域 {number + 1}')
+                item = QListWidgetItem(tr('第 {p0} 页 · 区域 {p1}', p0=f'{row + 1}', p1=f'{number + 1}'))
                 item.setData(Qt.ItemDataRole.UserRole, (row, number))
                 self.region_list.addItem(item)
                 if selected == (row, number):
@@ -337,11 +338,11 @@ class AnnotationCropDialog(QDialog):
         if count:
             import pymupdf as p
             output_pages = len(layout_flow([p.Rect(area.getCoords()) for area in all_regions])) if self.layout_mode.currentData() == 'flow' else count
-            self.feedback.setText(f'已选 {count} 个区域，预计导出 {output_pages} 页。原 PDF 保留。')
+            self.feedback.setText(tr('已选 {p0} 个区域，预计导出 {p1} 页。原 PDF 保留。', p0=f'{count}', p1=f'{output_pages}'))
         else:
-            self.feedback.setText('请在右侧需要的页面上画框；每个页面分别选择区域。' if self.preview.editable else '所选范围内没有可摘录区域。')
+            self.feedback.setText(tr('请在右侧需要的页面上画框；每个页面分别选择区域。') if self.preview.editable else tr('所选范围内没有可摘录区域。'))
         if self.preview.drag:
-            self.feedback.setText('请完成当前选区后导出；按 Esc 可取消当前绘制。')
+            self.feedback.setText(tr('请完成当前选区后导出；按 Esc 可取消当前绘制。'))
         self.start.setEnabled(bool(count) and self.preview.drag is None)
         self.preview.viewport().update()
 
@@ -379,7 +380,7 @@ def open_annotation_crop(host):
     finally:
         dialog.deleteLater()
     if len(host.ws.pages) != len(pages) or any(current is not before for current, before in zip(host.ws.pages, pages)):
-        QMessageBox.information(host, '区域摘录未完成', '文档已改变，请重新选择区域。')
+        QMessageBox.information(host, tr('区域摘录未完成'), tr('文档已改变，请重新选择区域。'))
         return
     if needs_output_protection(host.store, pages):
         protection = EncryptionDialog(host, allow_plain=True)
@@ -391,15 +392,15 @@ def open_annotation_crop(host):
             protection.setting = None
             protection.deleteLater()
     stem = Path(host.ws.path or '文档').stem
-    path = new_pdf_path(host, host.store, '区域摘录导出', f'{stem}_区域摘录.pdf')
+    path = new_pdf_path(host, host.store, tr('区域摘录导出'), tr('{p0}_区域摘录.pdf', p0=f'{stem}'))
     if not path:
         return
     try:
         result = run_operation(host, '区域摘录', lambda progress, cancel:
             export_annotation_crop(host.store, pages, options, path, progress, cancel), cancellable=True)
-        QMessageBox.information(host, '区域摘录完成',
-            f'已导出 {result["regions"]} 个区域，共 {result["out_pages"]} 页：\n{result["path"]}')
+        QMessageBox.information(host, tr('区域摘录完成'),
+            tr('已导出 {p0} 个区域，共 {p1} 页：\n{p2}', p0=f"{result['regions']}", p1=f"{result['out_pages']}", p2=f"{result['path']}"))
     except OperationCancelled:
-        QMessageBox.information(host, '已取消', '已取消，未提交新 PDF，原文件保留。')
+        QMessageBox.information(host, tr('已取消'), tr('已取消，未提交新 PDF，原文件保留。'))
     except (AnnotationCropError, PdfError, OSError) as exc:
-        QMessageBox.warning(host, '区域摘录未完成', str(exc))
+        QMessageBox.warning(host, tr('区域摘录未完成'), str(exc))

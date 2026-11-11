@@ -1,4 +1,5 @@
 """Reader panning, link activation and cache-only hover hit testing."""
+from app.i18n import tr
 import math
 
 from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QUrl
@@ -95,7 +96,7 @@ class ReaderInteraction(QObject):
                 return
             if result.error:
                 self.link_press = self.link_jump = None
-                self.host.statusBar().showMessage('链接暂时无法读取，请重试。', 5000)
+                self.host.statusBar().showMessage(tr('链接暂时无法读取，请重试。'), 5000)
             elif pending is self.link_jump:
                 self._finish_jump(pending)
             elif pending['released']:
@@ -138,16 +139,16 @@ class ReaderInteraction(QObject):
             allowed = (url.scheme().lower() in ('http', 'https') and bool(url.host())
                        or url.scheme().lower() == 'mailto' and bool(url.path()))
             if not url.isValid() or not allowed:
-                self.host.statusBar().showMessage('此链接类型暂不支持打开。', 5000)
+                self.host.statusBar().showMessage(tr('此链接类型暂不支持打开。'), 5000)
                 return
             opened = QDesktopServices.openUrl(url)
-            self.host.statusBar().showMessage('已交给默认应用打开链接。' if opened
-                                             else '链接未能打开，请检查系统默认浏览器或邮件应用。', 5000)
+            self.host.statusBar().showMessage(tr('已交给默认应用打开链接。') if opened
+                                             else tr('链接未能打开，请检查系统默认浏览器或邮件应用。'), 5000)
         elif link.get('kind') == p.LINK_GOTO:
             matches = [i for i, target in enumerate(self.host.ws.pages)
                        if target.source_id == ref.source_id and target.source_page == link.get('page')]
             if not matches:
-                self.host.statusBar().showMessage('链接指向的页面已不在当前文档中。', 5000)
+                self.host.statusBar().showMessage(tr('链接指向的页面已不在当前文档中。'), 5000)
                 return
             index = next((i for i in matches if self.host.ws.pages[i].copy_group == ref.copy_group), matches[0])
             self.host.go_to_page(index + 1)
@@ -159,7 +160,7 @@ class ReaderInteraction(QObject):
             else:
                 self._finish_jump(pending)
         else:
-            self.host.statusBar().showMessage('此链接类型暂不支持打开。', 5000)
+            self.host.statusBar().showMessage(tr('此链接类型暂不支持打开。'), 5000)
 
     def _finish_jump(self, pending):
         if not self._current(pending):
@@ -190,7 +191,7 @@ class ReaderInteraction(QObject):
         cursor = Qt.CursorShape.OpenHandCursor if hand else Qt.CursorShape.ArrowCursor
         hit = self.link_at(position) if self.links_enabled() else None
         self.view.viewport().setToolTip('' if hit is None else
-            hit[1].get('uri') or ('跳转到文档内页面' if 'page' in hit[1] else '此链接类型暂不支持打开'))
+            hit[1].get('uri') or (tr('跳转到文档内页面') if 'page' in hit[1] else tr('此链接类型暂不支持打开')))
         if hit is not None:
             self.view.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             return

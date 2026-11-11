@@ -1,4 +1,5 @@
 """Non-destructive document search with cancellable background scanning."""
+from app.i18n import tr, mark_text
 from app.themes import set_theme_style
 from threading import Event
 
@@ -101,15 +102,15 @@ class SearchBar(QFrame):
         layout.setSpacing(3)
         self.input = QLineEdit()
         self.input.setObjectName("searchInput")
-        self.input.setPlaceholderText("搜索全文")
-        self.input.setToolTip("输入关键词搜索全文；Enter 下一处，Shift+Enter 上一处")
-        self.input.setAccessibleName("全文搜索关键词")
+        self.input.setPlaceholderText(tr('搜索全文'))
+        self.input.setToolTip(tr('输入关键词搜索全文；Enter 下一处，Shift+Enter 上一处'))
+        self.input.setAccessibleName(tr('全文搜索关键词'))
         self.input.setFixedHeight(30)
         leading = self.input.addAction(toolbar_icon("search", "#6A8178", 16), QLineEdit.ActionPosition.LeadingPosition)
         leading.triggered.connect(self.input.setFocus)
         self.clear_action = self.input.addAction(toolbar_icon("x", "#72847D", 14), QLineEdit.ActionPosition.TrailingPosition)
-        self.clear_action.setToolTip("清空关键词")
-        self.clear_action.setText("清空关键词")
+        self.clear_action.setToolTip(tr('清空关键词'))
+        self.clear_action.setText(tr('清空关键词'))
         self.clear_action.triggered.connect(self.input.clear)
         self.clear_action.setVisible(False)
         self.input.textChanged.connect(lambda value: self.clear_action.setVisible(bool(value)))
@@ -120,14 +121,14 @@ class SearchBar(QFrame):
         layout.addWidget(self.input, 1)
         self.feedback = QLabel()
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
-        self.feedback.setAccessibleName("全文搜索结果")
+        self.feedback.setAccessibleName(tr('全文搜索结果'))
         self.feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.feedback.setMinimumWidth(56)
         self.feedback.setMaximumWidth(130)
         layout.addWidget(self.feedback)
-        self.previous = host._icon_btn("chevron-left", "上一处匹配 (Shift+Enter / Shift+F3)", lambda: self.step(-1))
-        self.next = host._icon_btn("chevron-right", "下一处匹配 (Enter / F3)", lambda: self.step(1))
-        self.close_button = host._icon_btn("x", "关闭搜索 (Esc)", self.close_search)
+        self.previous = host._icon_btn("chevron-left", tr('上一处匹配 (Shift+Enter / Shift+F3)'), lambda: self.step(-1))
+        self.next = host._icon_btn("chevron-right", tr('下一处匹配 (Enter / F3)'), lambda: self.step(1))
+        self.close_button = host._icon_btn("x", tr('关闭搜索 (Esc)'), self.close_search)
         for button in (self.previous, self.next, self.close_button):
             button.setFixedSize(28, 28)
             button.setIconSize(QSize(16, 16))
@@ -169,10 +170,10 @@ class SearchBar(QFrame):
 
     def sync_shortcut_hints(self):
         manager = self.host.shortcut_manager
-        self.input.setToolTip('输入关键词搜索全文；' + manager.hint('search.confirm', '确认搜索／下一处')
-                             + '；' + manager.hint('search.input_previous', '上一处'))
-        self.previous.setToolTip(manager.hint('search.previous', '上一处匹配'))
-        self.next.setToolTip(manager.hint('search.next', '下一处匹配'))
+        self.input.setToolTip(tr('输入关键词搜索全文；') + manager.hint('search.confirm', tr('确认搜索／下一处'))
+                             + '；' + manager.hint('search.input_previous', tr('上一处')))
+        self.previous.setToolTip(manager.hint('search.previous', tr('上一处匹配')))
+        self.next.setToolTip(manager.hint('search.next', tr('下一处匹配')))
         self.update_feedback()
 
     def open_search(self):

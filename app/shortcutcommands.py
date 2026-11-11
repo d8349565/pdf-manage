@@ -124,6 +124,7 @@ for _key, _path, _keys in (
 ):
     _menu(_key, _path, _keys)
 
+_add('app.language', '界面语言 / Language', '应用设置', menu=('文件', '应用设置', '界面语言 / Language'))
 _menu('edit.copy_pages', '编辑/复制页面', ('Ctrl+C',), scope='pages')
 _menu('pages.delete', '页面/删除页面', ('Del',), scope='pages')
 _menu('reader.select', '视图/阅读设置/选择文字', ('V',), scope='reader')

@@ -1,5 +1,6 @@
 """Compression preview prepared in temporary files, exported only on request."""
 from __future__ import annotations
+from app.i18n import tr
 from app.themes import set_theme_style
 
 import os
@@ -35,20 +36,20 @@ class CompressionDialog(QDialog):
         self._preview_sources = set()
         self._busy = False
         self._closing_result = None
-        self.setWindowTitle("压缩 PDF")
+        self.setWindowTitle(tr('压缩 PDF'))
         self.resize(1100, 780)
         self.setMinimumSize(820, 580)
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
-        row.addWidget(QLabel("压缩档位"))
+        row.addWidget(QLabel(tr('压缩档位')))
         self.profile = ClearComboBox()
-        self.profile.setAccessibleName('压缩档位')
+        self.profile.setAccessibleName(tr('压缩档位'))
         for name, key in (("原画质（推荐）· 无损优化", "quality"), ("高质量 · 300 DPI", "high"),
                           ("均衡 · 200 DPI", "balanced"), ("适合外发 · 150 DPI", "send"),
                           ("小体积 · 120 DPI", "small"), ("自定义…", "custom")):
             self.profile.addItem(name, key)
         row.addWidget(self.profile, 1)
-        self.calculate = QPushButton("开始压缩")
+        self.calculate = QPushButton(tr('开始压缩'))
         self.calculate.clicked.connect(self.prepare)
         row.addWidget(self.calculate)
         layout.addLayout(row)
@@ -59,48 +60,48 @@ class CompressionDialog(QDialog):
         self.dpi.setRange(72, 600)
         self.dpi.setValue(300)
         self.dpi.setSuffix(" DPI")
-        self.dpi.setAccessibleName("彩色和灰度图片的目标分辨率")
+        self.dpi.setAccessibleName(tr('彩色和灰度图片的目标分辨率'))
         self.quality = ClearSpinBox()
         self.quality.setRange(40, 100)
         self.quality.setValue(92)
-        self.quality.setAccessibleName("图片编码质量")
-        self.grayscale = QCheckBox("转为灰度（会移除颜色）")
-        advanced_layout.addWidget(QLabel("图片分辨率"), 0, 0)
+        self.quality.setAccessibleName(tr('图片编码质量'))
+        self.grayscale = QCheckBox(tr('转为灰度（会移除颜色）'))
+        advanced_layout.addWidget(QLabel(tr('图片分辨率')), 0, 0)
         advanced_layout.addWidget(self.dpi, 0, 1)
-        advanced_layout.addWidget(QLabel("图片质量"), 0, 2)
+        advanced_layout.addWidget(QLabel(tr('图片质量')), 0, 2)
         advanced_layout.addWidget(self.quality, 0, 3)
         advanced_layout.addWidget(self.grayscale, 0, 4)
         layout.addWidget(self.advanced)
         self.advanced.hide()
-        self.note = hint(layout, "保留图片像素、文字和矢量，自动比较更小的无损编码。需要更小体积时，可选择其他档位。")
-        self.summary = hint(layout, "点击计算后，查看压缩前后大小和页面效果。")
+        self.note = hint(layout, tr('保留图片像素、文字和矢量，自动比较更小的无损编码。需要更小体积时，可选择其他档位。'))
+        self.summary = hint(layout, tr('点击计算后，查看压缩前后大小和页面效果。'))
         set_theme_style(self.summary, 'font-size: 16px; font-weight: 600; color: #174A3A;')
         self.result_note = hint(layout, '')
         self.result_note.hide()
         toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel('页码'))
+        toolbar.addWidget(QLabel(tr('页码')))
         self.page = ClearSpinBox()
         self.page.setRange(1, len(owner.ws.pages))
         self.page.setFixedWidth(88)
         self.page.setKeyboardTracking(False)
-        self.page.setAccessibleName('跳转预览页')
+        self.page.setAccessibleName(tr('跳转预览页'))
         self.page.setEnabled(False)
         toolbar.addWidget(self.page)
         toolbar.addWidget(QLabel(f'/ {len(owner.ws.pages)}'))
         toolbar.addStretch()
         self.zoom_out = QPushButton('−')
-        self.zoom_out.setAccessibleName('缩小两侧预览')
+        self.zoom_out.setAccessibleName(tr('缩小两侧预览'))
         self.zoom_out.setFixedWidth(44)
         toolbar.addWidget(self.zoom_out)
         self.zoom = ClearComboBox()
-        self.zoom.setAccessibleName('两侧预览缩放')
+        self.zoom.setAccessibleName(tr('两侧预览缩放'))
         for name, value in (('适合页面', 'page'), ('适合宽度', 'width'), ('100%', 100),
                             ('150%', 150), ('200%', 200), ('300%', 300), ('400%', 400)):
             self.zoom.addItem(name, value)
         self.zoom.setMinimumWidth(130)
         toolbar.addWidget(self.zoom)
         self.zoom_in = QPushButton('+')
-        self.zoom_in.setAccessibleName('放大两侧预览')
+        self.zoom_in.setAccessibleName(tr('放大两侧预览'))
         self.zoom_in.setFixedWidth(44)
         toolbar.addWidget(self.zoom_in)
         layout.addLayout(toolbar)
@@ -118,12 +119,12 @@ class CompressionDialog(QDialog):
         self.comparison.zoom_changed.connect(self._zoom_changed)
         layout.addWidget(self.comparison, 1)
         footer = QHBoxLayout()
-        hint(footer, '两侧同步 · 滚轮翻页 · Ctrl+滚轮缩放 · 拖动查看细节')
+        hint(footer, tr('两侧同步 · 滚轮翻页 · Ctrl+滚轮缩放 · 拖动查看细节'))
         footer.setStretch(0, 1)
-        close = QPushButton("关闭")
+        close = QPushButton(tr('关闭'))
         close.clicked.connect(self.reject)
         footer.addWidget(close)
-        self.export = QPushButton("另存压缩结果…")
+        self.export = QPushButton(tr('另存压缩结果…'))
         self.export.setObjectName("primary")
         self.export.setEnabled(False)
         self.export.clicked.connect(self.save_result)
@@ -143,15 +144,15 @@ class CompressionDialog(QDialog):
         key = self.profile.currentData()
         self.advanced.setVisible(key == "custom")
         notes = {
-            "quality": "原画质：保留全部图片像素，逐张比较无损编码；合并重复对象，精简静态文档中未使用的字体字符。",
-            "high": "高质量：高分辨率图片按需降至 300 DPI，JPEG 质量 92；无损线稿继续使用无损编码。",
-            "balanced": "均衡：高分辨率图片按需降至 200 DPI，JPEG 质量 85，兼顾阅读清晰度与文件大小。",
-            "send": "适合外发：高分辨率图片按需降至 150 DPI，JPEG 质量 80，请核对小字与细线。",
-            "small": "小体积：高分辨率图片按需降至 120 DPI，JPEG 质量 72，图片细节损失更明显。",
-            "custom": f"自定义：图片按需降至 {self.dpi.value()} DPI，JPEG 质量 {self.quality.value()}；质量 100 仍不等于无损。",
+            "quality": tr("原画质：保留全部图片像素，逐张比较无损编码；合并重复对象，精简静态文档中未使用的字体字符。"),
+            "high": tr("高质量：高分辨率图片按需降至 300 DPI，JPEG 质量 92；无损线稿继续使用无损编码。"),
+            "balanced": tr("均衡：高分辨率图片按需降至 200 DPI，JPEG 质量 85，兼顾阅读清晰度与文件大小。"),
+            "send": tr("适合外发：高分辨率图片按需降至 150 DPI，JPEG 质量 80，请核对小字与细线。"),
+            "small": tr("小体积：高分辨率图片按需降至 120 DPI，JPEG 质量 72，图片细节损失更明显。"),
+            "custom": tr("自定义：图片按需降至 {p0} DPI，JPEG 质量 {p1}；质量 100 仍不等于无损。", p0=self.dpi.value(), p1=self.quality.value()),
         }
-        self.note.setText(notes[key] + " 文字和矢量内容保留；黑白图片不降采样。")
-        self.summary.setText("请重新计算当前档位。")
+        self.note.setText(notes[key] + tr(' 文字和矢量内容保留；黑白图片不降采样。'))
+        self.summary.setText(tr('请重新计算当前档位。'))
 
     def _set_busy(self, busy):
         self._busy = busy
@@ -180,7 +181,7 @@ class CompressionDialog(QDialog):
         self.result_note.hide()
         self.result = None
         self._set_busy(True)
-        self.summary.setText("正在计算压缩效果…")
+        self.summary.setText(tr('正在计算压缩效果…'))
         try:
             if self.baseline is None:
                 self.baseline = self.owner._write_pdf(
@@ -229,21 +230,21 @@ class CompressionDialog(QDialog):
                 if not (key == "custom" and self.grayscale.isChecked()):
                     self.result = self.lossless
                     after = os.path.getsize(self.lossless.path)
-                    fallback_note = "当前档位未进一步缩小，已保留更小的无损结果。"
+                    fallback_note = tr("当前档位未进一步缩小，已保留更小的无损结果。")
             self.reduced = after < before
-            change = f"缩小 {(1 - after / before) * 100:.1f}%" if self.reduced else "没有缩小，可自行决定是否导出"
-            baseline_note = "（工作区基准）" if self.owner.ws.dirty else ""
+            change = tr("缩小 {p0}%", p0=f'{(1 - after / before) * 100:.1f}') if self.reduced else tr("没有缩小，可自行决定是否导出")
+            baseline_note = tr("（工作区基准）") if self.owner.ws.dirty else ""
             self.summary.setText(f"{size_text(before)} → {size_text(after)} · {change}{baseline_note}")
-            self.result_note.setText(fallback_note or ('原画质结果：图片像素保留，可放大对照细节。' if self.result is self.lossless
-                                                      else '当前档位可能改变图片细节，请放大核对小字与细线。'))
+            self.result_note.setText(fallback_note or (tr('原画质结果：图片像素保留，可放大对照细节。') if self.result is self.lossless
+                                                      else tr('当前档位可能改变图片细节，请放大核对小字与细线。')))
             self.result_note.show()
         except OperationCancelled:
             self._show_cancelled()
         except PdfError as exc:
             self.result = None
-            self.summary.setText('压缩未完成，可调整档位后重试。')
+            self.summary.setText(tr('压缩未完成，可调整档位后重试。'))
             self.comparison.clear('压缩未完成，原文件保留')
-            QMessageBox.warning(self, "压缩未完成", str(exc))
+            QMessageBox.warning(self, tr('压缩未完成'), str(exc))
         finally:
             self._release_old_results()
             self._set_busy(False)
@@ -251,7 +252,7 @@ class CompressionDialog(QDialog):
             self.preview()
 
     def _show_cancelled(self):
-        self.summary.setText("计算已取消，原件保留；可重新计算。")
+        self.summary.setText(tr('计算已取消，原件保留；可重新计算。'))
         self.comparison.clear('计算已取消，可以重新开始')
 
     def preview(self):
@@ -276,12 +277,12 @@ class CompressionDialog(QDialog):
     def save_result(self):
         if self._busy or not self.result:
             return
-        if not self.reduced and QMessageBox.question(self, "没有缩小", "压缩结果没有变小，仍要另存吗？",
+        if not self.reduced and QMessageBox.question(self, tr('没有缩小'), tr('压缩结果没有变小，仍要另存吗？'),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
         stem = Path(self.owner.ws.path or "文档.pdf").stem
-        path = new_pdf_path(self, self.owner.store, "另存压缩结果", stem + "_压缩.pdf")
+        path = new_pdf_path(self, self.owner.store, tr('另存压缩结果'), stem + tr('_压缩.pdf'))
         if not path:
             return
         self._set_busy(True)
@@ -289,12 +290,12 @@ class CompressionDialog(QDialog):
             result = self.owner._write_pdf(list(self.result.pages), path, "导出压缩结果", cancellable=True,
                                           options=WriteOptions(compression="quality"))
             if result is not None:
-                QMessageBox.information(self, "已导出", f"已完整导出 1 个文件：\n{result.path}\n大小：{size_text(os.path.getsize(result.path))}")
+                QMessageBox.information(self, tr('已导出'), tr('已完整导出 1 个文件：\n{p0}\n大小：{p1}', p0=f'{result.path}', p1=f'{size_text(os.path.getsize(result.path))}'))
                 self.owner._show_write_notes((self.baseline, self.result, result))
         except OperationCancelled:
-            QMessageBox.information(self, "已取消", "已取消，完成 0 个导出文件。")
+            QMessageBox.information(self, tr('已取消'), tr('已取消，完成 0 个导出文件。'))
         except PdfError as exc:
-            QMessageBox.warning(self, "导出失败", str(exc))
+            QMessageBox.warning(self, tr('导出失败'), str(exc))
         finally:
             self._set_busy(False)
 

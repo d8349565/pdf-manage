@@ -1,4 +1,5 @@
 """Review automatic scan angles page by page before applying a batch."""
+from app.i18n import tr
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
                              QHeaderView, QHBoxLayout, QLabel,
@@ -19,20 +20,20 @@ class DeskewDialog(QDialog):
         self.host, self.pages = host, tuple(host.ws.pages)
         self.rows, self.controls, self.estimates = [], {}, {}
         self.loading, self.preview_row, self.analyzing = False, None, False
-        self.setWindowTitle('扫描纠偏')
+        self.setWindowTitle(tr('扫描纠偏'))
         layout = QVBoxLayout(self)
         bar = QHBoxLayout()
-        bar.addWidget(QLabel('处理范围'))
+        bar.addWidget(QLabel(tr('处理范围')))
         self.scope = PageScope(self.pages, host.ws.target_indices())
         bar.addWidget(self.scope, 1)
-        self.analyze_button = QPushButton('自动分析角度')
+        self.analyze_button = QPushButton(tr('自动分析角度'))
         self.analyze_button.clicked.connect(self.analyze)
         bar.addWidget(self.analyze_button)
         layout.addLayout(bar)
         body = QHBoxLayout()
         left = QVBoxLayout()
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(['应用', '页码', '分析结果', '旋转角度'])
+        self.table.setHorizontalHeaderLabels([tr('应用'), tr('页码'), tr('分析结果'), tr('旋转角度')])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -42,9 +43,9 @@ class DeskewDialog(QDialog):
         for column, width in ((0, 44), (1, 52), (3, 108)):
             self.table.setColumnWidth(column, width)
         self.table.setMinimumSize(430, 330)
-        self.table.setAccessibleName('逐页纠偏角度与确认状态')
+        self.table.setAccessibleName(tr('逐页纠偏角度与确认状态'))
         left.addWidget(self.table)
-        instruction = QLabel('正数顺时针、负数逆时针，支持 ±10°。右侧滚动查看上下页；不可靠建议需勾选确认。')
+        instruction = QLabel(tr('正数顺时针、负数逆时针，支持 ±10°。右侧滚动查看上下页；不可靠建议需勾选确认。'))
         instruction.setWordWrap(True)
         left.addWidget(instruction)
         body.addLayout(left, 1)
@@ -54,9 +55,9 @@ class DeskewDialog(QDialog):
         self.preview.page_changed.connect(self.follow_preview)
         right.addWidget(self.preview)
         toggles = QHBoxLayout()
-        self.grid = QCheckBox('显示水平参考线')
+        self.grid = QCheckBox(tr('显示水平参考线'))
         self.grid.setChecked(True)
-        self.original = QCheckBox('查看原页')
+        self.original = QCheckBox(tr('查看原页'))
         toggles.addWidget(self.grid)
         toggles.addWidget(self.original)
         right.addLayout(toggles)
@@ -65,13 +66,12 @@ class DeskewDialog(QDialog):
         self.status = QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        hint = QLabel('保留原页尺寸，旋转后等比缩小并补白，避免裁掉边角。可撤销，保存时另存副本。'
-                      '含批注、印章或表单的页会跳过；请先纠偏再添加。不处理拍照透视或弯曲书页。')
+        hint = QLabel(tr('保留原页尺寸，旋转后等比缩小并补白，避免裁掉边角。可撤销，保存时另存副本。含批注、印章或表单的页会跳过；请先纠偏再添加。不处理拍照透视或弯曲书页。'))
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText('应用已勾选页面')
-        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr('应用已勾选页面'))
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -98,13 +98,13 @@ class DeskewDialog(QDialog):
                 checked.setCheckState(Qt.CheckState.Unchecked)
                 self.table.setItem(index, 0, checked)
                 self.table.setItem(index, 1, QTableWidgetItem(str(row + 1)))
-                self.table.setItem(index, 2, QTableWidgetItem('待分析，也可手动设置'))
+                self.table.setItem(index, 2, QTableWidgetItem(tr('待分析，也可手动设置')))
                 spin = ClearDoubleSpinBox()
                 spin.setRange(-10, 10)
                 spin.setDecimals(1)
                 spin.setSingleStep(.1)
                 spin.setSuffix('°')
-                spin.setAccessibleName(f'第 {row + 1} 页纠偏角度')
+                spin.setAccessibleName(tr('第 {p0} 页纠偏角度', p0=f'{row + 1}'))
                 spin.valueChanged.connect(lambda _, i=index: self.manual_angle(i))
                 self.table.setCellWidget(index, 3, spin)
                 self.controls[row] = spin
@@ -152,7 +152,7 @@ class DeskewDialog(QDialog):
         except OperationCancelled:
             notice = '分析已取消，页面未修改；可重新分析或手动设置。'
         except (ValueError, PdfError) as exc:
-            QMessageBox.warning(self, '无法分析扫描角度', str(exc))
+            QMessageBox.warning(self, tr('无法分析扫描角度'), str(exc))
         finally:
             self.loading = False
             self.analyzing = False
@@ -178,7 +178,7 @@ class DeskewDialog(QDialog):
         row = self.rows[index]
         self.table.item(index, 0).setCheckState(Qt.CheckState.Checked if abs(self.controls[row].value()) >= .05
                                                else Qt.CheckState.Unchecked)
-        self.table.item(index, 2).setText('手动设置，请核对右侧预览')
+        self.table.item(index, 2).setText(tr('手动设置，请核对右侧预览'))
         self.sync()
 
     def angles(self):
@@ -230,7 +230,7 @@ class DeskewDialog(QDialog):
         if self.rows:
             review = sum(value.status == 'review' for value in self.estimates.values())
             skipped = sum(value.status in ('blank', 'unsupported') for value in self.estimates.values())
-            self.status.setText(f'共 {len(self.rows)} 页 · 已勾选 {count} 页 · 待确认 {review} 页 · 跳过 {skipped} 页')
+            self.status.setText(tr('共 {p0} 页 · 已勾选 {p1} 页 · 待确认 {p2} 页 · 跳过 {p3} 页', p0=f'{len(self.rows)}', p1=f'{count}', p2=f'{review}', p3=f'{skipped}'))
         self.preview.refresh_pages()
 
 
@@ -251,8 +251,8 @@ def open_deskew(host):
             raise ValueError('工作区已改变，请重新操作。')
         host.ws.edit_pages(changes, '扫描纠偏')
         host.refresh()
-        host.statusBar().showMessage(host.shortcut_manager.describe(f'已纠偏 {len(changes)} 页；Ctrl+Z 可撤销，保存时另存副本。'), 6500)
+        host.statusBar().showMessage(host.shortcut_manager.describe(tr('已纠偏 {p0} 页；Ctrl+Z 可撤销，保存时另存副本。', p0=f'{len(changes)}')), 6500)
     except OperationCancelled:
-        host.statusBar().showMessage('已取消，页面未修改。', 5000)
+        host.statusBar().showMessage(tr('已取消，页面未修改。'), 5000)
     except (ValueError, PdfError) as exc:
-        QMessageBox.warning(host, '无法纠偏', str(exc))
+        QMessageBox.warning(host, tr('无法纠偏'), str(exc))

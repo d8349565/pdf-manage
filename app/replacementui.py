@@ -1,4 +1,5 @@
 """Small native controls for editing existing text on the PDF page."""
+from app.i18n import tr
 from PyQt6.QtCore import QRect, QSignalBlocker, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFontDatabase, QPainter, QSyntaxHighlighter, QTextCharFormat
 from PyQt6.QtWidgets import QApplication, QComboBox, QCompleter, QDoubleSpinBox, QFrame, QProxyStyle, QSizePolicy, QStyle, QTextEdit, QToolButton
@@ -30,7 +31,7 @@ class FontChoice(QComboBox):
         self.addItems([family for family in QFontDatabase.families() if not family.startswith('@')])
         for index in range(self.count()):
             self.setItemData(index, QSize(0, 28), Qt.ItemDataRole.SizeHintRole)
-        self.lineEdit().setPlaceholderText('搜索字体')
+        self.lineEdit().setPlaceholderText(tr('搜索字体'))
         set_theme_style(self.lineEdit(),
             'QLineEdit { min-height: 0; padding: 0; border: none; background: transparent; '
             'font-size: 13px; color: #1F2937; placeholder-text-color: #4D6B67; }')

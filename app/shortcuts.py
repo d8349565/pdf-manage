@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QAbstractButton, QAbstractSpinBox, QD
                              QLineEdit, QPlainTextEdit, QTextEdit, QWidget)
 
 from app.runtime import preferences
+from app.i18n import tr
 from app.shortcutcommands import COMMANDS, LEGACY_IDS, scope_label, scopes_overlap
 
 PORTABLE = QKeySequence.SequenceFormat.PortableText
@@ -21,12 +22,12 @@ _OWNERS = {command.owner for command in COMMANDS.values() if command.owner}
 
 def canonical(value):
     if not isinstance(value, str) or not value.strip():
-        raise ValueError('请按下一个有效的按键组合。')
+        raise ValueError(tr('请按下一个有效的按键组合。'))
     sequence = QKeySequence(value, PORTABLE)
     if sequence.isEmpty() or sequence.count() != 1 or sequence[0].key() in (
             Qt.Key.Key_unknown, Qt.Key.Key_Shift, Qt.Key.Key_Control,
             Qt.Key.Key_Alt, Qt.Key.Key_Meta, Qt.Key.Key_AltGr):
-        raise ValueError('每个快捷键需要一个完整组合，不支持连续组合键。')
+        raise ValueError(tr('每个快捷键需要一个完整组合，不支持连续组合键。'))
     combination = sequence[0]
     modifiers = combination.keyboardModifiers() & ~Qt.KeyboardModifier.KeypadModifier
     key = combination.key()
@@ -41,17 +42,17 @@ def binding_error(command, value):
     sequence = QKeySequence(value, PORTABLE)
     combination = sequence[0]
     if combination.key() == Qt.Key.Key_Escape:
-        return 'Esc 保留用于取消当前操作，请选择其他组合。'
+        return tr('Esc 保留用于取消当前操作，请选择其他组合。')
     if combination.keyboardModifiers() & Qt.KeyboardModifier.MetaModifier:
-        return 'Windows 系统按键不用于应用快捷键。'
+        return tr('Windows 系统按键不用于应用快捷键。')
     if value in ('Esc', 'Tab', 'Backtab', 'Shift+Tab', 'Alt+F4', 'Alt+Space', 'Alt+Tab',
                  'Alt+Shift+Tab', 'Ctrl+Esc', 'Ctrl+Alt+Del'):
-        return '此按键用于取消、切换焦点或系统操作，请选择其他组合。'
+        return tr('此按键用于取消、切换焦点或系统操作，请选择其他组合。')
     if value in ('Return', 'Enter') and command.scope != 'search':
-        return '回车保留用于确认当前输入，请添加 Ctrl、Alt 或 Shift。'
+        return tr('回车保留用于确认当前输入，请添加 Ctrl、Alt 或 Shift。')
     if command.scope in ('search', 'textbox') and text_editing_combination(sequence):
         if command.scope != 'search' or value not in ('Return', 'Enter', 'Shift+Return', 'Shift+Enter'):
-            return '此操作在输入框内使用，请选择不占用文字输入和原生编辑的组合或功能键。'
+            return tr('此操作在输入框内使用，请选择不占用文字输入和原生编辑的组合或功能键。')
     return ''
 
 
@@ -105,11 +106,11 @@ def decode_config(raw):
     try:
         data = json.loads(raw)
     except (TypeError, ValueError) as error:
-        raise ValueError('配置内容无法读取，请选择有效的快捷键 JSON 文件。') from error
+        raise ValueError(tr('配置内容无法读取，请选择有效的快捷键 JSON 文件。')) from error
     if not isinstance(data, dict) or type(data.get('version')) is not int or data['version'] != 1:
-        raise ValueError('不支持此快捷键配置版本。')
+        raise ValueError(tr('不支持此快捷键配置版本。'))
     if not isinstance(data.get('overrides'), dict):
-        raise ValueError('配置缺少有效的快捷键设置。')
+        raise ValueError(tr('配置缺少有效的快捷键设置。'))
     return data['overrides']
 
 
@@ -152,7 +153,7 @@ class ShortcutManager(QObject):
             if migrate:
                 old = json.loads(self.settings.value('reading/shortcuts', '{}', type=str))
                 if not isinstance(old, dict):
-                    raise ValueError('旧阅读快捷键配置无法读取。')
+                    raise ValueError(tr('旧阅读快捷键配置无法读取。'))
                 overrides = {LEGACY_IDS[key]: [value] if value else [] for key, value in old.items()
                              if key in LEGACY_IDS and isinstance(value, str)}
             elif self.settings.contains(SETTINGS_KEY):
@@ -160,17 +161,17 @@ class ShortcutManager(QObject):
             else:
                 overrides = {}
         except (TypeError, ValueError) as error:
-            self.notices.append(f'{error} 原配置已保留，本次使用默认快捷键。')
+            self.notices.append(tr('{error} 原配置已保留，本次使用默认快捷键。', error=error))
             return values
         explicit = set()
         for identifier, saved in overrides.items():
             if identifier not in COMMANDS:
-                self.notices.append('已跳过无法识别的命令：' + str(identifier))
+                self.notices.append(tr('已跳过无法识别的命令：') + str(identifier))
                 continue
             explicit.add(identifier)
             values[identifier] = []
             if not isinstance(saved, list):
-                self.notices.append(f'“{COMMANDS[identifier].label}”的异常绑定已停用。')
+                self.notices.append(tr('“{label}”的异常绑定已停用。', label=tr(COMMANDS[identifier].label)))
                 continue
             for value in saved:
                 try:
@@ -181,7 +182,7 @@ class ShortcutManager(QObject):
                     if key not in values[identifier]:
                         values[identifier].append(key)
                 except ValueError:
-                    self.notices.append(f'“{COMMANDS[identifier].label}”的一个异常绑定已停用。')
+                    self.notices.append(tr('“{label}”的一个异常绑定已停用。', label=tr(COMMANDS[identifier].label)))
         for left, right, key in conflicts(values):
             # Explicit choices win over new defaults; two invalid saved choices
             # are both suspended rather than silently picking a winner.
@@ -190,11 +191,11 @@ class ShortcutManager(QObject):
             for identifier in losers:
                 if key in values[identifier]:
                     values[identifier].remove(key)
-                    self.notices.append(f'“{COMMANDS[identifier].label}”的冲突绑定 {key} 已停用。')
+                    self.notices.append(tr('“{label}”的冲突绑定 {key} 已停用。', label=tr(COMMANDS[identifier].label), key=key))
         if migrate:
             error = self._write(values)
             if error:
-                self.notices.append('旧配置本次已读取，但迁移未保存：' + error)
+                self.notices.append(tr('旧配置本次已读取，但迁移未保存：') + error)
         return values
 
     def values(self):
@@ -205,13 +206,13 @@ class ShortcutManager(QObject):
         for identifier in COMMANDS:
             bindings = values.get(identifier, self.defaults[identifier])
             if not isinstance(bindings, (list, tuple)):
-                raise ValueError(f'“{COMMANDS[identifier].label}”的快捷键需要是一个列表。')
+                raise ValueError(tr('“{label}”的快捷键需要是一个列表。', label=tr(COMMANDS[identifier].label)))
             result[identifier] = []
             for value in bindings:
                 key = canonical(value)
                 error = binding_error(COMMANDS[identifier], key)
                 if error:
-                    raise ValueError(f'“{COMMANDS[identifier].label}”：{error}')
+                    raise ValueError(tr('“{label}”：{error}', label=tr(COMMANDS[identifier].label), error=error))
                 if key not in result[identifier]:
                     result[identifier].append(key)
         return result
@@ -224,8 +225,9 @@ class ShortcutManager(QObject):
         collisions = conflicts(normalized)
         if collisions:
             left, right, key = collisions[0]
-            return (f'{key} 同时用于“{COMMANDS[left].label}”和“{COMMANDS[right].label}”，'
-                    f'生效位置重叠（{scope_label(COMMANDS[left])}／{scope_label(COMMANDS[right])}）。')
+            return tr('{key} 同时用于“{left}”和“{right}”，生效位置重叠（{left_scope}／{right_scope}）。',
+                      key=key, left=tr(COMMANDS[left].label), right=tr(COMMANDS[right].label),
+                      left_scope=tr(scope_label(COMMANDS[left])), right_scope=tr(scope_label(COMMANDS[right])))
         return ''
 
     def encode(self, values=None):
@@ -248,7 +250,7 @@ class ShortcutManager(QObject):
             self.settings.setValue(SETTINGS_KEY, self.encode(values))
             self.settings.sync()
             if self.settings.status() != QSettings.Status.NoError:
-                raise OSError('设置位置无法写入')
+                raise OSError(tr('设置位置无法写入'))
         except (OSError, RuntimeError) as error:
             if old is None:
                 self.settings.remove(SETTINGS_KEY)
@@ -258,7 +260,7 @@ class ShortcutManager(QObject):
             # QSettings keeps the first error status. A fresh instance allows
             # retrying after permissions/disk space have been repaired.
             self.settings = _fresh_settings(self.settings)
-            return f'快捷键未保存，仍使用原设置。请检查设置目录的写入权限。{error}'
+            return tr('快捷键未保存，仍使用原设置。请检查设置目录的写入权限。{error}', error=error)
         return ''
 
     def apply(self, values):
@@ -289,16 +291,17 @@ class ShortcutManager(QObject):
         return ' / '.join(key.toString(NATIVE) for key in (sequences if all_keys else sequences[:1]))
 
     def hint(self, identifier, text=None):
-        text = COMMANDS[identifier].label if text is None else text
+        text = tr(COMMANDS[identifier].label) if text is None else text
         binding = self.label(identifier, all_keys=True)
         return f'{text} ({binding})' if binding else text
 
     def describe(self, text):
+        text = tr(text)
         for phrase, identifier, label in (
             ('Ctrl+Z 可撤销', 'edit.undo', '可撤销'), ('Ctrl+Z 撤销', 'edit.undo', '撤销'),
             ('Ctrl+S 保存', 'file.save', '保存'), ('Ctrl+Enter 完成', 'textbox.apply', '完成文本框'),
         ):
-            text = text.replace(phrase, self.hint(identifier, label))
+            text = text.replace(tr(phrase), self.hint(identifier, label))
         return text
 
     def watch_hint(self, identifier, target, text):
@@ -342,7 +345,7 @@ class ShortcutManager(QObject):
         return action
 
     def bind_callback(self, identifier, owner, callback, *, enabled=None):
-        action = QAction(COMMANDS[identifier].label, owner)
+        action = QAction(tr(COMMANDS[identifier].label), owner)
         action.triggered.connect(lambda checked=False: callback() if enabled is None or enabled() else None)
         return self.bind_action(identifier, action, owner)
 
@@ -479,13 +482,14 @@ def _target(owner, selector):
     if '#' in text:
         text, position = text.rsplit('#', 1)
         index = int(position)
+    captions = {_caption(text), _caption(tr(text))}
     matches = []
     for button in buttons:
         caption = _caption(button.toolTip() if kind == 'tip' else
                            button.accessibleName() if kind == 'name' else button.text())
         if kind == 'text' and not caption:
             caption = _caption(button.toolTip() or button.accessibleName())
-        if caption == text or (kind == 'prefix' and caption.startswith(text)):
+        if caption in captions or (kind == 'prefix' and any(caption.startswith(text) for text in captions)):
             matches.append(button)
     return matches[index] if index < len(matches) else None
 
@@ -556,9 +560,10 @@ def install_main_shortcuts(host):
     walk(host._menubar)
     host._shortcut_actions = actions = {}
     for identifier, command in COMMANDS.items():
-        if not command.menu or command.menu not in menu_actions:
+        path = tuple(tr(part) for part in command.menu)
+        if not path or path not in menu_actions:
             continue
-        action = menu_actions[command.menu]
+        action = menu_actions[path]
         widgets, context = host, Qt.ShortcutContext.WindowShortcut
         if command.scope == 'pages':
             widgets = (host.left_view, host.arrange_view)
@@ -591,7 +596,7 @@ def install_main_shortcuts(host):
                 lambda value=kind: _select_review_tool(host, value))
         elif identifier.startswith('annotation.'):
             name = identifier.split('.', 1)[1]
-            action = QAction(command.label, host)
+            action = QAction(tr(command.label), host)
             action.triggered.connect(lambda checked=False, value=name: _annotation_operation(host, value))
             actions[identifier] = manager.bind_action(identifier, action, host.preview_view,
                 context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -654,7 +659,7 @@ def bind_outline(host):
     ):
         identifier = 'outline.' + name
         action = (panel.expand_all_action if name == 'expand' else panel.collapse_all_action
-                  if name == 'collapse' else QAction(COMMANDS[identifier].label, panel))
+                  if name == 'collapse' else QAction(tr(COMMANDS[identifier].label), panel))
         if name not in ('expand', 'collapse'):
             action.triggered.connect(lambda checked=False, fn=callback: fn())
         host._shortcut_actions[identifier] = manager.bind_action(identifier, action, panel,
@@ -685,5 +690,8 @@ _MAIN_BUTTON_IDS.update({
 def link_main_button_hint(host, button, label):
     text = _caption(label)
     identifier = _MAIN_BUTTON_IDS.get(text)
+    if identifier is None:
+        identifier = next((key for source, key in _MAIN_BUTTON_IDS.items()
+                           if _caption(tr(source)) == text), None)
     if identifier:
         host.shortcut_manager.watch_hint(identifier, button, text)

@@ -1,4 +1,5 @@
 """A draggable, session-only shortcut to the reader's shared settings menu."""
+from app.i18n import tr
 from app.themes import set_theme_style, theme_manager, ui_color
 from PyQt6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer, Qt
 from PyQt6.QtGui import QAction, QColor, QCursor, QIcon, QPainter, QPen, QRegion
@@ -31,7 +32,7 @@ class ReadingSettingsOrb(QToolButton):
         self.setIconSize(QSize(24, 24))
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setAccessibleName('阅读设置')
+        self.setAccessibleName(tr('阅读设置'))
         set_theme_style(self, '''
             QToolButton#readingSettingsOrb {
                 min-width: 40px; min-height: 40px; padding: 0; border-radius: 14px;
@@ -57,9 +58,9 @@ class ReadingSettingsOrb(QToolButton):
         self.clicked.connect(self.open_settings)
         menu.aboutToShow.connect(self._menu_opened)
         menu.aboutToHide.connect(self._menu_closed)
-        self.hide_action = QAction('本次运行隐藏悬浮球', host)
+        self.hide_action = QAction(tr('本次运行隐藏悬浮球'), host)
         self.hide_action.triggered.connect(self.hide_temporarily)
-        self.restore_action = QAction(self._reading_icon, '显示阅读悬浮球', host)
+        self.restore_action = QAction(self._reading_icon, tr('显示阅读悬浮球'), host)
         self.restore_action.triggered.connect(self.restore)
         theme_manager().changed.connect(self._refresh_theme)
         self._refresh_theme()
@@ -174,7 +175,7 @@ class ReadingSettingsOrb(QToolButton):
         self.hide_timer.stop()
         self.hide()
         self.sync()
-        self.host.statusBar().showMessage('本次运行已隐藏悬浮球；可从“视图 → 显示阅读悬浮球”恢复。', 6000)
+        self.host.statusBar().showMessage(tr('本次运行已隐藏悬浮球；可从“视图 → 显示阅读悬浮球”恢复。'), 6000)
 
     def restore(self):
         self.temporarily_hidden = False
@@ -195,16 +196,16 @@ class ReadingSettingsOrb(QToolButton):
         available = bool(self.host.ws.pages)
         self.host.default_reading_view_action.setEnabled(available and self.host._zoom_mode in ('page', 'width'))
         self.host.default_reading_view_action.setToolTip(
-            '保存当前页面布局和适配方式，新打开的文档使用此设置'
-            if self.host._zoom_mode in ('page', 'width') else '先选择“适合页面”或“适合宽度”，再设为默认')
+            tr('保存当前页面布局和适配方式，新打开的文档使用此设置')
+            if self.host._zoom_mode in ('page', 'width') else tr('先选择“适合页面”或“适合宽度”，再设为默认'))
         self.restore_action.setEnabled(available)
         self.hide_action.setEnabled(available and not self.temporarily_hidden)
         layout = self.host.reading_layout_actions[self.host._reading_layout].text()
         zoom = self.host.reading_zoom_actions[self.host._zoom_mode].text()
-        hint = '\n阅读区较窄，当前暂用单页。' if self.host.reading_fallback_notice.isVisible() else ''
+        hint = tr('\n阅读区较窄，当前暂用单页。') if self.host.reading_fallback_notice.isVisible() else ''
         keys = ' · '.join(self.host.shortcut_manager.hint('reader.' + key, label)
-                          for key, label in (('single', '单页'), ('spread', '双页'), ('four', '四页')))
-        self.setToolTip(f'阅读设置\n{layout} · {zoom}{hint}\n按住拖动可调整位置（本次运行有效）\n{keys}')
+                          for key, label in (('single', tr('单页')), ('spread', tr('双页')), ('four', tr('四页'))))
+        self.setToolTip(tr('阅读设置\n{p0} · {p1}{p2}\n按住拖动可调整位置（本次运行有效）\n{p3}', p0=f'{layout}', p1=f'{zoom}', p2=f'{hint}', p3=f'{keys}'))
         visible = (available and self.parentWidget().isVisible() and not self.temporarily_hidden
                    and not (hasattr(self.host, 'immersive') and self.host.immersive.borderless))
         if not visible:

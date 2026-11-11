@@ -1,5 +1,6 @@
 """Shared progress UI and worker for file operations."""
 from __future__ import annotations
+from app.i18n import tr
 from app.themes import set_theme_style
 from time import monotonic
 from threading import Event
@@ -44,7 +45,7 @@ class TaskProgressDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 22)
         layout.setSpacing(0)
-        badge = QLabel(f'{APP_NAME}  /  任务进度')
+        badge = QLabel(tr('{p0}  /  任务进度', p0=tr(APP_NAME)))
         badge.setObjectName('taskBadge')
         layout.addWidget(badge)
         layout.addSpacing(10)
@@ -53,11 +54,11 @@ class TaskProgressDialog(QDialog):
         layout.addWidget(heading)
         layout.addSpacing(24)
         row = QHBoxLayout()
-        self.stage = QLabel('正在准备…')
+        self.stage = QLabel(tr('正在准备…'))
         self.stage.setObjectName('taskStage')
         self.stage.setWordWrap(True)
         row.addWidget(self.stage, 1)
-        self.percent = QLabel('处理中')
+        self.percent = QLabel(tr('处理中'))
         self.percent.setObjectName('taskPercent')
         row.addWidget(self.percent, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(row)
@@ -67,7 +68,7 @@ class TaskProgressDialog(QDialog):
         self.bar.setRange(0, 0)
         layout.addWidget(self.bar)
         layout.addSpacing(10)
-        self.detail = QLabel('正在处理，请稍候')
+        self.detail = QLabel(tr('正在处理，请稍候'))
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
         layout.addSpacing(22)
@@ -77,9 +78,9 @@ class TaskProgressDialog(QDialog):
         layout.addWidget(divider)
         layout.addSpacing(16)
         footer = QHBoxLayout()
-        self.hint = QLabel('本地处理 · 文件不会上传')
+        self.hint = QLabel(tr('本地处理 · 文件不会上传'))
         footer.addWidget(self.hint, 1)
-        self.cancel_button = QPushButton('取消任务')
+        self.cancel_button = QPushButton(tr('取消任务'))
         self.cancel_button.setVisible(cancellable)
         self.cancel_button.setAutoDefault(False)
         self.cancel_button.clicked.connect(self.request_cancel)
@@ -94,21 +95,21 @@ class TaskProgressDialog(QDialog):
             self.bar.setRange(0, total)
             self.bar.setValue(min(current, total))
             self.percent.setText(f'{min(100, int(current * 100 / total))}%')
-            self.detail.setText(f'已完成 {min(current, total)} / {total}')
+            self.detail.setText(tr('已完成 {p0} / {p1}', p0=f'{min(current, total)}', p1=f'{total}'))
         else:
             self.bar.setRange(0, 0)
-            self.percent.setText('处理中')
-            self.detail.setText('此步骤耗时取决于文件大小，请稍候')
+            self.percent.setText(tr('处理中'))
+            self.detail.setText(tr('此步骤耗时取决于文件大小，请稍候'))
 
     def request_cancel(self):
         if self._finished or self._cancelling or not self._cancellable:
             return
         self._cancelling = True
         self.cancel_button.setEnabled(False)
-        self.cancel_button.setText('正在取消')
-        self.stage.setText('正在结束当前步骤…')
-        self.detail.setText('结束后自动关闭，请勿重复操作')
-        self.percent.setText('取消中')
+        self.cancel_button.setText(tr('正在取消'))
+        self.stage.setText(tr('正在结束当前步骤…'))
+        self.detail.setText(tr('结束后自动关闭，请勿重复操作'))
+        self.percent.setText(tr('取消中'))
         self.bar.setRange(0, 0)
         self.canceled.emit()
 

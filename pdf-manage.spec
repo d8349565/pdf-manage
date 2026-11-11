@@ -5,12 +5,14 @@ import sys
 from PyInstaller.building.api import COLLECT, EXE, PYZ
 from PyInstaller.building.build_main import Analysis
 from PyInstaller.utils.hooks import collect_submodules
+from PyQt6.QtCore import QLibraryInfo
 from PyInstaller.utils.win32.versioninfo import (
     FixedFileInfo, StringFileInfo, StringStruct, StringTable,
     VarFileInfo, VarStruct, VSVersionInfo,
 )
 
 ROOT = Path(SPECPATH).resolve()
+QT_TRANSLATIONS = {f'qtbase_{code}.qm' for code in ('zh_CN', 'zh_TW', 'ja', 'ko', 'de', 'fr', 'es')}
 sys.path.insert(0, str(ROOT))
 from app import APP_IS_PRERELEASE, APP_NAME, APP_SLUG, APP_VERSION_PARTS, __version__
 sys.path.insert(0, str(ROOT / "packaging"))
@@ -117,7 +119,9 @@ def keep_data(item) -> bool:
     hay = _hay(item)
     if any(tok in hay for tok in DROP):
         return False
-    if "translations" in hay or "/qml/" in hay:
+    if "translations" in hay:
+        return Path(item[0]).name in QT_TRANSLATIONS
+    if "/qml/" in hay:
         return False
     return True
 
@@ -139,6 +143,11 @@ a = Analysis(
            (str(ROOT / "app" / "assets" / "quickstart" / "reading.png"), "app/assets/quickstart"),
            (str(ROOT / "app" / "assets" / "quickstart" / "arrange.png"), "app/assets/quickstart"),
            (str(ROOT / "packaging" / "licenses"), "licenses")]
+          + [(str(path), 'app/locales') for path in sorted((ROOT / 'app' / 'locales').glob('*.json'))
+             if path.stem in ('en', 'zh-TW', 'ja', 'ko', 'de', 'fr', 'es')]
+          + [(str(Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / name), 'PyQt6/Qt6/translations')
+             for name in sorted(QT_TRANSLATIONS)
+             if (Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / name).is_file()]
           + collect_license_data(ROOT)
           + ([(str(DONATION_IMAGE), "app/assets")] if DONATION_IMAGE.is_file() else []),
     hiddenimports=collect_submodules("app")

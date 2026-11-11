@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.i18n import mark_text, tr
 from app.themes import set_theme_style, ui_color
 
 from collections import OrderedDict
@@ -70,10 +71,10 @@ FALLBACK_PAPERS = (
 )
 
 MARGIN_PRESETS = (
-    ("无边距（充满可打印区）", 0.0),
-    ("窄边距 5 毫米", 5.0),
-    ("常规边距 10 毫米", 10.0),
-    ("宽边距 20 毫米", 20.0),
+    (mark_text('无边距（充满可打印区）'), 0.0),
+    (mark_text('窄边距 5 毫米'), 5.0),
+    (mark_text('常规边距 10 毫米'), 10.0),
+    (mark_text('宽边距 20 毫米'), 20.0),
 )
 
 
@@ -885,7 +886,7 @@ class SheetPreview(QWidget):
         self._cache_bytes += image.sizeInBytes()
         if error:
             self._errors[key] = error
-            self.setToolTip(f"预览失败：{error}。可以尝试打印，失败时会说明具体页码。")
+            self.setToolTip(tr('预览失败：{p0}。可以尝试打印，失败时会说明具体页码。', p0=f'{error}'))
         while len(self._cache) > PREVIEW_CACHE_SIZE or (self._cache_bytes > PREVIEW_CACHE_BYTES and len(self._cache) > 1):
             dropped_key, dropped = self._cache.popitem(last=False)
             self._cache_bytes -= dropped.sizeInBytes()
@@ -916,7 +917,7 @@ class PrintDialog(QDialog):
         self._geometry_cache: dict[tuple, dict[bool, SheetGeometry]] = {}
         self._printing = False
 
-        self.setWindowTitle("打印")
+        self.setWindowTitle(tr('打印'))
         available = self.screen().availableGeometry()
         width, height = min(1120, available.width() - 32), min(760, available.height() - 32)
         self.setMinimumSize(min(880, width), min(600, height))
@@ -1032,18 +1033,18 @@ class PrintDialog(QDialog):
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
-        toolbar.addWidget(self._tool_btn("zoom-out", "缩小", self._zoom_out))
-        toolbar.addWidget(self._tool_btn("zoom-in", "放大", self._zoom_in))
-        self.btn_fit = self._tool_btn("layout-grid", "适应窗口", self._on_fit_clicked)
+        toolbar.addWidget(self._tool_btn("zoom-out", tr('缩小'), self._zoom_out))
+        toolbar.addWidget(self._tool_btn("zoom-in", tr('放大'), self._zoom_in))
+        self.btn_fit = self._tool_btn("layout-grid", tr('适应窗口'), self._on_fit_clicked)
         self.btn_fit.setCheckable(True)
         self.btn_fit.setChecked(True)
         toolbar.addWidget(self.btn_fit)
         toolbar.addSpacing(14)
 
-        self.btn_prev = self._tool_btn("chevron-left", "上一张纸", self._prev_sheet)
-        self.label_sheet = QLabel("第 1 / 1 张纸")
+        self.btn_prev = self._tool_btn("chevron-left", tr('上一张纸'), self._prev_sheet)
+        self.label_sheet = QLabel(tr('第 1 / 1 张纸'))
         set_theme_style(self.label_sheet, "color: #4D6B67; font-size: 13px;")
-        self.btn_next = self._tool_btn("chevron-right", "下一张纸", self._next_sheet)
+        self.btn_next = self._tool_btn("chevron-right", tr('下一张纸'), self._next_sheet)
         toolbar.addWidget(self.btn_prev)
         toolbar.addWidget(self.label_sheet)
         toolbar.addWidget(self.btn_next)
@@ -1108,12 +1109,12 @@ class PrintDialog(QDialog):
         lay.setSpacing(8)
         self.sidebar_scroll.setWidget(inner)
         outer.addWidget(self.sidebar_scroll, 1)
-        title = QLabel("打印设置")
+        title = QLabel(tr('打印设置'))
         set_theme_style(title, "font-size: 16px; font-weight: 600; color: #134E4A;")
         lay.addWidget(title)
 
         self.combo_printer = ClearComboBox()
-        self.combo_printer.setAccessibleName("打印机")
+        self.combo_printer.setAccessibleName(tr('打印机'))
         printers = [name for name in QPrinterInfo.availablePrinterNames()
                     if name.casefold() != "microsoft print to pdf"]
         default_name = QPrinterInfo.defaultPrinterName()
@@ -1122,18 +1123,18 @@ class PrintDialog(QDialog):
             if default_name in printers:
                 self.combo_printer.setCurrentText(default_name)
         else:
-            self.combo_printer.setPlaceholderText("未找到可用打印机")
+            self.combo_printer.setPlaceholderText(tr('未找到可用打印机'))
             self.combo_printer.setEnabled(False)
         self.combo_printer.currentIndexChanged.connect(self._on_printer_changed)
-        lay.addWidget(self._field("打印机", self.combo_printer))
+        lay.addWidget(self._field(tr('打印机'), self.combo_printer))
 
         self.btn_range_group = QButtonGroup(self)
-        self.radio_all = QRadioButton(f"全部（{len(self.pages)} 页）")
+        self.radio_all = QRadioButton(tr('全部（{p0} 页）', p0=f'{len(self.pages)}'))
         self.radio_all.setChecked(True)
         selected_count = len(self.ws.target_indices())
-        self.radio_sel = QRadioButton(f"已选（{selected_count} 页）")
+        self.radio_sel = QRadioButton(tr('已选（{p0} 页）', p0=f'{selected_count}'))
         self.radio_sel.setEnabled(selected_count > 0)
-        self.radio_custom = QRadioButton("指定页码")
+        self.radio_custom = QRadioButton(tr('指定页码'))
         for radio in (self.radio_all, self.radio_sel, self.radio_custom):
             self.btn_range_group.addButton(radio)
         scope = QWidget()
@@ -1148,20 +1149,20 @@ class PrintDialog(QDialog):
         range_row = QHBoxLayout()
         range_row.setSpacing(8)
         self.edit_range = QLineEdit()
-        self.edit_range.setAccessibleName("打印页码范围")
-        self.edit_range.setPlaceholderText("例如 1-3, 5")
+        self.edit_range.setAccessibleName(tr('打印页码范围'))
+        self.edit_range.setPlaceholderText(tr('例如 1-3, 5'))
         self.edit_range.setEnabled(False)
         range_row.addWidget(self.radio_custom)
         range_row.addWidget(self.edit_range, 1)
         scope_layout.addLayout(range_row)
         self.combo_page_subset = ClearComboBox()
-        self.combo_page_subset.setAccessibleName("奇偶页筛选")
-        for text, value in (("全部页", "all"), ("仅奇数页", "odd"), ("仅偶数页", "even")):
+        self.combo_page_subset.setAccessibleName(tr('奇偶页筛选'))
+        for text, value in ((tr('全部页'), "all"), (tr('仅奇数页'), "odd"), (tr('仅偶数页'), "even")):
             self.combo_page_subset.addItem(text, value)
-        self.combo_page_subset.setToolTip("在所选范围内，按当前文档从 1 开始的页码筛选，不按纸张正反面筛选。")
+        self.combo_page_subset.setToolTip(tr('在所选范围内，按当前文档从 1 开始的页码筛选，不按纸张正反面筛选。'))
         scope_layout.addWidget(self.combo_page_subset)
         self.combo_page_subset.currentIndexChanged.connect(self._refresh)
-        lay.addWidget(self._field("打印范围", scope))
+        lay.addWidget(self._field(tr('打印范围'), scope))
         self.label_range_error = QLabel("")
         set_theme_style(self.label_range_error, "color: #DC2626; font-size: 11px;")
         self.label_range_error.hide()
@@ -1170,71 +1171,71 @@ class PrintDialog(QDialog):
         self.edit_range.textChanged.connect(self._on_custom_range_changed)
 
         self.combo_paper = ClearComboBox()
-        self.combo_paper.setAccessibleName("纸张大小")
+        self.combo_paper.setAccessibleName(tr('纸张大小'))
         self.combo_paper.currentIndexChanged.connect(self._on_paper_changed)
         self.combo_orient = ClearComboBox()
-        self.combo_orient.setAccessibleName("纸张方向")
-        for text, value in (("自动", "auto"), ("纵向", "portrait"), ("横向", "landscape")):
+        self.combo_orient.setAccessibleName(tr('纸张方向'))
+        for text, value in ((tr('自动'), "auto"), (tr('纵向'), "portrait"), (tr('横向'), "landscape")):
             self.combo_orient.addItem(text, value)
-        self.combo_orient.setToolTip("自动时，单页跟随原页方向；两页根据上下或左右排布决定纸张方向。")
+        self.combo_orient.setToolTip(tr('自动时，单页跟随原页方向；两页根据上下或左右排布决定纸张方向。'))
         self.combo_orient.currentIndexChanged.connect(self._on_paper_changed)
         paper_row = QHBoxLayout()
         paper_row.setSpacing(10)
-        paper_row.addWidget(self._field("纸张大小", self.combo_paper), 1)
-        paper_row.addWidget(self._field("纸张方向", self.combo_orient), 1)
+        paper_row.addWidget(self._field(tr('纸张大小'), self.combo_paper), 1)
+        paper_row.addWidget(self._field(tr('纸张方向'), self.combo_orient), 1)
         lay.addLayout(paper_row)
 
         self.combo_scale = ClearComboBox()
-        self.combo_scale.setAccessibleName("页面缩放")
-        self.combo_scale.addItem("缩小过大页面", "shrink")
-        self.combo_scale.addItem("适合纸张", "fit")
-        self.combo_scale.addItem("实际大小（100%）", "actual")
-        self.combo_scale.setToolTip("默认不放大小页面，只有超出打印区域时才缩小。多页排列时按每个格子的大小计算。")
+        self.combo_scale.setAccessibleName(tr('页面缩放'))
+        self.combo_scale.addItem(tr('缩小过大页面'), "shrink")
+        self.combo_scale.addItem(tr('适合纸张'), "fit")
+        self.combo_scale.addItem(tr('实际大小（100%）'), "actual")
+        self.combo_scale.setToolTip(tr('默认不放大小页面，只有超出打印区域时才缩小。多页排列时按每个格子的大小计算。'))
         self.combo_scale.currentIndexChanged.connect(self._refresh)
-        self.scale_field = self._field("页面缩放", self.combo_scale)
+        self.scale_field = self._field(tr('页面缩放'), self.combo_scale)
         lay.addWidget(self.scale_field)
-        self.label_scale_hint = QLabel("保持原始尺寸；超出可打印区域的部分不会打印，请核对预览。")
+        self.label_scale_hint = QLabel(tr('保持原始尺寸；超出可打印区域的部分不会打印，请核对预览。'))
         self.label_scale_hint.setWordWrap(True)
         set_theme_style(self.label_scale_hint, "color: #92400E; font-size: 11px;")
         self.label_scale_hint.hide()
         lay.addWidget(self.label_scale_hint)
 
         self.combo_color = ClearComboBox()
-        self.combo_color.setAccessibleName("颜色模式")
-        self.combo_color.addItem("彩色", "color")
-        self.combo_color.addItem("灰度（黑白）", "grayscale")
+        self.combo_color.setAccessibleName(tr('颜色模式'))
+        self.combo_color.addItem(tr('彩色'), "color")
+        self.combo_color.addItem(tr('灰度（黑白）'), "grayscale")
         self.combo_color.currentIndexChanged.connect(self._refresh)
         self.spin_copies = ClearSpinBox()
-        self.spin_copies.setAccessibleName("打印份数")
+        self.spin_copies.setAccessibleName(tr('打印份数'))
         self.spin_copies.setRange(1, 999)
         self.spin_copies.setValue(1)
         self.spin_copies.valueChanged.connect(self._refresh)
         count_row = QHBoxLayout()
         count_row.setSpacing(10)
-        count_row.addWidget(self._field("颜色模式", self.combo_color), 1)
-        count_row.addWidget(self._field("打印份数", self.spin_copies), 1)
+        count_row.addWidget(self._field(tr('颜色模式'), self.combo_color), 1)
+        count_row.addWidget(self._field(tr('打印份数'), self.spin_copies), 1)
         lay.addLayout(count_row)
 
         self.combo_layout = ClearComboBox()
-        self.combo_layout.setAccessibleName("打印排版方式")
-        self.combo_layout.addItem("普通打印", "normal")
-        self.combo_layout.addItem("小册子（对折）", "booklet")
+        self.combo_layout.setAccessibleName(tr('打印排版方式'))
+        self.combo_layout.addItem(tr('普通打印'), "normal")
+        self.combo_layout.addItem(tr('小册子（对折）'), "booklet")
         self.combo_layout.currentIndexChanged.connect(self._refresh)
-        self.label_nup = self._caption("每面排列")
+        self.label_nup = self._caption(tr('每面排列'))
         self.combo_nup = ClearComboBox()
-        self.combo_nup.setAccessibleName("每面页数与排列方式")
-        layouts = [("1 页", 1, "horizontal"), ("2 页（左右）", 2, "horizontal"),
-                   ("2 页（上下）", 2, "vertical"), ("4 页", 4, "horizontal"),
-                   ("6 页", 6, "horizontal"), ("9 页", 9, "horizontal"), ("16 页", 16, "horizontal")]
+        self.combo_nup.setAccessibleName(tr('每面页数与排列方式'))
+        layouts = [(tr('1 页'), 1, "horizontal"), (tr('2 页（左右）'), 2, "horizontal"),
+                   (tr('2 页（上下）'), 2, "vertical"), (tr('4 页'), 4, "horizontal"),
+                   (tr('6 页'), 6, "horizontal"), (tr('9 页'), 9, "horizontal"), (tr('16 页'), 16, "horizontal")]
         for text, count, shape in layouts:
             self.combo_nup.addItem(text, count)
             self.combo_nup.setItemData(self.combo_nup.count() - 1, shape, Qt.ItemDataRole.UserRole + 1)
-        self.combo_nup.setToolTip("上下两页适合纵向纸张，左右两页适合横向纸张。")
+        self.combo_nup.setToolTip(tr('上下两页适合纵向纸张，左右两页适合横向纸张。'))
         self.combo_nup.currentIndexChanged.connect(self._refresh)
         self.nup_field = self._field(self.label_nup, self.combo_nup)
         layout_row = QHBoxLayout()
         layout_row.setSpacing(10)
-        layout_row.addWidget(self._field("排版方式", self.combo_layout), 1)
+        layout_row.addWidget(self._field(tr('排版方式'), self.combo_layout), 1)
         layout_row.addWidget(self.nup_field, 1)
         lay.addLayout(layout_row)
 
@@ -1242,30 +1243,30 @@ class PrintDialog(QDialog):
         booklet_layout = QVBoxLayout(self.booklet_controls)
         booklet_layout.setContentsMargins(0, 0, 0, 0)
         booklet_layout.setSpacing(8)
-        note = QLabel("每面两页，自动编排对折后的页序。")
+        note = QLabel(tr('每面两页，自动编排对折后的页序。'))
         note.setWordWrap(True)
         booklet_layout.addWidget(note)
         self.combo_booklet_binding = ClearComboBox()
-        self.combo_booklet_binding.setAccessibleName("装订方向")
-        self.combo_booklet_binding.addItem("左侧装订", "left")
-        self.combo_booklet_binding.addItem("右侧装订", "right")
+        self.combo_booklet_binding.setAccessibleName(tr('装订方向'))
+        self.combo_booklet_binding.addItem(tr('左侧装订'), "left")
+        self.combo_booklet_binding.addItem(tr('右侧装订'), "right")
         self.combo_booklet_binding.currentIndexChanged.connect(self._refresh)
-        booklet_layout.addWidget(self._field("装订方向", self.combo_booklet_binding))
+        booklet_layout.addWidget(self._field(tr('装订方向'), self.combo_booklet_binding))
         self.combo_booklet_sides = ClearComboBox()
-        self.combo_booklet_sides.setAccessibleName("小册子打印面")
-        self.combo_booklet_sides.addItem("双面（自动双面打印机）", "both")
-        self.combo_booklet_sides.addItem("仅正面（手动双面第 1 步）", "front")
-        self.combo_booklet_sides.addItem("仅反面（手动双面第 2 步）", "back")
+        self.combo_booklet_sides.setAccessibleName(tr('小册子打印面'))
+        self.combo_booklet_sides.addItem(tr('双面（自动双面打印机）'), "both")
+        self.combo_booklet_sides.addItem(tr('仅正面（手动双面第 1 步）'), "front")
+        self.combo_booklet_sides.addItem(tr('仅反面（手动双面第 2 步）'), "back")
         self.combo_booklet_sides.currentIndexChanged.connect(self._refresh)
-        booklet_layout.addWidget(self._field("本次打印", self.combo_booklet_sides))
+        booklet_layout.addWidget(self._field(tr('本次打印'), self.combo_booklet_sides))
         self.booklet_controls.hide()
         lay.addWidget(self.booklet_controls)
 
-        self.label_sides = self._caption("纸张面数")
+        self.label_sides = self._caption(tr('纸张面数'))
         self.btn_duplex_group = QButtonGroup(self)
-        self.radio_single = QRadioButton("单面打印")
+        self.radio_single = QRadioButton(tr('单面打印'))
         self.radio_single.setChecked(True)
-        self.radio_double = QRadioButton("双面打印")
+        self.radio_double = QRadioButton(tr('双面打印'))
         sides = QWidget()
         sides_layout = QHBoxLayout(sides)
         sides_layout.setContentsMargins(0, 0, 0, 0)
@@ -1277,43 +1278,43 @@ class PrintDialog(QDialog):
         lay.addWidget(self.sides_field)
 
         self.advanced_toggle = QToolButton()
-        self.advanced_toggle.setText("更多设置")
+        self.advanced_toggle.setText(tr('更多设置'))
         self.advanced_toggle.setCheckable(True)
         self.advanced_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.advanced_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.advanced_toggle.setAccessibleName("展开更多打印设置")
+        self.advanced_toggle.setAccessibleName(tr('展开更多打印设置'))
         lay.addWidget(self.advanced_toggle)
         self.advanced = QWidget()
         advanced_layout = QVBoxLayout(self.advanced)
         advanced_layout.setContentsMargins(0, 0, 0, 0)
         advanced_layout.setSpacing(10)
         self.combo_margin = ClearComboBox()
-        self.combo_margin.setAccessibleName("页边距")
+        self.combo_margin.setAccessibleName(tr('页边距'))
         for text, value in MARGIN_PRESETS:
-            self.combo_margin.addItem(text, value)
+            self.combo_margin.addItem(tr(text), value)
         self.combo_margin.currentIndexChanged.connect(self._on_paper_changed)
-        advanced_layout.addWidget(self._field("页边距", self.combo_margin))
+        advanced_layout.addWidget(self._field(tr('页边距'), self.combo_margin))
         self.combo_cell_order = ClearComboBox()
-        self.combo_cell_order.setAccessibleName("多页填充顺序")
-        self.combo_cell_order.addItem("先横向，再纵向", "row")
-        self.combo_cell_order.addItem("先纵向，再横向", "column")
+        self.combo_cell_order.setAccessibleName(tr('多页填充顺序'))
+        self.combo_cell_order.addItem(tr('先横向，再纵向'), "row")
+        self.combo_cell_order.addItem(tr('先纵向，再横向'), "column")
         self.combo_cell_order.currentIndexChanged.connect(self._refresh)
-        self.cell_order_field = self._field("填充顺序", self.combo_cell_order)
+        self.cell_order_field = self._field(tr('填充顺序'), self.combo_cell_order)
         advanced_layout.addWidget(self.cell_order_field)
         from PyQt6.QtWidgets import QCheckBox
-        self.check_borders = QCheckBox("显示页面边框")
-        self.check_reverse = QCheckBox("按相反页序打印")
+        self.check_borders = QCheckBox(tr('显示页面边框'))
+        self.check_reverse = QCheckBox(tr('按相反页序打印'))
         self.check_borders.toggled.connect(self._refresh)
         self.check_reverse.toggled.connect(self._refresh)
         advanced_layout.addWidget(self.check_borders)
         advanced_layout.addWidget(self.check_reverse)
         self.combo_duplex_mode = ClearComboBox()
-        self.combo_duplex_mode.setAccessibleName("双面装订边")
-        self.combo_duplex_mode.addItem("沿长边装订", "long_edge")
-        self.combo_duplex_mode.addItem("沿短边装订", "short_edge")
+        self.combo_duplex_mode.setAccessibleName(tr('双面装订边'))
+        self.combo_duplex_mode.addItem(tr('沿长边装订'), "long_edge")
+        self.combo_duplex_mode.addItem(tr('沿短边装订'), "short_edge")
         self.combo_duplex_mode.setEnabled(False)
         self.combo_duplex_mode.currentIndexChanged.connect(self._on_duplex_changed)
-        self.duplex_field = self._field("双面装订", self.combo_duplex_mode)
+        self.duplex_field = self._field(tr('双面装订'), self.combo_duplex_mode)
         advanced_layout.addWidget(self.duplex_field)
         self.advanced.hide()
         lay.addWidget(self.advanced)
@@ -1321,7 +1322,7 @@ class PrintDialog(QDialog):
         self.advanced_toggle.toggled.connect(lambda expanded: self.advanced_toggle.setArrowType(
             Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow))
         self.advanced_toggle.toggled.connect(lambda expanded: self.advanced_toggle.setAccessibleName(
-            "收起更多打印设置" if expanded else "展开更多打印设置"))
+            tr('收起更多打印设置') if expanded else tr('展开更多打印设置')))
 
         self.label_duplex_warn = QLabel("")
         self.label_duplex_warn.setWordWrap(True)
@@ -1340,10 +1341,10 @@ class PrintDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(16, 8, 16, 16)
         btn_row.setSpacing(10)
-        btn_cancel = QPushButton("取消")
+        btn_cancel = QPushButton(tr('取消'))
         btn_cancel.setObjectName("secondaryBtn")
         btn_cancel.clicked.connect(self.reject)
-        self.btn_print = QPushButton("打印")
+        self.btn_print = QPushButton(tr('打印'))
         self.btn_print.setObjectName("primaryBtn")
         self.btn_print.clicked.connect(self.do_print)
         btn_row.addWidget(btn_cancel)
@@ -1462,7 +1463,7 @@ class PrintDialog(QDialog):
         self._sheet_index = max(0, min(index, total - 1)) if total else 0
         current = self._sheet_index + 1 if total else 0
         self.label_sheet.setText(
-            f"第 {current} / {total} 张纸" if total else "没有可打印的纸张"
+            tr('第 {p0} / {p1} 张纸', p0=f'{current}', p1=f'{total}') if total else tr('没有可打印的纸张')
         )
         self.btn_prev.setEnabled(current > 1)
         self.btn_next.setEnabled(0 < current < total)
@@ -1541,7 +1542,7 @@ class PrintDialog(QDialog):
         if subset in ("odd", "even"):
             indices = [index for index in indices if (index + 1) % 2 == (1 if subset == "odd" else 0)]
         if not indices and subset != "all":
-            self.label_range_error.setText("所选范围内没有" + ("奇数页" if subset == "odd" else "偶数页"))
+            self.label_range_error.setText(tr('所选范围内没有奇数页') if subset == "odd" else tr('所选范围内没有偶数页'))
             self.label_range_error.setVisible(True)
         return indices
 
@@ -1603,7 +1604,7 @@ class PrintDialog(QDialog):
         for widget in (self.label_nup, self.combo_nup, self.label_sides, self.radio_single,
                        self.radio_double, self.combo_duplex_mode):
             widget.setVisible(not options.booklet)
-        self.check_reverse.setText("按相反纸张顺序打印" if options.booklet else "按相反页序打印")
+        self.check_reverse.setText(tr('按相反纸张顺序打印') if options.booklet else tr('按相反页序打印'))
 
         geometries = self._geometries(options)
         sheets = build_sheets(self.pages, options, self.store)
@@ -1689,8 +1690,7 @@ class PrintDialog(QDialog):
         mode = DUPLEX_MODES.get(options.duplex)
         if supported and mode not in supported:
             self.label_duplex_warn.setText(
-                f"「{options.printer_name}」没有报告支持自动双面。仍可发送，"
-                "但可能只打单面，需要你把纸取出来翻面重放。"
+                tr('「{p0}」没有报告支持自动双面。仍可发送，但可能只打单面，需要你把纸取出来翻面重放。', p0=f'{options.printer_name}')
             )
             self.label_duplex_warn.setVisible(True)
         else:
@@ -1701,10 +1701,10 @@ class PrintDialog(QDialog):
             return
         options = self._collect_options()
         if not options.page_indices:
-            QMessageBox.warning(self, "没有可打印的页面", "请指定有效的打印页码范围。")
+            QMessageBox.warning(self, tr('没有可打印的页面'), tr('请指定有效的打印页码范围。'))
             return
         if not options.printer_name:
-            QMessageBox.warning(self, "没有可用的打印机", "请先连接或安装打印机。保存 PDF 请使用“文件 → 另存为”。")
+            QMessageBox.warning(self, tr('没有可用的打印机'), tr('请先连接或安装打印机。保存 PDF 请使用“文件 → 另存为”。'))
             return
         self._printing = True
         self.btn_print.setEnabled(False)
@@ -1719,9 +1719,9 @@ class PrintDialog(QDialog):
             run_operation(self, "发送打印任务", work, cancellable=True, show_delay_ms=0)
             self.accept()
         except OperationCancelled:
-            QMessageBox.information(self, "已取消打印", "已请求停止发送。已经交给打印机的页面可能仍会打印，可在系统打印队列中取消。")
+            QMessageBox.information(self, tr('已取消打印'), tr('已请求停止发送。已经交给打印机的页面可能仍会打印，可在系统打印队列中取消。'))
         except Exception as exc:
-            QMessageBox.critical(self, "打印失败", f"发送打印任务时出错：{exc}\n\n任务可能已经部分发送，请检查系统打印队列后再重试。")
+            QMessageBox.critical(self, tr('打印失败'), tr('发送打印任务时出错：{p0}\n\n任务可能已经部分发送，请检查系统打印队列后再重试。', p0=f'{exc}'))
         finally:
             self._printing = False
             self.canvas.resume_rendering()

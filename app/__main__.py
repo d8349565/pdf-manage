@@ -16,6 +16,7 @@ from PyQt6.QtGui import QGuiApplication, QIcon
 from PyQt6.QtWidgets import QApplication
 
 from app import APP_NAME, APP_ORGANIZATION, __version__
+from app.i18n import tr
 from app.themes import initialize_theme, set_theme_style
 
 
@@ -98,9 +99,12 @@ def main() -> None:
         prepare_profile()
     except OSError as exc:
         from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.critical(None, '数据目录无法使用', str(exc))
+        QMessageBox.critical(None, tr('数据目录无法使用'), str(exc))
         raise SystemExit(1)
     from app.runtime import preferences
+    from app.i18n import initialize_language
+    initialize_language(preferences(), app)
+    app.setApplicationDisplayName(tr(APP_NAME))
     initialize_theme(preferences())
     from app.shortcuts import get_manager
     get_manager()
@@ -129,7 +133,7 @@ def main() -> None:
             from app.runtime import portable_root
             hint = ('请从“文件 → 右键快捷工具”修复此版本的菜单。' if portable_root() else
                     '请重新运行安装程序，并勾选右键快捷工具。')
-            QMessageBox.critical(None, "右键入口无法启动", f"{hint}\n{exc}")
+            QMessageBox.critical(None, tr('右键入口无法启动'), f"{hint}\n{exc}")
             code = 1
         sys.exit(code)
     shell_mode = {"--split-pdf": "split", "--merge-pdf": "merge"}.get(sys.argv[1] if len(sys.argv) > 1 else "")
@@ -143,7 +147,7 @@ def main() -> None:
             if not router.start_or_forward(paths):
                 return
         except (RuntimeError, OSError) as exc:
-            QMessageBox.warning(None, '无法打开文件', str(exc))
+            QMessageBox.warning(None, tr('无法打开文件'), str(exc))
             sys.exit(1)
     app.setWindowIcon(_window_icon())
     if paths:
@@ -167,7 +171,7 @@ def main() -> None:
         try:
             router.attach(win)
         except RuntimeError as exc:
-            QMessageBox.warning(win, '无法打开文件', str(exc))
+            QMessageBox.warning(win, tr('无法打开文件'), str(exc))
             win.close()
             sys.exit(1)
     if not paths:
