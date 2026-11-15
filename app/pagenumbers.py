@@ -54,8 +54,12 @@ def stamp_number(page, text, options, index):
         from app.pdfedits import cjk_font_buffer
         font = "ZhiXuCJK"
         page.insert_font(fontname=font, fontbuffer=cjk_font_buffer())
-    result = page.insert_textbox(visible * page.derotation_matrix, text,
-        fontname=font, fontsize=options.font_size, color=(0, 0, 0),
+    # page.rect includes UserUnit scaling; text insertion uses unscaled PDF units.
+    media = page.mediabox
+    crop = page.cropbox & p.Rect(media.x0, 0, media.x1, media.height)
+    unit = width / (crop.height if page.rotation % 180 else crop.width)
+    result = page.insert_textbox(visible / unit * page.derotation_matrix, text,
+        fontname=font, fontsize=options.font_size / unit, color=(0, 0, 0),
         align={"left": 0, "center": 1, "right": 2}[horizontal], rotate=page.rotation)
     if result < 0:
         raise ValueError(f"第 {index + 1} 页放不下页码，请减小字号或边距。")

@@ -140,6 +140,55 @@ def test_page_numbers_match_rotated_preview(qapp, tmp_path, rotation, extra):
     store.close_all()
 
 
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+@pytest.mark.parametrize("user_unit", [.5, 1, 2])
+def test_page_numbers_on_scans_with_scaled_page_units(qapp, tmp_path, rotation, user_unit):
+    from app.pagenumbers import PageNumberOptions
+    source, target = tmp_path / "scan.pdf", tmp_path / "numbered.pdf"
+    pix = p.Pixmap(p.csRGB, p.IRect(0, 0, 60, 80), False)
+    pix.clear_with(235)
+    with p.open() as doc:
+        page = doc.new_page(width=600, height=800)
+        page.insert_image(page.rect, pixmap=pix)
+        page.set_cropbox(p.Rect(20, 30, 580, 770))
+        page.set_rotation(rotation)
+        doc.xref_set_key(page.xref, "UserUnit", str(user_unit))
+        doc.save(source)
+    original = source.read_bytes()
+    store = PdfStore()
+    try:
+        pages = store.load(str(source))
+        options = PageNumberOptions(start=7)
+        before = store.number_preview(pages, 0, replace(options, mode="labels"), 400)
+        preview = store.number_preview(pages, 0, options, 400)
+        footer = int(preview.height() * .8)
+        assert preview.copy(0, footer, preview.width(), preview.height() - footer) != before.copy(
+            0, footer, before.width(), before.height() - footer), "preview page number is not visible"
+        assert preview.copy(0, 0, preview.width(), footer) == before.copy(0, 0, before.width(), footer)
+        store.write(pages, str(target), options=WriteOptions(page_numbers=options))
+        with p.open(target) as doc, p.open(source) as unnumbered:
+            page = doc[0]
+            assert page.get_text().strip() == "7"
+            zoom = 400 / page.rect.width
+            rendered = page.get_pixmap(matrix=p.Matrix(zoom, zoom), alpha=False)
+            baseline = unnumbered[0].get_pixmap(matrix=p.Matrix(zoom, zoom), alpha=False)
+            footer = int(rendered.height * .8) * rendered.stride
+            assert rendered.samples[:footer] == baseline.samples[:footer]
+            assert rendered.samples[footer:] != baseline.samples[footer:], "exported page number is not visible"
+            span = page.get_text("dict", flags=p.TEXTFLAGS_TEXT)["blocks"][0]["lines"][0]["spans"][0]
+            assert span["size"] == pytest.approx(options.font_size)
+            assert page.rotation == rotation
+            assert page.rect == unnumbered[0].rect
+            assert page.cropbox == unnumbered[0].cropbox
+            assert len(page.get_images()) == 1
+            assert float(doc.xref_get_key(page.xref, "UserUnit")[1]) == user_unit
+        assert source.read_bytes() == original
+        with p.open(source) as doc:
+            assert not doc[0].get_text().strip()
+    finally:
+        store.close_all()
+
+
 def test_page_labels_skip_cover_and_chinese_font_is_subset(qapp, tmp_path):
     from app.pagenumbers import PageNumberOptions
     source = tmp_path / "source.pdf"
