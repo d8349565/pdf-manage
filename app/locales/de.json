@@ -1,4 +1,13 @@
 {
+  "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消工具。": "Bereich auf einer Seite aufziehen und loslassen, um den Mosaikstil auszuwählen und vorab anzusehen; Esc beendet das Werkzeug.",
+  "在当前页拖选或绘制；Esc 取消工具。": "Auf der aktuellen Seite ziehen, um auszuwählen oder zu zeichnen; Esc beendet das Werkzeug.",
+  "已取消当前工具，返回浏览。": "Werkzeug beendet. Zurück zur Ansicht.",
+  "当前页没有可修改的文字层。扫描图片或已转为线条的工程图纸可用文本框、画笔或便签标注。": "Diese Seite hat keine bearbeitbare Textebene. Scans oder technische Zeichnungen mit in Linien umgewandeltem Text lassen sich mit Textfeldern, Stift oder Notizen kommentieren.",
+  "拖动绘制椭圆；按住 Shift 画正圆；Esc 取消工具。": "Ziehen, um eine Ellipse zu zeichnen; für einen Kreis Shift gedrückt halten; Esc beendet das Werkzeug.",
+  "椭圆（按住 Shift 画正圆）": "Ellipse (Shift für einen Kreis)",
+  "点一下添加便签；Esc 取消工具。": "Klicken, um eine Notiz hinzuzufügen; Esc beendet das Werkzeug.",
+  "点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。": "Text anklicken oder markieren und direkt bearbeiten; Enter übernimmt, Esc bricht ab.",
+  "选区没有文字层；扫描图片或已转为线条的工程图纸可用画笔、文本框或便签标注。": "Die Auswahl hat keine Textebene. Scans oder technische Zeichnungen mit in Linien umgewandeltem Text lassen sich mit Stift, Textfeldern oder Notizen kommentieren.",
   "\n修改仍保留在当前窗口，原件未改动。": "\nIhre Änderungen bleiben in diesem Fenster erhalten. Das Original ist unverändert.",
   "\n原文件、导出结果和当前 OCR 组件保留。": "\nOriginaldateien, exportierte Ergebnisse und aktuelle OCR-Komponenten bleiben erhalten.",
   "\n已完成的输出已保留。": "\nBereits fertiggestellte Ausgabedateien wurden beibehalten.",

@@ -467,7 +467,11 @@ def test_reading_toolbar_fits_the_reader_and_top_actions_stay_compact(loaded_win
     assert all(not button.text() and button.toolTip() for button in window.mode_buttons)
     canvas_top = window.preview_view.mapTo(window, QPoint()).y()
     toolbar_bottom = toolbar.mapTo(window, QPoint(0, toolbar.height())).y()
-    assert 0 <= canvas_top - toolbar_bottom <= 3
+    assert window.tab_bar.isVisible() and window.tab_bar.height() == 32
+    tabs_top = window.tab_bar.mapTo(window, QPoint()).y()
+    tabs_bottom = window.tab_bar.mapTo(window, QPoint(0, window.tab_bar.height())).y()
+    assert 0 <= tabs_top - toolbar_bottom <= 3
+    assert 0 <= canvas_top - tabs_bottom <= 3
 
 
 def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, tmp_path, monkeypatch):

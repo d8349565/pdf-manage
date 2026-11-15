@@ -6,7 +6,7 @@ import pytest
 from PyQt6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt, QUrl
 from PyQt6.QtGui import QCursor, QDrag, QDragEnterEvent, QDragLeaveEvent, QDropEvent
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QFileDialog, QFrame
+from PyQt6.QtWidgets import QApplication, QFileDialog, QFrame, QMessageBox
 
 from app.ui import MIME, MainWindow
 
@@ -37,7 +37,7 @@ def window(qapp):
     win.close()
 
 
-def test_tab_bar_hidden_for_single_file_and_shown_for_multiple_files(window, tmp_path, monkeypatch, qapp):
+def test_tab_bar_shows_close_button_for_single_and_multiple_files(window, tmp_path, monkeypatch, qapp):
     doc_a = tmp_path / "A.pdf"
     doc_b = tmp_path / "B.pdf"
     _make_pdf(doc_a, 2, "A")
@@ -47,12 +47,13 @@ def test_tab_bar_hidden_for_single_file_and_shown_for_multiple_files(window, tmp
     assert not window.tab_bar.isVisible()
     assert len(window._tabs) == 1
 
-    # Open 1st file: reuses initial empty tab, tab bar stays hidden
+    # Even one document has a visible close button.
     monkeypatch.setattr(QFileDialog, "getOpenFileNames", lambda *a, **k: ([str(doc_a)], "PDF (*.pdf)"))
     window.open_files()
     qapp.processEvents()
     assert len(window._tabs) == 1
-    assert not window.tab_bar.isVisible()
+    assert window.tab_bar.isVisible()
+    assert window.tab_bar.pill_for(window._active_tab_id).close_button.isVisible()
     assert len(window.ws.pages) == 2
 
     # Open 2nd file: creates 2nd tab, 32px tab bar becomes visible
@@ -65,13 +66,48 @@ def test_tab_bar_hidden_for_single_file_and_shown_for_multiple_files(window, tmp
     assert len(window.ws.pages) == 3
     assert os.path.basename(window.ws.path) == "B.pdf"
 
-    # Close current tab (B.pdf): returns to A.pdf and hides tab bar again
+    # Close B.pdf: A.pdf keeps its close button.
     window.close_current_file()
     qapp.processEvents()
     assert len(window._tabs) == 1
-    assert not window.tab_bar.isVisible()
+    assert window.tab_bar.isVisible()
     assert len(window.ws.pages) == 2
     assert os.path.basename(window.ws.path) == "A.pdf"
+
+    QTest.mouseClick(window.tab_bar.pill_for(window._active_tab_id).close_button,
+                     Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    assert not window.ws.pages and window.ws.path is None
+    assert not window.tab_bar.isVisible()
+    assert window.isVisible()
+
+
+def test_single_tab_close_button_protects_unsaved_changes(window, tmp_path, monkeypatch):
+    from app.workspace import PageEdit
+    source = tmp_path / 'unsaved.pdf'
+    _make_pdf(source, 1, 'Original')
+    original_bytes = source.read_bytes()
+    window.open_files_in_tabs([str(source)])
+    window.ws.edit_page(0, PageEdit('rect', (20, 30, 80, 90), annotation_id='unsaved'))
+    window.refresh()
+    before = window.ws.pages
+    choices = iter(['取消', '不保存'])
+
+    def choose(box):
+        text = next(choices)
+        button = next(b for b in box.buttons() if b.text() == text)
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        return box.result()
+
+    monkeypatch.setattr(QMessageBox, 'exec', choose)
+    close = window.tab_bar.pill_for(window._active_tab_id).close_button
+    assert close.isVisible()
+    QTest.mouseClick(close, Qt.MouseButton.LeftButton)
+    assert window.ws.pages is before and window.ws.dirty
+    assert window.tab_bar.isVisible()
+    QTest.mouseClick(close, Qt.MouseButton.LeftButton)
+    assert not window.ws.pages and not window.tab_bar.isVisible()
+    assert source.read_bytes() == original_bytes
 
 
 @pytest.mark.parametrize("modified", [False, True])

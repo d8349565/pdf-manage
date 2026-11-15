@@ -50,6 +50,8 @@ Translations are stored in shared text catalogues with checks for new messages a
 
 See the [user guide (中文)](docs/USAGE.md) for entry points, shortcuts, and limitations.
 
+The current source shows a tab close button even for a single PDF and returns to the home screen when it is closed. Press Esc to cancel a review tool, or hold Shift in the ellipse tool to draw a circle.
+
 ## Common Workflows
 
 - **Merge open PDFs:** Use the merge-open-files command in the **Page** menu, select documents, arrange their order, and save the merged result. Unsaved page and annotation edits in the selected tabs are included; the original files and tabs are retained. The current source also offers a toolbar shortcut.
@@ -70,6 +72,7 @@ https://github.com/user-attachments/assets/d4ac3a3d-a558-4e45-b97b-4613ed64aed1
 
 ## Before You Use It
 
+- **Engineering drawings:** Reading, page organization, and annotations are supported. In-place text correction requires actual, visible, single-line horizontal text. Scanned images, outlined text, vertical or angled text, and CAD lines or dimension objects cannot be edited directly. OCR does not reconstruct an editable CAD file. [Editing limits (中文)](docs/USAGE.md#工程图纸-pdf-的编辑范围)
 - **Saving and originals:** Page edits support undo, but drafts are not automatically recovered. Save your work regularly. Signed PDFs are protected in read-only mode; work on a saved copy of important files.
 - **OCR and Word:** Check recognized amounts, identifiers, and conversion results. Handwriting recognition and exact reconstruction of arbitrary complex layouts are not supported. PDF-to-Word uses layout preservation by default and does not require Word; scanned pages require offline OCR. The additional Word reflow option and Word-to-PDF conversion require locally installed Microsoft Word. PDF import requires Word 2013 or later.
 - **Comparison results:** PDF comparison is experimental. Review complex reflows, repeated clauses, and low-quality scans individually. Finding no differences does not prove that two documents are identical.

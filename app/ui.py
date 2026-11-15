@@ -2384,7 +2384,7 @@ class DocumentTabBar(QFrame):
                 self._pills[tab.tab_id] = pill
                 self._pills_layout.insertWidget(idx, pill)
             pill.update_content(tab.ws, tab.tab_id == active_tab_id)
-        self.setVisible(len(tabs) > 1)
+        self.setVisible(len(tabs) > 1 or any(tab.ws.pages or tab.ws.path for tab in tabs))
 
     def dragEnterEvent(self, event) -> None:
         if _document_paths_from_mime(event.mimeData()):
@@ -4407,6 +4407,15 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event) -> bool:
         kind = event.type()
+        if (kind in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
+                and event.key() == Qt.Key.Key_Escape
+                and not QApplication.activePopupWidget() and not QApplication.activeModalWidget()):
+            tools = getattr(self, 'annotation_tools', None)
+            if (tools is not None and isinstance(obj, QWidget)
+                    and (obj in (tools.view, tools.view.viewport(), tools)
+                         or tools.isAncestorOf(obj) or tools.view.viewport().isAncestorOf(obj))
+                    and tools.cancel_tool(event)):
+                return True
         if (kind == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape
                 and hasattr(self, 'immersive') and self.immersive.borderless
                 and isinstance(obj, QWidget) and (obj is self or self.isAncestorOf(obj))

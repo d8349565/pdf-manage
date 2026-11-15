@@ -758,7 +758,7 @@ class AnnotationTools(QWidget):
         ("note", "note-comment", "便签备注"),
         ("freetext", "text-box", "页面文本框"),
         ("rect", "square", "矩形框"),
-        ("ellipse", "circle", "椭圆"),
+        ("ellipse", "circle", mark_text("椭圆（按住 Shift 画正圆）")),
         ("arrow", "arrow-up-right", "箭头"),
         ("replace", "text-edit", "单行文字修正"),
         ("mosaic", "mosaic", "马赛克（像素块／模糊／纯色遮盖）"),
@@ -795,7 +795,7 @@ class AnnotationTools(QWidget):
         self.tool = QComboBox(self)
         self.tool.hide()
         for kind, icon_name, name in self.TOOL_DEFS:
-            self.tool.addItem(name, kind)
+            self.tool.addItem(tr(name), kind)
         self.tool.setAccessibleName(tr('审阅工具'))
         self.tool.currentIndexChanged.connect(self._on_tool_combo_changed)
 
@@ -820,8 +820,8 @@ class AnnotationTools(QWidget):
                        "ellipse": "椭圆", "arrow": "箭头", "replace": "改原文", "mosaic": "马赛克"}
         for idx, (kind, icon_name, name) in enumerate(self.TOOL_DEFS):
             action = QAction(toolbar_icon(icon_name, '#526B63', 16), short_names[kind], self)
-            action.setToolTip(name)
-            self.host.shortcut_manager.watch_hint('review.' + kind, action, name)
+            action.setToolTip(tr(name))
+            self.host.shortcut_manager.watch_hint('review.' + kind, action, tr(name))
             action.setCheckable(True)
             action.triggered.connect(lambda checked=False, i=idx: self.tool.setCurrentIndex(i))
             self.tool_group.addAction(action)
@@ -842,7 +842,7 @@ class AnnotationTools(QWidget):
                 self.tool_bar.addAction(actions[kind])
         self.tool_buttons = [self.tool_bar.widgetForAction(action) for action in self.tool_actions]
         for button, (_, _, name) in zip(self.tool_buttons, self.TOOL_DEFS):
-            button.setAccessibleName(name)
+            button.setAccessibleName(tr(name))
         self.insert_image_button = self.tool_bar.widgetForAction(self.insert_image_action)
         self.insert_image_button.setAccessibleName(tr('插入图片'))
         self.tool_actions[0].setChecked(True)
@@ -1055,9 +1055,11 @@ class AnnotationTools(QWidget):
             self._update_color_button_style()
             if not self.ensure_snapshot(geometry_only=kind not in ("highlight", "underline", "replace")):
                 return
-            self._set_feedback("点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。" if kind == "replace" else
-                                  "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消框选。" if kind == "mosaic" else
-                                  "点一下添加便签。" if kind == "note" else "在当前页拖选或绘制；Esc 取消当前笔画。")
+            self._set_feedback(tr("点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。") if kind == "replace" else
+                               tr("在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消工具。") if kind == "mosaic" else
+                               tr("点一下添加便签；Esc 取消工具。") if kind == "note" else
+                               tr("拖动绘制椭圆；按住 Shift 画正圆；Esc 取消工具。") if kind == "ellipse" else
+                               tr("在当前页拖选或绘制；Esc 取消工具。"))
             if kind == "mosaic":
                 self._set_view_cursor(Qt.CursorShape.CrossCursor)
         except Exception as exc:
@@ -1280,6 +1282,30 @@ class AnnotationTools(QWidget):
         self.stroke = []
         self.stroke_page = None
 
+    def cancel_tool(self, event):
+        box = getattr(self, '_inline_text_box', None)
+        replacement = getattr(self, '_inline_replace', None)
+        if ((box is not None and box.preedit)
+                or (replacement and replacement['input']._preedit)):
+            event.accept()  # Do not discard the editor during input method composition.
+            return True
+        if not (self._move_state or self._move_committing or self.stroke or box or replacement
+                or self.isVisible() and self.tool.currentData() != 'browse'):
+            return False
+        event.accept()
+        if event.type() == QEvent.Type.ShortcutOverride or self._move_committing:
+            return True
+        if box is not None:
+            box.close()
+        self._close_inline_replace()
+        self.clear_overlay()
+        self.tool.setCurrentIndex(self.tool.findData('browse'))
+        self.annotations.setCurrentIndex(0)
+        self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+        self.view.setFocus()
+        self._set_feedback(tr('已取消当前工具，返回浏览。'))
+        return True
+
     def eventFilter(self, watched, event):
         if getattr(self, "view", None) is None:
             return False
@@ -1305,6 +1331,8 @@ class AnnotationTools(QWidget):
         state = getattr(self, "_inline_replace", None)
         if state and (watched is state["input"] or state['actions'].isAncestorOf(watched)):
             if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+                if state['input']._preedit:
+                    return False
                 self._close_inline_replace()
                 self.view.setFocus()
                 return True
@@ -1480,6 +1508,13 @@ class AnnotationTools(QWidget):
                 return True
             bounds = self.view.page_rects[owner]
             point = QPointF(max(bounds.left(), min(bounds.right(), point.x())), max(bounds.top(), min(bounds.bottom(), point.y())))
+            if kind == 'ellipse' and event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                start = self.stroke[0]
+                dx, dy = point.x() - start.x(), point.y() - start.y()
+                side = min(max(abs(dx), abs(dy)),
+                           bounds.right() - start.x() if dx >= 0 else start.x() - bounds.left(),
+                           bounds.bottom() - start.y() if dy >= 0 else start.y() - bounds.top())
+                point = start + QPointF(math.copysign(side, dx), math.copysign(side, dy))
             if event.type() == QEvent.Type.MouseMove:
                 if kind == "ink":
                     last = self.stroke[-1]
@@ -2008,6 +2043,8 @@ class AnnotationTools(QWidget):
                     if selected:
                         break
             if not selected:
+                if not any(block.get('lines') for block in raw_data.get('blocks', ())):
+                    raise ValueError(tr("当前页没有可修改的文字层。扫描图片或已转为线条的工程图纸可用文本框、画笔或便签标注。"))
                 raise ValueError("请点击或框选一行需要修改的文字。")
             if len(selected) != 1:
                 raise ValueError("一次只能修改一行文字，请缩小选择范围。")
@@ -2023,7 +2060,7 @@ class AnnotationTools(QWidget):
         elif kind in ("highlight", "underline"):
             quads = selection_quads(snapshot["raw"], area)
             if not quads:
-                raise ValueError("选区没有文字层；扫描图片可以用画笔或便签标注。")
+                raise ValueError(tr("选区没有文字层；扫描图片或已转为线条的工程图纸可用画笔、文本框或便签标注。"))
             edit = PageEdit(kind, quads, color=color, width=self.width.value(), annotation_id=identifier)
         elif kind in ("rect", "ellipse"):
             edit = PageEdit(kind, tuple(area), color=color, width=self.width.value(), annotation_id=identifier)

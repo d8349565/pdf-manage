@@ -86,6 +86,8 @@ def test_mosaic_drag_on_neighbor_page_and_escape_cancel(reader, qapp, monkeypatc
     QTest.keyClick(view, Qt.Key.Key_Escape)
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
     assert not calls and not tools.stroke
+    assert tools.tool.currentData() == 'browse'
+    tools.tool.setCurrentIndex(tools.tool.findData('mosaic'))
     QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
     QTest.mouseMove(view.viewport(), end)
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
@@ -356,10 +358,120 @@ def test_escape_cancels_drawing_before_release(reader, kind):
         assert tools.stroke
         QTest.keyClick(view, Qt.Key.Key_Escape)
         assert not tools.stroke and tools.overlay is None
+        assert tools.tool.currentData() == 'browse'
     finally:
         tools.clear_overlay()
         QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=last)
     assert reader.ws.pages is before and not reader.ws.dirty
+
+
+@pytest.mark.parametrize("kind", ["select", "highlight", "underline", "ink", "note", "freetext",
+                                 "rect", "ellipse", "arrow", "replace", "mosaic"])
+def test_escape_exits_selected_review_tool_without_drawing(reader, kind):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData(kind))
+    QTest.keyClick(reader.preview_view, Qt.Key.Key_Escape)
+    assert tools.tool.currentData() == "browse"
+    assert tools.tool_actions[0].isChecked()
+    assert tools.isVisible()
+    assert not reader.ws.dirty
+
+
+def test_escape_from_tool_options_cancels_tool_and_keeps_review_bar(reader):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('rect'))
+    tools.width.setFocus()
+    QTest.keyClick(tools.width, Qt.Key.Key_Escape)
+    assert tools.tool.currentData() == 'browse' and tools.isVisible()
+    assert tools.width.isHidden() and not reader.ws.dirty
+
+
+@pytest.mark.parametrize('mode', ['fullscreen', 'borderless'])
+def test_escape_cancels_tool_before_leaving_reading_mode(reader, mode):
+    action = getattr(reader.immersive, mode + '_action')
+    action.setChecked(True)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('rect'))
+    QTest.keyClick(reader.preview_view, Qt.Key.Key_Escape)
+    assert tools.tool.currentData() == 'browse'
+    assert getattr(reader.immersive, mode)
+    QTest.keyClick(reader.preview_view, Qt.Key.Key_Escape)
+    assert not getattr(reader.immersive, mode)
+
+
+@pytest.mark.parametrize("dx,dy,rotation", [(120, 60, 0), (-120, 60, 90),
+                                          (-120, -60, 180), (120, -60, 270)])
+def test_shift_ellipse_preview_and_saved_shape_are_circular(reader, qapp, tmp_path, dx, dy, rotation):
+    from PyQt6.QtGui import QMouseEvent
+    reader.ws.rotate(rotation)
+    reader.refresh()
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools, view = reader.annotation_tools, reader.preview_view
+    tools.tool.setCurrentIndex(tools.tool.findData("ellipse"))
+    top = view.page_rects[0].topLeft()
+    first = view.mapFromScene(top + QPointF(240, 300))
+    last = view.mapFromScene(top + QPointF(240 + dx, 300 + dy))
+    shift = Qt.KeyboardModifier.ShiftModifier
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, shift, pos=first)
+    move = QMouseEvent(QEvent.Type.MouseMove, QPointF(last), Qt.MouseButton.NoButton,
+                       Qt.MouseButton.LeftButton, shift)
+    QApplication.sendEvent(view.viewport(), move)
+    assert tools.overlay is not None
+    bounds = tools.overlay.path().boundingRect()
+    assert bounds.width() == pytest.approx(bounds.height(), abs=.01)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, shift, pos=last)
+    area = p.Rect(reader.ws.pages[0].edits[-1].points)
+    assert area.width == pytest.approx(area.height, abs=.01)
+    output = tmp_path / "circle.pdf"
+    reader.store.write(reader.ws.pages, str(output))
+    with p.open(output) as document:
+        page = document[0]
+        circle = next(a for a in page.annots() if a.type[0] == p.PDF_ANNOT_CIRCLE)
+        assert circle.rect.width == pytest.approx(circle.rect.height, abs=.01)
+
+
+def test_ellipse_shift_can_be_released_before_finishing(reader):
+    from PyQt6.QtGui import QMouseEvent
+    reader.open_annotation_tools()
+    tools, view = reader.annotation_tools, reader.preview_view
+    tools.tool.setCurrentIndex(tools.tool.findData('ellipse'))
+    top = view.page_rects[0].topLeft()
+    first = view.mapFromScene(top + QPointF(80, 220))
+    last = view.mapFromScene(top + QPointF(200, 280))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+    for modifiers in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ShiftModifier,
+                      Qt.KeyboardModifier.NoModifier):
+        move = QMouseEvent(QEvent.Type.MouseMove, QPointF(last), Qt.MouseButton.NoButton,
+                           Qt.MouseButton.LeftButton, modifiers)
+        QApplication.sendEvent(view.viewport(), move)
+        rect = tools.overlay.path().boundingRect()
+        assert (abs(rect.width() - rect.height()) < .01) == bool(modifiers)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=last)
+    rect = p.Rect(reader.ws.pages[0].edits[-1].points)
+    assert rect.width > rect.height * 1.9
+
+
+def test_shift_circle_stays_within_page_at_edge(reader):
+    from PyQt6.QtGui import QMouseEvent
+    reader.open_annotation_tools()
+    tools, view = reader.annotation_tools, reader.preview_view
+    tools.tool.setCurrentIndex(tools.tool.findData('ellipse'))
+    bounds = view.page_rects[0]
+    first = view.mapFromScene(bounds.topRight() + QPointF(-25, 210))
+    last = first + QPoint(120, 70)
+    shift = Qt.KeyboardModifier.ShiftModifier
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, shift, pos=first)
+    QApplication.sendEvent(view.viewport(), QMouseEvent(
+        QEvent.Type.MouseMove, QPointF(last), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, shift))
+    area = tools.overlay.path().boundingRect()
+    assert bounds.contains(area)
+    assert area.width() == pytest.approx(area.height(), abs=.01)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, shift, pos=last)
+    assert reader.ws.pages[0].edits[-1].kind == 'ellipse'
 
 
 @pytest.mark.parametrize("cancel", [None, "escape", "page"])
@@ -853,6 +965,67 @@ def start_edit(win, qapp, y=90):
     QTest.mouseClick(win.preview_view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     assert tools._inline_replace is not None
     return tools, tools._inline_replace
+
+
+def test_escape_discards_inline_edits_and_respects_input_method(reader, qapp):
+    from PyQt6.QtGui import QInputMethodEvent
+    tools, state = start_edit(reader, qapp)
+    before = reader.ws.pages
+    state['input'].setText('Cancelled replacement')
+    QApplication.sendEvent(state['input'], QInputMethodEvent('拼音', []))
+    QTest.keyClick(state['input'], Qt.Key.Key_Escape)
+    assert tools._inline_replace is state
+    QApplication.sendEvent(state['input'], QInputMethodEvent('', []))
+    QTest.keyClick(state['input'], Qt.Key.Key_Escape)
+    assert tools._inline_replace is None and tools.tool.currentData() == 'browse'
+    assert reader.ws.pages is before and not reader.ws.dirty
+
+    tools.tool.setCurrentIndex(tools.tool.findData('freetext'))
+    tools.start_text_box((60, 220, 320, 280), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText('Cancelled text box')
+    QApplication.sendEvent(box.editor, QInputMethodEvent('拼音', []))
+    QTest.keyClick(box.editor, Qt.Key.Key_Escape)
+    assert tools._inline_text_box is box
+    QApplication.sendEvent(box.editor, QInputMethodEvent('', []))
+    QTest.keyClick(box.editor, Qt.Key.Key_Escape)
+    assert tools._inline_text_box is None and tools.tool.currentData() == 'browse'
+    assert reader.ws.pages is before and not reader.ws.dirty
+
+
+@pytest.mark.parametrize('scanned', [False, True])
+def test_no_text_drawing_explains_limits_and_keeps_annotation_tools(reader, qapp, tmp_path, monkeypatch, scanned):
+    source = tmp_path / 'drawing-without-text.pdf'
+    with p.open() as document:
+        page = document.new_page()
+        page.draw_rect((40, 40, 400, 500))
+        page.draw_line((40, 220), (400, 220))
+        if scanned:
+            image = page.get_pixmap().tobytes('png')
+            with p.open() as scan:
+                scan.new_page().insert_image(page.rect, stream=image)
+                scan.save(source)
+        else:
+            document.save(source)
+    assert reader.open_files_in_tabs([str(source)])
+    reader.refresh()
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools, view = reader.annotation_tools, reader.preview_view
+    tools.tool.setCurrentIndex(tools.tool.findData('replace'))
+    messages = []
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: messages.append(args[2]))
+    top = view.page_rects[0].topLeft()
+    first = view.mapFromScene(top + QPointF(80, 260))
+    last = view.mapFromScene(top + QPointF(180, 300))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=last)
+    assert len(messages) == 1 and '工程图纸' in messages[0] and '文本框' in messages[0]
+    assert not reader.ws.dirty
+    tools.tool.setCurrentIndex(tools.tool.findData('rect'))
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=last)
+    assert reader.ws.pages[0].edits[-1].kind == 'rect'
 
 
 def test_original_font_menu_is_searchable_and_bounded(reader, qapp, tmp_path):
