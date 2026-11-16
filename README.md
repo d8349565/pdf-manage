@@ -62,6 +62,8 @@ The current source shows a tab close button even for a single PDF and returns to
 
 Enable the Explorer context-menu tools during installation to merge or split PDFs, combine images into a PDF, compress images, or convert Word/Markdown to PDF directly from Explorer. On Windows 11, these commands may appear under **Show more options**. Enable them inside the app when using the portable edition. [Explorer integration (中文)](docs/USAGE.md#安装与快捷入口)
 
+**Help → Contributions** acknowledges people who share suggestions and report problems. Names appear in random order, with equal recognition. The acknowledgement opens once on the first main-window launch after installation or upgrade; once dismissed, the saved receipt prevents it from appearing automatically on subsequent launches and upgrades.
+
 ## Video Demo
 
 This 75-second demo was recorded with v0.7.5. It shows page organization, offline OCR, PDF-table export to Excel, and annotated-image sharing. Some screens differ from the current app; see the features above and the changelog for later changes.

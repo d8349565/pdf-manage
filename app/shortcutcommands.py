@@ -120,6 +120,7 @@ for _key, _path, _keys in (
     ('theme.terracotta', '视图/界面主题/赤陶', ()),
     ('theme.night', '视图/界面主题/夜航（深色）', ()),
     ('app.quick_start', '帮助/操作指南', ()),
+    ('app.contributions', '帮助/贡献', ()),
     ('app.about', f'帮助/关于{APP_NAME}', ()),
 ):
     _menu(_key, _path, _keys)

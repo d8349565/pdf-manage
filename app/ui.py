@@ -88,6 +88,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from app import APP_NAME, APP_EXE_NAME
@@ -97,7 +98,7 @@ from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
 from app.pdfio import (NeedPassword, PdfError, PdfStore, WriteNeedsConfirmation,
                        WriteOptions, apply_output_conflicts, is_encrypted_file)
-from app.workspace import Workspace, parse_page_range, parse_range_segments
+from app.workspace import Workspace, parse_page_range
 from app.startup import mark
 from app.storage import TemporaryWorkspace, export_path, output_directory
 from app.rendering import RenderResult, RenderScheduler, RenderSignals
@@ -3112,9 +3113,11 @@ class MainWindow(QMainWindow):
         help_menu = self._menubar.addMenu(tr('帮助'))
         self.quick_start_action = self._act(tr('操作指南'), self.show_quick_start)
         self.quick_start_action.setStatusTip(tr('查看拖入文件、缩放、移动页面与侧栏的常用操作'))
+        self.contribution_action = self._act(tr('贡献'), self.show_contributions)
+        self.contribution_action.setStatusTip(tr('感谢为项目提供建议和问题反馈的朋友'))
         self.about_action = self._act(tr('关于{p0}', p0=tr(APP_NAME)), self.show_about)
         self.about_action.setStatusTip(tr('查看版本、检查更新、项目地址与赞赏信息'))
-        help_menu.addActions([self.quick_start_action, self.about_action])
+        help_menu.addActions([self.quick_start_action, self.contribution_action, self.about_action])
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -3142,13 +3145,33 @@ class MainWindow(QMainWindow):
 
     def show_first_run_guide(self) -> None:
         if (self._closing or not self.isVisible()
-                or self._window_settings.value('onboarding/quickStartSeen', False, type=bool)):
+                or getattr(self, '_contribution_intro', None) is not None):
+            return
+        contributions_seen = self._window_settings.value('onboarding/contributionsV1Seen', False, type=bool)
+        if contributions_seen and self._window_settings.value('onboarding/quickStartSeen', False, type=bool):
             return
         if (self._opening_paths or self._saving or getattr(self, '_task_dialog', None)
                 or QApplication.activeModalWidget() or QApplication.activePopupWidget()):
             QTimer.singleShot(400, self.show_first_run_guide)
             return
+        if not contributions_seen:
+            from app.contributionui import ContributionDialog
+            self._contribution_intro = ContributionDialog(self, first_run=True)
+            self._contribution_intro.finished.connect(self._finish_contribution_intro)
+            self._contribution_intro.open()
+            return
         self.show_quick_start()
+
+    def _remember_contributions(self) -> None:
+        # A milestone receipt, deliberately independent of later app versions.
+        self._window_settings.setValue('onboarding/contributionsV1Seen', True)
+        self._window_settings.sync()
+
+    def _finish_contribution_intro(self, _result) -> None:
+        self._remember_contributions()
+        self._contribution_intro.deleteLater()
+        self._contribution_intro = None
+        QTimer.singleShot(0, self.show_first_run_guide)
 
     def show_quick_start(self) -> None:
         dialog = getattr(self, '_quick_start_dialog', None)
@@ -3166,6 +3189,13 @@ class MainWindow(QMainWindow):
         self._window_settings.sync()
         self._quick_start_dialog.deleteLater()
         self._quick_start_dialog = None
+
+    def show_contributions(self) -> None:
+        from app.contributionui import ContributionDialog
+        dialog = ContributionDialog(self)
+        dialog.exec()
+        self._remember_contributions()
+        dialog.deleteLater()
 
     def show_about(self) -> None:
         from app.aboutui import AboutDialog
@@ -3330,7 +3360,7 @@ class MainWindow(QMainWindow):
             button.setFixedSize(28, 28)
             self._selection_buttons.append(button)
             layout.addWidget(button)
-        self.split_tool_button = self._icon_btn("split", tr('拆分文件'), lambda: self.open_export_tool(1))
+        self.split_tool_button = self._icon_btn("split", tr('拆分文件'), self.open_split_popup)
         self.convert_tool_button = self._icon_btn("table", tr('PDF 转 Excel'), lambda: self.open_export_tool(2))
         for button in (self.split_tool_button, self.convert_tool_button):
             button.setFixedSize(28, 28)
@@ -3364,6 +3394,41 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(0)
         self.act_tools.setChecked(True)
         self.export_tools.setCurrentIndex(index)
+
+    def open_split_popup(self) -> None:
+        if not self.split_tool_button.isEnabled():
+            return
+        self._ensure_tools()
+        if not hasattr(self, '_split_menu'):
+            from app.filesplitui import SplitOptions
+            self._split_menu = menu = QMenu(self)
+            menu.setAccessibleName(tr('拆分文件'))
+            options = SplitOptions(self._btn(tr('拆分到文件夹…'), self._split_from_popup, primary=True))
+            options.setMinimumWidth(320)
+            options.setContentsMargins(12, 12, 12, 12)
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(options)
+            menu.addAction(action)
+            self._split_popup_options = options
+            options.changed.connect(lambda: self.split_options.copy_from(options))
+
+            def resize_popup():
+                options.layout().activate()
+                # QMenu caches widget action sizes until the action changes.
+                action.setData(options.sizeHint())
+                menu.adjustSize()
+
+            menu.aboutToShow.connect(resize_popup)
+            options.changed.connect(lambda: QTimer.singleShot(0, resize_popup))
+        self._split_popup_options.copy_from(self.split_options)
+        self._update_export_controls()
+        button = self.split_tool_button
+        self._split_menu.popup(button.mapToGlobal(QPoint(0, button.height() + 4)))
+        self._split_popup_options.mode_group.checkedButton().setFocus(Qt.FocusReason.PopupFocusReason)
+
+    def _split_from_popup(self) -> None:
+        self._split_menu.close()
+        self.split()
 
     def _sync_mode(self, index: int) -> None:
         if index == 1 and hasattr(self, 'immersive') and self.immersive.fullscreen:
@@ -3617,9 +3682,13 @@ class MainWindow(QMainWindow):
         if not self._tools_ready:
             return
         count = len(self.ws.pages)
+        split_reason = (self.store.operation_reason(self.ws.pages, 'copy') or
+                        self.store.operation_reason(self.ws.pages, 'modify'))
+        self.split_options.set_context(count, split_reason)
+        if hasattr(self, '_split_popup_options'):
+            self._split_popup_options.set_context(count, split_reason)
         for kind, button, label in (
             ("extract", self.extract_button, self.extract_feedback),
-            ("split", self.split_button, self.split_feedback),
             ("convert", self.convert_button, self.convert_feedback),
         ):
             error = ""
@@ -3634,13 +3703,6 @@ class MainWindow(QMainWindow):
                     raise ValueError(reason)
                 if kind == "extract":
                     self.ws.extract_indices(self.extract_range.text())
-                elif kind == "split":
-                    if self.split_range_mode.isChecked():
-                        outputs = len(parse_range_segments(self.split_range.text(), count))
-                    else:
-                        step = self.split_count.value() if self.split_every.isChecked() else 1
-                        outputs = (count + step - 1) // step
-                    summary = tr('预计输出 {p0} 个文件', p0=f'{outputs}')
                 elif kind == "convert":
                     if self.convert_range_mode.isChecked():
                         parse_page_range(self.convert_range.text(), count)
@@ -3948,7 +4010,7 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
 
     def _tools(self) -> QWidget:
-        from app.pagetoolsui import ClearComboBox, ClearSpinBox
+        from app.pagetoolsui import ClearComboBox
 
         box = QFrame()
         box.setObjectName("exportSidebar")
@@ -4010,47 +4072,11 @@ class MainWindow(QMainWindow):
         self.extract_button = self._btn(tr('提取到新 PDF…'), self.extract, primary=True)
         extract.addWidget(self.extract_button)
         split = section(tr('拆分文件'))
-        split.setSpacing(8)
-        self.split_each = QRadioButton(tr('每页一个文件'))
-        self.split_every = QRadioButton(tr('每几页一个文件'))
-        self.split_count = ClearSpinBox()
-        self.split_count.setRange(1, 1_000_000)
-        self.split_count.setValue(5)
-        self.split_count.setSuffix(tr(' 页'))
-        self.split_count.setAccessibleName(tr('每个拆分文件的页数'))
-        self.split_count.setFixedWidth(88)
-        self.split_count.setFixedHeight(36)
-        self.split_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.split_count.hide()
-        self.split_every.toggled.connect(self.split_count.setVisible)
-        self.split_count.valueChanged.connect(self._update_export_controls)
-        self.split_range_mode = QRadioButton(tr('按页码范围'))
-        self.split_mode_group = QButtonGroup(self)
-        self.split_mode_group.addButton(self.split_each)
-        self.split_mode_group.addButton(self.split_every)
-        self.split_mode_group.addButton(self.split_range_mode)
-        self.split_each.setChecked(True)
-        split.addWidget(self.split_each)
-        interval = QHBoxLayout()
-        interval.setContentsMargins(0, 0, 0, 0)
-        interval.setSpacing(8)
-        interval.addWidget(self.split_every, 1)
-        interval.addWidget(self.split_count)
-        split.addLayout(interval)
-        split.addWidget(self.split_range_mode)
-        self.split_range = QLineEdit()
-        self.split_range.setPlaceholderText(tr('如 1-3,5,7-9，每段一个文件'))
-        self.split_range.setAccessibleName(tr('拆分页码范围'))
-        self.split_range.setVisible(False)
-        self.split_range_mode.toggled.connect(self.split_range.setVisible)
-        split.addWidget(self.split_range)
-        split.addSpacing(4)
-        self.split_feedback = QLabel("")
-        self.split_feedback.setObjectName("exportFeedback")
-        self.split_feedback.setWordWrap(True)
-        split.addWidget(self.split_feedback)
-        self.split_button = self._btn(tr('拆分到文件夹…'), self.split, primary=True)
-        split.addWidget(self.split_button)
+        from app.filesplitui import SplitOptions
+        self.split_options = SplitOptions(self._btn(tr('拆分到文件夹…'), self.split, primary=True))
+        split.addWidget(self.split_options)
+        for name in ('each', 'every', 'count', 'range_mode', 'mode_group', 'range', 'feedback', 'button'):
+            setattr(self, 'split_' + name, getattr(self.split_options, name))
         convert = section(tr('PDF 转 Excel'))
         content_label = QLabel(tr('导出内容'))
         self.convert_content = ClearComboBox()
@@ -4121,9 +4147,9 @@ class MainWindow(QMainWindow):
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         security.addWidget(hint)
-        for field in (self.extract_range, self.split_range, self.convert_range):
+        for field in (self.extract_range, self.convert_range):
             field.textChanged.connect(self._update_export_controls)
-        for radio in (self.split_each, self.split_every, self.split_range_mode, self.convert_all, self.convert_selected, self.convert_range_mode):
+        for radio in (self.convert_all, self.convert_selected, self.convert_range_mode):
             radio.toggled.connect(self._update_export_controls)
         return box
 
@@ -7012,11 +7038,7 @@ class MainWindow(QMainWindow):
 
     def _split_groups(self) -> list[list[int]]:
         self._ensure_tools()
-        count = len(self.ws.pages)
-        if self.split_range_mode.isChecked():
-            return parse_range_segments(self.split_range.text(), count)
-        step = self.split_count.value() if self.split_every.isChecked() else 1
-        return [list(range(start, min(start + step, count))) for start in range(0, count, step)]
+        return self.split_options.groups(len(self.ws.pages))
 
     def split_selected_page(self) -> None:
         if not self._allow_operation("modify") or not self._allow_operation("copy"):

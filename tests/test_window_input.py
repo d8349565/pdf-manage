@@ -503,7 +503,9 @@ def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, t
         assert doc.page_count == 2
     QTest.mouseClick(buttons['拆分文件'], Qt.MouseButton.LeftButton)
     QApplication.processEvents()
-    assert window.tools_panel.isVisible() and window.export_tools.currentIndex() == 1
+    assert window.tools_panel.isHidden() and not window.act_tools.isChecked()
+    assert window._split_menu.isVisible()
+    QTest.keyClick(window._split_menu, Qt.Key.Key_Escape)
     QTest.mouseClick(buttons['PDF 转 Excel'], Qt.MouseButton.LeftButton)
     QApplication.processEvents()
     assert window.export_tools.currentIndex() == 2
@@ -517,6 +519,79 @@ def test_top_toolbar_page_tools_work_without_opening_side_panel(loaded_window, t
         assert button.isVisible()
         assert button.geometry().right() < toolbar.width()
         assert button.geometry().bottom() < toolbar.height()
+
+
+@pytest.mark.parametrize('tools_visible', [False, True])
+@pytest.mark.parametrize('mode', [0, 1])
+def test_split_popup_keeps_sidebar_and_work_mode(loaded_window, tools_visible, mode):
+    window = loaded_window
+    window.act_tools.setChecked(tools_visible)
+    window.stack.setCurrentIndex(mode)
+    QApplication.processEvents()
+    tool_index = window.export_tools.currentIndex()
+    saved_visibility = window._window_settings.value('mainWindow/toolsVisible', False, type=bool)
+    QTest.mouseClick(window.split_tool_button, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    popup = window._split_menu
+    assert popup.isVisible() and QApplication.activePopupWidget() is popup
+    assert popup.y() >= window.split_tool_button.mapToGlobal(QPoint(0, window.split_tool_button.height())).y()
+    assert window.stack.currentIndex() == mode
+    assert window.act_tools.isChecked() == tools_visible
+    assert window.tools_panel.isVisible() == (tools_visible and mode == 0)
+    assert window.export_tools.currentIndex() == tool_index
+    if mode == 0:
+        QTest.keyClick(popup, Qt.Key.Key_Escape)
+    else:
+        QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=QPoint(-10, popup.height() + 10))
+    QApplication.processEvents()
+    assert not popup.isVisible()
+    assert window._window_settings.value('mainWindow/toolsVisible', False, type=bool) == saved_visibility
+    window.act_tools.setChecked(not tools_visible)
+    window.stack.setCurrentIndex(0)
+    QApplication.processEvents()
+    assert window.tools_panel.isVisible() == (not tools_visible)
+
+
+def test_split_popup_validates_options_and_exports_without_sidebar(loaded_window, tmp_path, monkeypatch):
+    window = loaded_window
+    QTest.mouseClick(window.split_tool_button, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    options = window._split_popup_options
+    assert options.each.isChecked() and options.feedback.text() == '预计输出 5 个文件'
+    options.every.setChecked(True)
+    options.count.setValue(2)
+    assert options.feedback.text() == '预计输出 3 个文件'
+    options.range_mode.setChecked(True)
+    options.range.setText('6')
+    assert not options.button.isEnabled()
+    options.range.setText('1-3,5')
+    assert options.button.isEnabled() and options.feedback.text() == '预计输出 2 个文件'
+    QApplication.processEvents()
+    assert window._split_menu.rect().contains(options.button.mapTo(window._split_menu, options.button.rect().bottomRight()))
+    QTest.keyClick(options.range, Qt.Key.Key_Escape)
+    QTest.mouseClick(window.split_tool_button, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    assert options.range_mode.isChecked() and options.range.text() == '1-3,5'
+    monkeypatch.setattr(QFileDialog, 'getExistingDirectory', lambda *args: '')
+    options.button.click()
+    assert not window._split_menu.isVisible() and window.tools_panel.isHidden()
+    output = tmp_path / 'split-popup-output'
+    output.mkdir()
+    opened = []
+    monkeypatch.setattr(QFileDialog, 'getExistingDirectory', lambda *args: str(output))
+    monkeypatch.setattr(window, '_open_output_folder', opened.append)
+    source = window.ws.path
+    pages = list(window.ws.pages)
+    QTest.mouseClick(window.split_tool_button, Qt.MouseButton.LeftButton)
+    options.button.click()
+    assert not window._split_menu.isVisible() and not window.act_tools.isChecked()
+    assert window.ws.path == source and window.ws.pages == pages
+    assert opened == [str(output)]
+    paths = sorted(output.glob('*.pdf'))
+    assert len(paths) == 2
+    for path, expected in zip(paths, (3, 1)):
+        with pymupdf.open(path) as doc:
+            assert doc.page_count == expected
 
 
 def test_continuous_scroll_updates_page_without_jumping(loaded_window):

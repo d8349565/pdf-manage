@@ -89,7 +89,7 @@ def main() -> None:
                      "app.rasterpdf", "app.rasterui", "app.storage", "app.storageui", "app.updates", "markdown",
                      "app.imagecompress", "app.imagequick", "app.runtime", "app.contextmenus", "app.contextmenuui",
                      "app.themes", "app.updateui", "app.immersivereading", "app.signatureinfo", "app.signatureui",
-                     "app.quickstartui",
+                     "app.quickstartui", "app.contributionui", "app.filesplitui",
                      "app.readingcache", "app.annotcrop", "app.annotcropui",
                      "app.colorcleanup", "app.colorcleanupui", "app.replacementui",
                      "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
