@@ -34,8 +34,6 @@ class PdfSafety:
     def read_only_reason(self) -> str:
         if self.signature == 'pending':
             return '正在检查原文件保护信息，编辑功能准备中'
-        if self.signature == "present":
-            return "检测到数字签名，未验证有效性 · 原件只读"
         if self.signature == "unknown":
             return "无法确认签名结构 · 为保护原件，以只读方式打开"
         if not self.allows(pymupdf.PDF_PERM_MODIFY | pymupdf.PDF_PERM_ASSEMBLE):
@@ -46,6 +44,12 @@ class PdfSafety:
 def _present(doc, xref, key):
     kind, value = doc.xref_get_key(xref, key)
     return kind != "null" and value not in ("", "null", "[]", "<<>>")
+
+
+def xref_in_use(pdf, xref):
+    """Distinguish unused slots from live objects in a sparse cross-reference table."""
+    entry = pymupdf.mupdf.ll_pdf_get_xref_entry_no_change(pdf.m_internal, xref)
+    return entry is not None and entry.type not in ('\x00', 'f')
 
 
 def signature_state(doc) -> str:
@@ -71,10 +75,7 @@ def signature_steps(doc):
             if xref % 256 == 0 or perf_counter() - started >= .01:
                 yield
                 started = perf_counter()
-            # 稀疏交叉引用表可有未分配的编号。加载这些槽位会抛异常，
-            # 但槽位本身不是签名；有效对象读取失败仍由下方按 unknown 保护。
-            entry = pymupdf.mupdf.ll_pdf_get_xref_entry_no_change(pdf.m_internal, xref)
-            if entry is None or entry.type in ('\x00', 'f'):
+            if not xref_in_use(pdf, xref):
                 continue
             field_type = doc.xref_get_key(xref, "FT")[1]
             object_type = doc.xref_get_key(xref, "Type")[1]

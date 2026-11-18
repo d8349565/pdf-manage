@@ -14,7 +14,7 @@ from app.ocr.model_manager import validate_runtime
 from app.ocr.page_detector import has_effective_text
 from app.ocr.pdf_export import add_text_layer
 from app.output import check_cancel, commit_file, stamp, OperationCancelled
-from app.pdfstructure import document_signature, inspect_safety
+from app.pdfstructure import document_signature, inspect_safety, signature_state
 from app.storage import StorageError, TemporaryWorkspace
 
 DPI = 200
@@ -86,8 +86,8 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
             if doc.is_encrypted:
                 raise OCRError('PDF 需要密码，请通过原有打开文件流程验证后再识别。')
             safety = inspect_safety(doc, authentication)
-            if safety.signature != 'none':
-                raise OCRError('检测到数字签名或无法确认签名结构，MVP 不支持生成 OCR 副本。')
+            if safety.signature == 'unknown':
+                raise OCRError('无法确认数字签名结构，暂不能生成 OCR 副本。')
             if not safety.allows(p.PDF_PERM_MODIFY) or not safety.allows(p.PDF_PERM_COPY):
                 raise OCRError('当前密码不允许修改或复制 PDF 内容，不能执行 OCR。')
             if not doc.is_pdf or doc.is_repaired:
@@ -148,6 +148,10 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
                 if failures and not processed:
                     raise OCRError('未生成识别结果：' + '；'.join(f'第 {i + 1} 页：{why}' for i, why in failures))
                 report(0, 0, '正在保存并校验搜索文字层')
+                if safety.signature == 'present':
+                    from app.pdfsecurity import freeze_signatures
+                    freeze_signatures(doc, cancel=cancel_check)
+                    structure = document_signature(doc)
                 fd, temp = tempfile.mkstemp(prefix='.zhixu-ocr-', suffix='.pdf', dir=destination.parent)
                 os.close(fd)
                 doc.subset_fonts()
@@ -157,6 +161,8 @@ def run_ocr(source_path, destination_path, page_indices, options=None,
                         raise OCRError('输出 PDF 密码验证失败，未提交结果。')
                     if check.is_repaired or document_signature(check) != structure:
                         raise OCRError('输出 PDF 页面或导航结构校验失败，未提交结果。')
+                    if safety.signature == 'present' and signature_state(check) != 'none':
+                        raise OCRError('输出 PDF 未能移除原数字签名，未提交结果。')
                     for index, written in checks.items():
                         check_cancel(cancel_check)
                         page = check[index]

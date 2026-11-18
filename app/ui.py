@@ -2905,23 +2905,11 @@ class MainWindow(QMainWindow):
             policy.setRetainSizeWhenHidden(True)
             widget.setSizePolicy(policy)
         # addPermanentWidget 会自动显示未显式隐藏的控件并触发布局和字体测量。
-        # 空窗口先隐藏，渲染或保护提示真正需要时再显示。
+        # 空窗口先隐藏，渲染状态需要时再显示。
         self.render_label.hide()
         self.render_progress.hide()
         status_layout.addWidget(self.render_label)
         status_layout.addWidget(self.render_progress)
-        self.protection_label = QLabel(status_widgets)
-        self.protection_label.setObjectName("hint")
-        self.protection_label.setWordWrap(True)
-        self.protection_label.hide()
-        status_layout.addWidget(self.protection_label)
-        self.protection_copy_button = QPushButton(tr('制作影像副本…'), status_widgets)
-        self.protection_copy_button.setAccessibleName(tr('为无法确认签名结构的原件制作影像副本'))
-        set_theme_style(self.protection_copy_button, 'min-height: 0px; padding: 4px 8px;')
-        self.protection_copy_button.setMinimumWidth(self.protection_copy_button.sizeHint().width())
-        self.protection_copy_button.clicked.connect(lambda: self.rasterize_document(recovery=True))
-        self.protection_copy_button.hide()
-        status_layout.addWidget(self.protection_copy_button)
         # 一次注册，避免 QStatusBar 为每个控件重复重建整个布局。
         self.statusBar().addPermanentWidget(status_widgets)
         self.update_notice_button = QToolButton(self.statusBar())
@@ -3471,18 +3459,10 @@ class MainWindow(QMainWindow):
         read_only = self.store.operation_reason(self.ws.pages, "modify")
         self._controls_read_only = bool(read_only)
         copy_reason = self.store.operation_reason(self.ws.pages, "copy")
-        protection = read_only or copy_reason or self.store.operation_reason(self.ws.pages, "print")
         ofd_copy = any(ref.source_path.lower().endswith('.ofd') for ref in self.ws.pages)
-        if ofd_copy and not protection:
-            protection = tr('OFD 工作副本 · 原文件保留 · 保存时另存为 PDF')
-        self.protection_label.setText(protection)
-        self.protection_label.setVisible(bool(protection))
         self.signature_info_action.setEnabled(bool(count))
         unknown_signature = any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages)
         raster_reason = self.store.operation_reason(self.ws.pages, 'raster_copy')
-        self.protection_copy_button.setVisible(unknown_signature)
-        self.protection_copy_button.setEnabled(bool(count) and not raster_reason)
-        self.protection_copy_button.setToolTip(raster_reason or tr('仅复制页面影像；原件不变，副本不保留签名效力。'))
         self._sync_page_navigation()
         save_reason = read_only
         if read_only and any(page.edits for page in self.ws.pages):
@@ -3502,7 +3482,7 @@ class MainWindow(QMainWindow):
         sources = [self.store._source(sid) for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages)]
         encrypted = any(source.safety.encrypted for source in sources)
         signature_reason = next((source.safety.read_only_reason for source in sources
-                                 if source.safety.signature != "none"), "")
+                                 if source.safety.signature in ('pending', 'unknown')), "")
         decrypt_hint = (tr('请先打开加密 PDF。') if not count else
                         signature_reason or (tr('另存未加密副本；有权限限制时需输入管理密码。') if encrypted
                                              else tr('当前文档未加密，无需解密。')))
@@ -4313,9 +4293,6 @@ class MainWindow(QMainWindow):
             parts.append(tr('未保存'))
         if self.ws.last_error:
             parts.append(self.ws.last_error)
-        reason = self.store.operation_reason(self.ws.pages, "modify")
-        if reason:
-            parts.append(reason)
         return " · ".join(parts)
 
     def _selection_caption(self) -> str:
@@ -6063,7 +6040,7 @@ class MainWindow(QMainWindow):
                 return False
             reason = self.store.operation_reason(pages, 'modify')
             if reason:
-                self._warn_merge_readonly(path, pages, reason)
+                self._warn_merge_readonly(path, reason)
                 self._release_unused_docs()
                 return False
             incoming.extend(pages)
@@ -6089,6 +6066,7 @@ class MainWindow(QMainWindow):
         at_index: int | None = None,
         target_view: PageListView | None = None,
         open_empty_in_tabs: bool = True,
+        signed_merge: bool = False,
     ) -> bool:
         valid_paths = [os.path.abspath(p) for p in paths if p and (p.lower().endswith((".pdf", ".ofd")) or _is_image_path(p))]
         if not valid_paths:
@@ -6099,22 +6077,24 @@ class MainWindow(QMainWindow):
             return False
         base_pos = len(self.ws.pages) if at_index is None else max(0, min(at_index, len(self.ws.pages)))
         target_workspace,before=self.ws,tuple(self.ws.pages)
-        incoming = []
-        for index, path in enumerate(valid_paths, start=1):
-            pages = self._try_load(path, index, len(valid_paths))
-            if pages is None:
-                self._release_unused_docs()
-                return False
-            reason = self.store.operation_reason(pages, 'modify')
-            if reason:
-                self._warn_merge_readonly(path, pages, reason)
-                self._release_unused_docs()
-                return False
-            incoming.extend(pages)
+        batches = self._load_file_batches(valid_paths)
+        if batches is None:
+            return False
         if self.ws is not target_workspace or tuple(self.ws.pages)!=before:
             self._release_unused_docs()
             self.statusBar().showMessage(tr('工作区已改变，请重新选择插入位置。'),5000)
             return False
+        if signed_merge and (self.store.has_signed_pages(before) or any(
+                self.store.has_signed_pages(pages) for _, pages in batches)):
+            return self._merge_signature_batches(batches, include_current=True)
+        incoming = []
+        for path, pages in batches:
+            reason = self.store.operation_reason(pages, 'modify')
+            if reason:
+                self._warn_merge_readonly(path, reason)
+                self._release_unused_docs()
+                return False
+            incoming.extend(pages)
         return self.insert_prepared_pages(incoming,at_index=base_pos,target_view=target_view)
 
     def insert_prepared_pages(self,incoming,*,at_index=None,target_view=None):
@@ -6242,7 +6222,7 @@ class MainWindow(QMainWindow):
         reason = (self.store.operation_reason(source_pages, "copy")
                   or self.store.operation_reason(source_pages, "modify"))
         if reason:
-            self._warn_merge_readonly(source_ws.path or tr('来源文档'), source_pages, reason)
+            self._warn_merge_readonly(source_ws.path or tr('来源文档'), reason)
             return False
         incoming = Workspace._unique_pages(source_pages, source_pages)
         incoming_outline = (
@@ -6272,14 +6252,29 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, tr('合并 PDF / 图片'), "",
             tr('PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)'))
         if paths:
+            pdfs_only = all(path.lower().endswith('.pdf') for path in paths)
             if self.ws.pages or any(_is_image_path(path) for path in paths):
-                self.insert_dropped_files(paths)
+                self.insert_dropped_files(paths, signed_merge=pdfs_only)
+            elif pdfs_only and len(paths) > 1:
+                self._ingest(paths, replace=True, signed_merge=True)
             else:
                 self._ingest(paths, replace=False)
 
     def merge_open_files(self):
         from app.mergeopenui import merge_open_files
         return merge_open_files(self)
+
+    def _merge_signature_batches(self, batches, *, include_current=False):
+        from app.mergeopenui import merge_open_files
+        tabs = [self._active_tab()] if include_current and self.ws.pages else []
+        for path, pages in batches:
+            workspace = Workspace()
+            workspace.open_replace(pages, path)
+            tabs.append(_DocumentTab(ws=workspace))
+        try:
+            return merge_open_files(self, tabs=tabs)
+        finally:
+            self._release_unused_docs()
 
     def open_startup_files(self, paths: list[str], mode: str = "") -> None:
         try:
@@ -6306,7 +6301,17 @@ class MainWindow(QMainWindow):
                 message += tr('\n无法打开：') + "、".join(os.path.basename(path) for path in invalid[:4])
             QMessageBox.warning(self, tr('无法打开右键入口'), message)
             return False
-        if not self._ingest(paths, replace=True):
+        if mode == 'merge' and len(paths) > 1:
+            if not self.confirm_leave():
+                return False
+            batches = self._load_file_batches(paths)
+            if batches is None:
+                return False
+            if any(self.store.has_signed_pages(pages) for _, pages in batches):
+                return self._merge_signature_batches(batches)
+            if not self._replace_from_batches(batches):
+                return False
+        elif not self._ingest(paths, replace=True):
             return False
         if mode == "split":
             self._ensure_tools()
@@ -6339,7 +6344,36 @@ class MainWindow(QMainWindow):
             else:
                 self.statusBar().showMessage(tr('已在末尾插入 {p0} 页 · 可拖动调整顺序', p0=f'{inserted_count}'), 4000)
 
-    def _ingest(self, paths: list[str], replace: bool) -> bool:
+    def _load_file_batches(self, paths):
+        batches = []
+        for index, path in enumerate(paths, start=1):
+            pages = self._try_load(path, index, len(paths))
+            if pages is None:
+                self._release_unused_docs()
+                return None
+            batches.append((os.path.abspath(path), pages))
+        return batches
+
+    def _replace_from_batches(self, batches):
+        if len(batches) > 1:
+            for path, pages in batches:
+                reason = self.store.operation_reason(pages, 'modify')
+                if reason:
+                    self._warn_merge_readonly(path, reason)
+                    self._release_unused_docs()
+                    return False
+        self.ws.reset()
+        self._reading_layout, self._zoom_mode = self._default_reading_view()
+        for path, pages in batches:
+            if len(batches) > 1:
+                self.ws.merge_pages(pages)
+            else:
+                self.ws.load_first_or_merge(pages, path)
+        self.refresh()
+        self._release_unused_docs()
+        return True
+
+    def _ingest(self, paths: list[str], replace: bool, *, signed_merge=False) -> bool:
         if not paths:
             return False
         if not replace and self.ws.pages and not self._allow_operation("modify"):
@@ -6347,31 +6381,12 @@ class MainWindow(QMainWindow):
         if replace:
             if not self.confirm_leave():
                 return False
-            batches: list[tuple[str, list]] = []
-            for index, path in enumerate(paths, start=1):
-                pages = self._try_load(path, index, len(paths))
-                if pages is None:
-                    self._release_unused_docs()
-                    return False
-                batches.append((os.path.abspath(path), pages))
-            if len(batches) > 1:
-                for path, pages in batches:
-                    reason = self.store.operation_reason(pages, "modify")
-                    if reason:
-                        self._warn_merge_readonly(path, pages, reason)
-                        self._release_unused_docs()
-                        return False
-            self.ws.reset()
-            self._reading_layout, self._zoom_mode = self._default_reading_view()
-            for path, pages in batches:
-                if len(batches) > 1:
-                    self.ws.merge_pages(pages)
-                else:
-                    self.ws.load_first_or_merge(pages, path)
-            self.refresh()
-            # 关闭旧文档时按文档加锁，最多等这一次渲染跑完，而不是整个线程池排空。
-            self._release_unused_docs()
-            return True
+            batches = self._load_file_batches(paths)
+            if batches is None:
+                return False
+            if signed_merge and len(batches) > 1 and any(self.store.has_signed_pages(pages) for _, pages in batches):
+                return self._merge_signature_batches(batches)
+            return self._replace_from_batches(batches)
         loaded = True
         for index, path in enumerate(paths, start=1):
             if not self._load_one(path, index, len(paths)):
@@ -6428,7 +6443,7 @@ class MainWindow(QMainWindow):
             return None
         reason = self.store.operation_reason(pages, "modify") if self.ws.pages else ""
         if reason:
-            self._warn_merge_readonly(path, pages, reason)
+            self._warn_merge_readonly(path, reason)
             self._release_unused_docs()
             return None
         incoming_outline = self.store.outline_entries(pages, group_sources=True) if self.ws.outline is not None else None
@@ -6444,10 +6459,8 @@ class MainWindow(QMainWindow):
             self.ws.load_first_or_merge(pages, os.path.abspath(path), outline=incoming_outline)
         return pages
 
-    def _warn_merge_readonly(self, path, pages, reason) -> None:
+    def _warn_merge_readonly(self, path, reason) -> None:
         message = tr('{p0}\n{p1}\n\n请单独打开阅读。', p0=f'{os.path.basename(path)}', p1=f'{reason}')
-        if not self.store.operation_reason(pages, "editable_copy"):
-            message += tr('符合条件时，可在单独打开后制作可编辑副本，再合并副本。')
         QMessageBox.warning(self, tr('不能合并只读文档'), message)
 
     def _release_unused_docs(self) -> None:
@@ -6679,7 +6692,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, tr('无需解密'), tr('当前文档未加密。'))
             return
         for source in sources:
-            if source.safety.signature != "none":
+            if source.safety.signature in ('pending', 'unknown'):
                 QMessageBox.information(self, tr('文件保护'), source.safety.read_only_reason)
                 return
         for sid in dict.fromkeys(ref.source_id for ref in self.ws.pages):
@@ -6719,38 +6732,55 @@ class MainWindow(QMainWindow):
         open_signature_info(self)
 
     def editable_copy(self):
+        if not self.ws.pages or self._saving or getattr(self, '_task_dialog', None) is not None:
+            return False
+        self._finish_document_checks(self.ws.pages)
         if any(self.store._source(ref.source_id).safety.signature == 'unknown' for ref in self.ws.pages):
             self.rasterize_document(recovery=True)
-            return
-        if not self._allow_operation("editable_copy") or not self.ws.pages:
-            return
-        if not self.confirm_leave():
-            return
-        if QMessageBox.warning(self, tr('制作可编辑副本'), tr('副本将冻结签名外观并移除签名验证结构。\n原数字签名效力不会保留；其他表单仍可填写。原件不会覆盖。'),
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Ok:
-            return
-        from app.exportdialogs import new_pdf_path
-        path = new_pdf_path(self, self.store, tr('另存可编辑副本'), Path(self.ws.path or tr('文档.pdf')).stem + tr('_可编辑副本.pdf'))
-        if not path:
-            return
+            return False
+        if not self._allow_operation('editable_copy'):
+            return False
+        self._saving = True
         try:
-            result = self._write_pdf(list(self.ws.pages), path, tr('制作可编辑副本'), register_result=True,
-                options=WriteOptions(operation="editable_copy", editable_copy=True), cancellable=True)
+            box = QMessageBox(QMessageBox.Icon.Information, tr('编辑副本'),
+                              tr('原件保留。副本保留签章外观，不含原数字签名。'),
+                              parent=self)
+            edit = box.addButton(tr('编辑副本'), QMessageBox.ButtonRole.AcceptRole)
+            cancel = box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(edit)
+            box.setEscapeButton(cancel)
+            box.exec()
+            proceed = box.clickedButton() is edit
+            box.deleteLater()
+            if not proceed:
+                return False
+            from app.exportdialogs import new_pdf_path
+            suggested = Path(self.ws.path or tr('文档.pdf')).stem + tr('_可编辑副本.pdf')
+            path = new_pdf_path(self, self.store, tr('另存可编辑副本'), suggested)
+            if not path:
+                return False
+            index = self.ws.preview_index()
+            result = self._write_pdf(list(self.ws.pages), path, tr('制作可编辑副本'),
+                                     options=WriteOptions(operation='editable_copy'))
             if result is None:
-                return
+                return False
             try:
-                self.ws.reset()
-                self.ws.load_first_or_merge(list(result.pages), result.path)
-                self.refresh()
-                self._release_unused_docs()
-                self._show_write_notes((result,))
+                if self._open_files_in_tabs([result.path]):
+                    self.ws.last_saved_path = result.path
+                    if index is not None:
+                        self.go_to_page(index + 1)
+                    self.statusBar().showMessage(tr('已保存到 {p0}', p0=result.path), 7000)
+                    return True
             except Exception:
-                QMessageBox.warning(self, tr('副本已保存'), tr('副本已保存到：\n{p0}\n界面更新未完成，请重新打开。', p0=f'{result.path}'))
+                pass
+            self.statusBar().showMessage(tr('已保存到 {p0}', p0=result.path), 7000)
         except OperationCancelled:
-            QMessageBox.information(self, tr('已取消'), tr('已取消，完成 0 个输出文件。'))
+            self.statusBar().showMessage(tr('已取消，完成 0 个输出文件。'), 5000)
         except PdfError as exc:
             QMessageBox.warning(self, tr('副本未完成'), str(exc))
+        finally:
+            self._saving = False
+        return False
 
     def open_word_converter(self, *, direction="word_to_pdf"):
         from app.wordui import WordConverterWindow
@@ -6886,11 +6916,14 @@ class MainWindow(QMainWindow):
         merged_output = workspace.path is None and bool(workspace.protected_paths)
         page_tool_copy = any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup')
                              for ref in workspace.pages for edit in ref.edits)
-        requires_copy = page_tool_copy or any(self.store._source(ref.source_id).requires_copy for ref in workspace.pages)
+        original = workspace.last_saved_path or workspace.path
+        signed_copy = bool(original and self.store.is_source_destination(original, signed_only=True)) or (
+            not workspace.last_saved_path and self.store.has_signed_pages(workspace.pages))
+        requires_copy = signed_copy or page_tool_copy or any(
+            self.store._source(ref.source_id).requires_copy for ref in workspace.pages)
         self._window_settings.sync()
         mode = default_save_mode(self._window_settings)
         while True:
-            original = workspace.last_saved_path or workspace.path
             is_ofd = bool(original and original.lower().endswith('.ofd'))
             path = workspace.last_saved_path or (workspace.path if mode == 'overwrite' else None)
             remember_overwrite = False
@@ -6907,7 +6940,8 @@ class MainWindow(QMainWindow):
             if not use_save_target:
                 suggested = (os.path.splitext(original)[0] + '.pdf' if is_ofd else
                              os.path.splitext(original)[0] + tr('_副本.pdf') if original else tr('未命名.pdf'))
-                path, _ = QFileDialog.getSaveFileName(self, tr('另存为 PDF') if is_ofd else tr('保存 PDF'), export_path(suggested), "PDF (*.pdf)")
+                title = tr('另存副本（不含原数字签名）') if signed_copy else tr('另存为 PDF') if is_ofd else tr('保存 PDF')
+                path, _ = QFileDialog.getSaveFileName(self, title, export_path(suggested), "PDF (*.pdf)")
                 if not path:
                     return False
                 if not path.lower().endswith(".pdf"):

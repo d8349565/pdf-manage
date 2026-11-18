@@ -158,7 +158,10 @@ def make_pdf(path, *, password=None, permissions=4095, signature=False):
     with p.open() as doc:
         doc.new_page()
         doc.new_page().insert_text((60, 80), 'Existing searchable electronic text')
-        if signature:
+        if signature == 'unknown':
+            field = doc.get_new_xref()
+            doc.update_object(field, '<< /FT /Sig /V (unsupported) >>')
+        elif signature:
             sig = doc.get_new_xref()
             doc.update_object(sig, '<< /Type /Sig /ByteRange [0 1 2 3] /Contents <11223344> >>')
             doc.xref_set_key(doc.pdf_catalog(), 'Perms', f'<< /DocMDP {sig} 0 R >>')
@@ -214,14 +217,20 @@ def job(tmp_path, monkeypatch):
     return source, tmp_path / 'output.pdf', OCROptions(runtime_dir=str(runtime))
 
 
-def test_output_retains_source_structure_and_search(job):
+@pytest.mark.parametrize('signed', [False, True])
+def test_output_retains_source_structure_and_search(job, signed):
+    from app.pdfstructure import signature_state
     source, output, options = job
+    if signed:
+        source.unlink()
+        make_pdf(source, signature=True)
     before = source.read_bytes()
     result = run_ocr(source, output, [0, 1], options)
     assert result.processed_pages == (0,) and result.skipped_pages == (1,)
     assert not result.failed_pages and DeterministicEngine.closed
     assert source.read_bytes() == before
     with p.open(source) as original, p.open(output) as generated:
+        assert signature_state(generated) == 'none'
         assert '中文预算' in generated[0].get_text()
         assert generated[0].search_for('12345.67')
         assert original.get_toc() == generated.get_toc()
@@ -288,8 +297,8 @@ def test_all_failed_pages_produce_no_final_pdf(job, monkeypatch):
     assert not output.exists()
 
 
-@pytest.mark.parametrize('signature,permissions,password', [(True, 4095, None), (False, p.PDF_PERM_PRINT, 'user')])
-def test_signature_and_insufficient_permissions_are_rejected(job, signature, permissions, password):
+@pytest.mark.parametrize('signature,permissions,password', [('unknown', 4095, None), (True, p.PDF_PERM_PRINT, 'user')])
+def test_unknown_signature_and_insufficient_permissions_are_rejected(job, signature, permissions, password):
     source, output, options = job
     source.unlink()
     make_pdf(source, signature=signature, permissions=permissions, password=password)

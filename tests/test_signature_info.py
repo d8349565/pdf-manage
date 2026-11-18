@@ -62,7 +62,7 @@ def test_reports_metadata_page_and_protection_without_writes(tmp_path, mode, sta
             assert row.method == '/adbe.pkcs7.detached'
         if mode == 'unknown':
             assert report['issues']
-        assert bool(store.operation_reason(pages, 'modify')) == (state != 'none')
+        assert bool(store.operation_reason(pages, 'modify')) == (state == 'unknown')
         assert path.read_bytes() == original
     finally:
         store.close_all()
@@ -131,7 +131,7 @@ def test_panel_shows_plain_declared_metadata_and_source_page_mapping(window, tmp
         assert dialog.status.textFormat() == Qt.TextFormat.PlainText
         assert dialog.target_page == 2 and dialog.jump.isEnabled()
         assert dialog.editable.isEnabled() and dialog.raster.isEnabled()
-        assert not window.save_action.isEnabled()
+        assert window.save_action.isEnabled() and '另存' in dialog.protection.text()
         assert '当前版本尚未解析证书' in dialog.details.toPlainText()
         window.ws.pages = window.ws.pages[:1]
         dialog.show_signature()
@@ -146,7 +146,7 @@ def test_panel_respects_copy_permissions_and_unknown_structure(window, tmp_path)
     dialog = SignatureInfoDialog(window, reports)
     try:
         assert not dialog.editable.isEnabled() and not dialog.raster.isEnabled()
-        assert '复制受限' in dialog.permissions.text()
+        assert '复制：受限' in dialog.permissions.text()
         assert '影像副本：' in dialog.action_hint.text()
         assert reports[0]['safety'].signature == 'unknown'
     finally:
@@ -184,4 +184,4 @@ def test_menu_reuses_existing_navigation_and_safe_copy_routes(window, tmp_path, 
     monkeypatch.setattr(window, 'rasterize_document', lambda **kw: calls.append(('raster', kw['recovery'])))
     window.signature_info_action.trigger()
     assert calls == {'jump': [('jump', 2)], 'editable': [('editable',)], 'raster': [('raster', False)]}[action]
-    assert not window.save_action.isEnabled()
+    assert window.save_action.isEnabled()

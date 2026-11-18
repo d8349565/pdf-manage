@@ -74,8 +74,8 @@ def validate_pdf_for_word(source):
         safety = inspect_safety(doc, 0)
         if not safety.allows(pymupdf.PDF_PERM_COPY):
             raise ValueError("当前 PDF 不允许复制或导出内容。")
-        if safety.signature != "none":
-            raise ValueError("签名 PDF 请先明确制作可编辑副本，再转换为 Word。")
+        if safety.signature == 'unknown':
+            raise ValueError('无法确认数字签名结构，请先制作影像副本再导出。')
         if not doc.is_pdf or doc.page_count < 1:
             raise ValueError("源文件不是有效的 PDF。")
 

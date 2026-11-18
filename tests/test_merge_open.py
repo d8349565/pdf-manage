@@ -181,7 +181,7 @@ def test_protected_sources_are_visible_with_reasons_and_not_selected(opened, mon
     window._finish_document_checks([page for tab in window._tabs for page in tab.ws.pages])
     ref = window._tabs[1].ws.pages[0]
     source = window.store._source(ref.source_id)
-    source.safety = replace(source.safety, signature='present')
+    source.safety = replace(source.safety, signature='unknown')
     def inspect(dialog):
         item = dialog.files.item(1)
         assert 'B.pdf' in item.text()

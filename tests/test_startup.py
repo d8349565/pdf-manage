@@ -129,7 +129,7 @@ def test_status_widgets_are_registered_once_while_hidden(qapp, monkeypatch):
         return original(status, widget, *args)
     monkeypatch.setattr(QStatusBar, "addPermanentWidget", add)
     win = MainWindow()
-    assert hidden == [[True, True, True, True]], "empty startup repeatedly lays out unused status widgets"
+    assert len(hidden) == 1 and hidden[0] and all(hidden[0]), "empty startup repeatedly lays out unused status widgets"
     assert registered == [win.render_label.parentWidget(), win.update_notice_button]
     assert win.update_notice_button.isHidden()
     from PyQt6.QtTest import QTest

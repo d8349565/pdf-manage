@@ -5,6 +5,7 @@ import math
 import pymupdf
 
 from app.output import check_cancel
+from app.pdfstructure import xref_in_use
 
 
 def freeze_signatures(doc, progress=None, cancel=None):
@@ -50,6 +51,8 @@ def freeze_signatures(doc, progress=None, cancel=None):
         doc.xref_set_key(catalog, key, "null")
     for xref in range(1, doc.xref_length()):
         check_cancel(cancel)
+        if not xref_in_use(pdf, xref):
+            continue
         kind = doc.xref_get_key(xref, "Type")[1]
         if kind in ("/Sig", "/DocTimeStamp") or doc.xref_get_key(xref, "ByteRange")[0] != "null":
             doc.update_object(xref, "<<>>")

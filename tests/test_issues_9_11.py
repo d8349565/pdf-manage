@@ -74,7 +74,7 @@ def test_raster_geometry_order_pixels_and_original_preserved(tmp_path, rotation,
 
 
 @pytest.mark.parametrize('signature', ['unknown', 'present'])
-def test_readonly_signature_has_safe_copy_route_without_unlocking_original(tmp_path, signature):
+def test_signature_allows_a_safe_image_copy(tmp_path, signature):
     from app.pdfstructure import signature_state
     source, target = tmp_path / 'signed.pdf', tmp_path / 'copy.pdf'
     make_pdf(source, signature=signature)
@@ -83,8 +83,8 @@ def test_readonly_signature_has_safe_copy_route_without_unlocking_original(tmp_p
     try:
         pages = store.load(str(source))
         assert store._source(pages[0].source_id).safety.signature == signature
-        assert store.operation_reason(pages, 'modify')
-        assert store.operation_reason(pages, 'copy')
+        assert bool(store.operation_reason(pages, 'modify')) == (signature == 'unknown')
+        assert bool(store.operation_reason(pages, 'copy')) == (signature == 'unknown')
         assert not store.operation_reason(pages, 'raster_copy')
         rasterize_pdf(store, pages, target)
         with p.open(target) as doc:
@@ -95,7 +95,6 @@ def test_readonly_signature_has_safe_copy_route_without_unlocking_original(tmp_p
         copied = store.load(str(target))
         assert not store.operation_reason(copied, 'modify')
         assert source.read_bytes() == before
-        assert store.operation_reason(pages, 'modify')
     finally:
         store.close_all()
 
@@ -285,11 +284,10 @@ def test_unknown_signature_ui_exposes_recovery_and_keeps_destructive_actions_dis
         window.ws.open_replace(pages, str(source))
         window.refresh()
         assert window.raster_action.isEnabled() and window.editable_action.isEnabled()
-        assert not window.protection_copy_button.isHidden()
         assert not window.save_action.isEnabled() and not window.delete_action.isEnabled()
         calls = []
         monkeypatch.setattr(window, 'rasterize_document', lambda *args, **kwargs: calls.append(kwargs))
-        window.editable_copy()
+        window.editable_action.trigger()
         assert calls == [dict(recovery=True)]
     finally:
         close_window(window, qapp)

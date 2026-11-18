@@ -52,7 +52,6 @@ class WriteOptions:
     compression_dpi: int = 300
     compression_quality: int = 92
     compression_grayscale: bool = False
-    editable_copy: bool = False
     page_numbers: "PageNumberOptions | None" = None
     outline: tuple | None = None
     allow_tag_loss: bool = False
@@ -478,7 +477,7 @@ class PdfStore:
             sid = self._register(origin.path, doc, data, origin.password, 0, origin.disk_stamp)
             self._source(sid).needs_encryption_choice = (
                 origin.safety.encrypted or origin.needs_encryption_choice)
-            self._source(sid).requires_copy = origin.requires_copy
+            self._source(sid).requires_copy = origin.requires_copy or origin.safety.signature == 'present'
             self._source(sid).lost_structures = tuple(dict.fromkeys(
                 (*origin.lost_structures, *origin.safety.special_structures)))
         except Exception:
@@ -528,7 +527,7 @@ class PdfStore:
             if safety.signature == 'pending':
                 if operation not in ('copy', 'print'):
                     return safety.read_only_reason
-            elif operation not in ("print", "editable_copy", "raster_copy") and safety.signature != "none":
+            elif safety.signature == 'unknown' and operation not in ('print', 'editable_copy', 'raster_copy'):
                 return safety.read_only_reason
             if operation == "decrypt" and safety.needs_owner_for_decryption:
                 return "解除打印、复制等权限限制需要管理密码。"
@@ -537,18 +536,29 @@ class PdfStore:
                     return "只有已识别的签名文件可以制作可编辑副本；无法判断的签名结构继续只读保护。"
                 if not safety.allows(pymupdf.PDF_PERM_MODIFY) or not safety.allows(pymupdf.PDF_PERM_COPY):
                     return "当前密码不允许修改或导出内容，不能制作可编辑副本。"
-            if operation == "modify" and safety.read_only_reason:
+            if operation in ("modify", "merge") and safety.read_only_reason:
                 return safety.read_only_reason
             permission = {"print": pymupdf.PDF_PERM_PRINT, "copy": pymupdf.PDF_PERM_COPY,
+                          "merge": pymupdf.PDF_PERM_COPY,
                           "raster_copy": pymupdf.PDF_PERM_COPY,
                           "annotate": pymupdf.PDF_PERM_ANNOTATE, "content_edit": pymupdf.PDF_PERM_MODIFY,
                           "outline": pymupdf.PDF_PERM_MODIFY}.get(operation)
             if permission is not None and not safety.allows(permission):
                 return {"print": "当前密码不允许打印。", "copy": "当前密码不允许导出内容。",
+                        "merge": "当前密码不允许导出内容。",
                         "raster_copy": "当前密码不允许导出影像副本，请使用管理密码重新打开。",
                         "annotate": "当前密码不允许添加或修改批注。", "content_edit": "当前密码不允许修改页面内容。",
                         "outline": "当前密码不允许修改大纲。"}[operation]
         return ""
+
+    def has_signed_pages(self, pages: list[PageRef]) -> bool:
+        return any(
+            self._source(sid).safety.signature == 'present' for sid in {page.source_id for page in pages})
+
+    def require_signature_copy_target(self, dest, *, signed_pages, operation):
+        if self.is_source_destination(dest, signed_only=True) or (
+                signed_pages and operation in ('merge', 'editable_copy') and self.is_source_destination(dest)):
+            raise PdfError('签名文件只能另存副本，不能覆盖来源文件。')
 
     def require_operation(self, pages: list[PageRef], operation: str) -> None:
         reason = self.operation_reason(pages, operation)
@@ -574,9 +584,12 @@ class PdfStore:
                                             for page in pages)))
         return reports
 
-    def is_source_destination(self, dest: str) -> bool:
+    def is_source_destination(self, dest: str, *, signed_only=False) -> bool:
+        target_key = _path_key(dest)
         for source in self._sources.values():
-            if _path_key(source.path) == _path_key(dest):
+            if signed_only and source.safety.signature != 'present':
+                continue
+            if _path_key(source.path) == target_key:
                 return True
             try:
                 if os.path.samefile(source.path, dest):
@@ -1188,14 +1201,16 @@ class PdfStore:
         check_cancel(cancel)
         if options.encryption:
             options.encryption.validate()
-        if options.editable_copy != (options.operation == "editable_copy"):
-            raise PdfError("签名副本必须使用专用的保护流程。")
         self.require_operation(pages, self.write_operation(pages, options))
+        signature_copy = self.has_signed_pages(pages)
         for ref in pages:
             for edit in ref.edits:
                 self.require_operation([ref], edit.operation)
         if options.outline is not None:
-            self.require_operation(pages, "outline")
+            # The merge outline is generated for the new document; it does not edit the signed source.
+            outline_sources = [ref for ref in pages if self._source(ref.source_id).safety.signature != 'present'] if (
+                signature_copy and options.operation == 'merge') else pages
+            self.require_operation(outline_sources, "outline")
         if options.page_numbers is not None:
             self.require_operation(pages, "content_edit" if options.page_numbers.mode == "visible" else "outline")
         if cancel:
@@ -1206,20 +1221,20 @@ class PdfStore:
                     original_progress(current, total, message)
             progress_callback = guarded_progress
         sources = {sid: self._source(sid) for sid in dict.fromkeys(p.source_id for p in pages)}
+        for source in sources.values():
+            if source.safety.signature not in ('none', 'present'):
+                raise PdfError(source.safety.read_only_reason)
+        self.require_signature_copy_target(dest, signed_pages=signature_copy, operation=options.operation)
         if any(source.requires_copy for source in sources.values()) and self.is_source_destination(dest):
             raise PdfError('图片导入或扫描件增强后请另存副本，不能覆盖来源文件。')
         if (any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup') for ref in pages for edit in ref.edits)
                 and self.is_source_destination(dest)):
             raise PdfError('页面工具处理后请另存副本，不能覆盖来源文件。')
-        if not options.editable_copy:
-            for source in sources.values():
-                if source.safety.signature != "none":
-                    raise PdfError(source.safety.read_only_reason)
         for ref in pages:
             if not 0 <= ref.source_page < len(sources[ref.source_id].sizes) or ref.rotation % 90:
                 raise PdfError("页面引用或旋转角度无效，已停止写入。")
         target_stamp = self._check_destination(dest)
-        if (options.editable_copy or options.encryption or options.compression or options.page_numbers) and self.is_source_destination(dest):
+        if (options.encryption or options.compression or options.page_numbers) and self.is_source_destination(dest):
             raise PdfError("此操作只能另存副本，不能覆盖来源文件。")
         if options.allow_structure_loss and self.is_source_destination(dest):
             raise PdfError("特殊结构只能另存副本，不能覆盖已打开的来源文件。")
@@ -1239,10 +1254,9 @@ class PdfStore:
                     source.doc_locked()
                 out, password, keep_encryption, warnings = self._assemble(pages, sources, options, progress_callback)
             check_cancel(cancel)
-            if options.editable_copy:
+            if signature_copy:
                 from app.pdfsecurity import freeze_signatures
                 freeze_signatures(out, progress_callback, cancel)
-                warnings.append("签名外观已冻结，原数字签名效力不会保留；其他表单仍可填写。")
             if options.compression in (*COMPRESSION_PRESETS, "custom"):
                 dpi, quality = COMPRESSION_PRESETS.get(options.compression,
                     (options.compression_dpi, options.compression_quality))
@@ -1322,7 +1336,7 @@ class PdfStore:
                         raise PdfError("待保存文件的加密校验失败，原文件未改动。")
                 if check.is_repaired or document_signature(check) != expected:
                     raise PdfError("待保存文件的页面、跳转或对象核对失败，原文件未改动。")
-                if options.editable_copy and signature_state(check) != "none":
+                if signature_copy and signature_state(check) != "none":
                     raise PdfError("签名验证结构未完整移除，已停止输出。")
                 candidate = _Source(dest, check, data, password, authentication, _file_stamp(tmp))
                 check = None

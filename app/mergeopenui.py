@@ -103,10 +103,10 @@ class MergeOpenDialog(QDialog):
         title = QLabel(tr('合并已打开的文件'))
         set_theme_style(title, 'font-size: 20px; font-weight: 600; color: #173C36;')
         layout.addWidget(title)
-        instruction = QLabel(tr('选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。'))
-        instruction.setObjectName('hint')
-        instruction.setWordWrap(True)
-        layout.addWidget(instruction)
+        self.instruction = QLabel()
+        self.instruction.setObjectName('hint')
+        self.instruction.setWordWrap(True)
+        layout.addWidget(self.instruction)
         row = QHBoxLayout()
         row.addWidget(QLabel(tr('文件顺序')), 1)
         self.select_all_button = QPushButton(tr('全选'))
@@ -153,7 +153,7 @@ class MergeOpenDialog(QDialog):
         self.note.setObjectName('hint')
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
-        form = QFormLayout()
+        form = self.save_form = QFormLayout()
         self.save_mode = QComboBox()
         self.save_mode.setAccessibleName(tr('合并结果保存方式'))
         self.save_mode.addItem(tr('另存为新文件（默认）'), 'copy')
@@ -199,6 +199,9 @@ class MergeOpenDialog(QDialog):
                 if self.files.item(row).checkState() == Qt.CheckState.Checked
                 and self.files.item(row).flags() & Qt.ItemFlag.ItemIsEnabled]
 
+    def includes_signature(self, selected):
+        return any(self.sources[tid].get('signed') for tid in selected)
+
     def refresh(self):
         selected = self.selected_ids()
         previous = self.target.currentData()
@@ -218,7 +221,8 @@ class MergeOpenDialog(QDialog):
         self.refresh_target()
         pages = sum(self.sources[tid]['pages'] for tid in selected)
         self.summary.setText(tr('已选择 {p0} 份 · 共 {p1} 页', p0=f'{len(selected)}', p1=f'{pages}')
-                             + (tr('\n至少选择 2 份 PDF。') if len(selected) < 2 else ''))
+                             + (tr('\n至少选择 2 份 PDF。') if len(selected) < 2 else '')
+                             + ('\n' + tr('保留原文件，合并件不含原数字签名。') if self.includes_signature(selected) else ''))
         eligible = sum(not source['reason'] for source in self.sources.values())
         self.select_all_button.setText(tr('取消全选') if eligible and len(selected) == eligible else tr('全选'))
         self.select_all_button.setEnabled(eligible > 0)
@@ -229,9 +233,17 @@ class MergeOpenDialog(QDialog):
     def refresh_target(self):
         # Updating a selection must not clear the combo's model in its own signal.
         selected = self.selected_ids()
+        signed_copy = self.includes_signature(selected)
+        self.instruction.setText(tr('选择文件并调整顺序。') if signed_copy else
+                                 tr('选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。'))
         copy_only = any(self.sources[tid].get('requires_copy') for tid in selected)
-        eligible_target = self.target.count() > 1 and not copy_only
+        eligible_target = self.target.count() > 1 and not (signed_copy or copy_only)
         self.save_mode.model().item(1).setEnabled(eligible_target)
+        if signed_copy and self.save_mode.currentData() != 'copy':
+            blocked = self.save_mode.blockSignals(True)
+            self.save_mode.setCurrentIndex(0)
+            self.save_mode.blockSignals(blocked)
+        self.save_form.setRowVisible(self.save_mode, not signed_copy)
         overwrite = self.save_mode.currentData() == 'overwrite'
         target = self.sources.get(self.target.currentData(), {})
         for widget in (self.target_caption, self.target, self.target_path):
@@ -239,6 +251,12 @@ class MergeOpenDialog(QDialog):
         self.target_path.setText(target.get('save_path', '') if eligible_target else
                                  tr('所选文件目前仅支持另存新文件，请切换保存方式。'))
         self.target_path.setToolTip(target.get('save_path', ''))
+        self.note.setVisible(not signed_copy or any(self.sources[tid]['dirty'] for tid in selected))
+        if signed_copy:
+            self.start.setText(tr('合并为副本'))
+            self.note.setText(tr('合并包含未保存修改。'))
+            self.start.setEnabled(len(selected) >= 2)
+            return
         self.start.setText(tr('合并并覆盖') if overwrite else tr('合并并另存'))
         self.note.setText(tr('合并包含未保存修改。仅覆盖指定文件，其他文件和标签保留。') if overwrite else
                           tr('拖动文件或选中后点上移／下移排序。\n包含未保存修改，原文件和原标签保持不变。'))
@@ -264,14 +282,16 @@ class MergeOpenDialog(QDialog):
             self.refresh()
 
     def choose_output(self):
-        if len(self.selected_ids()) < 2:
+        selected = self.selected_ids()
+        if len(selected) < 2:
             return
-        if self.save_mode.currentData() == 'overwrite':
+        signed_copy = self.includes_signature(selected)
+        if not signed_copy and self.save_mode.currentData() == 'overwrite':
             from app.savesettings import confirm_overwrite
             tid = self.target.currentData()
             source = self.sources.get(tid, {})
             path = source.get('save_path')
-            if not self.start.isEnabled() or tid not in self.selected_ids() or not path:
+            if not self.start.isEnabled() or tid not in selected or not path:
                 return
             if source.get('saved_target') != path:
                 path, remember = confirm_overwrite(self, [path], self.parent()._window_settings)
@@ -283,13 +303,14 @@ class MergeOpenDialog(QDialog):
             self.accept()
             return
         from app.exportdialogs import new_pdf_path
-        path = new_pdf_path(self, self.parent().store, tr('合并并另存'), tr('合并文件.pdf'))
+        path = new_pdf_path(self, self.parent().store, self.start.text(),
+                            tr('合并副本.pdf') if signed_copy else tr('合并文件.pdf'))
         if path:
             self.output_path = path
             self.accept()
 
 
-def merge_open_files(host):
+def merge_open_files(host, *, tabs=None):
     if host._saving or getattr(host, '_task_dialog', None) is not None:
         return False
     tools = getattr(host, 'annotation_tools', None)
@@ -298,7 +319,9 @@ def merge_open_files(host):
     host._saving = True
     try:
         host._save_current_tab_state()
-        tabs = [tab for tab in host._tabs if tab.ws.pages or tab.ws.path]
+        open_ids = {tab.tab_id for tab in host._tabs}
+        if tabs is None:
+            tabs = [tab for tab in host._tabs if tab.ws.pages or tab.ws.path]
         snapshots = {tab.tab_id: tab.ws._fingerprint() for tab in tabs}
         refs = {page.source_id: page for tab in tabs for page in tab.ws.pages}
         def prepare(progress, cancel):
@@ -311,14 +334,17 @@ def merge_open_files(host):
         sources = []
         for tab in tabs:
             ws = tab.ws
+            save_path = ws.last_saved_path or ws.path
             reason = ('首期支持 PDF 标签，请先另存为 PDF。' if not is_pdf_workspace(ws) else
                       '没有可合并的页面。' if not ws.pages else '')
-            reason = reason or host.store.operation_reason(ws.pages, 'copy') or host.store.operation_reason(ws.pages, 'modify')
+            reason = reason or host.store.operation_reason(ws.pages, 'merge')
             sources.append(dict(tab_id=tab.tab_id, name=workspace_name(ws), path=ws.path or workspace_name(ws),
                                 pages=len(ws.pages), dirty=ws.dirty, reason=reason,
-                                save_path=ws.last_saved_path or ws.path, saved_target=ws.last_saved_path,
+                                save_path=save_path, saved_target=ws.last_saved_path,
                                 active=tab.tab_id == host._active_tab_id,
-                                requires_copy=any(host.store._source(page.source_id).requires_copy or
+                                signed=host.store.has_signed_pages(ws.pages) or bool(
+                                    save_path and host.store.is_source_destination(save_path, signed_only=True)),
+                                requires_copy=tab.tab_id not in open_ids or any(host.store._source(page.source_id).requires_copy or
                                     any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup')
                                         for edit in page.edits) for page in ws.pages)))
         dialog = MergeOpenDialog(host, sources)
@@ -326,13 +352,15 @@ def merge_open_files(host):
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return False
             ids, path = dialog.selected_ids(), dialog.output_path
+            signed_copy = dialog.includes_signature(ids)
             target_id, remember = dialog.overwrite_tab_id, dialog.remember_overwrite
         finally:
             dialog.deleteLater()
         selected = [next(tab for tab in tabs if tab.tab_id == tid) for tid in ids]
         if len(selected) < 2 or not path:
             return False
-        if any(tab not in host._tabs or tab.ws._fingerprint() != snapshots[tab.tab_id] for tab in selected):
+        if any((tab.tab_id in open_ids and host._get_tab(tab.tab_id) is not tab)
+               or tab.ws._fingerprint() != snapshots[tab.tab_id] for tab in selected):
             raise PdfError('来源工作区已改变，请重新选择合并文件。')
         target = next((tab for tab in selected if tab.tab_id == target_id), None)
         if target_id is not None and (target is None or path != (target.ws.last_saved_path or target.ws.path)):
@@ -340,9 +368,10 @@ def merge_open_files(host):
         if target is None and host.store.is_source_destination(path):
             raise PdfError('不能覆盖已打开的来源文件，请选择新的文件名。')
         pages, outline = merge_pages(host.store, selected)
-        host.store.require_operation(pages, 'copy')
-        host.store.require_operation(pages, 'modify')
-        result = host._write_pdf(pages, path, '合并已打开的文件', options=WriteOptions(outline=outline),
+        host.store.require_operation(pages, 'merge')
+        if signed_copy and target is not None:
+            raise PdfError('签名文件只能另存副本，不能覆盖来源文件。')
+        result = host._write_pdf(pages, path, '合并已打开的文件', options=WriteOptions(operation='merge', outline=outline),
                                  register_result=target is not None, allow_tag_overwrite=target is not None)
         if result is None:
             return False
@@ -363,12 +392,14 @@ def merge_open_files(host):
                     host.ws.last_saved_path = result.path
             host._release_unused_docs()
         except Exception:
-            QMessageBox.warning(host, tr('文件已保存'), tr('合并结果已保存到：\n{p0}\n界面刷新未完成，请重新打开查看。', p0=f'{result.path}'))
-            return True
-        if result.warnings:
+            opened = False
+        if result.warnings and not signed_copy:
             QMessageBox.information(host, tr('合并完成 · 请核对'), '\n'.join(result.warnings))
-        host.statusBar().showMessage(tr('已合并并保存到指定文件。') if replaced else tr('已合并并打开新 PDF。') if opened else
-                                    tr('已保存合并结果，可从“文件 → 打开”查看：{p0}', p0=f'{result.path}'), 7000)
+        if not opened:
+            message = tr('已保存合并结果，可从“文件 → 打开”查看：{p0}', p0=result.path)
+        else:
+            message = tr('已合并并保存到指定文件。') if replaced else tr('已合并并打开新 PDF。')
+        host.statusBar().showMessage(message, 7000)
         return True
     except OperationCancelled as exc:
         host.statusBar().showMessage(str(exc), 5000)

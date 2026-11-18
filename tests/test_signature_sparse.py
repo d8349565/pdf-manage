@@ -5,6 +5,7 @@ import pymupdf as p
 import pytest
 
 from app.pdfio import PdfError, PdfStore
+from app.pdfstructure import signature_state
 
 
 def sparse_pdf(path, signature='none'):
@@ -52,11 +53,16 @@ def test_sparse_object_table_preserves_signature_checks_and_merge(tmp_path, defe
         assert store._source(pages[0].source_id).safety.signature == signature
         combined = pages + store.load(str(other))
         target = tmp_path / 'merged.pdf'
-        if signature == 'none':
+        if signature != 'unknown':
             assert not store.operation_reason(combined, 'modify')
+            if signature == 'present':
+                single = tmp_path / 'single-copy.pdf'
+                store.write(pages, str(single))
+                with p.open(single) as doc:
+                    assert doc.page_count == 1 and signature_state(doc) == 'none'
             store.write(combined, str(target))
             with p.open(target) as doc:
-                assert doc.page_count == 2
+                assert doc.page_count == 2 and signature_state(doc) == 'none'
         else:
             with pytest.raises(PdfError):
                 store.write(combined, str(target))

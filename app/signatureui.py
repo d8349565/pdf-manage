@@ -94,6 +94,8 @@ class SignatureInfoDialog(QDialog):
         safety = report['safety']
         self.status.setText(tr(STATES.get(safety.signature, STATES['unknown'])))
         protection = tr(safety.read_only_reason) if safety.read_only_reason else tr('原件保护检查未限制编辑；具体操作仍需满足文件权限。')
+        if safety.signature == 'present' and not safety.read_only_reason:
+            protection = tr('可直接操作，修改将另存为副本。')
         if report['ofd']:
             protection = tr('以下仅为转换后的 PDF 工作副本信息，不代表 OFD 原件的签名状态。\n') + protection
         self.protection.setText(protection)

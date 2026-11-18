@@ -186,6 +186,7 @@ def write_pdf(store, pages, dest, *, options=None, progress_callback=None,
         raise PdfError("没有可保存的页面")
     options = options or WriteOptions()
     check_cancel(cancel)
+    store.require_signature_copy_target(dest, signed_pages=store.has_signed_pages(pages), operation=options.operation)
     if progress_callback:
         progress_callback(0, 0, "正在准备保存位置")
     candidate = None
