@@ -2,7 +2,7 @@
 from app.i18n import tr
 import math
 
-from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QUrl
+from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QApplication
 
@@ -55,10 +55,12 @@ class ReaderInteraction(QObject):
         tools = getattr(self.host, 'annotation_tools', None)
         images = getattr(self.host, 'image_tools', None)
         capture = getattr(self.host, 'region_capture', None)
+        translation = getattr(self.host, '_translation', None)
         return (not self.panning and not getattr(self.host, '_task_dialog', None)
                 and not (tools and (tools.stroke or tools._move_state or tools._move_committing
                                     or (tools.isVisible() and tools.tool.currentData() != 'browse')))
-                and not (images and images.engaged) and not (capture and capture.active))
+                and not (images and images.engaged) and not (capture and capture.active)
+                and not (translation and translation.region_active))
 
     def link_at(self, position):
         point = self.view.mapToScene(position)
@@ -103,7 +105,7 @@ class ReaderInteraction(QObject):
                 self._finish_click(pending)
             return
 
-    def _finish_click(self, pending):
+    def _finish_click(self, pending, *, deferred=False):
         if not self._current(pending) or pending['dragged']:
             self.link_press = None
             return False
@@ -111,21 +113,45 @@ class ReaderInteraction(QObject):
             return False
         hit = self.link_at(pending['position'])
         self.link_press = None
-        if hit is None or hit != self.link_at(pending['end']):
-            return False
-        self.host.text_selection.clear()
-        self._follow_link(pending['ref'], hit[1])
-        return True
+        end_hit = self.link_at(pending['end'])
+        if hit is not None and hit == end_hit:
+            self.host.text_selection.clear()
+            self._follow_link(pending['ref'], hit[1])
+            return True
+        controller = getattr(self.host, '_translation', None)
+        segment = pending['translation_segment']
+        if controller and segment is not None and hit is None and end_hit is None:
+            if segment is controller.segment_at(pending['index'], pending['end']):
+                panel = controller.panel
+                if (not deferred and self.host.text_selection.active()
+                        and (not panel.isVisible() or panel.width() < panel.minimumWidth())):
+                    # Opening the sidebar moves the page before a second click can hit the word.
+                    self.link_press = pending
+
+                    def open_single_click():
+                        if not self.host._closing and self._current(pending):
+                            self._finish_click(pending, deferred=True)
+
+                    QTimer.singleShot(QApplication.doubleClickInterval(), Qt.TimerType.PreciseTimer, open_single_click)
+                    return False
+                self.host.text_selection.clear()
+                controller.activate_page_segment(pending['index'], segment)
+                return True
+        return False
 
     def _begin_link(self, position, *, released=False, end=None):
+        """Resolve links and translated passages on release, leaving drags to the reader."""
         index = self.view.page_at_point(self.view.mapToScene(position))
         if not 0 <= index < len(self.host.ws.pages):
             return
         ref = self.host.ws.pages[index]
-        if self.host.store.cached_annotations(ref) is None or self.link_at(position):
+        controller = getattr(self.host, '_translation', None)
+        segment = controller.segment_at(index, position) if controller else None
+        if self.host.store.cached_annotations(ref) is None or self.link_at(position) or segment is not None:
             pending = dict(index=index, ref=ref, pages=self.host.ws.pages,
                            generation=self.view.layout_generation, position=position,
-                           end=position if end is None else end, released=released, dragged=False)
+                           end=position if end is None else end, released=released, dragged=False,
+                           translation_segment=segment)
             self.link_press = pending
             if self.host.store.cached_annotations(ref) is None:
                 self._request_metadata(pending)
@@ -199,10 +225,12 @@ class ReaderInteraction(QObject):
             bounds = self.view.page_rects[index]
             ref = self.host.ws.pages[index]
             summary = self.host.store.cached_annotations(ref)
-            if summary and bounds.contains(point) and not self.host.store.operation_reason([ref], 'copy'):
+            if bounds.contains(point) and not self.host.store.operation_reason([ref], 'copy'):
                 local = point - bounds.topLeft()
-                if any(x0 <= local.x() <= x1 and y0 <= local.y() <= y1
-                       for x0, y0, x1, y1 in summary.get('text_boxes', ())):
+                native_text = summary and any(x0 <= local.x() <= x1 and y0 <= local.y() <= y1
+                                              for x0, y0, x1, y1 in summary.get('text_boxes', ()))
+                translation = getattr(self.host, '_translation', None)
+                if native_text or (translation and self.links_enabled() and translation.segment_at(index, position)):
                     cursor = Qt.CursorShape.IBeamCursor
         self.view.viewport().setCursor(cursor)
 
@@ -286,6 +314,8 @@ class ReaderInteraction(QObject):
             return True
         if kind == QEvent.Type.Wheel:
             self.link_press = self.link_jump = None
+        if kind == QEvent.Type.MouseButtonDblClick and event.button() == Qt.MouseButton.LeftButton:
+            self.link_press = None
         if kind == QEvent.Type.MouseButtonPress:
             self.link_press = self.link_jump = None
             if (event.button() == Qt.MouseButton.LeftButton and not event.modifiers()

@@ -181,6 +181,10 @@ class ImmersiveReading(QObject):
             self.exit_button.hide()
             for widget, _ in self._borderless_chrome:
                 widget.hide()
+            translation = getattr(self.host, '_translation', None)
+            if translation is not None:
+                translation.mini_bar.hide()
+                translation.set_panel_visible(self.host.act_translation.isChecked())
             return
         document = (id(self.host.ws.pages), self.host.ws.path)
         if document != self._document or not available:
@@ -194,6 +198,11 @@ class ImmersiveReading(QObject):
         if self.fullscreen:
             for widget, _ in self._saved_chrome:
                 widget.hide()
+        translation = getattr(self.host, '_translation', None)
+        if translation is not None:
+            if self.fullscreen:
+                translation.mini_bar.hide()
+            translation.set_panel_visible(self.host.act_translation.isChecked())
         self._position()
         self._edge_icon()
 
@@ -369,12 +378,17 @@ class ImmersiveReading(QObject):
             self._borderless_mode = host.stack.currentIndex()
             self._borderless_pages = host.act_pages.isChecked()
             self._borderless_split = host.reader_split.sizes()
-            widgets = (host.menuWidget(), host.workbench_bar, host.tab_bar, host.statusBar(),
-                       host.tools_panel, host.navigation_bar, host.banner, host.search_bar)
+            widgets = [host.menuWidget(), host.workbench_bar, host.tab_bar, host.statusBar(),
+                       host.tools_panel, host.navigation_bar, host.banner, host.search_bar]
             self._borderless_chrome = [(widget, not widget.isHidden()) for widget in widgets]
         self.borderless = enabled
         if enabled:
             self.collapse(animate=False)
+            translation = getattr(host, '_translation', None)
+            if translation is not None:
+                translation.mini_bar.hide()
+                translation.region_tool.cancel()
+                translation.set_panel_visible(False)
         host.preview_view.set_borderless(enabled)
         host.setProperty('borderlessReader', enabled)
         frame = host.reader_frame
@@ -414,8 +428,13 @@ class ImmersiveReading(QObject):
             self._mode = host.stack.currentIndex()
             self._auto = self.auto_action.isChecked()
             self._pages_visible = host.act_pages.isChecked()
-            widgets = (host.menuWidget(), host.workbench_bar, host.tab_bar, host.statusBar(), host.tools_panel)
+            widgets = [host.menuWidget(), host.workbench_bar, host.tab_bar, host.statusBar(), host.tools_panel]
             self._saved_chrome = [(widget, not widget.isHidden()) for widget in widgets]
+            translation = getattr(host, '_translation', None)
+            if translation is not None:
+                translation.mini_bar.hide()
+                translation.region_tool.cancel()
+                translation.set_panel_visible(False)
             host.stack.setCurrentIndex(0)
             self.auto_action.setChecked(True)
             for widget, _ in self._saved_chrome:

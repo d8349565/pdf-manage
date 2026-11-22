@@ -1045,31 +1045,39 @@ class PdfStore:
                     raise PdfError(f"无法应用页面修改：{exc}") from exc
             yield self._draft[0]
 
-    def cached_text_snapshot(self, ref, *, include_tables=True):
+    def cached_text_snapshot(self, ref, *, include_tables=True, infer_aligned_tables=False):
         """GUI-safe lookup: never wait for native rendering or parse a page."""
+        if ref is None or self._text_cache is None:
+            return None
         if not self._native_lock.acquire(blocking=False):
             return None
         try:
-            key = (ref.render_key, include_tables)
-            hit = self._text_cache.get(key) if self._text_cache is not None else None
-            if hit is None and not include_tables and self._text_cache is not None:
-                key = (ref.render_key, True)
+            if include_tables:
+                candidates = (((ref.render_key, True, True),)
+                              if infer_aligned_tables
+                              else ((ref.render_key, True, False), (ref.render_key, True, True)))
+            else:
+                candidates = ((ref.render_key, False, False),
+                              (ref.render_key, True, False),
+                              (ref.render_key, True, True))
+            for key in candidates:
                 hit = self._text_cache.get(key)
-            if hit is not None:
-                self._text_cache.move_to_end(key)
-                return hit[0]
+                if hit is not None:
+                    self._text_cache.move_to_end(key)
+                    return hit[0]
             return None
         finally:
             self._native_lock.release()
 
-    def text_snapshot(self, ref, *, include_tables=True):
+    def text_snapshot(self, ref, *, include_tables=True, infer_aligned_tables=False):
         from collections import OrderedDict
         import pymupdf
         import sys
         with self._native_lock, self._draft_lock:
             if self._text_cache is None:
                 self._text_cache = OrderedDict()
-            key = (ref.render_key, include_tables)
+            aligned = bool(include_tables and infer_aligned_tables)
+            key = (ref.render_key, include_tables, aligned)
             hit = self._text_cache.get(key)
             if hit is not None:
                 self._text_cache.move_to_end(key)
@@ -1080,9 +1088,16 @@ class PdfStore:
                 snapshot = dict(raw=self._textpage_for_page(ref, page, flags).extractRAWDICT(),
                                 annotations=annotation_summary(page))
                 if include_tables:
-                    from app.documentlayout import page_layout
-                    layout, _ = page_layout(page)
-                    snapshot['tables'] = [item['table'] for item in layout if item['kind'] == 'table']
+                    from app.documentlayout import page_layout, table_has_column_gutters
+                    layout, _ = (page_layout(page, infer_aligned_tables=True)
+                                 if aligned else page_layout(page))
+                    snapshot['aligned_tables_checked'] = aligned
+                    # Text alignment alone can draw column cuts through prose. Only
+                    # expose inferred cells to selection/translation if the source
+                    # actually has repeated whitespace between their columns.
+                    snapshot['tables'] = [item['table'] for item in layout if item['kind'] == 'table'
+                                          and (item['table'].detection_strategy != 'text'
+                                               or table_has_column_gutters(snapshot['raw'], item['table']))]
                 extra = pymupdf.Matrix(1, 1).prerotate(ref.rotation)
                 rotated = page.rect * extra
                 extra *= pymupdf.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)

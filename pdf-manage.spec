@@ -173,6 +173,8 @@ a = Analysis(
         "pywintypes",
         "win32api",
         "win32con",
+        "win32cred",
+        "win32crypt",
         "win32job",
         "win32process",
     ],

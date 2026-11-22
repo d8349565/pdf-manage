@@ -50,6 +50,7 @@ for _key, _path, _keys in (
     ('file.exit', '文件/退出', ()),
     ('app.storage', '文件/应用设置/存储管理', ()),
     ('app.save_settings', '文件/应用设置/保存设置', ()),
+    ('app.translation_settings', '文件/应用设置/翻译设置', ()),
     ('app.shortcuts', '文件/应用设置/快捷键管理', ()),
     ('app.shell_tools', '文件/应用设置/右键快捷工具', ()),
     ('app.default_pdf', '文件/应用设置/设为默认 PDF 应用', ()),
@@ -60,6 +61,7 @@ for _key, _path, _keys in (
     ('search.open', '编辑/全文搜索', ('Ctrl+F',)),
     ('review.open', '编辑/审阅与文字修正', ()),
     ('reader.capture', '编辑/框选导出图片', ('Ctrl+Shift+C',)),
+    ('reader.region_translate', '编辑/框选翻译', ()),
     ('pages.insert', '页面/插入页面', ()),
     ('pages.append', '页面/合并文件', ()),
     ('pages.merge_open', '页面/合并已打开文件', ()),
@@ -98,6 +100,7 @@ for _key, _path, _keys in (
     ('view.outline', '视图/大纲书签', ('Ctrl+Shift+B',)),
     ('view.pages', '视图/页面栏', ('F8',)),
     ('view.tools', '视图/工具面板', ('F9',)),
+    ('view.translation', '视图/翻译面板', ()),
     ('view.fullscreen', '视图/全屏阅读', ('F11',)),
     ('view.borderless', '视图/无边框模式', ('Ctrl+F11',)),
     ('view.auto_sidebar', '视图/侧栏自动隐藏', ()),
@@ -154,6 +157,7 @@ for _key, _label, _keys, _repeat in (
 
 for _key, _label, _scope, _keys in (
     ('reader.copy_text', '复制正文文字', 'reader', ('Ctrl+C',)),
+    ('reader.translate_selection', '翻译所选文字', 'reader', ()),
     ('reader.previous_group', '对开阅读：上一组', 'spread', ('PgUp',)),
     ('reader.next_group', '对开阅读：下一组', 'spread', ('PgDown',)),
     ('search.confirm', '搜索框：确认搜索／下一处', 'search', ('Return', 'Enter')),
@@ -162,7 +166,7 @@ for _key, _label, _scope, _keys in (
     ('image.delete', '删除当前页面图片', 'image', ('Del', 'Backspace')),
 ):
     _add(_key, _label, '视图' if _scope == 'spread' else '编辑', scope=_scope, defaults=_keys,
-         manual=_key != 'reader.copy_text', repeat=_scope in ('spread', 'search'))
+         manual=_key not in ('reader.copy_text', 'reader.translate_selection'), repeat=_scope in ('spread', 'search'))
 
 for _kind, _name in (
     ('browse', '浏览／移动'), ('select', '选择页面批注'), ('highlight', '文字高亮'),

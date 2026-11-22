@@ -48,6 +48,7 @@ class TableModel:
     col_widths: list[float]            # 以 PDF 点为单位
     confidence: float = 1.0
     continuation_of: int | None = None  # 若跨页，则记录上一个表格的索引
+    detection_strategy: str = ''
 
 @dataclass
 class PageAnalysis:

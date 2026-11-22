@@ -77,8 +77,8 @@ def main() -> None:
                                 for p in internal.rglob("*") if p.is_file()}
     assert any("qwindows.dll" in n for n in names)
     assert any("Qt6PrintSupport.dll" in n for n in names)
-    for required in ("qjpeg.dll", "qtiff.dll", "qwebp.dll", "_webp.", "pythoncom", "pywintypes", "win32job", "win32process",
-                     "Qt6Network.dll", "qschannelbackend.dll", "QtNetwork.pyd", "_imagingft"):
+    for required in ("qjpeg.dll", "qtiff.dll", "qwebp.dll", "_webp.", "pythoncom", "pywintypes", "win32cred", "win32crypt",
+                     "win32job", "win32process", "Qt6Network.dll", "qschannelbackend.dll", "QtNetwork.pyd", "_imagingft"):
         assert any(required in n for n in names), f"Missing conversion dependency: {required}"
     python_modules = archive.open_embedded_archive("PYZ.pyz").toc
     for required in ("app.wordconvert", "app.wordui", "app.imaging", "app.pdfsecurity", "app.pdfshell", "app.pdfworker",
@@ -92,6 +92,8 @@ def main() -> None:
                      "app.quickstartui", "app.contributionui", "app.filesplitui",
                      "app.readingcache", "app.annotcrop", "app.annotcropui",
                      "app.colorcleanup", "app.colorcleanupui", "app.replacementui",
+                     "app.translation.config", "app.translation.client", "app.translation.extractor",
+                     "app.translation.keystore", "app.translation.ui",
                      "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
         assert required in python_modules, f"Missing module: {required}"
     for filename in ('home.png', 'reading.png', 'arrange.png'):

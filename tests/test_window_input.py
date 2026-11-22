@@ -622,6 +622,39 @@ def test_continuous_scroll_updates_page_without_jumping(loaded_window):
     assert not window.ws.dirty
 
 
+@pytest.mark.parametrize('translation_visible', (False, True))
+def test_continuous_scroll_uses_the_page_that_dominates_the_viewport(loaded_window, translation_visible):
+    from app.translation.config import TranslationSettings
+
+    window = loaded_window
+    view = window.preview_view
+    window._set_zoom(1.0)
+    window.act_translation.setChecked(translation_visible)
+    if translation_visible:
+        window._translation.config = TranslationSettings(api_key='test-page-key', privacy_accepted=True)
+        window._translation.sync_page(force=True)
+    window.go_to_page(4)
+    QApplication.processEvents()
+    last = view.page_rects[4]
+    bar = view.verticalScrollBar()
+    bar.setValue(round((last.top() - 130) * view.transform().m11()))
+    before = bar.value()
+    visible = view.mapToScene(view.viewport().rect()).boundingRect()
+    assert visible.intersects(view.page_rects[3])
+    assert visible.intersected(last).height() > visible.height() / 2
+
+    window._reading_scrolled()
+    window._reading_scrolled()  # Settle without reverting to the previous page.
+    assert window.ws.preview_index() == 4 and window.page_number.value() == 5
+    assert abs(bar.value() - before) <= 1
+    if translation_visible:
+        assert window._translation.panel.primary_btn.text() == '翻译第 5 页'
+
+    window.go_to_page(4)
+    window._reading_scrolled()
+    assert window.page_number.value() == 4
+
+
 def test_continuous_layout_tracks_rotation_and_deletion(loaded_window):
     window = loaded_window
     before = window.preview_view.page_rects[0]

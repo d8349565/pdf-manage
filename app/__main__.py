@@ -9,6 +9,11 @@ mark("python_entry")
 # Python 3.8+ already marks this process DPI-aware. Qt 6 then tries
 # PER_MONITOR_AWARE_V2 and Windows returns Access Denied.
 if sys.platform == "win32":
+    if not getattr(sys, "frozen", False):
+        # Source PyQt includes an OpenSSL plugin. Keep unrelated DLLs on PATH
+        # out of its loader search, matching the packaged Schannel setup.
+        from ctypes import windll
+        windll.kernel32.SetDefaultDllDirectories(0x1000)  # LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
     os.environ.setdefault("QT_QPA_PLATFORM", "windows:dpiawareness=2")
 
 from PyQt6.QtCore import QTimer, Qt, QtMsgType, qInstallMessageHandler

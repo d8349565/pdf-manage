@@ -113,6 +113,7 @@ dist/
 dist-installer/
 dist-ocr*/
 build/
+/Data/
 credentials*
 
 # 真实业务文档和数据导出不作为源文件。

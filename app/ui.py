@@ -1327,10 +1327,10 @@ class PreviewView(QGraphicsView):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setProperty("themeCanvas", "#F4F7F6")
         self.setBackgroundBrush(QColor(ui_color("#F4F7F6")))
-        # 稳态下位图恰好是 1:1 设备像素，此提示只在缩放过渡期间生效，
-        # 让等待重渲染的这段时间不再是锯齿块。
+        # 缩放时平滑复用页图；选区变化时整幅刷新视口，避免局部采样取整导致文字偏移一个像素。
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
@@ -2757,6 +2757,56 @@ class MainWindow(QMainWindow):
         self.act_tools.setToolTip(tr('工具面板'))
         self.act_tools.setStatusTip(tr('显示或隐藏右侧工具面板'))
         self.act_tools.toggled.connect(self._set_tools_visible)
+        self.act_translation = QAction(tr('翻译面板'), self)
+        self.act_translation.setCheckable(True)
+        self.act_translation.setChecked(False)
+        self.act_translation.setIcon(toolbar_icon("translate"))
+        self.act_translation.setToolTip(tr('文档翻译'))
+        self.act_translation.setStatusTip(tr('显示或隐藏右侧文档翻译面板'))
+        self.act_translation.toggled.connect(self._set_translation_visible)
+
+    def _ensure_translation(self):
+        controller = getattr(self, '_translation', None)
+        if controller is None:
+            from app.translation.ui import TranslationController
+            controller = TranslationController(self)
+            self._translation = controller
+        return controller
+
+    def _set_translation_visible(self, on: bool) -> None:
+        if not on and getattr(self, '_translation', None) is None:
+            return
+        if on and not self.ws.pages:
+            self.act_translation.setChecked(False)
+            return
+        if on:
+            self.stack.setCurrentIndex(0)
+        self._ensure_translation().set_panel_visible(on)
+
+    def open_translation_settings(self) -> None:
+        self._ensure_translation().open_settings()
+
+    def begin_region_translate(self) -> None:
+        if not self.ws.pages or not self._allow_operation('copy'):
+            return
+        self._ensure_translation().begin_region_translate()
+
+    def translate_selected_text(self) -> None:
+        if not self.ws.pages or not self._allow_operation('copy'):
+            return
+        self._ensure_translation().translate_current_selection()
+
+    def _on_text_selected(self, text: str, page_index: int, area) -> None:
+        if not self.ws.pages or self._in_arrange():
+            return
+        if getattr(self, '_closing', False) or getattr(self, '_task_dialog', None) is not None:
+            return
+        self._ensure_translation().on_text_selected(text, page_index, area)
+
+    def _on_text_selection_cleared(self) -> None:
+        controller = getattr(self, '_translation', None)
+        if controller is not None:
+            controller.on_text_cleared()
 
     def _set_pages_visible(self, on: bool) -> None:
         if hasattr(self, 'immersive'):
@@ -2771,8 +2821,11 @@ class MainWindow(QMainWindow):
         if panel is not None:
             if on and self.ws.pages and self._readable_painted:
                 self._ensure_tools()
-            panel.setVisible(on and bool(self.ws.pages) and not (
-                hasattr(self, 'immersive') and (self.immersive.fullscreen or self.immersive.borderless)))
+            show = on and bool(self.ws.pages) and not (
+                hasattr(self, 'immersive') and (self.immersive.fullscreen or self.immersive.borderless))
+            if show and getattr(self, 'act_translation', None) is not None and self.act_translation.isChecked():
+                self.act_translation.setChecked(False)
+            panel.setVisible(show)
 
     @property
     def export_tools(self):
@@ -2852,6 +2905,7 @@ class MainWindow(QMainWindow):
         self._window_settings.remove('reading/sidebarAutoHide')
         self.act_pages.setChecked(False)
         self.act_tools.setChecked(False)
+        self.act_translation.setChecked(False)
         self.sidebar_mode.setCurrentIndex(0)
         self._tool_index = 0
         if self._tools_ready:
@@ -2959,6 +3013,7 @@ class MainWindow(QMainWindow):
         settings_menu=file_menu.addMenu(tr('应用设置'))
         settings_menu.addAction(self._act(tr('界面语言 / Language'), self.configure_language))
         settings_menu.addAction(self._act(tr('保存设置'), self.configure_save_settings))
+        settings_menu.addAction(self._act(tr('翻译设置…'), self.open_translation_settings))
         settings_menu.addAction(self.storage_action)
         settings_menu.addAction(self._act(tr('快捷键管理'), self.configure_shortcuts))
         if sys.platform == "win32":
@@ -2990,6 +3045,10 @@ class MainWindow(QMainWindow):
         self.capture_action.setIcon(toolbar_icon('annotation-select'))
         self.capture_action.setToolTip(tr('框选原文，连同批注说明复制或保存为图片'))
         edit.addAction(self.capture_action)
+        self.region_translate_action = self._act(tr('框选翻译…'), self.begin_region_translate)
+        self.region_translate_action.setIcon(toolbar_icon('region-translate'))
+        self.region_translate_action.setToolTip(tr('框选原文、图表或扫描区域，自动提取文字或本地 OCR 并翻译'))
+        edit.addAction(self.region_translate_action)
         edit.addSeparator()
         self.insert_action = self._act(tr('插入页面…'), self.insert_files)
         self.append_action = self._act(tr('合并文件…'), self.append_files)
@@ -3090,6 +3149,7 @@ class MainWindow(QMainWindow):
         view.addSeparator()
         view.addAction(self.act_pages)
         view.addAction(self.act_tools)
+        view.addAction(self.act_translation)
         view.addSeparator()
         zoom_menu=view.addMenu(tr('缩放'))
         zoom_menu.addAction(self._act(tr('放大'), self.zoom_in))
@@ -3222,6 +3282,8 @@ class MainWindow(QMainWindow):
         finally:
             self.preview_view.set_reading_colors(self._reading_colors)
             self.restore_reading_colors_action.setEnabled(self._reading_colors.enabled)
+            if getattr(self, '_translation', None) is not None:
+                self._translation.refresh_colors()
             dialog.deleteLater()
 
     def restore_reading_colors(self):
@@ -3229,6 +3291,8 @@ class MainWindow(QMainWindow):
         self._reading_colors.save(self._window_settings)
         self.preview_view.set_reading_colors(self._reading_colors)
         self.restore_reading_colors_action.setEnabled(False)
+        if getattr(self, '_translation', None) is not None:
+            self._translation.refresh_colors()
         self.statusBar().showMessage(tr('已恢复文档原色。'), 4000)
 
     def show_updates(self) -> None:
@@ -3328,6 +3392,9 @@ class MainWindow(QMainWindow):
         self.search_button = self._action_btn(self.find_action)
         self.search_button.setFixedSize(28, 28)
         document.addWidget(self.search_button)
+        self.translation_button = self._action_btn(self.act_translation)
+        self.translation_button.setFixedSize(28, 28)
+        document.addWidget(self.translation_button)
         self.document_name = QLabel(bar)
         self.document_name.setObjectName("documentName")
         self.document_name.setMinimumWidth(80)
@@ -3445,6 +3512,11 @@ class MainWindow(QMainWindow):
             self.rendering._dispatch()
         self._prune_visible_thumbs()
         self._sync_selection()
+        if getattr(self, '_translation', None) is not None:
+            self._translation.set_panel_visible(self.act_translation.isChecked())
+            if index == 1:
+                self._translation.mini_bar.hide()
+                self._translation.region_tool.cancel()
         view = self.arrange_view if index else self.left_view
         current = self.ws.preview_index()
         if current is not None:
@@ -3476,6 +3548,10 @@ class MainWindow(QMainWindow):
         self.watermark_action.setEnabled(bool(count) and not self.store.operation_reason(self.ws.pages, "annotate"))
         self.image_export_action.setEnabled(bool(count) and not copy_reason)
         self.capture_action.setEnabled(bool(count) and not copy_reason)
+        self.region_translate_action.setEnabled(bool(count) and not copy_reason)
+        self.act_translation.setEnabled(bool(count) and not copy_reason)
+        if not count or copy_reason:
+            self.act_translation.setChecked(False)
         self.annot_crop_action.setEnabled(bool(count) and not copy_reason)
         self.raster_action.setEnabled(bool(count) and not raster_reason)
         self.encrypt_action.setEnabled(bool(count) and not read_only)
@@ -3541,6 +3617,8 @@ class MainWindow(QMainWindow):
         self.convert_tool_button.setEnabled(bool(count) and not copy_reason)
         self._set_pages_visible(self.act_pages.isChecked())
         self._set_tools_visible(self.act_tools.isChecked())
+        if getattr(self, '_translation', None) is not None:
+            self._translation.set_panel_visible(self.act_translation.isChecked())
         self.navigation_bar.setVisible(bool(count) and not self._in_arrange() and not self.immersive.borderless)
         self.reading_orb.sync()
         self.mode_buttons[1].setEnabled(bool(count) or self._in_arrange())
@@ -3610,6 +3688,8 @@ class MainWindow(QMainWindow):
                                     else tr('输入页码，按 Enter 跳转'))
         if hasattr(self, 'outline_panel'):
             self.outline_panel.sync_position()
+        if getattr(self, '_translation', None) is not None:
+            self._translation.sync_page()
 
     def go_to_page(self, number: int, *, reveal=True) -> None:
         if not 1 <= number <= len(self.ws.pages):
@@ -3625,6 +3705,8 @@ class MainWindow(QMainWindow):
             self._scroll_navigation = navigating
         if reveal:
             self.preview_view.jump_to_page(number - 1)
+        view = self.preview_view
+        self._scroll_y = view.mapToScene(view.viewport().rect()).boundingRect().top()
 
     def step_page(self, delta: int) -> None:
         current = self.ws.preview_index()
@@ -4852,6 +4934,11 @@ class MainWindow(QMainWindow):
         self.search_bar.sync_document()
         self.text_selection.sync()
         self.region_capture.sync()
+        if getattr(self, '_translation', None) is not None:
+            if self._layout_pages is not self.ws.pages:
+                self._translation.sync_document()
+            else:
+                self._translation.region_tool.sync()
         if hasattr(self, 'image_tools'):
             self.image_tools.sync()
         if self.ws.pages:
@@ -4983,6 +5070,7 @@ class MainWindow(QMainWindow):
                 view.centerOn(x, rect.top() + anchor.y())
             else:
                 view.jump_to_page(idx)
+            self._scroll_y = view.mapToScene(view.viewport().rect()).boundingRect().top()
         if geometry_changed:
             view.view_changed.emit()
         self._schedule_reading_update()
@@ -5083,9 +5171,12 @@ class MainWindow(QMainWindow):
         visible = view.mapToScene(view.viewport().rect()).boundingRect()
         if not self._preparation_timer.isActive():
             self._preparation_timer.start()
-        if self._scroll_y is not None and abs(visible.top() - self._scroll_y) > .1:
+        moved = self._scroll_y is not None and abs(visible.top() - self._scroll_y) > .1
+        if moved:
             self._scroll_direction = 1 if visible.top() > self._scroll_y else -1
         self._scroll_y = visible.top()
+        candidates = list(view.visible_pages(visible))
+        current = self.ws.preview_index()
         # 整页居中时短页上方可能仍露出上一页，必须按中心判断当前页。
         y = (visible.center().y() if self._zoom_mode == 'page'
              else visible.top() + min(visible.height() / 4, 100))
@@ -5093,7 +5184,17 @@ class MainWindow(QMainWindow):
         hit = view.page_at_point(QPointF(visible.center().x(), y))
         if hit >= 0 and not view.page_rects[index].intersects(visible):
             index = hit
-        if index != self.ws.preview_index() and (self._scrolling or index != view.active_page):
+        if not view.spread and not moved and current in candidates:
+            # 手动跳页或缩放后，即使短页旁还露着邻页，也保留刚定位的页。
+            index = current
+        elif self._zoom_mode != 'page' and not view.spread:
+            if len(candidates) == 1:
+                index = candidates[0]
+            else:
+                index = next((page for page in candidates
+                              if visible.intersected(view.page_rects[page]).height() > visible.height() / 2),
+                             index)
+        if index != current and (self._scrolling or index != view.active_page):
             self._scroll_navigation = True
             try:
                 if len(self.ws.selected) == 1 and not self.ws.select_all:
@@ -5104,9 +5205,10 @@ class MainWindow(QMainWindow):
                 self._update_preview(lightweight=True)
             finally:
                 self._scroll_navigation = False
-        candidates = list(view.visible_pages(visible))
         if hasattr(self, 'outline_panel'):
             self.outline_panel.sync_position()
+        if getattr(self, '_translation', None) is not None:
+            self._translation.sync_page()
         # 按当前显示清晰度预备上下各三页；高倍率下优先留住最近的页面。
         wanted = set(candidates)
         widths = {i: self._preview_render_width(i) for i in wanted | {index}}
@@ -5689,9 +5791,10 @@ class MainWindow(QMainWindow):
             bounds_changed = view.sceneRect() != bounds
             if bounds_changed:
                 view.setSceneRect(bounds)
+            keep_center = self._scroll_navigation or self.reader_interaction.busy_gesture()
             if abs(view.transform().m11() - factor) <= 0.00001:
                 if bounds_changed:
-                    view.centerOn(rect.center() if mode == 'page' else center)
+                    view.centerOn(rect.center() if mode == 'page' and not keep_center else center)
                 return
             view.clear_detail()
             self._invalidate_detail_requests()
@@ -5700,7 +5803,7 @@ class MainWindow(QMainWindow):
             if duration > 0:
                 self._detail_timer.stop()
                 self._zoom_start_center = center
-                self._zoom_end_center = rect.center() if mode == 'page' else center
+                self._zoom_end_center = rect.center() if mode == 'page' and not keep_center else center
                 if mode == 'width':
                     self._zoom_end_center = QPointF(rect.center().x(), rect.top() + view.viewport().height() / factor / 2 - 4)
                 self._zoom_animation_context = (id(self.ws), view.layout_generation, index, mode, factor)
@@ -5711,7 +5814,7 @@ class MainWindow(QMainWindow):
                 self._zoom_animation.start()
                 return
             view.setTransform(QTransform.fromScale(factor, factor))
-            view.centerOn(rect.center() if mode == 'page' else center)
+            view.centerOn(rect.center() if mode == 'page' and not keep_center else center)
             view.view_changed.emit()
         finally:
             self._reader_updating = updating
@@ -7392,6 +7495,8 @@ class MainWindow(QMainWindow):
             self._reading_cache.close()
             self.region_capture.cancel()
             self.text_selection.clear()
+            if getattr(self, '_translation', None) is not None:
+                self._translation.shutdown()
             for handler in (self.text_selection, self.search_bar):
                 self.preview_view.removeEventFilter(handler)
                 self.preview_view.viewport().removeEventFilter(handler)

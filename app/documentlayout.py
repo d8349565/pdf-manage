@@ -540,13 +540,14 @@ def table_has_visible_grid(page, table):
     return sum(supported('v',x,top,bottom) for x in xs)>=2 and sum(horizontal)>=2 and any(horizontal[1:-1])
 
 
-def page_layout(page, *, include_images=False, preserve_positions=False, spatial=False):
+def page_layout(page, *, include_images=False, preserve_positions=False, spatial=False, infer_aligned_tables=False):
     import pymupdf as p
     from app.pdf2excel.analyzer import extract_spans, extract_drawings
     from app.pdf2excel.detector import detect_tables
     warnings = []
     lines, fills = extract_drawings(page)
-    tables = canonical_tables(page, detect_tables(page, extract_spans(page), lines, fills, warnings))
+    table_options = {'infer_aligned_tables': True} if infer_aligned_tables else {}
+    tables = canonical_tables(page, detect_tables(page, extract_spans(page), lines, fills, warnings, **table_options))
     raw = page.get_text('rawdict', flags=p.TEXTFLAGS_RAWDICT & ~p.TEXT_PRESERVE_IMAGES)
     if include_images and preserve_positions:
         from app.documentimages import native_graphic_text

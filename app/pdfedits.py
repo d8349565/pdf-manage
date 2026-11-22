@@ -1,6 +1,7 @@
 """Replay small immutable edits on private pages; never mutate input documents."""
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import groupby
@@ -71,39 +72,91 @@ def selected_lines(raw, rectangle):
     return result
 
 
-def selection_range(raw, start, end):
-    """Keep characters between two carets, including complete intermediate lines."""
+def _order_selection_entries(entries):
+    """Order text lines top-to-bottom, grouping inline glyphs (bullets, superscripts, mixed sizes) on the same row left-to-right."""
+    items = [item for item in entries if item[1]]
+
+    def _is_horizontal(item):
+        dx, dy = item[0].get('dir', (1, 0))
+        return abs(dx) >= abs(dy)
+
+    items.sort(key=lambda item: (
+        (item[0]['bbox'][1] + item[0]['bbox'][3]) / 2,
+        item[0]['bbox'][0],
+    ))
+    rows = []
+    for item in items:
+        box = item[0]['bbox']
+        item_h = max(0.0, box[3] - box[1])
+        item_mid = (box[1] + box[3]) / 2
+        horiz = _is_horizontal(item)
+        if rows and horiz and rows[-1]['horiz']:
+            ry0, ry1 = rows[-1]['band']
+            row_h = max(0.0, ry1 - ry0)
+            row_mid = (ry0 + ry1) / 2
+            overlap = min(box[3], ry1) - max(box[1], ry0)
+            min_h = min(item_h, row_h)
+            normal_ratio = item_h <= row_h * 2.2 or row_h < 6.0
+            center_limit = max(item_h, row_h) * 0.45 if normal_ratio else min_h * 0.5
+            if min_h > 0 and overlap >= min_h * 0.45 and abs(item_mid - row_mid) <= center_limit:
+                rows[-1]['items'].append(item)
+                if item_h > row_h and normal_ratio:
+                    rows[-1]['band'] = (box[1], box[3])
+                continue
+        rows.append({'horiz': horiz, 'band': (box[1], box[3]), 'items': [item]})
+    ordered, row_for_line = [], []
+    for row in rows:
+        row['items'].sort(key=lambda item: (item[0]['bbox'][0], item[0]['bbox'][1]))
+        ordered.extend(row['items'])
+        row_for_line.extend([row] * len(row['items']))
+    return ordered, row_for_line
+
+
+def _selection_line_at(entries, row_for_line, point):
+    """A horizontal line's trailing whitespace belongs to its row within the column."""
+    x, y = point
+    def proximity(index):
+        left, top, right, bottom = entries[index][0]['bbox']
+        dx = max(left - x, 0, x - right)
+        dy = max(top - y, 0, y - bottom)
+        return dx * dx + dy * dy, abs(y - (top + bottom) / 2)
+
+    nearest = min(range(len(entries)), key=proximity)
+    anchor_row = row_for_line[nearest]
+    if not anchor_row['horiz']:
+        return nearest
+
+    # Only treat a gap as a column boundary if there is a neighboring field.
+    # Indented lines and short outdented lines can belong to the same column.
+    left, _, right, _ = entries[nearest][0]['bbox']
+    top, bottom = anchor_row['band']
+    gutter = bottom - top
+    column_left, column_right = -float('inf'), float('inf')
+    for peer, _ in anchor_row['items']:
+        x0, _, x1, _ = peer['bbox']
+        if x1 + gutter < left:
+            column_left = max(column_left, (x1 + left) / 2)
+        elif right + gutter < x0:
+            column_right = min(column_right, (right + x0) / 2)
+
+    def in_column(index):
+        x0, _, x1, _ = entries[index][0]['bbox']
+        return row_for_line[index]['horiz'] and x0 < column_right and x1 > column_left
+
+    def row_distance(index):
+        top, bottom = row_for_line[index]['band']
+        x0, y0, x1, y1 = entries[index][0]['bbox']
+        # Fragments on the same baseline share a band; choose between them by x.
+        return (max(top - y, 0, y - bottom), abs(y - (top + bottom) / 2),
+                max(x0 - x, 0, x - x1), abs(y - (y0 + y1) / 2))
+
+    return min((i for i in range(len(entries)) if in_column(i)), key=row_distance)
+
+
+def _selected_text_geometry(raw, entries):
     import pymupdf as p
-    entries = [(line, [(char, span) for span in line.get('spans', ()) for char in span.get('chars', ())])
-               for block in raw.get('blocks', ()) for line in block.get('lines', ())]
-    entries = sorted((item for item in entries if item[1]),
-                     key=lambda item: (item[0]['bbox'][1], item[0]['bbox'][0]))
-    if not entries:
-        return dict(raw, blocks=[]), p.Rect()
-
-    def caret(point):
-        point = p.Point(point)
-        def distance(item):
-            box = p.Rect(item[0]['bbox'])
-            return (max(box.y0 - point.y, 0, point.y - box.y1),
-                    max(box.x0 - point.x, 0, point.x - box.x1))
-        index = min(range(len(entries)), key=lambda slot: distance(entries[slot]))
-        line, chars = entries[index]
-        dx, dy = line.get('dir', (1, 0))
-        offset = 0
-        for char, _ in chars:
-            box = p.Rect(char['bbox'])
-            center = (box.tl + box.br) / 2
-            offset += (center.x - point.x) * dx + (center.y - point.y) * dy < 0
-        return index, offset
-
-    first, last = sorted((caret(start), caret(end)))
     lines, area = [], p.Rect()
-    for index in range(first[0], last[0] + 1):
-        line, chars = entries[index]
-        chars = chars[first[1] if index == first[0] else 0:last[1] if index == last[0] else len(chars)]
-        if not chars:
-            continue
+    for line, chars in entries:
         spans = []
         for _, pairs in groupby(chars, key=lambda item: id(item[1])):
             group = list(pairs)
@@ -114,10 +167,120 @@ def selection_range(raw, start, end):
     return dict(raw, blocks=[dict(type=0, lines=lines)]), area
 
 
+def selection_word(raw, point):
+    """Select the word containing the glyph at a point in the text snapshot."""
+    import pymupdf as p
+    from PyQt6.QtCore import QTextBoundaryFinder
+
+    point = p.Point(point)
+
+    def hits():
+        for block in raw.get('blocks', ()):
+            if block.get('bbox') is not None and not p.Rect(block['bbox']).contains(point):
+                continue
+            for line in block.get('lines', ()):
+                if not p.Rect(line['bbox']).contains(point):
+                    continue
+                chars = [(char, span) for span in line.get('spans', ()) for char in span.get('chars', ())]
+                for index, (char, _) in enumerate(chars):
+                    box = p.Rect(char['bbox'])
+                    if box.contains(point) and char['c'].strip():
+                        yield abs((box.tl + box.br) / 2 - point), line, chars, index
+
+    hit = min(hits(), key=lambda match: match[0], default=None)
+    if hit is None:
+        return dict(raw, blocks=[]), p.Rect()
+    _, line, chars, index = hit
+    text = ''.join(char['c'] for char, _ in chars)
+    offsets = [0]
+    for char, _ in chars:
+        # Qt word boundaries are UTF-16 offsets, and a glyph can contain several characters.
+        offsets.append(offsets[-1] + len(char['c'].encode('utf-16-le')) // 2)
+    finder = QTextBoundaryFinder(QTextBoundaryFinder.BoundaryType.Word, text)
+    finder.setPosition(offsets[index])
+    if not finder.isAtBoundary():
+        finder.toPreviousBoundary()
+    first = bisect_right(offsets, finder.position()) - 1
+    last = bisect_left(offsets, finder.toNextBoundary())
+    word = chars[first:last]
+    if not any(value.isalnum() or value == '_' for char, _ in word for value in char['c']):
+        return dict(raw, blocks=[]), p.Rect()
+    return _selected_text_geometry(raw, ((line, word),))
+
+
+def selection_range(raw, start, end, tables=()):
+    """Keep characters between two carets, including complete intermediate lines."""
+    import pymupdf as p
+    start, end = p.Point(start), p.Point(end)
+    boxes = (p.Rect(cell.bbox) for table in tables for cell in table.cells if cell.bbox)
+    cell = next((box for box in boxes if box.contains(start) and box.contains(end)), None)
+    if cell is not None:
+        entries = [(dict(line, bbox=tuple(cell & p.Rect(line['bbox']))), chars)
+                   for line, chars in selected_lines(raw, cell)]
+    else:
+        entries = [(line, [(char, span) for span in line.get('spans', ()) for char in span.get('chars', ())])
+                   for block in raw.get('blocks', ()) for line in block.get('lines', ())]
+    entries, row_for_line = _order_selection_entries(entries)
+    if not entries:
+        return dict(raw, blocks=[]), p.Rect()
+
+    def caret(point):
+        index = _selection_line_at(entries, row_for_line, point)
+        line, chars = entries[index]
+        if 'inline_id' in line:
+            # Both visual edges identify a logical cursor position, also for RTL runs.
+            _, offset = min((abs(x - point.x), i + edge)
+                            for i, (char, _) in enumerate(chars) for edge, x in enumerate(char['carets']))
+            return index, offset
+        dx, dy = line.get('dir', (1, 0))
+        offset = 0
+        for char, _ in chars:
+            box = p.Rect(char['bbox'])
+            center = (box.tl + box.br) / 2
+            offset += (center.x - point.x) * dx + (center.y - point.y) * dy < 0
+        return index, offset
+
+    first, last = sorted((caret(start), caret(end)))
+    if first[0] != last[0] and first[1] == len(entries[first[0]][1]) and last[1] == 0:
+        # On a quarter-turned page the diagonal around two whole lines can
+        # land after the first line and before the last in logical text order.
+        enclosed = p.Rect(start, end).normalize()
+        if all(enclosed.contains(p.Rect(entries[i][0]['bbox'])) for i in (first[0], last[0])):
+            first, last = (first[0], 0), (last[0], len(entries[last[0]][1]))
+    # A plain text snapshot has no table grid. A neighboring field on the
+    # same baseline still establishes a gutter between two wrapped columns.
+    left_limit, right_limit = -float('inf'), float('inf')
+    if cell is None and first[0] != last[0]:
+        a, b = (p.Rect(entries[i][0]['bbox']) for i in (first[0], last[0]))
+        height = max(a.height, b.height)
+        if abs(a.x0 - b.x0) <= height * 1.5 and max(a.x0, b.x0) < min(a.x1, b.x1):
+            left, right = min(a.x0, b.x0), max(a.x1, b.x1)
+            for line, _ in entries:
+                box = p.Rect(line['bbox'])
+                if any(min(box.y1, edge.y1) - max(box.y0, edge.y0) >= min(box.height, edge.height) / 2
+                       for edge in (a, b)):
+                    if box.x1 + height < left:
+                        left_limit = max(left_limit, (box.x1 + left) / 2)
+                    elif box.x0 - height > right:
+                        right_limit = min(right_limit, (box.x0 + right) / 2)
+    selected = []
+    for index in range(first[0], last[0] + 1):
+        line, chars = entries[index]
+        if line['bbox'][2] <= left_limit or line['bbox'][0] >= right_limit:
+            continue
+        chars = chars[first[1] if index == first[0] else 0:last[1] if index == last[0] else len(chars)]
+        if chars:
+            selected.append((line, chars))
+    return _selected_text_geometry(raw, selected)
+
+
 def selection_quads(raw, rectangle):
     import pymupdf as p
     quads = []
     for line, chars in selected_lines(raw, rectangle):
+        if raw.get('inline_view'):
+            quads.extend(tuple(tuple(pt) for pt in p.Rect(char['bbox']).quad) for char, _ in chars)
+            continue
         # One continuous band per line avoids overlapping round caps per glyph.
         spans = []
         for _, group in groupby(chars, key=lambda item: id(item[1])):

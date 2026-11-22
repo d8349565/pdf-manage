@@ -16,6 +16,8 @@ def detect_tables(
     lines: list[dict] | None = None,
     fills: list[dict] | None = None,
     warnings: list[str] | None = None,
+    *,
+    infer_aligned_tables: bool = False,
 ) -> list[TableModel]:
     """使用级联策略检测页面上的表格，并构建高质量 TableModel。"""
     if lines is None:
@@ -53,7 +55,13 @@ def detect_tables(
                                      for start, end in raster_lines]]
                     break
         if name == 'text':
-            if any(span.get('alpha', 255) == 0 for span in spans):
+            hidden = any(span.get('alpha', 255) == 0 for span in spans)
+            columns = False
+            if not hidden:
+                from app.documentlayout import layout_from_raw
+                raw = page.get_text('rawdict', flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
+                columns = any(item.get('column_count', 1) > 1 for item in layout_from_raw(raw, []))
+            if hidden or (columns and infer_aligned_tables):
                 from app.pdf2excel.alignment_grid import alignment_grid_lines
                 aligned_lines,header_fills=alignment_grid_lines(page,spans)
                 if aligned_lines:
@@ -66,10 +74,9 @@ def detect_tables(
                         if warnings is not None:
                             warnings.append(f'第 {page.number+1} 页弱边框表格按重复对齐及底纹推断，请核对行列。')
                         break
-                break
-            from app.documentlayout import layout_from_raw
-            raw=page.get_text('rawdict',flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)
-            if any(item.get('column_count',1)>1 for item in layout_from_raw(raw,[])):
+                if hidden:
+                    break
+            if columns:
                 if warnings is not None:
                     warnings.append(f'第 {page.number + 1} 页存在正文分栏，不按整页文字猜测表格。')
                 break
@@ -229,6 +236,7 @@ def detect_tables(
                 row_heights=row_heights,
                 col_widths=col_widths,
                 confidence=tbl_confidence,
+                detection_strategy=best_strategy_name,
             )
         )
 

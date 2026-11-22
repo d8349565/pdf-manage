@@ -283,3 +283,58 @@ def test_fullscreen_forward_and_returning_pages_have_stable_first_frames(reader,
         output = tmp_path / f'window-return-{step}-{number}'
         output.mkdir()
         check_frame(reader, first, output, qapp)
+
+
+def test_selection_repaint_matches_full_frame_at_fractional_zoom(qapp):
+    from PyQt6.QtCore import QRectF, Qt
+    from PyQt6.QtGui import QColor, QImage, QPainterPath, QPen, QPixmap
+    from PyQt6.QtWidgets import QGraphicsPathItem
+    from app.ui import PreviewView
+
+    if qapp.platformName() != 'offscreen':
+        pytest.skip('This test reads the isolated offscreen window backing store')
+    view = PreviewView()
+    try:
+        page_rect = QRectF(0, 0, 425.3, 578.4)
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=page_rect.width(), height=page_rect.height())
+            for y in range(20, 570, 14):
+                page.insert_text((18, y), 'Keep each stroke in the same position throughout the selection.', fontsize=10)
+            raster = page.get_pixmap(matrix=pymupdf.Matrix(1.72, 1.72), alpha=False)
+            image = QImage(raster.samples, raster.width, raster.height, raster.stride, QImage.Format.Format_RGB888).copy()
+        view.resize(360, 245)
+        view.page_rects = [page_rect]
+        view.scene().setSceneRect(page_rect)
+        view.set_photo(QPixmap.fromImage(image), 1, (page_rect.width(), page_rect.height()))
+        view.scale(1.31, 1.31)
+        view.centerOn(175, 177)
+        view.show()
+        view.centerOn(175, 177)
+
+        def displayed_frame():
+            # QWidget.grab() would repaint the widget and conceal partial-update jitter.
+            QTest.qWait(25)
+            frame = view.screen().grabWindow(view.winId()).toImage()
+            assert not frame.isNull()
+            return frame
+
+        view.viewport().update()
+        original = displayed_frame()
+        highlight = QGraphicsPathItem()
+        highlight.setZValue(6)
+        highlight.setBrush(QColor(20, 149, 135, 70))
+        highlight.setPen(QPen(Qt.PenStyle.NoPen))
+        view.scene().addItem(highlight)
+        for rect in (QRectF(140.2, 122.8, 44.9, 19.1), QRectF(61.7, 118.2, 120.8, 66.3),
+                     QRectF(37, 105, 172.75, 76), QRectF(132.4, 120.6, 52, 23)):
+            path = QPainterPath()
+            path.addRect(rect)
+            highlight.setPath(path)
+            selected = displayed_frame()
+            assert selected != original
+            view.viewport().update()
+            assert selected == displayed_frame()
+        view.scene().removeItem(highlight)
+        assert displayed_frame() == original
+    finally:
+        view.close()
