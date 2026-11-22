@@ -11,7 +11,7 @@ from PyQt6.QtGui import QFontDatabase, QImage, QPageSize
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QApplication
 
-from app.pdfio import PdfStore
+from app.pdfio import PdfError, PdfStore
 from app.printing import (
     DUPLEX_MODES,
     PRINT_DPI,
@@ -30,11 +30,15 @@ from app.ui import MainWindow
 from app.workspace import Workspace
 
 
+_printing_test_app = None
+
+
 @pytest.fixture(scope="session")
 def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
+    global _printing_test_app
+    app = QApplication.instance() or QApplication([])
+    # Qt objects may outlive the session fixture and still need the application during teardown.
+    _printing_test_app = app
     font = Path('C:/Windows/Fonts/msyh.ttc')
     if font.is_file():
         QFontDatabase.addApplicationFont(str(font))
@@ -54,6 +58,58 @@ def test_duplex_modes_mapping():
     assert DUPLEX_MODES["none"] == QPrinter.DuplexMode.DuplexNone
     assert DUPLEX_MODES["long_edge"] == QPrinter.DuplexMode.DuplexLongSide
     assert DUPLEX_MODES["short_edge"] == QPrinter.DuplexMode.DuplexShortSide
+
+
+def test_duplex_is_requested_with_the_selected_paper(qapp, tmp_path):
+    requested = []
+
+    class ObservedPrinter(QPrinter):
+        def setDuplex(self, mode):
+            requested.append((self.pageLayout().pageSize().id(), mode))
+            super().setDuplex(mode)
+
+    printer = ObservedPrinter()
+    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+    printer.setOutputFileName(str(tmp_path / "printed.pdf"))
+    printer.setPageSize(QPageSize(QPageSize.PageSizeId.A5))
+    source = tmp_path / "pages.pdf"
+    _make_pdf(source, [(100, 140)] * 4)
+    store = PdfStore()
+    try:
+        pages = store.load(str(source))
+        options = PrintOptions(page_indices=list(range(4)), paper=QPageSize.PageSizeId.A4,
+                               duplex="long_edge", color_mode="grayscale")
+        render_pages_to_printer(printer, store, pages, options)
+        assert requested == [(QPageSize.PageSizeId.A4, QPrinter.DuplexMode.DuplexLongSide)]
+    finally:
+        store.close_all()
+
+
+def test_windows_rejected_duplex_stops_before_spooling(qapp, tmp_path, monkeypatch):
+    import sys
+
+    if sys.platform != "win32":
+        pytest.skip("需要 Windows 打印驱动")
+
+    class SingleSidedPrinter(QPrinter):
+        def outputFormat(self):
+            return QPrinter.OutputFormat.NativeFormat
+
+        def duplex(self):
+            return QPrinter.DuplexMode.DuplexNone
+
+    printer = SingleSidedPrinter()
+    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+    monkeypatch.setattr("app.printing.QPainter", lambda: pytest.fail("驱动未接受双面仍尝试启动打印"))
+    source = tmp_path / "pages.pdf"
+    _make_pdf(source, [(100, 140)] * 2)
+    store = PdfStore()
+    try:
+        pages = store.load(str(source))
+        with pytest.raises(PdfError, match="未接受.*双面"):
+            render_pages_to_printer(printer, store, pages, PrintOptions(page_indices=[0, 1], duplex="long_edge"))
+    finally:
+        store.close_all()
 
 
 @pytest.mark.parametrize('count,expected',[

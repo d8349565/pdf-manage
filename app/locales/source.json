@@ -86,25 +86,25 @@
     "app/exportdialogs.py:225"
   ],
   "1 页": [
-    "app/printing.py:1227"
+    "app/printing.py:1267"
   ],
   "16 页": [
-    "app/printing.py:1229"
+    "app/printing.py:1269"
   ],
   "2 页（上下）": [
-    "app/printing.py:1228"
+    "app/printing.py:1268"
   ],
   "2 页（左右）": [
-    "app/printing.py:1227"
+    "app/printing.py:1267"
   ],
   "4 页": [
-    "app/printing.py:1228"
+    "app/printing.py:1268"
   ],
   "6 页": [
-    "app/printing.py:1229"
+    "app/printing.py:1269"
   ],
   "9 页": [
-    "app/printing.py:1229"
+    "app/printing.py:1269"
   ],
   "A4 横向（宽表格）": [
     "app/outputui.py:71"
@@ -341,6 +341,9 @@
   ],
   "Windows 主窗口": [
     "app/shortcutcommands.py:app.default_pdf"
+  ],
+  "Windows 打印驱动报告错误，请检查打印队列。\n{p0}": [
+    "app/printing.py:371"
   ],
   "Windows 系统按键不用于应用快捷键。": [
     "app/shortcuts.py:47"
@@ -597,8 +600,8 @@
   "。还想更小，可选“更小体积（有损）”另存 WebP。": [
     "app/imagequick.py:235"
   ],
-  "「{p0}」没有报告支持自动双面。仍可发送，但可能只打单面，需要你把纸取出来翻面重放。": [
-    "app/printing.py:1693"
+  "「{p0}」没有报告支持所选的双面装订方式。请检查打印机驱动中的双面设置，或改选单面打印。": [
+    "app/printing.py:1733"
   ],
   "上一个标签页": [
     "app/shortcutcommands.py:tabs.previous"
@@ -619,7 +622,7 @@
     "app/shortcutcommands.py:visual_compare.previous"
   ],
   "上一张纸": [
-    "app/printing.py:1044",
+    "app/printing.py:1084",
     "app/shortcutcommands.py:print.previous",
     "app/shortcutcommands.py:print.previous"
   ],
@@ -645,7 +648,7 @@
     "app/shortcutcommands.py:compare.previous"
   ],
   "上下两页适合纵向纸张，左右两页适合横向纸张。": [
-    "app/printing.py:1233"
+    "app/printing.py:1273"
   ],
   "上下分割": [
     "app/pagesplitui.py:30"
@@ -675,7 +678,7 @@
     "app/shortcutcommands.py:visual_compare.next"
   ],
   "下一张纸": [
-    "app/printing.py:1047",
+    "app/printing.py:1087",
     "app/shortcutcommands.py:print.next",
     "app/shortcutcommands.py:print.next"
   ],
@@ -906,22 +909,22 @@
     "app/editingui.py:343"
   ],
   "仅偶数页": [
-    "app/printing.py:1160"
+    "app/printing.py:1200"
   ],
   "仅反面（手动双面第 2 步）": [
-    "app/printing.py:1259"
+    "app/printing.py:1299"
   ],
   "仅向 GitHub 查询版本，不上传文档。运行安装包前请关闭软件。": [
     "app/aboutui.py:225"
   ],
   "仅奇数页": [
-    "app/printing.py:1160"
+    "app/printing.py:1200"
   ],
   "仅改变阅读显示，保存、导出和打印仍用原色。\n图片、扫描页和批注也会按明暗换色，不单独识别文字。": [
     "app/readingcolors.py:215"
   ],
   "仅正面（手动双面第 1 步）": [
-    "app/printing.py:1258"
+    "app/printing.py:1298"
   ],
   "仅表格": [
     "app/ui.py:4146"
@@ -1021,7 +1024,7 @@
     "app/ui.py:3951"
   ],
   "例如 1-3, 5": [
-    "app/printing.py:1153"
+    "app/printing.py:1193"
   ],
   "例如 1-3,5": [
     "app/exportdialogs.py:477",
@@ -1147,7 +1150,7 @@
     "app/pagesplitui.py:62"
   ],
   "保持原始尺寸；超出可打印区域的部分不会打印，请核对预览。": [
-    "app/printing.py:1197"
+    "app/printing.py:1237"
   ],
   "保留内容": [
     "app/shortcutcommands.py:cleanup.keep"
@@ -1243,10 +1246,10 @@
     "app/editingui.py:900"
   ],
   "先横向，再纵向": [
-    "app/printing.py:1299"
+    "app/printing.py:1339"
   ],
   "先纵向，再横向": [
-    "app/printing.py:1300"
+    "app/printing.py:1340"
   ],
   "先自动清理，再用橡皮擦补一补": [
     "app/colorcleanupui.py:363"
@@ -1317,7 +1320,7 @@
     "app/recentui.py:173"
   ],
   "全部页": [
-    "app/printing.py:1160"
+    "app/printing.py:1200"
   ],
   "全部页面": [
     "app/ocrui.py:82",
@@ -1328,7 +1331,7 @@
     "app/pagetoolsui.py:96"
   ],
   "全部（{p0} 页）": [
-    "app/printing.py:1132"
+    "app/printing.py:1172"
   ],
   "共 {p0} 张。列表顺序就是页序，可拖动或用上移/下移调整。": [
     "app/exportdialogs.py:377"
@@ -1734,7 +1737,7 @@
     "app/shortcutcommands.py:review.replace"
   ],
   "单面打印": [
-    "app/printing.py:1267"
+    "app/printing.py:1307"
   ],
   "单页": [
     "app/readingsettings.py:207"
@@ -1974,17 +1977,17 @@
     "app/exportdialogs.py:80"
   ],
   "双面打印": [
-    "app/printing.py:1269"
+    "app/printing.py:1309"
   ],
   "双面装订": [
     "app/outputui.py:276",
-    "app/printing.py:1317"
+    "app/printing.py:1357"
   ],
   "双面装订边": [
-    "app/printing.py:1312"
+    "app/printing.py:1352"
   ],
   "双面（自动双面打印机）": [
-    "app/printing.py:1257"
+    "app/printing.py:1297"
   ],
   "双页": [
     "app/readingsettings.py:207"
@@ -2004,7 +2007,7 @@
     "app/ui.py:3308"
   ],
   "发送打印任务时出错：{p0}\n\n任务可能已经部分发送，请检查系统打印队列后再重试。": [
-    "app/printing.py:1724"
+    "app/printing.py:1764"
   ],
   "取消": [
     "app/annotcropui.py:249",
@@ -2019,7 +2022,7 @@
     "app/pagesplitui.py:111",
     "app/pagetoolsui.py:185",
     "app/pdfcompareui.py:186",
-    "app/printing.py:1344",
+    "app/printing.py:1384",
     "app/rasterui.py:76",
     "app/readingcolors.py:232",
     "app/savesettings.py:75",
@@ -2189,7 +2192,7 @@
     "app/watermarkui.py:447"
   ],
   "右侧装订": [
-    "app/printing.py:1252"
+    "app/printing.py:1292"
   ],
   "右转": [
     "app/ui.py:4008",
@@ -2525,7 +2528,7 @@
     "app/imageui.py:289"
   ],
   "在所选范围内，按当前文档从 1 开始的页码筛选，不按纸张正反面筛选。": [
-    "app/printing.py:1162"
+    "app/printing.py:1202"
   ],
   "在文档开头粘贴为页面": [
     "app/ui.py:1020"
@@ -2544,7 +2547,7 @@
     "app/shortcutui.py:260"
   ],
   "填充顺序": [
-    "app/printing.py:1302"
+    "app/printing.py:1342"
   ],
   "填入服务商提供的模型名称": [
     "app/translation/ui.py:534"
@@ -2641,7 +2644,7 @@
     "app/wordui.py:734"
   ],
   "多页填充顺序": [
-    "app/printing.py:1298"
+    "app/printing.py:1338"
   ],
   "夜航": [
     "app/themes.py:night"
@@ -2687,7 +2690,7 @@
     "app/editingui.py:313"
   ],
   "奇偶页筛选": [
-    "app/printing.py:1159"
+    "app/printing.py:1199"
   ],
   "奇数页右侧、偶数页左侧": [
     "app/outputui.py:275"
@@ -2880,7 +2883,7 @@
     "app/colorcleanupui.py:397"
   ],
   "实际大小（100%）": [
-    "app/printing.py:1192"
+    "app/printing.py:1232"
   ],
   "实际宽高": [
     "app/pagetoolsui.py:168"
@@ -2924,7 +2927,7 @@
     "app/pagetoolsui.py:164"
   ],
   "宽边距 20 毫米": [
-    "app/printing.py:77"
+    "app/printing.py:79"
   ],
   "宽高自动保持比例": [
     "app/seamstampui.py:93"
@@ -3029,10 +3032,10 @@
     "app/compression.py:151"
   ],
   "小册子打印面": [
-    "app/printing.py:1256"
+    "app/printing.py:1296"
   ],
   "小册子（对折）": [
-    "app/printing.py:1222"
+    "app/printing.py:1262"
   ],
   "尚有未识别页面，请先完成识别": [
     "app/pdfcontentcompareui.py:307"
@@ -3062,8 +3065,8 @@
     "app/updateui.py:354"
   ],
   "展开更多打印设置": [
-    "app/printing.py:1285",
-    "app/printing.py:1325"
+    "app/printing.py:1325",
+    "app/printing.py:1365"
   ],
   "展开页面与大纲侧栏": [
     "app/immersivereading.py:32",
@@ -3111,7 +3114,7 @@
     "app/shortcutcommands.py:tools.compress"
   ],
   "左侧装订": [
-    "app/printing.py:1251"
+    "app/printing.py:1291"
   ],
   "左右分割": [
     "app/pagesplitui.py:29"
@@ -3219,7 +3222,7 @@
     "app/editingui.py:1306"
   ],
   "已取消打印": [
-    "app/printing.py:1722"
+    "app/printing.py:1762"
   ],
   "已取消打开，原文件未修改": [
     "app/ui.py:6521"
@@ -3391,7 +3394,7 @@
     "app/translation/ui.py:2297"
   ],
   "已请求停止发送。已经交给打印机的页面可能仍会打印，可在系统打印队列中取消。": [
-    "app/printing.py:1722"
+    "app/printing.py:1762"
   ],
   "已调整 {p0} 页；Ctrl+Z 可撤销，保存时另存副本。": [
     "app/pagetoolsui.py:285"
@@ -3434,7 +3437,7 @@
     "app/ui.py:4389"
   ],
   "已选（{p0} 页）": [
-    "app/printing.py:1135"
+    "app/printing.py:1175"
   ],
   "已逐页盖完整印章": [
     "app/seamstampui.py:321"
@@ -3455,7 +3458,7 @@
     "app/shortcutcommands.py:app.about"
   ],
   "常规边距 10 毫米": [
-    "app/printing.py:76"
+    "app/printing.py:78"
   ],
   "平滑估计邻近背景": [
     "app/colorcleanupui.py:456"
@@ -3671,7 +3674,7 @@
     "app/colorcleanupui.py:675"
   ],
   "彩色": [
-    "app/printing.py:1205"
+    "app/printing.py:1245"
   ],
   "彩色和灰度图片的目标分辨率": [
     "app/compression.py:63"
@@ -3870,13 +3873,13 @@
     "app/watermarkui.py:203"
   ],
   "所选范围内没有偶数页": [
-    "app/printing.py:1545"
+    "app/printing.py:1585"
   ],
   "所选范围内没有可摘录区域。": [
     "app/annotcropui.py:343"
   ],
   "所选范围内没有奇数页": [
-    "app/printing.py:1545"
+    "app/printing.py:1585"
   ],
   "所选范围未找到纸序添加的水印。": [
     "app/watermarkui.py:769"
@@ -3912,26 +3915,29 @@
     "app/shortcutcommands.py:reader.hand"
   ],
   "打印": [
-    "app/printing.py:920",
-    "app/printing.py:1347",
+    "app/printing.py:960",
+    "app/printing.py:1387",
     "app/signatureui.py:102",
     "app/ui.py:3008",
     "app/shortcutcommands.py:file.print",
     "app/shortcutcommands.py:file.print"
   ],
   "打印份数": [
-    "app/printing.py:1209",
-    "app/printing.py:1216"
+    "app/printing.py:1249",
+    "app/printing.py:1256"
   ],
   "打印失败": [
-    "app/printing.py:1724"
+    "app/printing.py:1764"
   ],
   "打印排版方式": [
-    "app/printing.py:1220"
+    "app/printing.py:1260"
   ],
   "打印机": [
-    "app/printing.py:1117",
-    "app/printing.py:1129"
+    "app/printing.py:1157",
+    "app/printing.py:1169"
+  ],
+  "打印机未接受所选的双面装订方式。请检查纸张大小和打印机驱动中的双面设置后重试。": [
+    "app/printing.py:421"
   ],
   "打印窗口": [
     "app/shortcutcommands.py:print.zoom_in",
@@ -3950,13 +3956,13 @@
     "app/shortcutcommands.py:print.next"
   ],
   "打印范围": [
-    "app/printing.py:1165"
+    "app/printing.py:1205"
   ],
   "打印设置": [
-    "app/printing.py:1112"
+    "app/printing.py:1152"
   ],
   "打印页码范围": [
-    "app/printing.py:1152"
+    "app/printing.py:1192"
   ],
   "打开": [
     "app/recentui.py:259",
@@ -4317,7 +4323,7 @@
     "app/ocrui.py:82",
     "app/pagetoolsui.py:97",
     "app/pagetoolsui.py:101",
-    "app/printing.py:1137",
+    "app/printing.py:1177",
     "app/rasterui.py:54",
     "app/rasterui.py:48"
   ],
@@ -4355,11 +4361,11 @@
     "app/pdfcontentcompareui.py:93"
   ],
   "按相反纸张顺序打印": [
-    "app/printing.py:1607"
+    "app/printing.py:1647"
   ],
   "按相反页序打印": [
-    "app/printing.py:1306",
-    "app/printing.py:1607"
+    "app/printing.py:1346",
+    "app/printing.py:1647"
   ],
   "按键查找": [
     "app/shortcutui.py:141"
@@ -4376,7 +4382,7 @@
     "app/exportdialogs.py:305"
   ],
   "排版方式": [
-    "app/printing.py:1238"
+    "app/printing.py:1278"
   ],
   "接口发生重定向，为保护 API Key 已停止请求，请填写最终接口地址。": [
     "app/translation/client.py:141"
@@ -4522,7 +4528,7 @@
     "app/shortcutcommands.py:annotation.deactivate"
   ],
   "收起更多打印设置": [
-    "app/printing.py:1325"
+    "app/printing.py:1365"
   ],
   "收起翻译面板": [
     "app/translation/ui.py:1922"
@@ -4535,7 +4541,7 @@
   ],
   "放大": [
     "app/pdfcontentcompareui.py:133",
-    "app/printing.py:1037",
+    "app/printing.py:1077",
     "app/ui.py:3857",
     "app/ui.py:3155",
     "app/ui.py:4038",
@@ -4950,7 +4956,7 @@
     "app/shortcutcommands.py:view.borderless"
   ],
   "无边距（充满可打印区）": [
-    "app/printing.py:74"
+    "app/printing.py:76"
   ],
   "无需解密": [
     "app/ui.py:6795"
@@ -5042,10 +5048,10 @@
     "app/shortcutcommands.py:reader.show_orb"
   ],
   "显示页面边框": [
-    "app/printing.py:1305"
+    "app/printing.py:1345"
   ],
   "普通打印": [
-    "app/printing.py:1221"
+    "app/printing.py:1261"
   ],
   "暂无大纲，可为关键页面添加书签。": [
     "app/editingui.py:200"
@@ -5072,7 +5078,7 @@
   "更多设置": [
     "app/pdfcompareui.py:305",
     "app/pdfcontentcompareui.py:91",
-    "app/printing.py:1281",
+    "app/printing.py:1321",
     "app/shortcutcommands.py:compare.more",
     "app/shortcutcommands.py:visual_compare.more"
   ],
@@ -5242,7 +5248,7 @@
     "app/signatureui.py:137"
   ],
   "未找到可用打印机": [
-    "app/printing.py:1126"
+    "app/printing.py:1166"
   ],
   "未找到可管理的水印。已合并进正文或图片的水印无法在此单独删除。": [
     "app/watermarkui.py:317"
@@ -5305,7 +5311,7 @@
     "app/imagequick.py:201"
   ],
   "本次打印": [
-    "app/printing.py:1261"
+    "app/printing.py:1301"
   ],
   "本次操作未应用": [
     "app/editingui.py:1553",
@@ -5525,7 +5531,7 @@
   "横向": [
     "app/pagesplitui.py:71",
     "app/pagetoolsui.py:158",
-    "app/printing.py:1178"
+    "app/printing.py:1218"
   ],
   "正在从原图生成更小的 WebP…": [
     "app/imagequick.py:200"
@@ -5753,13 +5759,13 @@
     "app/pagesplitui.py:244"
   ],
   "每面两页，自动编排对折后的页序。": [
-    "app/printing.py:1246"
+    "app/printing.py:1286"
   ],
   "每面排列": [
-    "app/printing.py:1224"
+    "app/printing.py:1264"
   ],
   "每面页数与排列方式": [
-    "app/printing.py:1226"
+    "app/printing.py:1266"
   ],
   "每页一个文件": [
     "app/filesplitui.py:19"
@@ -5859,13 +5865,13 @@
     "app/shortcutui.py:358"
   ],
   "没有可打印的纸张": [
-    "app/printing.py:1466"
+    "app/printing.py:1506"
   ],
   "没有可打印的页面": [
-    "app/printing.py:1704"
+    "app/printing.py:1744"
   ],
   "没有可用的打印机": [
-    "app/printing.py:1707"
+    "app/printing.py:1747"
   ],
   "没有可翻译的文字内容。": [
     "app/translation/client.py:334"
@@ -5884,13 +5890,13 @@
     "app/editingui.py:1786"
   ],
   "沿短边装订": [
-    "app/printing.py:1314"
+    "app/printing.py:1354"
   ],
   "沿边位置": [
     "app/seamstampui.py:114"
   ],
   "沿长边装订": [
-    "app/printing.py:1313"
+    "app/printing.py:1353"
   ],
   "法语": [
     "app/translation/config.py:62"
@@ -6075,7 +6081,7 @@
     "app/pagetoolsui.py:180"
   ],
   "灰度（黑白）": [
-    "app/printing.py:1206"
+    "app/printing.py:1246"
   ],
   "点一下添加便签；Esc 取消工具。": [
     "app/editingui.py:1060"
@@ -6343,7 +6349,7 @@
     "app/updateui.py:247"
   ],
   "窄边距 5 毫米": [
-    "app/printing.py:75"
+    "app/printing.py:77"
   ],
   "笔刷直径，单位十分之一毫米": [
     "app/colorcleanupui.py:431"
@@ -6355,10 +6361,10 @@
     "app/pagetoolsui.py:151"
   ],
   "第 1 / 1 张纸": [
-    "app/printing.py:1045"
+    "app/printing.py:1085"
   ],
   "第 {p0} / {p1} 张纸": [
-    "app/printing.py:1466"
+    "app/printing.py:1506"
   ],
   "第 {p0} / {p1} 页": [
     "app/colorcleanupui.py:679"
@@ -6498,7 +6504,7 @@
   "纵向": [
     "app/pagesplitui.py:70",
     "app/pagetoolsui.py:157",
-    "app/printing.py:1178"
+    "app/printing.py:1218"
   ],
   "纸序 PDF": [
     "app/__init__.py:APP_NAME"
@@ -6511,17 +6517,17 @@
   ],
   "纸张大小": [
     "app/pagetoolsui.py:147",
-    "app/printing.py:1174",
-    "app/printing.py:1184"
+    "app/printing.py:1214",
+    "app/printing.py:1224"
   ],
   "纸张方向": [
     "app/outputui.py:72",
     "app/pagetoolsui.py:159",
-    "app/printing.py:1177",
-    "app/printing.py:1185"
+    "app/printing.py:1217",
+    "app/printing.py:1225"
   ],
   "纸张面数": [
-    "app/printing.py:1265"
+    "app/printing.py:1305"
   ],
   "纸面底色": [
     "app/readingcolors.py:187"
@@ -6593,7 +6599,7 @@
   ],
   "缩小": [
     "app/pdfcontentcompareui.py:133",
-    "app/printing.py:1036",
+    "app/printing.py:1076",
     "app/ui.py:3850",
     "app/ui.py:3156",
     "app/ui.py:4032",
@@ -6615,7 +6621,7 @@
     "app/shortcutcommands.py:print.zoom_out"
   ],
   "缩小过大页面": [
-    "app/printing.py:1190"
+    "app/printing.py:1230"
   ],
   "缩小预览": [
     "app/shortcutcommands.py:cleanup.zoom_out",
@@ -6730,7 +6736,7 @@
     "app/translation/ui.py:625"
   ],
   "自动": [
-    "app/printing.py:1178"
+    "app/printing.py:1218"
   ],
   "自动分析角度": [
     "app/deskewui.py:29",
@@ -6741,7 +6747,7 @@
     "app/scanwhiteui.py:247"
   ],
   "自动时，单页跟随原页方向；两页根据上下或左右排布决定纸张方向。": [
-    "app/printing.py:1180"
+    "app/printing.py:1220"
   ],
   "自动检查更新": [
     "app/aboutui.py:214"
@@ -6826,8 +6832,8 @@
     "app/textselection.py:297"
   ],
   "装订方向": [
-    "app/printing.py:1250",
-    "app/printing.py:1254"
+    "app/printing.py:1290",
+    "app/printing.py:1294"
   ],
   "西班牙语": [
     "app/translation/config.py:63"
@@ -7062,7 +7068,7 @@
     "app/outputui.py:162"
   ],
   "请先连接或安装打印机。保存 PDF 请使用“文件 → 另存为”。": [
-    "app/printing.py:1707"
+    "app/printing.py:1747"
   ],
   "请先选择一页。": [
     "app/ui.py:7185"
@@ -7123,7 +7129,7 @@
     "app/exportdialogs.py:370"
   ],
   "请指定有效的打印页码范围。": [
-    "app/printing.py:1704"
+    "app/printing.py:1744"
   ],
   "请按下一个有效的按键组合。": [
     "app/shortcuts.py:25"
@@ -7460,7 +7466,7 @@
     "app/ui.py:4039"
   ],
   "适合纸张": [
-    "app/printing.py:1191"
+    "app/printing.py:1231"
   ],
   "适合页面": [
     "app/colorcleanupui.py:397",
@@ -7469,7 +7475,7 @@
     "app/shortcutcommands.py:reader.fit_page"
   ],
   "适应窗口": [
-    "app/printing.py:1038",
+    "app/printing.py:1078",
     "app/shortcutcommands.py:print.fit",
     "app/shortcutcommands.py:cleanup.fit"
   ],
@@ -7917,8 +7923,8 @@
   ],
   "页边距": [
     "app/outputui.py:81",
-    "app/printing.py:1292",
-    "app/printing.py:1296"
+    "app/printing.py:1332",
+    "app/printing.py:1336"
   ],
   "页面": [
     "app/ui.py:3060",
@@ -7994,8 +8000,8 @@
     "app/shortcutcommands.py:view.pages"
   ],
   "页面缩放": [
-    "app/printing.py:1189",
-    "app/printing.py:1195"
+    "app/printing.py:1229",
+    "app/printing.py:1235"
   ],
   "页面缩略图": [
     "app/ui.py:3800"
@@ -8039,7 +8045,7 @@
     "app/pdfcompareui.py:343"
   ],
   "预览失败：{p0}。可以尝试打印，失败时会说明具体页码。": [
-    "app/printing.py:889"
+    "app/printing.py:929"
   ],
   "预览已停止，请重新比较": [
     "app/pdfcontentcompareui.py:370"
@@ -8066,8 +8072,8 @@
     "app/watermarkui.py:160"
   ],
   "颜色模式": [
-    "app/printing.py:1204",
-    "app/printing.py:1215"
+    "app/printing.py:1244",
+    "app/printing.py:1255"
   ],
   "首次启用 PDF 转 Word": [
     "app/wordui.py:770"
@@ -8145,7 +8151,7 @@
     "app/ui.py:7132"
   ],
   "默认不放大小页面，只有超出打印区域时才缩小。多页排列时按每个格子的大小计算。": [
-    "app/printing.py:1193"
+    "app/printing.py:1233"
   ],
   "默认仅本次运行有效。": [
     "app/translation/ui.py:571"

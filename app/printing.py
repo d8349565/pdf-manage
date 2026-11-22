@@ -4,10 +4,12 @@ from app.themes import set_theme_style, ui_color
 
 from collections import OrderedDict
 from bisect import bisect_left
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import math
+import sys
 
-from PyQt6.QtCore import QEvent, QMarginsF, QObject, QPointF, QRunnable, QRectF, QSize, QThreadPool, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QMarginsF, QObject, QPointF, QRunnable, QRectF, QSize, QThreadPool, Qt, pyqtSignal, qInstallMessageHandler
 from PyQt6.QtGui import (
     QColor,
     QFont,
@@ -341,6 +343,34 @@ def _image_for_color_mode(image: QImage, color_mode: str) -> QImage:
     return image.convertToFormat(QImage.Format.Format_Grayscale8) if color_mode == "grayscale" else image
 
 
+@contextmanager
+def _check_windows_print_errors(native_windows: bool):
+    """独立打印进程中，Qt 可能只用警告报告驱动设置或提交失败。"""
+    if not native_windows:
+        yield
+        return
+    failure = previous = None
+
+    def capture(kind, context, message):
+        nonlocal failure
+        if message and message.startswith(("ResetDC() ", "QWin32PrintEngine::newPage: EndPage failed",
+                                           "QWin32PrintEngine::end: EndPage failed",
+                                           "QWin32PrintEngine::end: EndDoc failed")):
+            failure = failure or message
+        elif previous:
+            previous(kind, context, message)
+        elif sys.stderr is not None:
+            print(message, file=sys.stderr)
+
+    previous = qInstallMessageHandler(capture)
+    try:
+        yield
+    finally:
+        qInstallMessageHandler(previous)
+    if failure:
+        raise PdfError(tr("Windows 打印驱动报告错误，请检查打印队列。\n{p0}", p0=failure))
+
+
 def render_pages_to_printer(
     printer: QPrinter,
     store: PdfStore,
@@ -375,13 +405,20 @@ def render_pages_to_printer(
     duplex = options.duplex
     if options.booklet:
         duplex = ("long_edge" if sheets[0].front_portrait else "short_edge") if options.booklet_sides == "both" else "none"
-    printer.setDuplex(DUPLEX_MODES.get(duplex, QPrinter.DuplexMode.DuplexNone))
-    printer.setCopyCount(options.copies)
-    printer.setColorMode(QPrinter.ColorMode.GrayScale if options.color_mode == "grayscale"
-                         else QPrinter.ColorMode.Color)
-
-    # 第一面的纸张方向必须在 QPainter 开启前设定，否则 QPainter 会沿用旧纸张朝向。
-    geometry = apply_sheet_layout(printer, options, faces[0][1])
+    mode = DUPLEX_MODES.get(duplex, QPrinter.DuplexMode.DuplexNone)
+    native_windows = sys.platform == "win32" and printer.outputFormat() == QPrinter.OutputFormat.NativeFormat
+    with _check_windows_print_errors(native_windows):
+        if mode == QPrinter.DuplexMode.DuplexNone:
+            printer.setDuplex(mode)
+        printer.setCopyCount(options.copies)
+        printer.setColorMode(QPrinter.ColorMode.GrayScale if options.color_mode == "grayscale"
+                             else QPrinter.ColorMode.Color)
+        # 驱动可能只允许部分纸型双面。先应用本次纸张和方向，再请求装订边。
+        geometry = apply_sheet_layout(printer, options, faces[0][1])
+        if mode != QPrinter.DuplexMode.DuplexNone:
+            printer.setDuplex(mode)
+    if native_windows and mode != QPrinter.DuplexMode.DuplexNone and printer.duplex() != mode:
+        raise PdfError(tr("打印机未接受所选的双面装订方式。请检查纸张大小和打印机驱动中的双面设置后重试。"))
 
     should_end = False
     if painter is None:
@@ -398,12 +435,13 @@ def render_pages_to_printer(
             if progress_callback:
                 progress_callback(position, len(faces), f"正在发送第 {position + 1} / {len(faces)} 面")
             if position > 0:
-                # 朝向变了才回写打印机：每次回写都是一趟驱动往返，长文档上很费时间。
-                if portrait != applied_portrait:
-                    geometry = apply_sheet_layout(printer, options, portrait)
-                    applied_portrait = portrait
-                if not printer.newPage():
-                    raise PdfError(f"发送第 {position + 1} 页失败，请检查打印机状态。")
+                with _check_windows_print_errors(native_windows):
+                    # 朝向变了才回写打印机：每次回写都是一趟驱动往返，长文档上很费时间。
+                    if portrait != applied_portrait:
+                        geometry = apply_sheet_layout(printer, options, portrait)
+                        applied_portrait = portrait
+                    if not printer.newPage():
+                        raise PdfError(f"发送第 {position + 1} 页失败，请检查打印机状态。")
 
             vp = painter.viewport()
             if vp.width() <= 0 or vp.height() <= 0:
@@ -450,8 +488,10 @@ def render_pages_to_printer(
         check_cancel(cancel_check)
         if progress_callback and should_end:
             progress_callback(0, 0, "正在提交打印队列，请稍候")
-        if should_end and not painter.end():
-            raise PdfError("结束打印任务失败，请检查打印机队列。")
+        if should_end:
+            with _check_windows_print_errors(native_windows):
+                if not painter.end():
+                    raise PdfError("结束打印任务失败，请检查打印机队列。")
         if progress_callback:
             progress_callback(len(faces), len(faces), f"已发送 {len(faces)} / {len(faces)} 面")
     except Exception:
@@ -1690,7 +1730,7 @@ class PrintDialog(QDialog):
         mode = DUPLEX_MODES.get(options.duplex)
         if supported and mode not in supported:
             self.label_duplex_warn.setText(
-                tr('「{p0}」没有报告支持自动双面。仍可发送，但可能只打单面，需要你把纸取出来翻面重放。', p0=f'{options.printer_name}')
+                tr('「{p0}」没有报告支持所选的双面装订方式。请检查打印机驱动中的双面设置，或改选单面打印。', p0=options.printer_name)
             )
             self.label_duplex_warn.setVisible(True)
         else:

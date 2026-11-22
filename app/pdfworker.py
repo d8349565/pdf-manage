@@ -498,7 +498,7 @@ def worker_main(folder):
             if printing:
                 from app import APP_NAME
                 from PyQt6.QtGui import QPageSize
-                from PyQt6.QtPrintSupport import QPrinter
+                from PyQt6.QtPrintSupport import QPrinter, QPrinterInfo
                 from PyQt6.QtWidgets import QApplication
                 from app.printing import PrintOptions, render_pages_to_printer
                 def print_progress(current, total, message):
@@ -508,12 +508,15 @@ def worker_main(folder):
                 check_cancel(cancelled)
                 application = QApplication.instance() or QApplication([])
                 application.setApplicationName(APP_NAME)
-                printer = QPrinter(QPrinter.PrinterMode.HighResolution)
                 if request.get('output_path'):
+                    printer = QPrinter(QPrinter.PrinterMode.HighResolution)
                     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
                     printer.setOutputFileName(request['output_path'])
                 else:
-                    printer.setPrinterName(settings['printer_name'])
+                    info = QPrinterInfo.printerInfo(settings['printer_name'])
+                    if info.isNull():
+                        raise PdfError('没有可用的打印机，请先连接或安装打印机。')
+                    printer = QPrinter(info, QPrinter.PrinterMode.HighResolution)
                     if not printer.isValid() or printer.printerName() != settings['printer_name']:
                         raise PdfError('没有可用的打印机，请先连接或安装打印机。')
                 if settings['paper'] is not None:

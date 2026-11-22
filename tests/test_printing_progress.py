@@ -1,8 +1,9 @@
 from time import monotonic
+import sys
 
 import pymupdf
 import pytest
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, qWarning
 from PyQt6.QtGui import QPainter, QPageSize
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtWidgets import QApplication, QWidget
@@ -63,6 +64,50 @@ def test_print_progress_covers_preparation_rendering_and_queue_submission(qapp, 
         else:
             assert observed[phase][-1][1] == 0 and '提交' in observed[phase][-1][2], '提交队列前已显示 100%'
             assert events[-1][:2] == (1, 1)
+    finally:
+        store.close_all()
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows 打印驱动错误')
+@pytest.mark.parametrize('stage', ['page_change', 'submission'])
+def test_native_driver_warning_prevents_success(qapp, tmp_path, monkeypatch, stage):
+    class NativeFormatPrinter(QPrinter):
+        def outputFormat(self):
+            return QPrinter.OutputFormat.NativeFormat
+
+        def newPage(self):
+            result = super().newPage()
+            if stage == 'page_change':
+                qWarning('ResetDC() called with null hdc.')
+            return result
+
+    class SubmitWarningPainter(QPainter):
+        def end(self):
+            result = super().end()
+            if stage == 'submission':
+                qWarning('QWin32PrintEngine::end: EndDoc failed')
+            return result
+
+    # PDF 后端负责绘制，替身只在换页或提交时发出 Windows 引擎的警告。
+    printer = NativeFormatPrinter()
+    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+    printer.setOutputFileName(str(tmp_path / 'printed.pdf'))
+    monkeypatch.setattr('app.printing.QPainter', SubmitWarningPainter)
+    source = tmp_path / 'generated.pdf'
+    with pymupdf.open() as doc:
+        doc.new_page(width=100, height=140)
+        if stage == 'page_change':
+            doc.new_page(width=140, height=100)
+        doc.save(source)
+    store = PdfStore()
+    events = []
+    try:
+        pages = store.load(str(source))
+        warning = 'ResetDC' if stage == 'page_change' else 'EndDoc failed'
+        with pytest.raises(PdfError, match=warning):
+            render_pages_to_printer(printer, store, pages, PrintOptions(page_indices=list(range(len(pages)))),
+                                    progress_callback=lambda *args: events.append(args))
+        assert events[-1][:2] == ((1, 2) if stage == 'page_change' else (0, 0))
     finally:
         store.close_all()
 
