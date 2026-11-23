@@ -2243,6 +2243,7 @@
   "页面按所选顺序从上到下拼接，各页等比铺满最宽页的宽度。": "Las páginas se apilan de arriba abajo en el orden seleccionado. Cada página se escala proporcionalmente al ancho de la más ancha.",
   "{p0} × {p1} 像素 · {p2} 边长上限 {p3} 像素 · 预计额外峰值 {p4} MiB": "{p0} × {p1} px · Límite de {p2} por lado {p3} px · Pico de memoria adicional estimado {p4} MiB",
   "所选页面尺寸异常，请缩小导出范围后重试。": "Una página seleccionada tiene dimensiones no válidas. Reduzca el intervalo de exportación e inténtelo de nuevo.",
+  "所选页面有未保存的内容修改。请先保存或另存 PDF，再导出长图。": "Las páginas seleccionadas tienen cambios sin guardar. Guarde el PDF o una copia antes de exportar la imagen vertical.",
   "没有要导出的页面。": "No hay páginas para exportar.",
   "宽度或高度超出 {p0} 边长上限。": "La anchura o la altura supera el límite de {p0}.",
   "预计内存超出 {p0} MiB 预算。": "El uso de memoria estimado supera el límite de {p0} MiB.",

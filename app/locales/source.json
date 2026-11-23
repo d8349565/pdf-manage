@@ -420,7 +420,7 @@
     "app/ui.py:6819"
   ],
   "_长图": [
-    "app/imaging.py:227"
+    "app/imaging.py:229"
   ],
   "{error} 原配置已保留，本次使用默认快捷键。": [
     "app/shortcuts.py:164"
@@ -745,7 +745,7 @@
   ],
   "不能覆盖已打开的来源文件，请选择新的文件名。": [
     "app/exportdialogs.py:550",
-    "app/imaging.py:234"
+    "app/imaging.py:236"
   ],
   "不能覆盖来源": [
     "app/ui.py:7163",
@@ -2502,7 +2502,7 @@
     "app/ui.py:6724"
   ],
   "图片输出为空": [
-    "app/imaging.py:187"
+    "app/imaging.py:189"
   ],
   "图片页序，可拖动或使用上移下移按钮": [
     "app/exportdialogs.py:255"
@@ -2940,7 +2940,7 @@
     "app/pagetoolsui.py:164"
   ],
   "宽度或高度超出 {p0} 边长上限。": [
-    "app/imaging.py:105"
+    "app/imaging.py:107"
   ],
   "宽边距 20 毫米": [
     "app/printing.py:79"
@@ -3299,7 +3299,7 @@
     "app/mergeopenui.py:401"
   ],
   "已合成 {p0} / {p1} 页": [
-    "app/imaging.py:255"
+    "app/imaging.py:257"
   ],
   "已启用此版本的右键菜单。": [
     "app/contextmenuui.py:95"
@@ -3919,7 +3919,10 @@
   "所选页面尺寸异常，请缩小导出范围后重试。": [
     "app/imaging.py:49",
     "app/imaging.py:52",
-    "app/imaging.py:94"
+    "app/imaging.py:96"
+  ],
+  "所选页面有未保存的内容修改。请先保存或另存 PDF，再导出长图。": [
+    "app/imaging.py:74"
   ],
   "所选页面（{p0} 页）": [
     "app/exportdialogs.py:470",
@@ -4941,7 +4944,7 @@
     "app/storageui.py:84"
   ],
   "无法核对长图尺寸，请重新导出。": [
-    "app/imaging.py:191"
+    "app/imaging.py:193"
   ],
   "无法比较": [
     "app/pdfcompareui.py:464",
@@ -5649,7 +5652,7 @@
     "app/updateui.py:362"
   ],
   "正在检查长图尺寸…": [
-    "app/imaging.py:236"
+    "app/imaging.py:238"
   ],
   "正在测试连接…": [
     "app/translation/ui.py:797"
@@ -5686,7 +5689,7 @@
     "app/mosaicui.py:208"
   ],
   "正在编码并保存长图…": [
-    "app/imaging.py:257"
+    "app/imaging.py:259"
   ],
   "正在编辑的页面文本框": [
     "app/shortcutcommands.py:textbox.apply",
@@ -5922,7 +5925,7 @@
     "app/compression.py:235"
   ],
   "没有要导出的页面。": [
-    "app/imaging.py:77"
+    "app/imaging.py:79"
   ],
   "没有需要逐项核对的文字修改。": [
     "app/pdfcontentcompareui.py:221"
@@ -6444,7 +6447,7 @@
     "app/translation/ui.py:2262"
   ],
   "第 {p0} 页的渲染尺寸与预检不符，请重新打开文档后再试。": [
-    "app/imaging.py:250"
+    "app/imaging.py:252"
   ],
   "第 {p0} 页纠偏角度": [
     "app/deskewui.py:107"
@@ -7210,7 +7213,7 @@
     "app/ui.py:7132"
   ],
   "请选择 PNG、降低 DPI 或缩小导出范围。": [
-    "app/imaging.py:111"
+    "app/imaging.py:113"
   ],
   "请选择一个 PDF 进行拆分。": [
     "app/ui.py:6402"
@@ -7240,7 +7243,7 @@
     "app/compression.py:155"
   ],
   "请降低 DPI、缩小导出范围或改用逐页导出。": [
-    "app/imaging.py:113"
+    "app/imaging.py:115"
   ],
   "调整效果": [
     "app/shortcutcommands.py:cleanup.adjust"
@@ -7831,10 +7834,10 @@
     "app/imageui.py:161"
   ],
   "长图内存不足，请降低 DPI 或缩小导出范围。": [
-    "app/imaging.py:264"
+    "app/imaging.py:266"
   ],
   "长图已导出": [
-    "app/imaging.py:259"
+    "app/imaging.py:261"
   ],
   "阅读": [
     "app/ui.py:3116",
@@ -8126,7 +8129,7 @@
     "app/updateui.py:368"
   ],
   "预计内存超出 {p0} MiB 预算。": [
-    "app/imaging.py:107"
+    "app/imaging.py:109"
   ],
   "预计输出 {p0} 个文件": [
     "app/filesplitui.py:96"

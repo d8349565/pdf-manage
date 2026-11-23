@@ -70,6 +70,8 @@ def plan_long_image(store, pages, fmt, dpi, cancel=None):
     source_pages = []
     for ref in pages:
         check_cancel(cancel)
+        if ref.edits:
+            raise PdfError(tr('所选页面有未保存的内容修改。请先保存或另存 PDF，再导出长图。'))
         rect = store._source(ref.source_id).sizes[ref.source_page]
         matrix = _image_matrix(ref, dpi / 72)
         source_pages.append((ref, rect, matrix, _image_pixels(rect, matrix)))

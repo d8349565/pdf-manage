@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from app import imaging, ui
 from app.exportdialogs import ImageExportDialog
+from app.workspace import PageEdit
 
 
 @pytest.fixture(scope="session")
@@ -226,6 +227,28 @@ def test_fractional_crop_preserves_source_margins(exporter, tmp_path):
             assert crop_image.getpixel((445, expected.height // 2)) == (255, 255, 255)
             assert crop_image.getpixel((15, expected.height // 2)) != (255, 255, 255)
     assert not warnings
+
+
+def test_long_image_requires_saving_edited_pages(exporter, mixed_pdf, monkeypatch):
+    window, folder, summaries, warnings = exporter
+    assert window.open_files_in_tabs([mixed_pdf])
+    window.ws.edit_page(0, PageEdit("rect", ((.1, .1), (.5, .5))))
+
+    def choose(*args):
+        pytest.fail("Save-page feedback must appear before choosing a folder")
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", choose)
+
+    def configure(dialog):
+        _long_settings(dialog, page_range="1-2")
+        assert "请先保存或另存 PDF" in dialog.feedback.text()
+        assert not dialog.start.isEnabled()
+        dialog.range.setText("2-3")
+        assert dialog.start.isEnabled()
+        dialog.reject()
+
+    _export(window, configure)
+    assert not list(folder.iterdir()) and not summaries and not warnings
 
 
 def test_width_rounding_does_not_add_or_crop_an_edge(qapp, tmp_path):
