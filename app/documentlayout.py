@@ -6,6 +6,26 @@ import re
 import math
 
 
+def _column_extent(items, size):
+    """Vertical extent supported by nearby lines, excluding isolated labels."""
+    runs = []
+    for item in items:  # sorted top to bottom
+        top, bottom = item['bbox'][1::2]
+        if not runs or top > runs[-1][1] + 3 * size:
+            runs.append([top, bottom, 1])
+            row_top = top
+        else:
+            run = runs[-1]
+            run[1] = max(run[1], bottom)
+            if top - row_top > size / 2:
+                row_top = top
+                run[2] += 1
+    supported = [run for run in runs if run[2] >= 3]
+    if supported:
+        return supported[0][0], supported[-1][1]
+    return None
+
+
 def _column_cuts(fragments):
     body=[item for item in fragments if not item.get('heading')]
     if len(body)<6:
@@ -15,6 +35,7 @@ def _column_cuts(fragments):
            for item in body)>len(body)*.5:
         return [], None
     size=median(item['size'] for item in body)
+    body.sort(key=lambda item: item['bbox'][1])
     candidates=[]
     for end in sorted({item['bbox'][2] for item in body}):
         starts=[item['bbox'][0] for item in body if item['bbox'][0]>=end+max(15,size*1.2)]
@@ -25,11 +46,14 @@ def _column_cuts(fragments):
         right=[item for item in body if item['bbox'][0]>=start-1]
         if min(len(left),len(right))<3:
             continue
-        top=max(min(item['bbox'][1] for item in left),min(item['bbox'][1] for item in right))
-        bottom=min(max(item['bbox'][3] for item in left),max(item['bbox'][3] for item in right))
+        left_extent = _column_extent(left, size)
+        right_extent = _column_extent(right, size)
+        if not left_extent or not right_extent:
+            continue
+        top = max(left_extent[0], right_extent[0])
+        bottom = min(left_extent[1], right_extent[1])
         overlap=bottom-top
-        extent=min(max(item['bbox'][3] for item in left)-min(item['bbox'][1] for item in left),
-                   max(item['bbox'][3] for item in right)-min(item['bbox'][1] for item in right))
+        extent = min(left_extent[1] - left_extent[0], right_extent[1] - right_extent[0])
         crossing=sum(min(item['bbox'][3],bottom)-max(item['bbox'][1],top) for item in body
                      if item['bbox'][0]<(end+start)/2<item['bbox'][2] and item['bbox'][1]<bottom and item['bbox'][3]>top)
         if overlap>0 and overlap>=extent*.5 and crossing<=overlap*.25:
@@ -114,6 +138,7 @@ def _paragraphs(items):
             output.append(item)
             continue
         current=dict(item)
+        preceding_line, first_word_width = current.pop('native_wrap', (None, 0))
         current['source_text']=item['text']
         current['last_line_box']=item['bbox']
         current['line_count']=1
@@ -125,6 +150,8 @@ def _paragraphs(items):
             box=previous['last_line_box']; gap=item['bbox'][1]-box[3]
             width=max(1,right-left)
             near_right=right-box[2]<=max(item['size']*1.3,width*.08)
+            if box == preceding_line and right - box[2] < first_word_width:
+                near_right = True
             same_column=previous.get('column',-1)==item.get('column',-1)
             normal_style=max(previous['size'],item['size'])<=min(previous['size'],item['size'])*1.2 and previous['bold']==item['bold'] and abs(item.get('angle',0))<3 and abs(previous.get('angle',0))<3
             normal_gap=-item['size']*.2<=gap<=item['size']*.9
@@ -233,7 +260,9 @@ def layout_from_raw(raw, tables, *, positioned_areas=(), rejoin_ocr=False):
         raw = _join_positioned_ocr(raw, positions)
     fragments = []
     for block in raw.get('blocks', ()):
+        previous_box = None
         for line in block.get('lines', ()):
+            preceding_line, previous_box = previous_box, None
             chars, sizes = [], []
             for span in line.get('spans', ()):
                 style=dict(font=span.get('font'),size=span.get('size',11),
@@ -272,6 +301,13 @@ def layout_from_raw(raw, tables, *, positioned_areas=(), rejoin_ocr=False):
                 fragment=dict(kind='text', text=text, runs=runs, bbox=tuple(bounds), size=size,angle=math.degrees(math.atan2(direction[1],direction[0])),
                               positioned=any(area.contains((bounds.tl+bounds.br)/2) for area in positions),
                               bold=any(span.get('flags', 0) & 16 for span in line.get('spans', ())))
+                if len(parts) == 1:
+                    previous_box = fragment['bbox']
+                    if preceding_line is not None:
+                        # A long opening word can wrap before the usual right margin.
+                        # Only use this evidence for consecutive lines in one PDF block.
+                        word_end = next((c['bbox'][0] for c in part if c['c'].isspace()), bounds.x0)
+                        fragment['native_wrap'] = preceding_line, word_end - bounds.x0
                 if line.get('joined_ocr'):
                     fragment['ocr_glyphs'] = part
                 fragments.append(fragment)

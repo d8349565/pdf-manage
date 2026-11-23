@@ -61,3 +61,27 @@ def test_short_aligned_numbers_keep_row_order():
         y=100+row*30
         values.extend([(f'{row+20}',(50,y,80,y+14),12),(f'{row+70}',(180,y,210,y+14),12)])
     assert layout_text(layout_from_raw(raw_lines(values),[])).splitlines()[0]=='20\t70'
+
+
+def test_summary_fields_above_full_width_prose_keep_the_paragraph_together():
+    fields = [('Bulletin', (40, 30, 95, 40), 10), ('Archive', (380, 30, 435, 40), 10)]
+    for y, labels in [(100, ('Place', 'Shift', 'Editor')), (116, ('North', 'Morning', 'Alex'))]:
+        for x, label in zip((40, 220, 380), labels):
+            fields.append((label, (x, y, x + 55, y + 10), 10))
+    paragraph = [
+        ('The workshop will accept applications until the final Friday in', (40, 220, 453, 232), 12),
+        ('September when the coordinators have prepared the rooms for the next round of', (40, 237, 500, 249), 12),
+        ('training.', (40, 254, 90, 266), 12),
+    ]
+    raw = raw_lines(fields + [('Work schedule', (40, 185, 160, 204), 18)])
+    raw['blocks'].extend(raw_lines(paragraph)['blocks'])
+    raw['blocks'].extend(raw_lines([
+        ('Bring the equipment listed in the appendix.', (40, 310, 500, 322), 12),
+        ('Report', (40, 680, 100, 690), 10), ('Edition', (380, 680, 435, 690), 10),
+    ])['blocks'])
+
+    layout = layout_from_raw(raw, [])
+    text = layout_text(layout)
+    assert text.index('Alex') < text.index('Work schedule')
+    expected = ' '.join(line[0] for line in paragraph)
+    assert expected in [item['text'] for item in layout]
