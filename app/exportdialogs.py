@@ -6,11 +6,11 @@ from app.themes import set_theme_style
 from pathlib import Path
 
 import pymupdf
-from PyQt6.QtCore import QEvent, QSettings, QSignalBlocker, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QSettings, QSignalBlocker, Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QPushButton, QRadioButton, QVBoxLayout, QWidget,
+    QListWidget, QListWidgetItem, QPushButton, QRadioButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES, plan_long_image
@@ -458,55 +458,226 @@ class ImageImportDialog(QDialog):
         return super().eventFilter(watched, event)
 
 
+class _ComboEnabledBridge(QObject):
+    def __init__(self, combo: QComboBox, target: QWidget):
+        super().__init__(target)
+        self._combo = combo
+        self._target = target
+        combo.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched is self._combo and event.type() == QEvent.Type.EnabledChange:
+            self._target.setEnabled(self._combo.isEnabled())
+        return False
+
+
+def _segmented_for_combo(combo: QComboBox, label: str = "") -> QFrame:
+    """Create a one-click segmented control bidirectionally synced to a QComboBox."""
+    track = QFrame()
+    track.setObjectName("segmentedTrack")
+    track.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+    if label:
+        track.setAccessibleName(label)
+        if not combo.accessibleName():
+            combo.setAccessibleName(label)
+    lay = QHBoxLayout(track)
+    lay.setContentsMargins(3, 3, 3, 3)
+    lay.setSpacing(3)
+    group = QButtonGroup(track)
+    group.setExclusive(True)
+    buttons_list: list[QPushButton] = []
+
+    def sync_from_combo(index: int) -> None:
+        if 0 <= index < len(buttons_list):
+            btn = buttons_list[index]
+            group.blockSignals(True)
+            btn.blockSignals(True)
+            btn.setChecked(True)
+            btn.blockSignals(False)
+            group.blockSignals(False)
+
+    for idx in range(combo.count()):
+        text = combo.itemText(idx)
+        btn = QPushButton(text, track)
+        btn.setCheckable(True)
+        btn.setAutoDefault(False)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        if label:
+            btn.setAccessibleName(f"{label} - {text}")
+        group.addButton(btn, idx)
+        lay.addWidget(btn, 1)
+        buttons_list.append(btn)
+
+    group.idClicked.connect(lambda i: combo.setCurrentIndex(i) if combo.currentIndex() != i else None)
+    combo.currentIndexChanged.connect(sync_from_combo)
+    sync_from_combo(combo.currentIndex())
+    track.setEnabled(combo.isEnabled())
+    _ComboEnabledBridge(combo, track)
+    combo.hide()
+    return track
+
+
 class ImageExportDialog(QDialog):
     def __init__(self, store, pages, current, selected, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('PDF 转图片'))
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(460)
         self.store, self.pages = store, pages
         self.count, self.current, self.selected = len(pages), current, list(selected)
         selected_count = len(self.selected)
+
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
+
+        # Card 1: 导出范围 --------------------------------------------------------
+        scope_card = QFrame()
+        scope_card.setObjectName("dialogCard")
+        scope_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        scope_layout = QVBoxLayout(scope_card)
+        scope_layout.setContentsMargins(16, 12, 16, 14)
+        scope_layout.setSpacing(8)
+
+        scope_title = QLabel(tr('导出范围'))
+        scope_title.setObjectName("sectionTitle")
+        scope_title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        scope_layout.addWidget(scope_title)
+
         self.current_mode = QRadioButton(tr('当前页'))
         self.all_mode = QRadioButton(tr('全部页面（{p0} 页）', p0=self.count))
         self.selected_mode = QRadioButton(tr('所选页面（{p0} 页）', p0=selected_count))
         self.range_mode = QRadioButton(tr('按页码范围'))
         self.current_mode.setChecked(True)
         for radio in (self.current_mode, self.all_mode, self.selected_mode, self.range_mode):
-            layout.addWidget(radio)
+            scope_layout.addWidget(radio)
             radio.toggled.connect(self.validate)
         self.all_mode.setVisible(self.count > 1)
         self.selected_mode.setVisible(0 < selected_count < self.count and self.selected != [current])
         self.range_mode.setVisible(self.count > 1)
+
+        self._range_wrap = QWidget()
+        self._range_wrap.setStyleSheet("background: transparent;")
+        self._range_wrap.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        range_row = QHBoxLayout(self._range_wrap)
+        range_row.setContentsMargins(24, 2, 0, 0)
+        range_row.setSpacing(0)
         self.range = QLineEdit()
         self.range.setPlaceholderText(tr('例如 1-3,5'))
         self.range.setAccessibleName(tr('图片导出页码范围'))
         self.range.setVisible(False)
-        self.range_mode.toggled.connect(self.range.setVisible)
+        self._range_wrap.setVisible(False)
+        self.range_mode.toggled.connect(self._toggle_range)
         self.range.textChanged.connect(self.validate)
-        layout.addWidget(self.range)
-        form = QFormLayout()
-        self.mode = QComboBox()
+        range_row.addWidget(self.range)
+        scope_layout.addWidget(self._range_wrap)
+        layout.addWidget(scope_card)
+
+        # Card 2: 输出设置 --------------------------------------------------------
+        output_card = QFrame()
+        output_card.setObjectName("dialogCard")
+        output_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        output_layout = QVBoxLayout(output_card)
+        output_layout.setContentsMargins(16, 12, 16, 14)
+        output_layout.setSpacing(10)
+
+        output_title = QLabel(tr('输出设置'))
+        output_title.setObjectName("sectionTitle")
+        output_title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        output_layout.addWidget(output_title)
+
+        mode_block = QVBoxLayout()
+        mode_block.setSpacing(5)
+        mode_text = tr('导出方式')
+        mode_label = QLabel(mode_text)
+        self.mode = QComboBox(self)
         self.mode.addItem(tr('每页一张'), False)
         self.mode.addItem(tr('合成一张长图'), True)
-        self.format = QComboBox()
+        self._mode_seg = _segmented_for_combo(self.mode, mode_text)
+        mode_block.addWidget(mode_label)
+        mode_block.addWidget(self._mode_seg)
+        self.mode_hint = hint(mode_block, "")
+        output_layout.addLayout(mode_block)
+
+        params_row = QHBoxLayout()
+        params_row.setSpacing(12)
+
+        fmt_col = QVBoxLayout()
+        fmt_col.setSpacing(5)
+        fmt_text = tr('图片格式')
+        fmt_col.addWidget(QLabel(fmt_text))
+        self.format = QComboBox(self)
         self.format.addItem("PNG", "png")
         self.format.addItem("JPEG", "jpeg")
-        self.dpi = QComboBox()
+        self._format_seg = _segmented_for_combo(self.format, fmt_text)
+        fmt_col.addWidget(self._format_seg)
+        params_row.addLayout(fmt_col, 1)
+
+        dpi_col = QVBoxLayout()
+        dpi_col.setSpacing(5)
+        dpi_text = tr('分辨率')
+        dpi_col.addWidget(QLabel(dpi_text))
+        self.dpi = QComboBox(self)
         self.dpi.addItem("150 DPI", 150)
         self.dpi.addItem("300 DPI", 300)
-        form.addRow(tr('导出方式'), self.mode)
-        form.addRow(tr('图片格式'), self.format)
-        form.addRow(tr('分辨率'), self.dpi)
-        layout.addLayout(form)
+        self._dpi_seg = _segmented_for_combo(self.dpi, dpi_text)
+        dpi_col.addWidget(self._dpi_seg)
+        params_row.addLayout(dpi_col, 1)
+        output_layout.addLayout(params_row)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFixedHeight(1)
+        set_theme_style(divider, "background: #E5EEEC; border: none;")
+        output_layout.addWidget(divider)
+
+        self.overwrite = QCheckBox(tr('覆盖同名图片（默认跳过）'))
+        output_layout.addWidget(self.overwrite)
+        layout.addWidget(output_card)
+
         for field in (self.mode, self.format, self.dpi):
             field.currentIndexChanged.connect(self.validate)
-        self.overwrite = QCheckBox(tr('覆盖同名图片（默认跳过）'))
-        layout.addWidget(self.overwrite)
-        self.mode_hint = hint(layout, "")
-        self.feedback = hint(layout, "")
+
+        # Dynamic feedback banner (hidden when empty to avoid dead whitespace) ---
+        self.feedback = QLabel("")
+        self.feedback.setWordWrap(True)
+        self.feedback.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.feedback.setObjectName("exportFeedbackBanner")
+        set_theme_style(self.feedback, """
+            QLabel#exportFeedbackBanner {
+                background: #EEF3F0;
+                color: #526B65;
+                border: 1px solid #D5E2DE;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+            QLabel#exportFeedbackBanner[error="true"] {
+                background: #FEF2F2;
+                color: #B91C1C;
+                border: 1px solid #FECACA;
+            }
+        """)
+        self.feedback.hide()
+        layout.addWidget(self.feedback)
+        layout.addStretch(1)
+
         self.start = buttons(self, layout, tr('导出到文件夹…'))
         self.validate()
+
+    def _fit_height(self):
+        if not self.isVisible():
+            return
+        self.layout().activate()
+        target_h = self.sizeHint().height()
+        if target_h > 0:
+            self.resize(self.width(), target_h)
+
+    def _toggle_range(self, checked):
+        self._range_wrap.setVisible(checked)
+        self.range.setVisible(checked)
+        if checked:
+            self.range.setFocus()
+        QTimer.singleShot(0, self._fit_height)
 
     def indices(self):
         if self.all_mode.isChecked():
@@ -537,8 +708,15 @@ class ImageExportDialog(QDialog):
         except (ValueError, PdfError) as exc:
             message = str(exc)
             valid = False
+        was_visible = self.feedback.isVisible()
         self.feedback.setText(message)
+        self.feedback.setProperty("error", "true" if (message and not valid) else "false")
+        self.feedback.style().unpolish(self.feedback)
+        self.feedback.style().polish(self.feedback)
+        self.feedback.setVisible(bool(message))
         self.start.setEnabled(valid)
+        if self.isVisible() and (was_visible != bool(message) or bool(message)):
+            QTimer.singleShot(0, self._fit_height)
 
     def accept(self):
         if self.start.isEnabled():

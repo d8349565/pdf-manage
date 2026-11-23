@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 import re
+import tempfile
+from time import monotonic
 
-from PyQt6.QtCore import QObject, QPointF, QRect, QRectF, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QIcon, QPainter, QPalette, QPen, QPixmap
-from PyQt6.QtWidgets import QAbstractButton, QApplication, QGraphicsView, QProxyStyle, QStyle
+from PyQt6.QtCore import QDir, QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSettings, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PyQt6.QtWidgets import (
+    QAbstractButton, QApplication, QComboBox, QFrame, QGraphicsView, QMenu, QProxyStyle, QStyle,
+    QStyledItemDelegate, QWidgetAction,
+)
 
 
 @dataclass(frozen=True)
@@ -122,6 +128,48 @@ def ui_color(value: str, *, foreground: bool = False, theme: Theme | None = None
     return colors.get(_COLOR_ROLES.get(value), value)
 
 
+_CHEVRON_SEARCH_PREFIX = "zhixu-ui"
+_CHEVRON_ICON_DIR: Path | None = None
+_CHEVRON_DEFAULT_URL = f"{_CHEVRON_SEARCH_PREFIX}:chevron-526b65.svg"
+_CHEVRON_DISABLED_URL = f"{_CHEVRON_SEARCH_PREFIX}:chevron-94a3b8.svg"
+
+
+def chevron_icon_url(color_hex: str) -> str:
+    """Write a tiny crisp SVG chevron for color_hex and return its Qt search-path URL."""
+    global _CHEVRON_ICON_DIR
+    clean = color_hex.lstrip("#").lower()
+    if not re.fullmatch(r"[0-9a-f]{6}", clean):
+        clean = "526b65"
+    filename = f"chevron-{clean}.svg"
+    if _CHEVRON_ICON_DIR is None:
+        base = Path(tempfile.gettempdir()) / "zhixupdf-ui-icons"
+        base.mkdir(parents=True, exist_ok=True)
+        QDir.addSearchPath(_CHEVRON_SEARCH_PREFIX, str(base))
+        _CHEVRON_ICON_DIR = base
+    target = _CHEVRON_ICON_DIR / filename
+    if not target.exists():
+        svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">'
+            f'<path d="M2.5 4.25L6 7.75L9.5 4.25" fill="none" stroke="#{clean}" '
+            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>\n'
+        )
+        try:
+            target.write_text(svg, encoding="utf-8")
+        except OSError:
+            pass
+    return f"{_CHEVRON_SEARCH_PREFIX}:{filename}"
+
+
+def ensure_chevron_icons() -> tuple[str, str]:
+    """Ensure default and themed combobox chevron SVGs exist on disk."""
+    default_url = chevron_icon_url("#526B65")
+    disabled_url = chevron_icon_url("#94A3B8")
+    for theme in THEMES:
+        chevron_icon_url(theme.colors["muted"])
+        chevron_icon_url(theme.colors["disabled"])
+    return default_url, disabled_url
+
+
 def themed_stylesheet(source: str, theme: Theme | None = None) -> str:
     theme = theme or current_theme()
     if theme.key == "forest":
@@ -133,7 +181,12 @@ def themed_stylesheet(source: str, theme: Theme | None = None) -> str:
         return prop + colon + _COLOR.sub(
             lambda color: ui_color(color.group(), foreground=foreground, theme=theme), value)
 
-    return _DECLARATION.sub(declaration, source)
+    result = _DECLARATION.sub(declaration, source)
+    if _CHEVRON_DEFAULT_URL in result:
+        result = result.replace(_CHEVRON_DEFAULT_URL, chevron_icon_url(theme.colors["muted"]))
+    if _CHEVRON_DISABLED_URL in result:
+        result = result.replace(_CHEVRON_DISABLED_URL, chevron_icon_url(theme.colors["disabled"]))
+    return result
 
 
 def set_theme_style(widget, source: str) -> None:
@@ -156,15 +209,389 @@ def theme_swatch(theme: Theme) -> QIcon:
     return QIcon(pixmap)
 
 
+def _blend_color(base_hex: str, overlay_hex: str, ratio: float) -> QColor:
+    base, over = QColor(base_hex), QColor(overlay_hex)
+    inv = 1.0 - ratio
+    return QColor(
+        round(base.red() * inv + over.red() * ratio),
+        round(base.green() * inv + over.green() * ratio),
+        round(base.blue() * inv + over.blue() * ratio),
+    )
+
+
+def _strip_mnemonic(text: str) -> str:
+    return re.sub(r"&([^&])", r"\1", text).replace("&&", "&")
+
+
+class _ComboItemDelegate(QStyledItemDelegate):
+    """Paint crisp rounded dropdown items with an active checkmark and zero FocusRect clutter."""
+
+    def __init__(self, combo: QComboBox):
+        super().__init__(combo)
+        self._combo = combo
+
+    def sizeHint(self, option, index):
+        base = super().sizeHint(option, index)
+        explicit = index.data(Qt.ItemDataRole.SizeHintRole)
+        if isinstance(explicit, QSize) and explicit.height() > 0:
+            return QSize(base.width() + 24, max(28, explicit.height()))
+        return QSize(base.width() + 28, max(30, base.height() + 10))
+
+    def paint(self, painter, option, index):
+        colors = current_theme().colors
+        is_dark = QColor(colors["surface"]).lightness() < 128
+        hover_fill = _blend_color(colors["surface"], colors["accent"], 0.16 if is_dark else 0.09)
+        enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
+        hovered = enabled and bool(option.state & QStyle.StateFlag.State_MouseOver)
+        selected = enabled and bool(option.state & QStyle.StateFlag.State_Selected)
+        is_current = index.row() == self._combo.currentIndex()
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pill = QRectF(option.rect).adjusted(4.0, 1.0, -4.0, -1.0)
+        if hovered or selected:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(hover_fill)
+            painter.drawRoundedRect(pill, 5.5, 5.5)
+
+        left_x = pill.left() + 10.0
+        deco = index.data(Qt.ItemDataRole.DecorationRole)
+        if isinstance(deco, QIcon) and not deco.isNull():
+            icon_rect = QRect(int(left_x), int(pill.center().y() - 8), 16, 16)
+            deco.paint(painter, icon_rect)
+            left_x += 22.0
+
+        item_font = index.data(Qt.ItemDataRole.FontRole)
+        font = QFont(item_font) if isinstance(item_font, QFont) else QFont(option.font)
+        if font.pixelSize() <= 0 and font.pointSize() <= 0:
+            font.setPixelSize(13)
+        if is_current:
+            font.setWeight(QFont.Weight.DemiBold)
+        painter.setFont(font)
+
+        if not enabled:
+            fg = colors["disabled"]
+        elif is_current:
+            fg = colors["accent"]
+        else:
+            fg = colors["text"]
+        painter.setPen(QColor(fg))
+
+        right_pad = 26.0 if is_current else 10.0
+        text_rect = QRectF(left_x, pill.top(), max(0.0, pill.right() - left_x - right_pad), pill.height())
+        elided = painter.fontMetrics().elidedText(str(index.data() or ""), Qt.TextElideMode.ElideRight, int(text_rect.width()))
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided)
+
+        if is_current:
+            from app.icons import toolbar_icon
+            ck_rect = QRect(int(pill.right() - 22), int(pill.center().y() - 8), 16, 16)
+            toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
+                painter, ck_rect
+            )
+        painter.restore()
+
+
+def _configure_combo_popup(combo: QComboBox) -> None:
+    if combo.property("_comboPopupStyled") or combo.isEditable() or combo.property("_customPopup"):
+        return
+    combo.setProperty("_comboPopupStyled", True)
+    combo.setItemDelegate(_ComboItemDelegate(combo))
+    view = combo.view()
+    if view is None:
+        return
+    view.setMouseTracking(True)
+    container = view.window()
+    if container is not None and container is not combo.window():
+        container.setObjectName("comboPopupFrame")
+        container.setProperty("_ownerCombo", combo)
+        if isinstance(container, QFrame):
+            container.setFrameShape(QFrame.Shape.NoFrame)
+            container.setLineWidth(0)
+        container.setWindowFlags(
+            container.windowFlags()
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint
+        )
+        container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        container.setStyleSheet("QFrame#comboPopupFrame { background: transparent; border: none; }")
+
+
+def _configure_menu_window(menu: QMenu) -> None:
+    if menu.property("_menuWindowStyled") or menu.objectName() == "readingSettingsMenu":
+        return
+    if any(isinstance(a, QWidgetAction) for a in menu.actions()):
+        return
+    menu.setProperty("_menuWindowStyled", True)
+    menu.setWindowFlags(
+        menu.windowFlags()
+        | Qt.WindowType.FramelessWindowHint
+        | Qt.WindowType.NoDropShadowWindowHint
+    )
+    menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+
+class _MenuPainter(QObject):
+    """Render crisp QMenus and manage clean QComboBox popups with double-click protection."""
+
+    def eventFilter(self, watched, event):
+        kind = event.type()
+
+        # Auto-configure non-editable QComboBox popups across the application.
+        if isinstance(watched, QComboBox) and kind in (QEvent.Type.Polish, QEvent.Type.Show, QEvent.Type.MouseButtonPress):
+            _configure_combo_popup(watched)
+            return False
+
+        # Clean 4px gap + accidental double-click guard on QComboBox popup containers.
+        if watched.objectName() == "comboPopupFrame":
+            combo = watched.property("_ownerCombo")
+            if isinstance(combo, QComboBox) and not combo.isEditable():
+                if kind == QEvent.Type.Show:
+                    watched.setProperty("_shownAt", monotonic())
+                    combo_top = combo.mapToGlobal(QPoint(0, 0)).y()
+                    combo_bottom = combo_top + combo.height()
+                    if watched.y() >= combo_bottom - 2:
+                        watched.move(watched.x(), watched.y() + 4)
+                    elif watched.y() + watched.height() <= combo_top + 2:
+                        watched.move(watched.x(), watched.y() - 4)
+                    return False
+                if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
+                    shown_at = watched.property("_shownAt") or 0.0
+                    if monotonic() - shown_at < 0.28:
+                        trigger_rect = QRect(combo.mapToGlobal(QPoint(0, 0)), combo.size())
+                        if trigger_rect.contains(event.globalPosition().toPoint()):
+                            return True
+            return False
+
+        if isinstance(watched, QMenu) and kind == QEvent.Type.Polish:
+            _configure_menu_window(watched)
+            return False
+
+        if kind != QEvent.Type.Paint or not isinstance(watched, QMenu):
+            return False
+        if watched.objectName() == "readingSettingsMenu":
+            return False
+        actions = [a for a in watched.actions() if a.isVisible()]
+        if any(isinstance(a, QWidgetAction) for a in actions):
+            return False
+        # Preserve native Qt scroll arrows when a tall menu overflows the screen.
+        if watched.height() < watched.sizeHint().height() - 4:
+            return False
+
+        colors = current_theme().colors
+        is_dark = QColor(colors["surface"]).lightness() < 128
+        hover_fill = _blend_color(colors["surface"], colors["accent"], 0.16 if is_dark else 0.09)
+        checked_fill = _blend_color(colors["surface"], colors["accent"], 0.22 if is_dark else 0.13)
+        rect = QRectF(watched.rect())
+
+        painter = QPainter(watched)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if not watched.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground):
+            painter.fillRect(watched.rect(), QColor(colors["surface"]))
+        painter.setPen(QPen(QColor(colors["border"]), 1.0))
+        painter.setBrush(QColor(colors["surface"]))
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 7.5, 7.5)
+
+        active = watched.activeAction()
+        has_icons = any(not a.icon().isNull() for a in actions)
+        has_checks = any(a.isCheckable() for a in actions)
+        wide_swatch = watched.objectName() == "themeMenu"
+
+        base_font = QFont(watched.font())
+        base_font.setPixelSize(13)
+        shortcut_font = QFont(base_font)
+        shortcut_font.setPixelSize(12)
+        section_font = QFont(base_font)
+        section_font.setPixelSize(11)
+        section_font.setWeight(QFont.Weight.DemiBold)
+
+        for action in actions:
+            item_rect = QRectF(watched.actionGeometry(action))
+            if item_rect.isEmpty():
+                continue
+            if action.isSeparator():
+                sec_title = _strip_mnemonic(action.text()).strip()
+                if sec_title:
+                    painter.setFont(section_font)
+                    painter.setPen(QColor(colors["muted"]))
+                    sec_rect = item_rect.adjusted(12.0, 0.0, -12.0, 0.0)
+                    painter.drawText(sec_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, sec_title)
+                else:
+                    y = round(item_rect.center().y()) + 0.5
+                    painter.setPen(QPen(QColor(colors["border"]), 1.0))
+                    painter.drawLine(QPointF(item_rect.left() + 8, y), QPointF(item_rect.right() - 8, y))
+                continue
+
+            enabled = action.isEnabled()
+            hovered = enabled and action is active
+            checked = action.isCheckable() and action.isChecked()
+            pill_rect = item_rect.adjusted(1.0, 1.0, -1.0, -1.0)
+            if hovered:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(hover_fill)
+                painter.drawRoundedRect(pill_rect, 5.5, 5.5)
+            elif checked and wide_swatch:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(checked_fill)
+                painter.drawRoundedRect(pill_rect, 5.5, 5.5)
+
+            icon_mode = QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled
+            left_x = item_rect.left() + 12.0
+            if wide_swatch and not action.icon().isNull():
+                icon_rect = QRect(int(left_x), int(item_rect.center().y() - 9), 36, 18)
+                action.icon().paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter, icon_mode)
+                left_x += 44.0
+            elif has_icons:
+                if not action.icon().isNull():
+                    if checked:
+                        badge = QRectF(left_x - 2.0, item_rect.center().y() - 10.0, 20.0, 20.0)
+                        painter.setPen(QPen(QColor(colors["accent"] if enabled else colors["disabled"]), 1.0))
+                        painter.setBrush(checked_fill)
+                        painter.drawRoundedRect(badge, 4.5, 4.5)
+                    icon_rect = QRect(int(left_x), int(item_rect.center().y() - 8), 16, 16)
+                    action.icon().paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter, icon_mode)
+                elif checked:
+                    from app.icons import toolbar_icon
+                    ck_rect = QRect(int(left_x), int(item_rect.center().y() - 8), 16, 16)
+                    toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
+                        painter, ck_rect
+                    )
+                left_x += 25.0
+            elif has_checks:
+                if checked:
+                    from app.icons import toolbar_icon
+                    ck_rect = QRect(int(left_x - 2), int(item_rect.center().y() - 8), 16, 16)
+                    toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
+                        painter, ck_rect
+                    )
+                left_x += 22.0
+
+            raw = action.text()
+            if "\t" in raw:
+                label, inline_shortcut = raw.split("\t", 1)
+            else:
+                label, inline_shortcut = raw, ""
+            label = _strip_mnemonic(label)
+            shortcut = inline_shortcut or action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+
+            right_x = item_rect.right() - 12.0
+            if action.menu() is not None:
+                cx = right_x - 3.0
+                cy = item_rect.center().y()
+                chev_color = colors["text"] if hovered else (colors["muted"] if enabled else colors["disabled"])
+                painter.setPen(QPen(QColor(chev_color), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                painter.drawPolyline(QPolygonF([
+                    QPointF(cx - 2.5, cy - 4.0),
+                    QPointF(cx + 1.5, cy),
+                    QPointF(cx - 2.5, cy + 4.0),
+                ]))
+                right_x -= 16.0
+            elif wide_swatch and checked:
+                from app.icons import toolbar_icon
+                ck_rect = QRect(int(right_x - 16), int(item_rect.center().y() - 8), 16, 16)
+                toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
+                    painter, ck_rect
+                )
+                right_x -= 20.0
+            elif shortcut:
+                painter.setFont(shortcut_font)
+                painter.setPen(QColor(colors["muted"] if enabled else colors["disabled"]))
+                sc_rect = QRectF(left_x, item_rect.top(), max(0.0, right_x - left_x), item_rect.height())
+                painter.drawText(sc_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, shortcut)
+                sc_w = painter.fontMetrics().horizontalAdvance(shortcut)
+                right_x -= sc_w + 14.0
+            elif checked and not action.icon().isNull():
+                from app.icons import toolbar_icon
+                ck_rect = QRect(int(right_x - 16), int(item_rect.center().y() - 8), 16, 16)
+                toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
+                    painter, ck_rect
+                )
+                right_x -= 20.0
+
+            label_font = QFont(base_font)
+            if checked:
+                label_font.setWeight(QFont.Weight.DemiBold)
+            painter.setFont(label_font)
+            text_color = colors["accent"] if (checked and enabled) else (
+                colors["text"] if enabled else colors["disabled"]
+            )
+            painter.setPen(QColor(text_color))
+            avail_w = max(0.0, right_x - left_x)
+            text_rect = QRectF(left_x, item_rect.top(), avail_w, item_rect.height())
+            elided = painter.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, int(avail_w))
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided)
+
+        painter.end()
+        return True
+
+
 class _CheckboxStyle(QProxyStyle):
-    """Share the indicator between native checkboxes and checkable list/table cells."""
+    """Draw crisp themed checkboxes, radio buttons, and combobox popups across all themes."""
+
+    _draws_combo_arrow = True
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_ComboBox_Popup:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
 
     def pixelMetric(self, metric, option=None, widget=None):
-        if metric in (QStyle.PixelMetric.PM_IndicatorWidth, QStyle.PixelMetric.PM_IndicatorHeight):
+        if metric in (
+            QStyle.PixelMetric.PM_IndicatorWidth,
+            QStyle.PixelMetric.PM_IndicatorHeight,
+            QStyle.PixelMetric.PM_ExclusiveIndicatorWidth,
+            QStyle.PixelMetric.PM_ExclusiveIndicatorHeight,
+        ):
             return 16
         return super().pixelMetric(metric, option, widget)
 
     def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PrimitiveElement.PE_IndicatorArrowDown and isinstance(widget, QComboBox):
+            colors = current_theme().colors
+            enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
+            color = colors["muted"] if enabled else colors["disabled"]
+            center = QRectF(option.rect).center()
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(QPen(QColor(color), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            painter.drawPolyline(QPolygonF([
+                QPointF(center.x() - 4.0, center.y() - 1.8),
+                QPointF(center.x(), center.y() + 2.2),
+                QPointF(center.x() + 4.0, center.y() - 1.8),
+            ]))
+            painter.restore()
+            return
+
+        if element == QStyle.PrimitiveElement.PE_IndicatorRadioButton:
+            colors = current_theme().colors
+            state = option.state
+            flags = QStyle.StateFlag
+            enabled = bool(state & flags.State_Enabled)
+            focused = enabled and bool(state & flags.State_HasFocus)
+            checked = bool(state & flags.State_On)
+            hovered = enabled and bool(state & flags.State_MouseOver)
+
+            rect = QRectF(option.rect).adjusted(1.0, 1.0, -1.0, -1.0)
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            if checked:
+                fill = colors["accent"] if enabled else colors["disabled"]
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(fill))
+                painter.drawEllipse(rect)
+                inner = rect.adjusted(4.2, 4.2, -4.2, -4.2)
+                painter.setBrush(QColor(colors["on_accent"] if enabled else colors["surface"]))
+                painter.drawEllipse(inner)
+            else:
+                border = colors["accent"] if (hovered or focused) else (
+                    colors["strong_border"] if enabled else colors["border"]
+                )
+                fill = colors["hover"] if hovered else (colors["surface"] if enabled else colors["subtle"])
+                painter.setPen(QPen(QColor(border), 1.5))
+                painter.setBrush(QColor(fill))
+                painter.drawEllipse(rect)
+            painter.restore()
+            return
+
         if element not in (QStyle.PrimitiveElement.PE_IndicatorCheckBox,
                            QStyle.PrimitiveElement.PE_IndicatorItemViewItemCheck):
             super().drawPrimitive(element, option, painter, widget)
@@ -177,32 +604,36 @@ class _CheckboxStyle(QProxyStyle):
         focused = enabled and bool(state & flags.State_HasFocus)
         partial = bool(state & flags.State_NoChange)
         checked = bool(state & flags.State_On) or partial
-        border = colors["accent" if checked or focused else "muted"]
-        fill = colors["selected" if checked else "surface"]
-        mark = colors["accent"]
-        if not enabled:
-            border, fill, mark = colors["strong_border"], colors["subtle"], colors["disabled"]
-        elif state & flags.State_Sunken:
-            border, fill = colors["accent_pressed"], colors["selected"]
-        elif state & flags.State_MouseOver:
-            border, fill = colors["accent"], colors["hover"]
+        hovered = enabled and bool(state & flags.State_MouseOver)
 
-        outline = 2 if focused else 1
+        if not enabled:
+            border, fill, mark = colors["border"], colors["subtle"], colors["disabled"]
+        elif checked:
+            fill = colors["accent_pressed"] if (state & flags.State_Sunken) else (
+                colors["accent_hover"] if hovered else colors["accent"]
+            )
+            border, mark = fill, colors["on_accent"]
+        else:
+            border = colors["accent"] if (hovered or focused) else colors["strong_border"]
+            fill = colors["hover"] if hovered else colors["surface"]
+            mark = colors["on_accent"]
+
+        outline = 1.5 if (focused and not checked) else 1.25
         inset = outline / 2
         rect = QRectF(option.rect).adjusted(inset, inset, -inset, -inset)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(QPen(QColor(border), outline))
         painter.setBrush(QColor(fill))
-        painter.drawRoundedRect(rect, 3.5, 3.5)
+        painter.drawRoundedRect(rect, 4.0, 4.0)
         if partial:
-            painter.setPen(QPen(QColor(mark), 1.5))
+            painter.setPen(QPen(QColor(mark), 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             offset = QPointF(3.5, 0)
             painter.drawLine(rect.center() - offset, rect.center() + offset)
         elif checked:
             from app.icons import toolbar_icon
 
-            mark_rect = QRect(0, 0, 22, 22)
+            mark_rect = QRect(0, 0, 18, 18)
             mark_rect.moveCenter(option.rect.center())
             toolbar_icon("check", mark, mark_rect.width(), themed=False).paint(painter, mark_rect)
         painter.restore()
@@ -215,11 +646,17 @@ class ThemeManager(QObject):
         if key not in _THEMES_BY_KEY:
             return False
         app = QApplication.instance()
+        ensure_chevron_icons()
         if not isinstance(app.style(), _CheckboxStyle):
             base = app.style().objectName()
             style = _CheckboxStyle(base)
             style.setObjectName(base)
             app.setStyle(style)
+        app.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, False)
+        if not getattr(app, "_menu_painter", None):
+            menu_painter = _MenuPainter(app)
+            app.installEventFilter(menu_painter)
+            app._menu_painter = menu_painter
         app.setProperty("uiTheme", key)
         colors = _THEMES_BY_KEY[key].colors
         palette = QPalette()
@@ -249,6 +686,10 @@ class ThemeManager(QObject):
                 widget.resetCachedContent()
             if isinstance(widget, QAbstractButton):
                 refresh_theme_icon(widget)
+            if isinstance(widget, QComboBox):
+                _configure_combo_popup(widget)
+            if isinstance(widget, QMenu):
+                _configure_menu_window(widget)
             for action in widget.findChildren(QAction, options=Qt.FindChildOption.FindDirectChildrenOnly):
                 if action not in seen_actions:
                     refresh_theme_icon(action)

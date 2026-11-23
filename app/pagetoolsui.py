@@ -4,7 +4,7 @@ from app.themes import ui_color
 
 from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen, QPolygonF
-from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+from PyQt6.QtWidgets import (QAbstractSpinBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
                              QFormLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
                              QStyle, QStyleOptionComboBox, QStyleOptionSpinBox,
                              QVBoxLayout, QWidget)
@@ -41,6 +41,10 @@ class ClearComboBox(QComboBox):
 
     def paintEvent(self, event):
         super().paintEvent(event)
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None and getattr(app.style(), "_draws_combo_arrow", False):
+            return
         option = QStyleOptionComboBox()
         self.initStyleOption(option)
         area = self.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
@@ -48,22 +52,38 @@ class ClearComboBox(QComboBox):
         center = area.center()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor(ui_color('#3B6654' if self.isEnabled() else '#9BAAA1')), 1.8))
+        painter.setPen(QPen(QColor(ui_color('#3B6654' if self.isEnabled() else '#9BAAA1')), 1.6))
         painter.drawPolyline(QPolygonF([QPointF(center.x() - 4, center.y() - 2),
             QPointF(center.x(), center.y() + 2), QPointF(center.x() + 4, center.y() - 2)]))
 
 
 def _draw_spin_controls(widget):
+    if widget.buttonSymbols() == QAbstractSpinBox.ButtonSymbols.NoButtons:
+        return
     option = QStyleOptionSpinBox()
     widget.initStyleOption(option)
+    up_area = widget.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, option, QStyle.SubControl.SC_SpinBoxUp, widget)
+    down_area = widget.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, option, QStyle.SubControl.SC_SpinBoxDown, widget)
+    if up_area.isEmpty() and down_area.isEmpty():
+        return
     painter = QPainter(widget)
-    painter.setPen(QPen(QColor(ui_color('#3B6654' if widget.isEnabled() else '#9BAAA1')), 1.4))
-    for control, plus in ((QStyle.SubControl.SC_SpinBoxUp, True), (QStyle.SubControl.SC_SpinBoxDown, False)):
-        area = widget.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, option, control, widget)
-        center = area.center()
-        painter.drawLine(center.x() - 3, center.y(), center.x() + 3, center.y())
-        if plus:
-            painter.drawLine(center.x(), center.y() - 3, center.x(), center.y() + 3)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    # Subtle vertical hairline separating the numeric value from the up/down chevrons
+    sep_x = min(up_area.left(), down_area.left()) - 0.5
+    painter.setPen(QPen(QColor(ui_color('#E5EEEC')), 1.0))
+    painter.drawLine(QPointF(sep_x, 5.0), QPointF(sep_x, widget.height() - 5.0))
+    color = ui_color('#526B65' if widget.isEnabled() else '#9BAAA1')
+    painter.setPen(QPen(QColor(color), 1.35, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    for area, up in ((up_area, True), (down_area, False)):
+        if area.isEmpty():
+            continue
+        cx, cy = area.center().x() + 0.5, area.center().y() + (0.8 if up else -0.4)
+        dy = -1.6 if up else 1.6
+        painter.drawPolyline(QPolygonF([
+            QPointF(cx - 3.0, cy - dy),
+            QPointF(cx, cy + dy),
+            QPointF(cx + 3.0, cy - dy),
+        ]))
 
 
 class ClearSpinBox(QSpinBox):

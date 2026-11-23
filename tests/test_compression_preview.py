@@ -283,3 +283,59 @@ def test_custom_compression_uses_and_remembers_the_numbers_typed(qapp, tmp_path,
         window.ws.reset()
         window.store.close_all()
         window.close()
+
+
+def test_high_zoom_renders_viewport_detail_tile_beyond_whole_page_cap(qapp, tmp_path):
+    path = tmp_path / 'wide-highres.pdf'
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=720, height=432)
+        page.insert_text((36, 60), 'Sharp 400% Detail Check 12345', fontsize=10)
+        doc.save(path)
+    store = PdfStore()
+    refs = store.load(str(path))
+    view = CompressionPreview()
+    view.resize(960, 600)
+    view.show()
+    view.set_documents(store, refs, refs)
+    view.set_zoom(400)
+    qapp.processEvents()
+    try:
+        wait_for(qapp, lambda: bool(view.images) and bool(view.detail_tiles) and not view.busy)
+        (tile_uv, tile_pair) = next(iter(view.detail_tiles.values()))
+        u0, v0, u1, v1 = tile_uv
+        assert 0.0 <= u0 < u1 < 1.0 and 0.0 <= v0 < v1 < 1.0
+        assert tile_pair[0].size() == tile_pair[1].size()
+        effective_width = tile_pair[0].width() / (u1 - u0)
+        assert effective_width > 3000
+    finally:
+        view.shutdown()
+        wait_for(qapp, lambda: not view.busy)
+        view.close()
+        view.deleteLater()
+        qapp.processEvents()
+        store.close_all()
+
+
+@pytest.mark.parametrize('rotation', [0, 90, 180, 270])
+def test_clipped_preview_respects_page_rotation(tmp_path, rotation):
+    from dataclasses import replace
+    from app.pdfworker import render_preview
+
+    path = tmp_path / f'rot-{rotation}.pdf'
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=400, height=600)
+        page.draw_rect(pymupdf.Rect(0, 0, 200, 300), fill=(1, 0, 0), color=None)
+        page.draw_rect(pymupdf.Rect(200, 0, 400, 300), fill=(0, 1, 0), color=None)
+        page.draw_rect(pymupdf.Rect(0, 300, 200, 600), fill=(0, 0, 1), color=None)
+        page.draw_rect(pymupdf.Rect(200, 300, 400, 600), fill=(1, 1, 0), color=None)
+        doc.save(path)
+    store = PdfStore()
+    try:
+        ref = replace(store.load(str(path))[0], rotation=rotation)
+        full = render_preview([ref], [''], None, width=600)[0]
+        tile = render_preview([ref], [''], None, clip=(0.5, 0.0, 1.0, 0.5), scale=3.0)[0]
+        full_center = full.pixelColor(int(full.width() * 0.75), int(full.height() * 0.25))
+        tile_center = tile.pixelColor(tile.width() // 2, tile.height() // 2)
+        assert full_center == tile_center
+    finally:
+        store.close_all()
