@@ -107,6 +107,38 @@ def test_closing_in_fullscreen_does_not_replace_the_saved_sidebar_choice(windows
     assert restored.immersive.pin.isChecked() and restored.act_pages.isChecked()
 
 
+def test_outline_width_follows_user_across_restart_and_auto_hide(windows, qapp, tmp_path):
+    source = tmp_path / 'outline.pdf'
+    with pymupdf.open() as document:
+        document.new_page()
+        document.set_toc([[1, 'A long chapter title', 1]])
+        document.save(source)
+    window = windows()
+    assert window.open_files_in_tabs([str(source)])
+    window.open_outline()
+    window.immersive.pin.click()
+    qapp.processEvents()
+    window.reader_split.moveSplitter(390, 1)
+    assert window.left_panel.width() == 390
+    window.act_pages.setChecked(False)
+    window.close()
+    qapp.processEvents()
+    restored = windows()
+    assert restored.open_files_in_tabs([str(source)])
+    restored.open_outline()
+    qapp.processEvents()
+    assert restored.left_panel.width() == 390
+    restored.act_tools.setChecked(True)
+    qapp.processEvents()
+    assert restored.reader_split.sizes()[2] >= restored.tools_panel.minimumWidth()
+    restored.act_tools.setChecked(False)
+    restored.immersive.pin.click()
+    restored.immersive.reveal()
+    assert restored.immersive.overlay.width() == 390
+    restored.reset_ui_preferences()
+    assert restored.immersive.overlay.width() == 300
+
+
 def test_restoring_interface_layout_resets_the_sidebar_preference(windows, qapp):
     window = windows()
     window.immersive.pin.click()

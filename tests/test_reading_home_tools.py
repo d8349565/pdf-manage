@@ -249,6 +249,31 @@ def test_cleared_history_stays_clear_after_window_close(reader, app):
     assert ReadingHistory(settings).entries == []
 
 
+@pytest.mark.parametrize(('tool', 'zoom'), [('select', 4), ('hand', 5)])
+def test_middle_drag_keeps_the_grabbed_point_under_the_pointer(reader, app, tool, zoom):
+    view = reader.preview_view
+    reader.set_reading_tool(tool)
+    reader._set_zoom(zoom)
+    app.processEvents()
+    canvas = view.viewport()
+    horizontal, vertical = view.horizontalScrollBar(), view.verticalScrollBar()
+    horizontal.setValue(horizontal.maximum() // 2)
+    vertical.setValue(vertical.maximum() // 2)
+    anchor = canvas.rect().center()
+    grabbed = view.mapToScene(anchor)
+    QTest.mousePress(canvas, Qt.MouseButton.MiddleButton, pos=anchor)
+    for offset in (QPoint(2, 1), QPoint(70, 90), QPoint(-15, 30)):
+        position = anchor + offset
+        QTest.mouseMove(canvas, position)
+        assert view.mapFromScene(grabbed) == position
+    QTest.qWait(60)
+    assert view.mapFromScene(grabbed) == position
+    QTest.mouseRelease(canvas, Qt.MouseButton.MiddleButton, pos=position)
+    QTest.mouseMove(canvas, anchor)
+    assert view.mapFromScene(grabbed) == position and not reader.reader_interaction.panning
+    assert reader.text_selection.start is None and not reader.ws.dirty
+
+
 def test_home_with_fifty_records_does_not_load_or_render_documents(app, tmp_path, monkeypatch):
     history = ReadingHistory(ui.preferences(ui.QSettings))
     for number in range(50):

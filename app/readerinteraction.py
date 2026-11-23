@@ -15,6 +15,7 @@ class ReaderInteraction(QObject):
         self.host, self.view = host, host.preview_view
         self.space = False
         self.origin = None
+        self._middle_drag = False
         self.previous_cursor = None
         self.hand_press = None
         self.link_press = self.link_jump = None
@@ -29,6 +30,7 @@ class ReaderInteraction(QObject):
         return self.space or self.origin is not None
 
     def _end_pan(self):
+        self._middle_drag = False
         if self.origin is not None:
             self.origin = None
             self.view.viewport().update()
@@ -52,7 +54,8 @@ class ReaderInteraction(QObject):
     def busy_gesture(self, *, buttons=True):
         tools = getattr(self.host, 'annotation_tools', None)
         images = getattr(self.host, 'image_tools', None)
-        return (bool(buttons and QApplication.mouseButtons()) or self.host.text_selection.start is not None
+        return (self._middle_drag or bool(buttons and QApplication.mouseButtons())
+                or self.host.text_selection.start is not None
                 or bool(tools and (tools.stroke or tools._move_state or tools._move_committing))
                 or bool(images and images.drag))
 
@@ -243,9 +246,15 @@ class ReaderInteraction(QObject):
         kind = event.type()
         if kind == QEvent.Type.WindowDeactivate and watched is self.host:
             self.reset()
+        if (self._middle_drag and kind == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.MiddleButton):
+            self.view.pan_by(event.globalPosition().toPoint() - self.origin)
+            self.reset()
+            return watched is self.view.viewport()
         if watched not in (self.view, self.view.viewport()):
             return False
-        if kind in (QEvent.Type.Hide, QEvent.Type.FocusOut):
+        if (kind in (QEvent.Type.Hide, QEvent.Type.FocusOut)
+                or kind == QEvent.Type.UngrabMouse and self._middle_drag):
             self.reset()
             return False
         if not self.view.isVisible() or not self.host.ws.pages or getattr(self.host, '_task_dialog', None):
@@ -279,14 +288,27 @@ class ReaderInteraction(QObject):
             return True
         if watched is not self.view.viewport():
             return False
-        if (kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
-                and (self.space or event.modifiers() & Qt.KeyboardModifier.AltModifier
-                     or (getattr(self.host, '_reading_tool', 'select') == 'hand' and self.links_enabled()))
-                and not self.busy_gesture(buttons=False)):
+        if self._middle_drag:
+            if kind == QEvent.Type.MouseMove and not event.buttons() & Qt.MouseButton.MiddleButton:
+                self.reset()
+                return False
+            if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+                        QEvent.Type.MouseButtonDblClick, QEvent.Type.Wheel):
+                return True
+        middle_press = (kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
+                        and event.button() == Qt.MouseButton.MiddleButton
+                        and event.buttons() == Qt.MouseButton.MiddleButton and not self.panning)
+        left_pan = (kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
+                    and (self.space or event.modifiers() & Qt.KeyboardModifier.AltModifier
+                         or (getattr(self.host, '_reading_tool', 'select') == 'hand' and self.links_enabled())))
+        if (middle_press or left_pan) and not self.busy_gesture(buttons=False):
+            self._middle_drag = middle_press
             if self.previous_cursor is None:
                 self.previous_cursor = self.view.viewport().cursor()
             self.origin = event.globalPosition().toPoint()
-            if not self.space and not event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            if middle_press:
+                self.link_press = self.link_jump = None
+            elif not self.space and not event.modifiers() & Qt.KeyboardModifier.AltModifier:
                 self.hand_press = dict(position=event.position().toPoint(), dragged=False)
             self.view.setFocus(Qt.FocusReason.MouseFocusReason)
             self.view.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)

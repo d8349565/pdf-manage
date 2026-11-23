@@ -24,7 +24,11 @@ class ImmersiveReading(QObject):
         self._page_dragging = False
         self._document = None
         self._saved_chrome = []
-        self._split_sizes = host.reader_split.sizes()
+        try:
+            self._preferred_width = max(0, host._window_settings.value('reading/sidebarWidth', 0, type=int))
+        except (TypeError, ValueError):
+            self._preferred_width = 0
+        host.reader_split.splitterMoved.connect(self._remember_width)
         self.overlay = QWidget(self.surface)
         self.overlay.hide()
         self.edge = QToolButton(self.surface)
@@ -123,6 +127,18 @@ class ImmersiveReading(QObject):
         self.host._window_settings.setValue('reading/sidebarAutoHide', enabled)
         self.host._window_settings.sync()
 
+    def _remember_width(self, _position, index):
+        if index == 1 and self.panel.isVisible() and self.host.reader_split.widget(0) is self.panel:
+            width = self.host.reader_split.sizes()[0]
+            if width > 0:
+                self._preferred_width = width
+                self.host._window_settings.setValue('reading/sidebarWidth', width)
+
+    def reset_width(self):
+        self.host._window_settings.remove('reading/sidebarWidth')
+        self._preferred_width = 0
+        self._position()
+
     def _change_auto(self, enabled):
         self.animation.stop()
         self.reveal_timer.stop()
@@ -136,15 +152,14 @@ class ImmersiveReading(QObject):
         self.pin.setToolTip(tr('取消固定，回到正文后自动收起；下次打开沿用选择') if not enabled
                             else tr('固定侧栏，阅读时保持展开；下次打开沿用选择'))
         if enabled:
-            self._split_sizes = self.host.reader_split.sizes()
             self.panel.setParent(self.overlay)
             self._position()
         else:
-            self.host.reader_split.insertWidget(0, self.panel)
-            sizes = self._split_sizes
-            if not sizes or sizes[0] < 40:
-                sizes = [self.overlay.width(), max(200, self.host.reader_split.width() - self.overlay.width())]
-            self.host.reader_split.setSizes(sizes)
+            split = self.host.reader_split
+            sizes = split.sizes()
+            sizes[0] = max(1, sizes[0])  # Keep the reading area open during startup layout.
+            split.insertWidget(0, self.panel)
+            split.setSizes([self._preferred_width or self.overlay.width(), *sizes])
             self.host.act_pages.setChecked(True)
         self.sync()
         self._sync_pages_action()
@@ -228,7 +243,7 @@ class ImmersiveReading(QObject):
         self.exit_button.move(max(0, self.surface.width() - self.exit_button.width() - 12), 8)
         self.exit_button.raise_()
         if self.auto_action.isChecked():
-            width = min(300, max(180, self.surface.width() - 48))
+            width = min(self._preferred_width or 300, max(180, self.surface.width() - 48))
             changed = self.overlay.width() != width or self.overlay.height() != self.surface.height()
             running = self.animation.state() == QPropertyAnimation.State.Running
             progress = 1 + self.panel.x() / max(1, self.overlay.width())

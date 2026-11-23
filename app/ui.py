@@ -2932,6 +2932,7 @@ class MainWindow(QMainWindow):
 
     def reset_ui_preferences(self):
         self.immersive.auto_action.setChecked(True)
+        self.immersive.reset_width()
         self._window_settings.remove('reading/sidebarAutoHide')
         self.act_pages.setChecked(False)
         self.act_tools.setChecked(False)
@@ -4001,7 +4002,7 @@ class MainWindow(QMainWindow):
         self.tools_panel.setMaximumWidth(320)
         QVBoxLayout(self.tools_panel).setContentsMargins(0, 0, 0, 0)
         split.addWidget(self.tools_panel)
-        split.setStretchFactor(0, 1)
+        split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 4)
         split.setStretchFactor(2, 0)
         split.setSizes([170, 760, 280])
@@ -7465,6 +7466,7 @@ class MainWindow(QMainWindow):
             self._history_timer.stop()
             self._clipboard_cleanup_timer.stop()
             self._closing = True
+            self.reader_interaction.reset()
             QApplication.instance().removeEventFilter(self)
             self._preparation_timer.stop()
             if self.arrange_preview is not None:
