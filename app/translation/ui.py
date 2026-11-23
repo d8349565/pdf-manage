@@ -100,35 +100,56 @@ from app.translation.extractor import (
 PANEL_STYLE = """
 QFrame#translationSidebar {
     background: #FFFFFF;
-    border: 1px solid #E2EEEC;
-    border-radius: 12px;
+    border: 1px solid #DFE8E3;
+    border-radius: 10px;
 }
 QFrame#translationSidebar QLabel {
-    color: #29413D;
+    color: #1E293B;
     background: transparent;
 }
 QFrame#translationSidebar QLabel#tpTitle {
     font-size: 14px;
     font-weight: 600;
-    color: #134E4A;
+    color: #1E293B;
 }
 QFrame#translationSidebar QLabel#tpHint {
-    color: #4D6B67;
+    color: #526B65;
     font-size: 12px;
 }
+QFrame#translationSidebar QLabel#tpEmptyTitle {
+    color: #1E293B;
+    font-size: 13px;
+    font-weight: 600;
+}
+QFrame#translationSidebar QToolButton#tpEmptyIcon {
+    background: #EEF3F0;
+    border: none;
+    border-radius: 22px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+}
+QFrame#translationSidebar QLabel#tpEmptyTag {
+    background: #F7FAF9;
+    border: 1px solid #E5EEEC;
+    border-radius: 5px;
+    color: #526B65;
+    font-size: 11px;
+    padding: 3px 7px;
+}
 QFrame#translationSidebar QToolButton#tpEnginePill {
-    min-height: 22px;
-    padding: 1px 6px;
+    min-height: 24px;
+    padding: 2px 8px;
     border-radius: 6px;
-    background: transparent;
-    border: 1px solid transparent;
-    color: #4D6B67;
+    background: #F7FAF9;
+    border: 1px solid #E5EEEC;
+    color: #526B65;
     font-size: 11px;
 }
 QFrame#translationSidebar QToolButton#tpEnginePill:hover {
-    background: #F0FDFA;
+    background: #EAF4EF;
     border-color: #99B2AC;
-    color: #134E4A;
+    color: #1E293B;
 }
 QFrame#translationSidebar QToolButton[iconAction="true"] {
     min-width: 26px;
@@ -139,72 +160,139 @@ QFrame#translationSidebar QToolButton[iconAction="true"] {
     background: transparent;
 }
 QFrame#translationSidebar QToolButton[iconAction="true"]:hover {
-    background: #F0FDFA;
-    border-color: #D7E8E4;
+    background: #F0F6F3;
+    border-color: #E2EEEC;
 }
 QFrame#translationSidebar QToolButton[iconAction="true"]:checked {
     background: #E1EEE7;
-    border-color: #D7E8E4;
+    border-color: #D5E2DE;
 }
 QFrame#translationSidebar QToolButton:focus {
-    border: 1px solid #0F766E;
+    border: 1.5px solid #0F766E;
 }
 QFrame#translationSidebar QToolButton[iconAction="true"]::menu-indicator {
     image: none;
 }
 QFrame#translationSidebar QPushButton {
-    min-height: 28px;
+    min-height: 22px;
     padding: 4px 10px;
-    border-radius: 8px;
+    border-radius: 6px;
     font-size: 13px;
 }
-QFrame#translationSidebar QPushButton[translationAction="true"] { padding: 3px 5px; }
-QFrame#translationSidebar QPushButton[translationAction="true"]:checked {
-    background: #D9EEEA; color: #134E4A; border: 1px solid #0F766E;
+QFrame#translationSidebar QPushButton[translationAction="true"] {
+    min-height: 22px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"] {
+    background: #F7FAF9;
+    border: 1px solid #E5EEEC;
+    color: #1E293B;
+    font-size: 12px;
+    min-height: 20px;
+    padding: 4px 8px;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"]:hover {
+    background: #EAF4EF;
+    border-color: #99B2AC;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"]:disabled {
+    background: #F7FAF9;
+    border-color: #E5EEEC;
+    color: #84958F;
+    font-weight: 400;
+}
+QFrame#translationSidebar QPushButton[primary="true"] {
+    background: #0F766E;
+    color: #FFFFFF;
+    border: 1px solid #0F766E;
+    font-weight: 600;
+    font-size: 13px;
+}
+QFrame#translationSidebar QPushButton[primary="true"]:hover {
+    background: #0D9488;
+    border-color: #0D9488;
+}
+QFrame#translationSidebar QPushButton[primary="true"]:pressed {
+    background: #115E59;
+    border-color: #115E59;
+}
+QFrame#translationSidebar QPushButton[primary="true"]:disabled {
+    background: #E8F0ED;
+    border-color: #D5E2DE;
+    color: #84958F;
+    font-weight: 500;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"][primary="true"] {
+    background: #EAF4EF;
+    border: 1px solid #99B2AC;
+    color: #134E4A;
+    font-weight: 600;
+    font-size: 12px;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"][primary="true"]:hover {
+    background: #E4F2ED;
+    border-color: #0F766E;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"][primary="true"]:disabled {
+    background: #F7FAF9;
+    border-color: #E5EEEC;
+    color: #84958F;
+    font-weight: 400;
+}
+QFrame#translationSidebar QPushButton[secondaryTool="true"]:checked {
+    background: #E4F2ED;
+    color: #0F766E;
+    border: 1px solid #0F766E;
+    font-weight: 600;
+    font-size: 12px;
 }
 QFrame#translationSidebar QComboBox {
-    min-height: 28px;
-    padding: 2px 8px;
-    border-radius: 8px;
+    min-height: 22px;
+    padding: 3px 24px 3px 9px;
+    border-radius: 6px;
     font-size: 12px;
 }
 QFrame#tpViewModes {
-    background: #F7FAF9;
-    border: 1px solid #D7E8E4;
+    background: #EEF3F0;
+    border: none;
     border-radius: 7px;
 }
 QFrame#tpViewModes QPushButton {
     min-height: 24px;
-    padding: 0 5px;
+    padding: 2px 8px;
     border: 1px solid transparent;
     border-radius: 5px;
     background: transparent;
-    color: #29413D;
+    color: #526B65;
     font-size: 12px;
 }
 QFrame#tpViewModes QPushButton:hover {
-    background: #F0FDFA;
+    color: #1E293B;
+    background: #E6F1EB;
 }
 QFrame#tpViewModes QPushButton:checked {
-    background: #D9EEEA;
-    border-color: #99B2AC;
-    color: #134E4A;
+    background: #FFFFFF;
+    border: 1px solid #D5E2DE;
+    color: #1E293B;
+    font-weight: 600;
 }
 QFrame#tpViewModes QPushButton:focus {
     border-color: #0F766E;
 }
-QScrollArea#tpScroll, QWidget#tpViewport, QWidget#tpContent {
+QScrollArea#tpScroll, QWidget#tpViewport, QWidget#tpContent, QWidget#tpEmptyBox {
     background: transparent;
     border: none;
 }
 QFrame#tpDivider {
-    background: #D7E8E4;
+    background: #E5EEEC;
     border: none;
 }
 QFrame#tpNoticeBox {
     background: #FFFBEB;
     border: 1px solid #FDE68A;
-    border-radius: 9px;
+    border-radius: 8px;
 }
 QFrame#tpNoticeBox QLabel {
     color: #92400E;
@@ -212,31 +300,38 @@ QFrame#tpNoticeBox QLabel {
 }
 QFrame#tpSegmentCard {
     background: transparent;
-    border: none;
-    border-bottom: 1px solid #E2EEEC;
+    border: 1px solid transparent;
+    border-bottom: 1px solid #E5EEEC;
+    border-radius: 6px;
 }
 QFrame#tpSegmentCard:hover {
     background: #F7FAF9;
+    border-color: #E5EEEC;
 }
 QFrame#tpSegmentCard[linked="true"] {
-    background: #E1EEE7;
-    border-bottom-color: #99B2AC;
+    background: #E4F2ED;
+    border-color: #99B2AC;
 }
 QFrame#tpSegmentCard QLabel#tpSegMeta {
-    color: #4D6B67;
+    color: #526B65;
     font-size: 11px;
     font-weight: 600;
 }
 QFrame#tpSegmentCard QLabel#tpSegSrc {
-    color: #4D6B67;
+    color: #526B65;
     font-size: 12px;
 }
 QFrame#tpSegmentCard QLabel#tpSegDst {
-    color: #29413D;
+    color: #1E293B;
     font-size: 13px;
 }
 QFrame#tpSegmentCard QLabel#tpSegDst[heading="true"] {
     font-weight: 600;
+}
+QFrame#tpFooterWrap {
+    background: transparent;
+    border: none;
+    border-top: 1px solid #E5EEEC;
 }
 QProgressBar#tpProgress {
     border: none;
@@ -1727,10 +1822,10 @@ class _SegmentCard(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 7, 2, 7)
+        layout.setContentsMargins(8, 9, 4, 9)
         layout.setSpacing(6)
         text = QVBoxLayout()
-        text.setSpacing(3)
+        text.setSpacing(4)
         layout.addLayout(text, 1)
         if pinned or label:
             title = QLabel(tr('已固定 · {p0}', p0=label) if pinned else label, self)
@@ -1886,12 +1981,14 @@ class TranslationPanel(QFrame):
         self._page_translated = False
         self._primary_label = tr('翻译当前页')
         self._error_banner = None
+        self._empty_tags_layout: QBoxLayout | None = None
+        self._empty_tags: list[QLabel] = []
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 8)
-        root.setSpacing(6)
+        root.setContentsMargins(12, 12, 12, 10)
+        root.setSpacing(8)
 
-        # Header row
+        # Row 1: Calm Header (Title + Provider Pill + Close) ---------------------
         head = QHBoxLayout()
         head.setSpacing(6)
         title = QLabel(tr('翻译'), self)
@@ -1899,18 +1996,6 @@ class TranslationPanel(QFrame):
         title.setObjectName('tpTitle')
         head.addWidget(title)
         head.addStretch()
-
-        self.lang_combo = ClearComboBox(self)
-        self.lang_combo.setAccessibleName(tr('翻译目标语言'))
-        self.lang_combo.setToolTip(tr('翻译目标语言'))
-        self.lang_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.lang_combo.setMinimumContentsLength(4)
-        for code, label, _ in TARGET_LANGUAGES:
-            self.lang_combo.addItem(tr(label), code)
-        self.lang_combo.currentIndexChanged.connect(
-            lambda: self.target_language_changed.emit(self.lang_combo.currentData())
-        )
-        head.insertWidget(1, self.lang_combo, 1)
 
         self.engine_pill = QToolButton(self)
         self.engine_pill.setObjectName('tpEnginePill')
@@ -1924,54 +2009,79 @@ class TranslationPanel(QFrame):
         head.addWidget(self.close_btn)
         root.addLayout(head)
 
-        action_row = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-        self._actions = action_row
-        action_row.setSpacing(4)
+        # Row 2: Target Language + Single Primary CTA ----------------------------
+        primary_row = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        primary_row.setSpacing(6)
+        self.lang_combo = ClearComboBox(self)
+        self.lang_combo.setAccessibleName(tr('翻译目标语言'))
+        self.lang_combo.setToolTip(tr('翻译目标语言'))
+        self.lang_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.lang_combo.setMinimumContentsLength(4)
+        self.lang_combo.setMinimumWidth(96)
+        for code, label, _ in TARGET_LANGUAGES:
+            self.lang_combo.addItem(tr(label), code)
+        self.lang_combo.currentIndexChanged.connect(
+            lambda: (self._fit_controls(), self.target_language_changed.emit(self.lang_combo.currentData()))
+        )
+        primary_row.addWidget(self.lang_combo)
+
+        self.primary_btn = QPushButton(self._primary_label, self)
+        self.primary_btn.setProperty('primary', True)
+        self.primary_btn.setProperty('translationAction', True)
+        self.primary_btn.setAutoDefault(False)
+        self.primary_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.primary_btn.clicked.connect(self._on_primary_clicked)
+        primary_row.addWidget(self.primary_btn, 1)
+        root.addLayout(primary_row)
+
+        # Row 3: Lightweight Secondary Excerpt Tools -----------------------------
+        self._actions = primary_row
         self._excerpts = QBoxLayout(QBoxLayout.Direction.LeftToRight)
-        self._excerpts.setSpacing(4)
-        action_row.addLayout(self._excerpts, 2)
+        self._excerpts.setSpacing(6)
         self.selection_btn = QPushButton(tr('划词翻译'), self)
         self.selection_btn.setCheckable(True)
+        self.selection_btn.setProperty('secondaryTool', True)
         self.selection_btn.toggled.connect(
             lambda armed: self.selection_btn.setText(tr('请划选文字') if armed else tr('划词翻译'))
         )
         self.selection_btn.toggled.connect(self._fit_controls)
         self.selection_btn.setToolTip(tr('拖动选择要翻译的文字'))
         self.selection_btn.setAccessibleDescription(self.selection_btn.toolTip())
+        self.selection_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.selection_btn.clicked.connect(self.selection_requested.emit)
         self.region_btn = QPushButton(tr('框选翻译'), self)
+        self.region_btn.setProperty('secondaryTool', True)
         self.region_btn.setToolTip(tr('框选区域翻译'))
+        self.region_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.region_btn.clicked.connect(self.region_translate_requested.emit)
-        self.primary_btn = QPushButton(self._primary_label, self)
-        self.primary_btn.setProperty('primary', True)
-        self.primary_btn.clicked.connect(self._on_primary_clicked)
-        for button in (self.selection_btn, self.region_btn, self.primary_btn):
+        for button in (self.selection_btn, self.region_btn):
             button.setProperty('translationAction', True)
             button.setAutoDefault(False)
         self._excerpts.addWidget(self.selection_btn, 1)
         self._excerpts.addWidget(self.region_btn, 1)
-        action_row.addWidget(self.primary_btn, 1)
-        root.addLayout(action_row)
+        root.addLayout(self._excerpts)
 
+        # Row 4: Recessed Segmented Display Mode Switch --------------------------
         mode_lay = QHBoxLayout()
         mode_lay.setSpacing(4)
         mode_switch = QFrame(self)
         mode_switch.setObjectName('tpViewModes')
         switch_lay = QHBoxLayout(mode_switch)
-        switch_lay.setContentsMargins(2, 2, 2, 2)
-        switch_lay.setSpacing(2)
+        switch_lay.setContentsMargins(3, 3, 3, 3)
+        switch_lay.setSpacing(3)
 
-        self.side_mode_btn = QPushButton(toolbar_icon('page-spread', size=15), tr('侧栏对照'), mode_switch)
+        self.side_mode_btn = QPushButton(toolbar_icon('page-spread', size=14), tr('侧栏对照'), mode_switch)
         self.side_mode_btn.setToolTip(tr('在右侧栏显示译文'))
-        self.overlay_mode_btn = QPushButton(toolbar_icon('text-box', size=15), tr('页内译文'), mode_switch)
+        self.overlay_mode_btn = QPushButton(toolbar_icon('text-box', size=14), tr('页内译文'), mode_switch)
         self.overlay_mode_btn.setToolTip(tr('在原文位置显示译文'))
         for button in (self.side_mode_btn, self.overlay_mode_btn):
             button.setCheckable(True)
             button.setAutoDefault(False)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            button.setIconSize(QSize(15, 15))
+            button.setIconSize(QSize(14, 14))
             button.setAccessibleDescription(button.toolTip())
-            switch_lay.addWidget(button)
+            switch_lay.addWidget(button, 1)
         self.side_mode_btn.setChecked(True)
         self.side_mode_btn.clicked.connect(lambda: self._select_mode('side'))
         self.overlay_mode_btn.clicked.connect(lambda: self._select_mode('overlay'))
@@ -2003,7 +2113,7 @@ class TranslationPanel(QFrame):
         prog_lay.addWidget(self.progress_label)
         self.progress_bar = QProgressBar(self.progress_widget)
         self.progress_bar.setObjectName('tpProgress')
-        self.progress_bar.setFixedHeight(5)
+        self.progress_bar.setFixedHeight(4)
         self.progress_bar.setTextVisible(False)
         prog_lay.addWidget(self.progress_bar)
         self.progress_widget.hide()
@@ -2018,8 +2128,8 @@ class TranslationPanel(QFrame):
         self.content = QWidget()
         self.content.setObjectName('tpContent')
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(0, 1, 3, 0)
-        self.content_layout.setSpacing(2)
+        self.content_layout.setContentsMargins(0, 4, 2, 4)
+        self.content_layout.setSpacing(4)
         self.content_layout.addStretch()
         self.scroll.setWidget(self.content)
         self.detail = TranslationBubble(self)
@@ -2033,9 +2143,11 @@ class TranslationPanel(QFrame):
         self.footer_hint.setObjectName('tpHint')
         self.footer_hint.setWordWrap(True)
         self.footer_hint.hide()
-        self.result_footer = QWidget(self)
+        self.result_footer = QFrame(self)
+        self.result_footer.setObjectName('tpFooterWrap')
         footer = QHBoxLayout(self.result_footer)
-        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setContentsMargins(0, 8, 0, 0)
+        footer.setSpacing(6)
         footer.addWidget(self.chk_bilingual)
         footer.addStretch()
         footer.addWidget(self.footer_hint)
@@ -2044,11 +2156,15 @@ class TranslationPanel(QFrame):
         self.copy_all_btn.setEnabled(False)
         self.copy_all_btn.hide()
         footer.addWidget(self.copy_all_btn)
+        self.result_footer.hide()
         root.addWidget(self.result_footer)
 
     @property
     def detail_visible(self) -> bool:
         return self._content_stack.currentWidget() is self.detail
+
+    def _has_footer_content(self) -> bool:
+        return not (self.chk_bilingual.isHidden() and self.copy_all_btn.isHidden() and self.footer_hint.isHidden())
 
     def set_detail_visible(self, visible: bool) -> None:
         if self.detail.floating:
@@ -2057,12 +2173,12 @@ class TranslationPanel(QFrame):
             self._content_stack.addWidget(self.detail)
             self.detail.set_floating(False)
         self._content_stack.setCurrentWidget(self.detail if visible else self.scroll)
-        self.result_footer.setVisible(not visible)
+        self.result_footer.setVisible((not visible) and self._has_footer_content())
 
     def float_detail(self, viewport) -> None:
         if not self.detail.floating:
             self._content_stack.setCurrentWidget(self.scroll)
-            self.result_footer.show()
+            self.result_footer.setVisible(self._has_footer_content())
             self._content_stack.removeWidget(self.detail)
             self.detail.setParent(viewport)
             self.detail.set_floating(True)
@@ -2074,16 +2190,31 @@ class TranslationPanel(QFrame):
 
     def _fit_controls(self):
         margins = self.layout().contentsMargins()
-        available = self.contentsRect().width() - margins.left() - margins.right()
+        available = max(self.contentsRect().width(), self.minimumWidth()) - margins.left() - margins.right()
         horizontal = QBoxLayout.Direction.LeftToRight
         vertical = QBoxLayout.Direction.TopToBottom
-        word, region, page = (max(b.sizeHint().width(), b.fontMetrics().horizontalAdvance(b.text()) + 14)
-                              for b in (self.selection_btn, self.region_btn, self.primary_btn))
-        self._excerpts.setDirection(horizontal if word + region + 4 <= available else vertical)
-        self._actions.setDirection(horizontal if word + region + page + 8 <= available else vertical)
+        lang_w = max(100, self.lang_combo.fontMetrics().horizontalAdvance(self.lang_combo.currentText()) + 38)
+        prim_w = max(
+            self.primary_btn.minimumSizeHint().width(),
+            self.primary_btn.fontMetrics().horizontalAdvance(self.primary_btn.text()) + 24,
+        )
+        if lang_w + prim_w + 6 <= available:
+            self._actions.setDirection(horizontal)
+            self.lang_combo.setMinimumWidth(lang_w)
+            self.lang_combo.setMaximumWidth(lang_w)
+        else:
+            self._actions.setDirection(vertical)
+            self.lang_combo.setMinimumWidth(0)
+            self.lang_combo.setMaximumWidth(16777215)
+        word, region = (max(b.sizeHint().width(), b.fontMetrics().horizontalAdvance(b.text()) + 16)
+                        for b in (self.selection_btn, self.region_btn))
+        self._excerpts.setDirection(horizontal if word + region + 6 <= available else vertical)
+        if self._empty_tags_layout is not None and self._empty_tags:
+            tags_total = sum(tag.sizeHint().width() for tag in self._empty_tags) + 6 * (len(self._empty_tags) - 1)
+            self._empty_tags_layout.setDirection(horizontal if tags_total <= available - 36 else vertical)
         if hasattr(self, '_provider_text'):
-            remaining = available - self._title.sizeHint().width() - self.close_btn.width() - self.lang_combo.minimumSizeHint().width() - 24
-            full_width = self.engine_pill.fontMetrics().horizontalAdvance(self._provider_text) + 14
+            remaining = available - self._title.sizeHint().width() - self.close_btn.width() - 24
+            full_width = self.engine_pill.fontMetrics().horizontalAdvance(self._provider_text) + 20
             self.engine_pill.setText(self._provider_text if full_width <= remaining else tr('设置'))
 
     def _on_primary_clicked(self) -> None:
@@ -2108,6 +2239,7 @@ class TranslationPanel(QFrame):
         if idx >= 0:
             self.lang_combo.setCurrentIndex(idx)
         self.lang_combo.blockSignals(False)
+        self._fit_controls()
 
         self.side_mode_btn.setChecked(config.view_mode == 'side')
         self.overlay_mode_btn.setChecked(config.view_mode == 'overlay')
@@ -2170,8 +2302,11 @@ class TranslationPanel(QFrame):
     def _clear_content(self) -> None:
         self.chk_bilingual.hide()
         self.copy_all_btn.hide()
+        self.result_footer.hide()
         self._clear_error_banner()
         self._cards.clear()
+        self._empty_tags_layout = None
+        self._empty_tags.clear()
         self.footer_hint.hide()
         while self.content_layout.count():
             item = self.content_layout.takeAt(0)
@@ -2180,23 +2315,67 @@ class TranslationPanel(QFrame):
                 widget.hide()
                 widget.deleteLater()
 
-    def _show_empty_hint(self, text: str) -> None:
-        hint = QLabel(text, self.content)
+    def _show_empty_hint(self, text: str, *, title: str = '', show_modes: bool = False) -> None:
+        if self.content_layout.count() == 0:
+            self.content_layout.addStretch(2)
+        box = QWidget(self.content)
+        box.setObjectName('tpEmptyBox')
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(8)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        badge = QToolButton(box)
+        badge.setObjectName('tpEmptyIcon')
+        badge.setFixedSize(44, 44)
+        badge.setIcon(toolbar_icon('translate', '#0F766E', 20))
+        badge.setIconSize(QSize(20, 20))
+        badge.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        lay.addWidget(badge, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        if title:
+            heading = QLabel(title, box)
+            heading.setObjectName('tpEmptyTitle')
+            heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            heading.setWordWrap(True)
+            lay.addWidget(heading)
+
+        hint = QLabel(text, box)
         hint.setObjectName('tpHint')
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setWordWrap(True)
-        hint.setContentsMargins(6, 10, 6, 0)
-        self.content_layout.addWidget(hint)
-        self.content_layout.addStretch()
+        lay.addWidget(hint)
+
+        if show_modes:
+            tags_wrap = QWidget(box)
+            tags_wrap.setStyleSheet('background: transparent;')
+            tags_row = QBoxLayout(QBoxLayout.Direction.LeftToRight, tags_wrap)
+            tags_row.setContentsMargins(0, 6, 0, 0)
+            tags_row.setSpacing(6)
+            self._empty_tags = []
+            for tag_text in (tr('划词即译'), tr('框选区域'), tr('整页对照')):
+                tag = QLabel(tag_text, tags_wrap)
+                tag.setObjectName('tpEmptyTag')
+                tag.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+                tags_row.addWidget(tag, 0, Qt.AlignmentFlag.AlignHCenter)
+                self._empty_tags.append(tag)
+            self._empty_tags_layout = tags_row
+            lay.addWidget(tags_wrap, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self.content_layout.addWidget(box)
+        self.content_layout.addStretch(3)
+        self._fit_controls()
 
     def show_unconfigured(self, *, key_missing: bool = False) -> None:
         self._clear_content()
         self.copy_all_btn.setEnabled(False)
         if key_missing:
             self.set_primary_label(tr('补填 API Key'), self.settings_requested)
-            self._show_empty_hint(tr('服务商和模型已保存。'))
+            self._show_empty_hint(tr('服务商和模型已保存。'), title=tr('还差一步即可使用'))
         else:
             self.set_primary_label(tr('去配置…'), self.settings_requested)
-            self._show_empty_hint(tr('尚未配置翻译服务。'))
+            self._show_empty_hint(tr('尚未配置翻译服务。'), title=tr('配置翻译引擎'))
 
     def show_scan_guidance(self, page_number: int, *, ocr_ready: bool) -> None:
         self._clear_content()
@@ -2205,14 +2384,14 @@ class TranslationPanel(QFrame):
         else:
             self.set_primary_label(tr('安装 OCR 增强包…'), self.ocr_install_requested)
         self.copy_all_btn.setEnabled(False)
-        self._show_empty_hint(tr('第 {p0} 页为扫描图片页', p0=str(page_number)))
+        self._show_empty_hint(tr('第 {p0} 页为扫描图片页', p0=str(page_number)), title=tr('需要先识别页面文字'))
 
     def show_ready_empty(self, page_number: int, pinned: list[tuple[str, str, str]], *, show_bilingual: bool) -> None:
         self._clear_content()
         self.set_primary_label(tr('翻译第 {p0} 页', p0=str(page_number)))
         self.copy_all_btn.setEnabled(False)
         self._append_pinned(pinned, show_bilingual=show_bilingual)
-        self._show_empty_hint(tr('可划词、框选或翻译本页。'))
+        self._show_empty_hint(tr('可划词、框选或翻译本页。'), title=tr('准备翻译第 {p0} 页', p0=str(page_number)), show_modes=not pinned)
 
     def show_error_banner(self, message: str, *, use_ocr: bool = False) -> None:
         self._clear_error_banner()
@@ -2233,6 +2412,7 @@ class TranslationPanel(QFrame):
     def _append_pinned(self, pinned: list[tuple[str, str, str]], *, show_bilingual: bool) -> None:
         if pinned:
             self.chk_bilingual.show()
+            self.result_footer.show()
         for idx, (label, src, dst) in enumerate(pinned):
             card = _SegmentCard('', label, src, dst, show_bilingual=show_bilingual, pinned=True, parent=self.content)
             card.unpin_requested.connect(lambda i=idx: self.unpin_requested.emit(i))
@@ -2286,8 +2466,10 @@ class TranslationPanel(QFrame):
             self.content_layout.addWidget(card)
 
         self.content_layout.addStretch()
-        self.chk_bilingual.setVisible(done_count > 0 or bool(pinned))
+        has_footer = done_count > 0 or bool(pinned)
+        self.chk_bilingual.setVisible(has_footer)
         self.copy_all_btn.setVisible(done_count > 0)
+        self.result_footer.setVisible(has_footer)
         self.copy_all_btn.setEnabled(done_count > 0)
         codes = sum(seg.role == 'code' for seg in ext.segments)
         preserved = tr('已保留 {p0} 段代码', p0=str(codes))

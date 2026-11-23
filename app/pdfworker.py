@@ -308,11 +308,15 @@ def print_pdf(store, pages, options, *, progress_callback=None, cancel=None, out
                              options=settings, output_path=output_path), progress_callback, cancel)
 
 
-def render_preview(refs, passwords, progress, cancel=None, *, width=1100):
+def render_preview(refs, passwords, progress, cancel=None, *, width=1100, clip=None, scale=None):
     from PyQt6.QtGui import QImage
+    payload = dict(operation="preview", pages=[asdict(ref) for ref in refs],
+                   passwords=passwords, width=max(1, min(2400, int(width))))
+    if clip is not None and scale is not None:
+        payload["clip"] = [float(v) for v in clip]
+        payload["scale"] = float(scale)
     with TemporaryWorkspace("pdfpreview") as folder:
-        _worker(folder, dict(operation="preview", pages=[asdict(ref) for ref in refs],
-                            passwords=passwords, width=max(1, min(2400, int(width)))), progress, cancel)
+        _worker(folder, payload, progress, cancel)
         images = [QImage(str(Path(folder) / f"preview-{index}.png")) for index in range(len(refs))]
         if any(image.isNull() for image in images):
             raise PdfError("无法加载页面预览，请重新计算。")
@@ -453,18 +457,45 @@ def worker_main(folder):
             result = dict(width=width, height=height)
         elif request.get("operation") == "preview":
             import pymupdf
+            req_clip = request.get("clip")
+            req_scale = request.get("scale")
             for index, item in enumerate(request["pages"]):
                 report(index, len(request["pages"]), "正在渲染压缩前后预览")
                 with pymupdf.open(item["source_path"]) as doc:
                     if doc.is_encrypted and doc.authenticate(request["passwords"][index] or "") <= 0:
                         raise PdfError("预览文件密码验证失败。")
                     page = doc[item["source_page"]]
-                    width = page.rect.height if item["rotation"] % 180 else page.rect.width
-                    scale = min(request.get('width', 1100) / max(width, 1),
-                                math.sqrt(4_000_000 / max(1, page.rect.width * page.rect.height)),
-                                8190 / max(1, page.rect.width, page.rect.height))
+                    clip_rect = None
+                    if req_clip and len(req_clip) == 4 and req_scale:
+                        u0, v0, u1, v1 = (max(0.0, min(1.0, float(v))) for v in req_clip)
+                        if u1 > u0 + 1e-4 and v1 > v0 + 1e-4:
+                            m_rot = pymupdf.Matrix(1, 1).prerotate(item["rotation"])
+                            bounds = page.rect * m_rot
+                            disp_clip = pymupdf.Rect(
+                                bounds.x0 + u0 * bounds.width,
+                                bounds.y0 + v0 * bounds.height,
+                                bounds.x0 + u1 * bounds.width,
+                                bounds.y0 + v1 * bounds.height,
+                            )
+                            candidate = (disp_clip * (~m_rot)).intersect(page.rect)
+                            if not candidate.is_empty:
+                                clip_rect = candidate
+                                scale = min(
+                                    max(0.1, float(req_scale)),
+                                    2400 / max(1e-3, disp_clip.width),
+                                    2400 / max(1e-3, disp_clip.height),
+                                    math.sqrt(4_000_000 / max(1e-3, disp_clip.width * disp_clip.height)),
+                                )
+                    if clip_rect is None:
+                        width = page.rect.height if item["rotation"] % 180 else page.rect.width
+                        scale = min(request.get('width', 1100) / max(width, 1),
+                                    math.sqrt(4_000_000 / max(1, page.rect.width * page.rect.height)),
+                                    8190 / max(1, page.rect.width, page.rect.height))
                     matrix = pymupdf.Matrix(scale, scale).prerotate(item["rotation"])
-                    page.get_pixmap(matrix=matrix, alpha=False).save(root / f"preview-{index}.png")
+                    if clip_rect is not None:
+                        page.get_pixmap(matrix=matrix, clip=clip_rect, alpha=False).save(root / f"preview-{index}.png")
+                    else:
+                        page.get_pixmap(matrix=matrix, alpha=False).save(root / f"preview-{index}.png")
             result = dict(success=True)
         elif request.get("operation") in ("write", "write_groups", "print"):
             printing = request['operation'] == 'print'
