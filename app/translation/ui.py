@@ -56,6 +56,8 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QStackedLayout,
+    QStyle,
+    QStyleOptionComboBox,
     QTabWidget,
     QTextEdit,
     QToolButton,
@@ -2023,9 +2025,7 @@ class TranslationPanel(QFrame):
         self.lang_combo = ClearComboBox(self)
         self.lang_combo.setAccessibleName(tr('翻译目标语言'))
         self.lang_combo.setToolTip(tr('翻译目标语言'))
-        self.lang_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.lang_combo.setMinimumContentsLength(4)
-        self.lang_combo.setMinimumWidth(96)
+        self.lang_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         for code, label, _ in TARGET_LANGUAGES:
             self.lang_combo.addItem(tr(label), code)
         self.lang_combo.currentIndexChanged.connect(
@@ -2201,7 +2201,15 @@ class TranslationPanel(QFrame):
         available = max(self.contentsRect().width(), self.minimumWidth()) - margins.left() - margins.right()
         horizontal = QBoxLayout.Direction.LeftToRight
         vertical = QBoxLayout.Direction.TopToBottom
-        lang_w = max(100, self.lang_combo.fontMetrics().horizontalAdvance(self.lang_combo.currentText()) + 38)
+        combo = self.lang_combo
+        option = QStyleOptionComboBox()
+        combo.initStyleOption(option)
+        option.rect = QRect(QPoint(), combo.sizeHint())
+        text_field = combo.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
+                                                  QStyle.SubControl.SC_ComboBoxEditField, combo)
+        frame_and_arrow = option.rect.width() - text_field.width()
+        # Leave a small inset on both sides of the painted text.
+        lang_w = max(100, combo.fontMetrics().horizontalAdvance(combo.currentText()) + frame_and_arrow + 4)
         prim_w = max(
             self.primary_btn.minimumSizeHint().width(),
             self.primary_btn.fontMetrics().horizontalAdvance(self.primary_btn.text()) + 24,

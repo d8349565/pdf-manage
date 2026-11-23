@@ -141,22 +141,22 @@ def chevron_icon_url(color_hex: str) -> str:
     if not re.fullmatch(r"[0-9a-f]{6}", clean):
         clean = "526b65"
     filename = f"chevron-{clean}.svg"
-    if _CHEVRON_ICON_DIR is None:
-        base = Path(tempfile.gettempdir()) / "zhixupdf-ui-icons"
-        base.mkdir(parents=True, exist_ok=True)
-        QDir.addSearchPath(_CHEVRON_SEARCH_PREFIX, str(base))
-        _CHEVRON_ICON_DIR = base
-    target = _CHEVRON_ICON_DIR / filename
-    if not target.exists():
-        svg = (
-            '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">'
-            f'<path d="M2.5 4.25L6 7.75L9.5 4.25" fill="none" stroke="#{clean}" '
-            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>\n'
-        )
-        try:
+    try:
+        if _CHEVRON_ICON_DIR is None:
+            base = Path(tempfile.gettempdir()) / "zhixupdf-ui-icons"
+            base.mkdir(parents=True, exist_ok=True)
+            QDir.addSearchPath(_CHEVRON_SEARCH_PREFIX, str(base))
+            _CHEVRON_ICON_DIR = base
+        target = _CHEVRON_ICON_DIR / filename
+        if not target.is_file():
+            svg = (
+                '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">'
+                f'<path d="M2.5 4.25L6 7.75L9.5 4.25" fill="none" stroke="#{clean}" '
+                'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>\n'
+            )
             target.write_text(svg, encoding="utf-8")
-        except OSError:
-            pass
+    except OSError:
+        return ":/qt-project.org/styles/commonstyle/images/arrow-down-16.png"
     return f"{_CHEVRON_SEARCH_PREFIX}:{filename}"
 
 

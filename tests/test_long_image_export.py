@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
 from app import imaging, ui
 from app.exportdialogs import ImageExportDialog
-from app.workspace import PageEdit
+from app.mosaic import mosaic_edit
 
 
 @pytest.fixture(scope="session")
@@ -139,7 +139,10 @@ def test_default_per_page_and_single_page_png_pixels(exporter, mixed_pdf):
     target.write_bytes(b"existing output")
     _export(window, _long_settings)
     assert target.read_bytes() == b"existing output"
-    assert "跳过 1 张" in summaries[-1][1]
+    copy = folder / "mixed_长图 (2).png"
+    with Image.open(copy) as image:
+        assert image.size == (300, 450)
+    assert "自动改名 1 张" in summaries[-1][1] and copy.name in summaries[-1][1]
 
     _export(window, lambda dialog: _long_settings(dialog, overwrite=True))
     with Image.open(folder / "mixed_0001.png") as single, Image.open(target) as long_image:
@@ -148,6 +151,32 @@ def test_default_per_page_and_single_page_png_pixels(exporter, mixed_pdf):
         assert single.info["dpi"] == long_image.info["dpi"]
     assert "已完整输出 1 张" in summaries[-1][1]
     assert not warnings and not list(folder.glob(".pageark-image-*"))
+
+
+def test_per_page_export_keeps_existing_names_and_handles_a_late_collision(exporter, mixed_pdf, monkeypatch):
+    window, folder, summaries, warnings = exporter
+    assert window.open_files_in_tabs([mixed_pdf])
+    base = folder / "mixed_0001.png"
+    second = folder / "mixed_0001 (2).png"
+    third = folder / "mixed_0001 (3).png"
+    base.write_bytes(b"original")
+    second.write_bytes(b"earlier copy")
+    commit = imaging.commit_file
+
+    def another_export_finishes(temp, target, expected, *, cancel=None):
+        if Path(target) == third and not third.exists():
+            third.write_bytes(b"concurrent export")
+        return commit(temp, target, expected, cancel=cancel)
+
+    monkeypatch.setattr(imaging, "commit_file", another_export_finishes)
+    _export(window, lambda dialog: dialog.all_mode.click())
+    assert not warnings and len(summaries) == 1
+    assert "已完整输出 3 张图片" in summaries[0][1] and "自动改名 1 张" in summaries[0][1]
+    assert base.read_bytes() == b"original" and second.read_bytes() == b"earlier copy"
+    assert third.read_bytes() == b"concurrent export"
+    for name in ("mixed_0001 (4).png", "mixed_0002.png", "mixed_0003.png"):
+        with Image.open(folder / name) as image:
+            image.verify()
 
 
 def test_export_result_opens_the_output_folder(exporter, mixed_pdf, monkeypatch):
@@ -296,10 +325,11 @@ def test_fractional_crop_preserves_source_margins(exporter, tmp_path):
     assert not warnings
 
 
-def test_long_image_requires_saving_edited_pages(exporter, mixed_pdf, monkeypatch):
+@pytest.mark.parametrize("long_image", [False, True], ids=["per-page", "long-image"])
+def test_image_export_requires_saving_edited_pages(exporter, mixed_pdf, monkeypatch, long_image):
     window, folder, summaries, warnings = exporter
     assert window.open_files_in_tabs([mixed_pdf])
-    window.ws.edit_page(0, PageEdit("rect", ((.1, .1), (.5, .5))))
+    window.ws.edit_page(1, mosaic_edit((20, 20, 60, 60), style="solid"))
 
     def choose(*args):
         pytest.fail("Save-page feedback must appear before choosing a folder")
@@ -307,15 +337,63 @@ def test_long_image_requires_saving_edited_pages(exporter, mixed_pdf, monkeypatc
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", choose)
 
     def configure(dialog):
-        _long_settings(dialog, page_range="1-2")
+        dialog.range_mode.click()
+        dialog.range.setText("1-2")
+        if long_image:
+            dialog.mode.setCurrentIndex(1)
         assert "请先保存或另存 PDF" in dialog.feedback.text()
         assert not dialog.start.isEnabled()
-        dialog.range.setText("2-3")
+        dialog.range.setText("1,3")
         assert dialog.start.isEnabled()
         dialog.reject()
 
     _export(window, configure)
     assert not list(folder.iterdir()) and not summaries and not warnings
+
+
+def test_per_page_export_checks_all_edits_before_writing(exporter, mixed_pdf, monkeypatch):
+    window, folder, _, _ = exporter
+    assert window.open_files_in_tabs([mixed_pdf])
+    window.ws.edit_page(0, mosaic_edit((30, 30, 60, 60), style="solid"))
+    existing = folder / "mixed_0002.png"
+    existing.write_bytes(b"existing image")
+    pages = window.ws.pages
+    with pytest.raises(imaging.PdfError, match="请先保存或另存 PDF"):
+        imaging.pdf_to_images(window.store, (pages[1], pages[0]), (1, 0), folder, "mixed", "png", 150,
+                              True, lambda *_: None, lambda: False)
+    assert list(folder.iterdir()) == [existing]
+    assert existing.read_bytes() == b"existing image"
+
+    saved = folder.parent / "masked.pdf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(saved), ""))
+    assert window.save(save_as=True)
+    _export(window, lambda dialog: None)
+    with pymupdf.open(mixed_pdf) as original, Image.open(folder / "masked_0001.png") as image:
+        assert original[0].get_pixmap().pixel(45, 45) == (255, 0, 0)
+        assert image.getpixel((94, 94)) == (0, 0, 0)  # Same point inside the solid mask at 150 DPI.
+
+
+def test_export_action_checks_text_box_still_being_edited(exporter, mixed_pdf, monkeypatch):
+    window, folder, _, _ = exporter
+    assert window.open_files_in_tabs([mixed_pdf])
+    window.open_annotation_tools()
+    tools = window.annotation_tools
+    assert tools.ensure_snapshot()
+    tools.start_text_box((15, 100, 125, 145), 0, window.ws.pages[0])
+    tools._inline_text_box.editor.setPlainText("Pending note")
+
+    observed = []
+    def inspect_settings(dialog):
+        observed.append((dialog.start.isEnabled(), dialog.feedback.text()))
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(ImageExportDialog, "exec", inspect_settings)
+    window.image_export_action.trigger()
+    assert len(observed) == 1
+    enabled, feedback = observed[0]
+    assert not enabled and "请先保存或另存 PDF" in feedback
+    assert window.ws.pages[0].edits[-1].text == "Pending note"
+    assert not list(folder.iterdir())
 
 
 def test_width_rounding_does_not_add_or_crop_an_edge(qapp, tmp_path):

@@ -6798,6 +6798,9 @@ class MainWindow(QMainWindow):
     def pdf_to_images(self):
         if not self.ws.pages or getattr(self, "_task_dialog", None) or not self._allow_operation("copy"):
             return
+        tools = getattr(self, "annotation_tools", None)
+        if tools is not None and not tools.finish_text_box():
+            return
         from app.exportdialogs import ImageExportDialog
         from app.imaging import pdf_to_images, pdf_to_long_image
         store, pages = self.store, tuple(self.ws.pages)
@@ -6816,17 +6819,21 @@ class MainWindow(QMainWindow):
         if not folder:
             return
         try:
-            done, skipped, failed, cancelled = run_operation(self, tr('PDF 转图片'), lambda progress, cancel:
+            done, renamed, failed, cancelled = run_operation(self, tr('PDF 转图片'), lambda progress, cancel:
                 export(store, selected, indices, folder, prefix, fmt, dpi, overwrite, progress, cancel), cancellable=True)
             title = tr('已取消') if cancelled else tr('导出结束')
-            summary = tr('已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}',
-                         p0=len(done), p1=len(skipped), p2=len(failed), p3=folder)
+            summary = tr('已完整输出 {p0} 张图片，其中自动改名 {p1} 张，失败 {p2} 张。\n{p3}',
+                         p0=len(done), p1=len(renamed), p2=len(failed), p3=done[0] if len(done) == 1 else folder)
             box = QMessageBox(QMessageBox.Icon.Information, title, summary, QMessageBox.StandardButton.Ok, self)
             if failed:
                 box.setInformativeText(failed[0])
-                box.setDetailedText('\n'.join(failed))
+            details = list(failed)
+            if len(done) > 1:
+                details.extend(Path(path).name for path in renamed)
+            if details:
+                box.setDetailedText('\n'.join(details))
             folder_button = None
-            if done or skipped:
+            if done:
                 folder_button = box.addButton(tr('打开文件夹'), QMessageBox.ButtonRole.ActionRole)
             box.exec()
             if folder_button is not None and box.clickedButton() is folder_button:

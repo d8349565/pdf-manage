@@ -9,7 +9,7 @@
     "app/wordui.py:795"
   ],
   "\n已完整写出的文件会保留。": [
-    "app/ui.py:7366"
+    "app/ui.py:7373"
   ],
   "\n当前显示已保存的同版更新说明。": [
     "app/updateui.py:401"
@@ -21,7 +21,7 @@
     "app/mergeopenui.py:265"
   ],
   "\n提示：有 {p0} 条提示，可展开详细信息查看。": [
-    "app/ui.py:7489"
+    "app/ui.py:7496"
   ],
   "\n文件权限：": [
     "app/signatureui.py:106"
@@ -39,10 +39,10 @@
     "app/readingsettings.py:205"
   ],
   " · 保存期间的修改仍待保存": [
-    "app/ui.py:7189"
+    "app/ui.py:7196"
   ],
   " · 已命中缓存": [
-    "app/translation/ui.py:2452"
+    "app/translation/ui.py:2460"
   ],
   " · 手工指定": [
     "app/pdfcompareui.py:454"
@@ -125,7 +125,7 @@
     "app/exportdialogs.py:154"
   ],
   "API Key 仅通过 HTTPS 发给上方服务商用于认证。在线翻译会将待译文字发给此服务商。开启自动翻译后，划词或翻页也会发送对应文字。": [
-    "app/translation/ui.py:678"
+    "app/translation/ui.py:680"
   ],
   "API Key 包含空格或无效字符。": [
     "app/translation/config.py:144"
@@ -134,7 +134,7 @@
     "app/translation/client.py:149"
   ],
   "API Key（本机模型通常可留空）": [
-    "app/translation/ui.py:822"
+    "app/translation/ui.py:824"
   ],
   "Alt＋拖动页面": [
     "app/textselection.py:49"
@@ -167,10 +167,10 @@
     "app/shortcutui.py:550"
   ],
   "Excel 导出内容": [
-    "app/exportdialogs.py:753"
+    "app/exportdialogs.py:754"
   ],
   "Excel 工作簿 (*.xlsx)": [
-    "app/ui.py:7435"
+    "app/ui.py:7442"
   ],
   "GitHub 下载": [
     "app/updateui.py:252",
@@ -226,7 +226,7 @@
     "app/ocrui.py:241"
   ],
   "OCR 并译本页": [
-    "app/translation/ui.py:2391"
+    "app/translation/ui.py:2399"
   ],
   "OCR 文字识别": [
     "app/ocrui.py:60",
@@ -292,10 +292,10 @@
     "app/wordui.py:558"
   ],
   "PDF 转 Excel": [
-    "app/exportdialogs.py:816",
+    "app/exportdialogs.py:817",
     "app/ui.py:3522",
     "app/ui.py:4229",
-    "app/ui.py:7447",
+    "app/ui.py:7454",
     "app/shortcutcommands.py:convert.pdf_excel",
     "app/shortcutcommands.py:convert.pdf_excel",
     "app/shortcutcommands.py:export_excel.apply",
@@ -322,7 +322,7 @@
   "PDF 转图片": [
     "app/exportdialogs.py:523",
     "app/ui.py:4249",
-    "app/ui.py:6819",
+    "app/ui.py:6822",
     "app/shortcutcommands.py:convert.pdf_images",
     "app/shortcutcommands.py:convert.pdf_images"
   ],
@@ -405,27 +405,27 @@
     "app/wordui.py:324"
   ],
   "_副本.pdf": [
-    "app/ui.py:7126",
+    "app/ui.py:7133",
     "app/ui.py:6713",
     "app/ui.py:6688"
   ],
   "_加密.pdf": [
-    "app/ui.py:6848"
+    "app/ui.py:6855"
   ],
   "_压缩.pdf": [
     "app/compression.py:550"
   ],
   "_可编辑副本.pdf": [
-    "app/ui.py:6933"
+    "app/ui.py:6940"
   ],
   "_增强.png": [
     "app/scanwhiteui.py:585"
   ],
   "_解密.pdf": [
-    "app/ui.py:6891"
+    "app/ui.py:6898"
   ],
   "_长图": [
-    "app/imaging.py:229"
+    "app/imaging.py:245"
   ],
   "{error} 原配置已保留，本次使用默认快捷键。": [
     "app/shortcuts.py:164"
@@ -437,7 +437,7 @@
     "app/ui.py:6626"
   ],
   "{p0}\n无法自动打开文件夹：{p1}": [
-    "app/ui.py:7065"
+    "app/ui.py:7072"
   ],
   "{p0}  /  任务进度": [
     "app/progress.py:48"
@@ -462,7 +462,7 @@
     "app/watermarkui.py:312"
   ],
   "{p0} · 完整译文": [
-    "app/translation/ui.py:3488"
+    "app/translation/ui.py:3496"
   ],
   "{p0} · 操作指南": [
     "app/quickstartui.py:42"
@@ -514,7 +514,7 @@
     "app/wordui.py:378"
   ],
   "{p0} 限制了文档权限，请输入管理密码：": [
-    "app/ui.py:6877"
+    "app/ui.py:6884"
   ],
   "{p0} 需要密码": [
     "app/ui.py:6587"
@@ -529,7 +529,7 @@
     "app/annotcropui.py:395"
   ],
   "{p0}{p1}\n覆盖会替换这些文件；签名与权限检查不通过的目标不会覆盖。": [
-    "app/ui.py:7374"
+    "app/ui.py:7381"
   ],
   "{p0}。旋转、删除、抽取作用于已选页面。": [
     "app/ui.py:5090"
@@ -750,18 +750,19 @@
     "app/ui.py:6627"
   ],
   "不能覆盖原件": [
-    "app/ui.py:7136"
+    "app/ui.py:7143"
   ],
   "不能覆盖已打开的原图或 PDF。": [
     "app/scanwhiteui.py:589"
   ],
   "不能覆盖已打开的来源文件，请选择新的文件名。": [
-    "app/exportdialogs.py:734",
-    "app/imaging.py:236"
+    "app/exportdialogs.py:735",
+    "app/imaging.py:250",
+    "app/imaging.py:227"
   ],
   "不能覆盖来源": [
-    "app/ui.py:7244",
-    "app/ui.py:7346"
+    "app/ui.py:7251",
+    "app/ui.py:7353"
   ],
   "不透明度": [
     "app/watermarkui.py:156"
@@ -946,7 +947,7 @@
     "app/printing.py:1298"
   ],
   "仅表格": [
-    "app/exportdialogs.py:752"
+    "app/exportdialogs.py:753"
   ],
   "仅设置阅读器页码标签": [
     "app/outputui.py:285"
@@ -1081,7 +1082,7 @@
   ],
   "保存": [
     "app/shortcutui.py:268",
-    "app/translation/ui.py:772",
+    "app/translation/ui.py:774",
     "app/ui.py:3103",
     "app/ui.py:3758",
     "app/ui.py:5912",
@@ -1092,8 +1093,8 @@
     "app/ocrui.py:156"
   ],
   "保存 PDF": [
-    "app/ui.py:7150",
-    "app/ui.py:7127"
+    "app/ui.py:7157",
+    "app/ui.py:7134"
   ],
   "保存位置已有同名图片，是否替换？": [
     "app/regioncapture.py:369"
@@ -1108,7 +1109,7 @@
     "app/shortcutcommands.py:note.save"
   ],
   "保存到 Windows 凭据管理器": [
-    "app/translation/ui.py:666"
+    "app/translation/ui.py:668"
   ],
   "保存区域图片": [
     "app/regioncapture.py:357"
@@ -1121,17 +1122,17 @@
     "app/regioncapture.py:335"
   ],
   "保存失败": [
-    "app/ui.py:7155"
+    "app/ui.py:7162"
   ],
   "保存完成，请留意以下信息：\n": [
-    "app/ui.py:7044"
+    "app/ui.py:7051"
   ],
   "保存已取消，修改仍保留，可继续编辑。": [
     "app/colorcleanupui.py:923"
   ],
   "保存并启用": [
-    "app/translation/ui.py:747",
-    "app/translation/ui.py:772"
+    "app/translation/ui.py:749",
+    "app/translation/ui.py:774"
   ],
   "保存当前页面布局和适配方式，新打开的文档使用此设置": [
     "app/readingsettings.py:199",
@@ -1221,7 +1222,7 @@
     "app/shortcutcommands.py:context.repair"
   ],
   "修改仍保留在当前窗口，可另存到其他位置，或取消后继续编辑。": [
-    "app/ui.py:7156"
+    "app/ui.py:7163"
   ],
   "修改内容": [
     "app/signatureui.py:103"
@@ -1240,7 +1241,7 @@
     "app/storageui.py:216"
   ],
   "停止翻译": [
-    "app/translation/ui.py:2268"
+    "app/translation/ui.py:2276"
   ],
   "像素块大小": [
     "app/mosaicui.py:132"
@@ -1312,10 +1313,10 @@
     "app/shortcutcommands.py:merge.all"
   ],
   "全部内容按页保留文字、表格和图片。扫描文字需先完成 OCR；金额与行列请核对原件。": [
-    "app/exportdialogs.py:772"
+    "app/exportdialogs.py:773"
   ],
   "全部内容（按页导出）": [
-    "app/exportdialogs.py:751"
+    "app/exportdialogs.py:752"
   ],
   "全部功能": [
     "app/shortcutui.py:158"
@@ -1342,7 +1343,7 @@
     "app/printing.py:1200"
   ],
   "全部页面": [
-    "app/exportdialogs.py:758",
+    "app/exportdialogs.py:759",
     "app/ocrui.py:82",
     "app/rasterui.py:48"
   ],
@@ -1360,7 +1361,7 @@
     "app/deskewui.py:233"
   ],
   "共导出页面：{p0} 页\n": [
-    "app/ui.py:7484"
+    "app/ui.py:7491"
   ],
   "关于": [
     "app/aboutui.py:89"
@@ -1426,7 +1427,7 @@
     "app/searchui.py:131"
   ],
   "关闭文档": [
-    "app/ui.py:7584"
+    "app/ui.py:7591"
   ],
   "关闭此标签页": [
     "app/ui.py:2317",
@@ -1436,7 +1437,7 @@
     "app/updateui.py:151"
   ],
   "关闭译文详情": [
-    "app/translation/ui.py:1011"
+    "app/translation/ui.py:1013"
   ],
   "其他文件位置": [
     "app/shortcutcommands.py:storage.details",
@@ -1485,7 +1486,7 @@
     "app/shortcutcommands.py:compare.zoom_out"
   ],
   "内容导出.xlsx": [
-    "app/ui.py:7423"
+    "app/ui.py:7430"
   ],
   "内容核对说明": [
     "app/pdfcontentcompareui.py:445"
@@ -1494,17 +1495,17 @@
     "app/exportdialogs.py:104"
   ],
   "准备分割预览": [
-    "app/ui.py:7273"
+    "app/ui.py:7280"
   ],
   "准备编辑功能": [
     "app/ui.py:6648"
   ],
   "准备翻译第 {p0} 页": [
-    "app/translation/ui.py:2402"
+    "app/translation/ui.py:2410"
   ],
   "分割单页": [
     "app/pagesplitui.py:16",
-    "app/ui.py:7266",
+    "app/ui.py:7273",
     "app/shortcutcommands.py:pages.split_page",
     "app/shortcutcommands.py:pages.split_page"
   ],
@@ -1535,7 +1536,7 @@
     "app/pagesplitui.py:74"
   ],
   "分割失败": [
-    "app/ui.py:7299"
+    "app/ui.py:7306"
   ],
   "分割方向": [
     "app/pagesplitui.py:33"
@@ -1545,7 +1546,7 @@
   ],
   "分割页面": [
     "app/pagesplitui.py:110",
-    "app/ui.py:7292"
+    "app/ui.py:7299"
   ],
   "分成 2 页": [
     "app/pagesplitui.py:35"
@@ -1571,25 +1572,25 @@
     "app/shortcutcommands.py:reader.mode"
   ],
   "划词即译": [
-    "app/translation/ui.py:2365"
+    "app/translation/ui.py:2373"
   ],
   "划词后自动翻译": [
-    "app/translation/ui.py:725"
+    "app/translation/ui.py:727"
   ],
   "划词时一并发送附近原文，帮助判断词义": [
-    "app/translation/ui.py:686"
+    "app/translation/ui.py:688"
   ],
   "划词翻译": [
-    "app/translation/ui.py:955",
-    "app/translation/ui.py:1004",
+    "app/translation/ui.py:957",
+    "app/translation/ui.py:1006",
     "app/translation/ui.py:2049",
     "app/translation/ui.py:2053"
   ],
   "划词翻译 · {p0}": [
-    "app/translation/ui.py:2991"
+    "app/translation/ui.py:2999"
   ],
   "划词译文": [
-    "app/translation/ui.py:1211"
+    "app/translation/ui.py:1213"
   ],
   "删除": [
     "app/imageui.py:164",
@@ -1644,7 +1645,7 @@
   ],
   "制作可编辑副本": [
     "app/ui.py:3670",
-    "app/ui.py:6938",
+    "app/ui.py:6945",
     "app/ui.py:3674",
     "app/shortcutcommands.py:document.editable_copy",
     "app/shortcutcommands.py:document.editable_copy",
@@ -1671,7 +1672,7 @@
     "app/shortcutcommands.py:watermark.preview"
   ],
   "副本未完成": [
-    "app/ui.py:6955"
+    "app/ui.py:6962"
   ],
   "加密 PDF": [
     "app/ui.py:6586"
@@ -1682,8 +1683,8 @@
   ],
   "加密另存": [
     "app/exportdialogs.py:70",
-    "app/ui.py:6848",
-    "app/ui.py:6852",
+    "app/ui.py:6855",
+    "app/ui.py:6859",
     "app/shortcutcommands.py:document.encrypt",
     "app/shortcutcommands.py:document.encrypt"
   ],
@@ -1692,10 +1693,10 @@
     "app/ui.py:4257"
   ],
   "加密另存完成": [
-    "app/ui.py:6855"
+    "app/ui.py:6862"
   ],
   "加密未完成": [
-    "app/ui.py:6860"
+    "app/ui.py:6867"
   ],
   "加密格式": [
     "app/exportdialogs.py:95"
@@ -1757,7 +1758,7 @@
     "app/wordui.py:388"
   ],
   "单击切换到原文，按住可临时对照": [
-    "app/translation/ui.py:1942"
+    "app/translation/ui.py:1944"
   ],
   "单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。拖动调整顺序，Ctrl+拖动复制页面。": [
     "app/ui.py:970"
@@ -1845,7 +1846,7 @@
     "app/signatureui.py:96"
   ],
   "原件保留。副本保留签章外观，不含原数字签名。": [
-    "app/ui.py:6921"
+    "app/ui.py:6928"
   ],
   "原件签名结构无法确认。副本只保存页面影像，不保留数字签名效力。": [
     "app/rasterui.py:45"
@@ -1926,7 +1927,7 @@
     "app/scanwhiteui.py:255"
   ],
   "去配置…": [
-    "app/translation/ui.py:2385"
+    "app/translation/ui.py:2393"
   ],
   "去除彩色笔迹": [
     "app/colorcleanupui.py:362",
@@ -2070,11 +2071,11 @@
     "app/seamstampui.py:140",
     "app/shortcutui.py:270",
     "app/storageui.py:111",
-    "app/translation/ui.py:743",
-    "app/ui.py:7377",
+    "app/translation/ui.py:745",
+    "app/ui.py:7384",
     "app/ui.py:5914",
-    "app/ui.py:6924",
-    "app/ui.py:7158",
+    "app/ui.py:6931",
+    "app/ui.py:7165",
     "app/ui.py:6705"
   ],
   "取消 (Esc)": [
@@ -2128,13 +2129,13 @@
   ],
   "另存为 PDF": [
     "app/ui.py:3758",
-    "app/ui.py:7127"
+    "app/ui.py:7134"
   ],
   "另存为 PDF…": [
     "app/exportdialogs.py:299"
   ],
   "另存为…": [
-    "app/ui.py:7157"
+    "app/ui.py:7164"
   ],
   "另存为新文件（默认）": [
     "app/mergeopenui.py:159",
@@ -2148,7 +2149,7 @@
     "app/ui.py:6703"
   ],
   "另存副本（不含原数字签名）": [
-    "app/ui.py:7127"
+    "app/ui.py:7134"
   ],
   "另存压缩结果": [
     "app/compression.py:550",
@@ -2159,7 +2160,7 @@
     "app/compression.py:338"
   ],
   "另存可编辑副本": [
-    "app/ui.py:6934"
+    "app/ui.py:6941"
   ],
   "另存新文件，保留签名外观；不保留原数字签名验证结构。": [
     "app/signatureui.py:82"
@@ -2190,10 +2191,10 @@
     "app/pdfcompareui.py:314"
   ],
   "可划词、框选或翻译本页。": [
-    "app/translation/ui.py:2402"
+    "app/translation/ui.py:2410"
   ],
   "可右键选择“翻译所选文字”。": [
-    "app/translation/ui.py:2915"
+    "app/translation/ui.py:2923"
   ],
   "可复制后粘贴到聊天窗口，或保存为 PNG 图片。": [
     "app/regioncapture.py:326"
@@ -2403,7 +2404,7 @@
     "app/immersivereading.py:153"
   ],
   "固定到侧栏": [
-    "app/translation/ui.py:1067"
+    "app/translation/ui.py:1069"
   ],
   "固定还是自动收起，由你选择": [
     "app/quickstartui.py:63"
@@ -2533,7 +2534,7 @@
     "app/ui.py:6787"
   ],
   "图片输出为空": [
-    "app/imaging.py:189"
+    "app/imaging.py:194"
   ],
   "图片页序，可拖动或使用上移下移按钮": [
     "app/exportdialogs.py:255"
@@ -2545,7 +2546,7 @@
     "app/regioncapture.py:406"
   ],
   "在一页内拖动框选要翻译的区域（文字、图表或扫描区均可）；Esc 或右键取消。": [
-    "app/translation/ui.py:1324"
+    "app/translation/ui.py:1326"
   ],
   "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消工具。": [
     "app/editingui.py:1059"
@@ -2594,7 +2595,7 @@
     "app/printing.py:1342"
   ],
   "填入服务商提供的模型名称": [
-    "app/translation/ui.py:630"
+    "app/translation/ui.py:632"
   ],
   "填写任意兼容 OpenAI Chat Completions 协议的 HTTPS 或本机地址。": [
     "app/translation/config.py:48"
@@ -2648,7 +2649,7 @@
   ],
   "复制": [
     "app/signatureui.py:102",
-    "app/translation/ui.py:950"
+    "app/translation/ui.py:952"
   ],
   "复制图片": [
     "app/regioncapture.py:330",
@@ -2673,8 +2674,8 @@
   ],
   "复制译文": [
     "app/textselection.py:204",
-    "app/translation/ui.py:1063",
-    "app/translation/ui.py:1863"
+    "app/translation/ui.py:1065",
+    "app/translation/ui.py:1865"
   ],
   "复制页面": [
     "app/ui.py:3132",
@@ -2743,7 +2744,7 @@
     "app/filesplitui.py:44"
   ],
   "如 1-3,5；默认全部": [
-    "app/exportdialogs.py:766"
+    "app/exportdialogs.py:767"
   ],
   "如果{p0} 帮到了你，欢迎支持项目的持续维护。赞赏完全自愿。": [
     "app/aboutui.py:238"
@@ -2828,11 +2829,11 @@
   "安装 OCR 增强包": [
     "app/pdfcontentcompareui.py:108",
     "app/storageui.py:90",
-    "app/translation/ui.py:1082",
+    "app/translation/ui.py:1084",
     "app/shortcutcommands.py:compare.ocr"
   ],
   "安装 OCR 增强包…": [
-    "app/translation/ui.py:2393"
+    "app/translation/ui.py:2401"
   ],
   "安装与备份": [
     "app/storageui.py:218"
@@ -2971,7 +2972,7 @@
     "app/pagetoolsui.py:184"
   ],
   "宽度或高度超出 {p0} 边长上限。": [
-    "app/imaging.py:107"
+    "app/imaging.py:112"
   ],
   "宽边距 20 毫米": [
     "app/printing.py:79"
@@ -2986,7 +2987,7 @@
     "app/exportdialogs.py:75"
   ],
   "密码验证未通过": [
-    "app/ui.py:6884"
+    "app/ui.py:6891"
   ],
   "对应关系待确认": [
     "app/pdfcontentcompareui.py:30"
@@ -3011,13 +3012,13 @@
     "app/shortcutui.py:527"
   ],
   "导出 Excel": [
-    "app/ui.py:7435"
+    "app/ui.py:7442"
   ],
   "导出 TXT": [
     "app/ui.py:6750"
   ],
   "导出内容": [
-    "app/exportdialogs.py:749"
+    "app/exportdialogs.py:750"
   ],
   "导出到文件夹…": [
     "app/exportdialogs.py:664"
@@ -3047,10 +3048,10 @@
     "app/exportdialogs.py:590"
   ],
   "导出未完成": [
-    "app/ui.py:6835"
+    "app/ui.py:6842"
   ],
   "导出结束": [
-    "app/ui.py:6821"
+    "app/ui.py:6824"
   ],
   "导出范围": [
     "app/exportdialogs.py:541"
@@ -3106,7 +3107,7 @@
     "app/storageui.py:315"
   ],
   "尚未配置翻译服务。": [
-    "app/translation/ui.py:2386"
+    "app/translation/ui.py:2394"
   ],
   "展开全部": [
     "app/editingui.py:102"
@@ -3136,13 +3137,13 @@
     "app/ui.py:6320"
   ],
   "工作区没有页面": [
-    "app/ui.py:7329"
+    "app/ui.py:7336"
   ],
   "工作区没有页面可供打印": [
-    "app/ui.py:7202"
+    "app/ui.py:7209"
   ],
   "工作区没有页面，请先打开或拖入 PDF。": [
-    "app/ui.py:7394"
+    "app/ui.py:7401"
   ],
   "工作区第 {p0} / {p1} 页 · 来自 {p2} 原第 {p3} 页 · {p4}×{p5} pt · 本次旋转 {p6}°{p7}": [
     "app/ui.py:5115"
@@ -3192,21 +3193,21 @@
     "app/readerinteraction.py:179"
   ],
   "已使用 {p0} 加密，原件保留：\n{p1}": [
-    "app/ui.py:6855"
+    "app/ui.py:6862"
   ],
   "已保存": [
     "app/ui.py:3746"
   ],
   "已保存到 {p0}": [
-    "app/ui.py:7187",
-    "app/ui.py:6951",
-    "app/ui.py:6947"
+    "app/ui.py:7194",
+    "app/ui.py:6958",
+    "app/ui.py:6954"
   ],
   "已保存合并结果，可从“文件 → 打开”查看：{p0}": [
     "app/mergeopenui.py:399"
   ],
   "已保存无需密码的 PDF 副本，原加密文件保留：\n{p0}": [
-    "app/ui.py:6898"
+    "app/ui.py:6905"
   ],
   "已保存的发布说明": [
     "app/updateui.py:370"
@@ -3215,8 +3216,8 @@
     "app/regioncapture.py:375"
   ],
   "已保留 {p0} 段代码": [
-    "app/translation/ui.py:2483",
-    "app/translation/ui.py:3308"
+    "app/translation/ui.py:2491",
+    "app/translation/ui.py:3316"
   ],
   "已修复此版本的右键菜单。": [
     "app/contextmenuui.py:95"
@@ -3231,10 +3232,10 @@
     "app/ui.py:6112"
   ],
   "已写出 {p0} 个文件，工作区未改动": [
-    "app/ui.py:7361"
+    "app/ui.py:7368"
   ],
   "已分割为 {p0} 页；可撤销。": [
-    "app/ui.py:7297"
+    "app/ui.py:7304"
   ],
   "已分片盖骑缝章": [
     "app/seamstampui.py:321"
@@ -3252,15 +3253,15 @@
     "app/signatureui.py:16"
   ],
   "已发送打印任务": [
-    "app/ui.py:7209"
+    "app/ui.py:7216"
   ],
   "已取消": [
     "app/annotcropui.py:404",
     "app/compression.py:561",
-    "app/ui.py:6821",
+    "app/ui.py:6824",
     "app/ui.py:6785",
-    "app/ui.py:6858",
-    "app/ui.py:6901"
+    "app/ui.py:6865",
+    "app/ui.py:6908"
   ],
   "已取消保存，修改仍保留，可继续编辑。": [
     "app/colorcleanupui.py:927"
@@ -3284,14 +3285,14 @@
     "app/regioncapture.py:449"
   ],
   "已取消框选翻译。": [
-    "app/translation/ui.py:1375",
-    "app/translation/ui.py:1385"
+    "app/translation/ui.py:1377",
+    "app/translation/ui.py:1387"
   ],
   "已取消生成区域图片。": [
     "app/regioncapture.py:512"
   ],
   "已取消解密，原加密文件保留。": [
-    "app/ui.py:6901"
+    "app/ui.py:6908"
   ],
   "已取消读取签名信息，原文件保持不变。": [
     "app/signatureui.py:159"
@@ -3306,8 +3307,8 @@
     "app/ui.py:6785"
   ],
   "已取消，完成 0 个输出文件。": [
-    "app/ui.py:6858",
-    "app/ui.py:6953"
+    "app/ui.py:6865",
+    "app/ui.py:6960"
   ],
   "已取消，完整输出已保留。": [
     "app/outputui.py:202"
@@ -3333,13 +3334,13 @@
     "app/mergeopenui.py:401"
   ],
   "已合成 {p0} / {p1} 页": [
-    "app/imaging.py:257"
+    "app/imaging.py:271"
   ],
   "已启用此版本的右键菜单。": [
     "app/contextmenuui.py:95"
   ],
   "已固定 · {p0}": [
-    "app/translation/ui.py:1839"
+    "app/translation/ui.py:1841"
   ],
   "已在末尾插入 {p0} 页 · 可拖动调整顺序": [
     "app/ui.py:6508"
@@ -3360,13 +3361,13 @@
     "app/ui.py:6362"
   ],
   "已复制当前页全部译文（{p0} 段）。": [
-    "app/translation/ui.py:3531"
+    "app/translation/ui.py:3539"
   ],
   "已复制整张图片，可直接粘贴到聊天窗口。": [
     "app/regioncapture.py:354"
   ],
   "已复制译文。": [
-    "app/translation/ui.py:1205"
+    "app/translation/ui.py:1207"
   ],
   "已完成": [
     "app/ui.py:6761",
@@ -3381,14 +3382,14 @@
   "已完整导出 1 个文件：\n{p0}\n大小：{p1}": [
     "app/compression.py:558"
   ],
-  "已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}": [
-    "app/ui.py:6822"
+  "已完整输出 {p0} 张图片，其中自动改名 {p1} 张，失败 {p2} 张。\n{p3}": [
+    "app/ui.py:6825"
   ],
   "已导出": [
     "app/compression.py:558"
   ],
   "已导出 Excel: {p0}": [
-    "app/ui.py:7496"
+    "app/ui.py:7503"
   ],
   "已导出 {p0} 个区域，共 {p1} 页：\n{p2}": [
     "app/annotcropui.py:402"
@@ -3400,7 +3401,7 @@
     "app/ui.py:3399"
   ],
   "已抽取到 {p0}": [
-    "app/ui.py:7252"
+    "app/ui.py:7259"
   ],
   "已插入 {p0} 页 · 可拖动调整顺序或撤销": [
     "app/ui.py:6278"
@@ -3430,7 +3431,7 @@
     "app/storageui.py:366"
   ],
   "已清空密钥输入框，点击“保存并启用”后生效。": [
-    "app/translation/ui.py:840"
+    "app/translation/ui.py:842"
   ],
   "已用管理密码打开": [
     "app/signatureui.py:105"
@@ -3448,7 +3449,7 @@
     "app/shortcutui.py:145"
   ],
   "已译 {p0}/{p1} 段": [
-    "app/translation/ui.py:2487"
+    "app/translation/ui.py:2495"
   ],
   "已请求停止发送。已经交给打印机的页面可能仍会打印，可在系统打印队列中取消。": [
     "app/printing.py:1762"
@@ -3500,7 +3501,7 @@
     "app/seamstampui.py:321"
   ],
   "已通过本机离线 OCR 临时识别 {p0} 段并翻译（原文件未改动）": [
-    "app/translation/ui.py:2446"
+    "app/translation/ui.py:2454"
   ],
   "已重新读取磁盘上的最新文件": [
     "app/ui.py:6165"
@@ -3525,7 +3526,7 @@
     "app/readingcolors.py:229"
   ],
   "应用仅连接本机接口。离线使用请确认服务未开启云端转发。": [
-    "app/translation/ui.py:699"
+    "app/translation/ui.py:701"
   ],
   "应用修改": [
     "app/editingui.py:2120"
@@ -3636,7 +3637,7 @@
     "app/signatureui.py:165"
   ],
   "当前文档未加密。": [
-    "app/ui.py:6867"
+    "app/ui.py:6874"
   ],
   "当前文档未加密，无需解密。": [
     "app/ui.py:3667"
@@ -3707,7 +3708,7 @@
     "app/editingui.py:1137"
   ],
   "当前页未检测到可翻译的文字段落。": [
-    "app/translation/ui.py:3274"
+    "app/translation/ui.py:3282"
   ],
   "当前页没有可修改的文字层。扫描图片或已转为线条的工程图纸可用文本框、画笔或便签标注。": [
     "app/editingui.py:2047"
@@ -3912,7 +3913,7 @@
     "app/contributionui.py:46"
   ],
   "我同意将待译文字发送至上述服务商": [
-    "app/translation/ui.py:683"
+    "app/translation/ui.py:685"
   ],
   "所有输出文件统一保存在这个文件夹，已有同名文件默认跳过。": [
     "app/wordui.py:438"
@@ -3942,19 +3943,19 @@
     "app/colorcleanupui.py:724"
   ],
   "所选页面": [
-    "app/exportdialogs.py:759",
+    "app/exportdialogs.py:760",
     "app/rasterui.py:48"
   ],
   "所选页面中未检测到可提取的表格，未生成或覆盖 Excel 文件。\n跳过页面：{p0}。\n可选择“全部内容”保留正文与图片；扫描文字需先完成 OCR。": [
-    "app/ui.py:7480"
+    "app/ui.py:7487"
   ],
   "所选页面尺寸异常，请缩小导出范围后重试。": [
     "app/imaging.py:49",
     "app/imaging.py:52",
-    "app/imaging.py:96"
+    "app/imaging.py:101"
   ],
-  "所选页面有未保存的内容修改。请先保存或另存 PDF，再导出长图。": [
-    "app/imaging.py:74"
+  "所选页面有未保存的内容修改。请先保存或另存 PDF，再导出图片。": [
+    "app/imaging.py:70"
   ],
   "所选页面（{p0} 页）": [
     "app/exportdialogs.py:548",
@@ -4053,7 +4054,7 @@
     "app/shortcutcommands.py:file.open"
   ],
   "打开 PDF 后即可高亮、备注、绘图或修正文字。": [
-    "app/ui.py:7033"
+    "app/ui.py:7040"
   ],
   "打开 PDF、OFD 或图片": [
     "app/recentui.py:168"
@@ -4098,8 +4099,8 @@
     "app/outputui.py:104",
     "app/outputui.py:215",
     "app/rasterui.py:181",
-    "app/ui.py:7054",
-    "app/ui.py:6830"
+    "app/ui.py:7061",
+    "app/ui.py:6837"
   ],
   "打开新 PDF 标签页": [
     "app/ui.py:2450",
@@ -4286,40 +4287,40 @@
     "app/shortcutcommands.py:outline.collapse"
   ],
   "抽取": [
-    "app/ui.py:7234"
+    "app/ui.py:7241"
   ],
   "抽取.pdf": [
-    "app/ui.py:7236"
+    "app/ui.py:7243"
   ],
   "抽取为": [
-    "app/ui.py:7236"
+    "app/ui.py:7243"
   ],
   "抽取写出的是另一个文件，不能覆盖当前文档或本次用过的源文件。请另选位置。": [
-    "app/ui.py:7245"
+    "app/ui.py:7252"
   ],
   "抽取失败": [
-    "app/ui.py:7255"
+    "app/ui.py:7262"
   ],
   "抽取页面": [
-    "app/ui.py:7250"
+    "app/ui.py:7257"
   ],
   "拆分": [
-    "app/ui.py:7329",
-    "app/ui.py:7334",
-    "app/ui.py:7339"
+    "app/ui.py:7336",
+    "app/ui.py:7341",
+    "app/ui.py:7346"
   ],
   "拆分 PDF": [
-    "app/ui.py:7359"
+    "app/ui.py:7366"
   ],
   "拆分写出的是新文件，不能覆盖当前文档或本次用过的源文件。\n受阻：{p0}": [
-    "app/ui.py:7347"
+    "app/ui.py:7354"
   ],
   "拆分到文件夹…": [
     "app/ui.py:4225",
     "app/ui.py:3564"
   ],
   "拆分失败": [
-    "app/ui.py:7366"
+    "app/ui.py:7373"
   ],
   "拆分文件": [
     "app/ui.py:3521",
@@ -4375,7 +4376,7 @@
     "app/translation/ui.py:2056"
   ],
   "拖动选择要翻译的文字，Esc 取消。": [
-    "app/translation/ui.py:2972"
+    "app/translation/ui.py:2980"
   ],
   "拖选或点击操作；Ctrl+Z 撤销": [
     "app/editingui.py:905"
@@ -4417,7 +4418,7 @@
     "app/textselection.py:49"
   ],
   "按修改后原文重译": [
-    "app/translation/ui.py:1032"
+    "app/translation/ui.py:1034"
   ],
   "按列表顺序生成页面，多帧 TIFF 按帧展开。": [
     "app/ui.py:4244"
@@ -4443,7 +4444,7 @@
   ],
   "按页码范围": [
     "app/exportdialogs.py:549",
-    "app/exportdialogs.py:760",
+    "app/exportdialogs.py:761",
     "app/filesplitui.py:30"
   ],
   "按顺序添加图片": [
@@ -4456,7 +4457,7 @@
     "app/translation/client.py:161"
   ],
   "接口地址": [
-    "app/translation/ui.py:615"
+    "app/translation/ui.py:617"
   ],
   "接口地址或模型名称不存在，请在翻译设置中核对。": [
     "app/translation/client.py:155"
@@ -4599,7 +4600,7 @@
     "app/printing.py:1365"
   ],
   "收起翻译面板": [
-    "app/translation/ui.py:2015"
+    "app/translation/ui.py:2017"
   ],
   "收起页面与大纲侧栏": [
     "app/immersivereading.py:271"
@@ -4672,7 +4673,7 @@
     "app/shortcutcommands.py:reader.arrange"
   ],
   "整页对照": [
-    "app/translation/ui.py:2365"
+    "app/translation/ui.py:2373"
   ],
   "整页平铺（重复多个水印）": [
     "app/watermarkui.py:185"
@@ -4718,7 +4719,7 @@
   ],
   "文件保护": [
     "app/ui.py:6656",
-    "app/ui.py:6871"
+    "app/ui.py:6878"
   ],
   "文件夹包含子文件夹（默认仅当前层）": [
     "app/wordui.py:314"
@@ -4728,19 +4729,19 @@
   ],
   "文件已保存": [
     "app/savesettings.py:223",
-    "app/ui.py:7193"
+    "app/ui.py:7200"
   ],
   "文件已保存到：\n{p0}": [
     "app/rasterui.py:178"
   ],
   "文件已写出": [
-    "app/ui.py:7044"
+    "app/ui.py:7051"
   ],
   "文件已存在": [
-    "app/ui.py:7370"
+    "app/ui.py:7377"
   ],
   "文件已成功保存到：\n{p0}\n界面刷新未完成，请重新打开该文件查看。": [
-    "app/ui.py:7193"
+    "app/ui.py:7200"
   ],
   "文件顺序": [
     "app/mergeopenui.py:111"
@@ -4831,10 +4832,10 @@
     "app/shortcutcommands.py:document.editable_copy"
   ],
   "文档.pdf": [
-    "app/ui.py:6804",
-    "app/ui.py:6848",
-    "app/ui.py:6891",
-    "app/ui.py:6933"
+    "app/ui.py:6807",
+    "app/ui.py:6855",
+    "app/ui.py:6898",
+    "app/ui.py:6940"
   ],
   "文档原色": [
     "app/readingcolors.py:158"
@@ -4940,7 +4941,7 @@
     "app/seamstampui.py:189"
   ],
   "无法保存": [
-    "app/ui.py:7098"
+    "app/ui.py:7105"
   ],
   "无法保存设置，请检查当前用户的写入权限。": [
     "app/savesettings.py:90"
@@ -4985,7 +4986,7 @@
     "app/storageui.py:84"
   ],
   "无法核对长图尺寸，请重新导出。": [
-    "app/imaging.py:193"
+    "app/imaging.py:198"
   ],
   "无法比较": [
     "app/pdfcompareui.py:464",
@@ -5010,7 +5011,7 @@
     "app/contextmenuui.py:85"
   ],
   "无法读取框选区域，请重试。": [
-    "app/translation/ui.py:3185"
+    "app/translation/ui.py:3193"
   ],
   "无法调整页面大小": [
     "app/pagetoolsui.py:309"
@@ -5022,7 +5023,7 @@
     "app/translation/client.py:176"
   ],
   "无法预览页面": [
-    "app/ui.py:7276"
+    "app/ui.py:7283"
   ],
   "无边框模式": [
     "app/immersivereading.py:89",
@@ -5033,7 +5034,7 @@
     "app/printing.py:76"
   ],
   "无需解密": [
-    "app/ui.py:6867"
+    "app/ui.py:6874"
   ],
   "日语": [
     "app/translation/config.py:59"
@@ -5095,8 +5096,8 @@
     "app/exportdialogs.py:82"
   ],
   "显示": [
-    "app/translation/ui.py:659",
-    "app/translation/ui.py:786"
+    "app/translation/ui.py:661",
+    "app/translation/ui.py:788"
   ],
   "显示 {p0} 项，共 {p1} 项 · {p2} 项已自定义": [
     "app/shortcutui.py:464"
@@ -5247,7 +5248,7 @@
     "app/pdfcontentcompareui.py:231"
   ],
   "服务商和模型已保存。": [
-    "app/translation/ui.py:2383"
+    "app/translation/ui.py:2391"
   ],
   "服务商截断了译文，请缩小选区或更换支持更长输出的模型。": [
     "app/translation/client.py:122"
@@ -5293,7 +5294,7 @@
     "app/ui.py:4415"
   ],
   "未命名.pdf": [
-    "app/ui.py:7126"
+    "app/ui.py:7133"
   ],
   "未命名文档": [
     "app/ui.py:2335",
@@ -5347,7 +5348,7 @@
     "app/wordui.py:715"
   ],
   "未检测到表格": [
-    "app/ui.py:7479"
+    "app/ui.py:7486"
   ],
   "未能复制密码，请手动输入：{p0}。": [
     "app/updateui.py:31"
@@ -5359,12 +5360,12 @@
     "app/shortcutui.py:145"
   ],
   "未配置": [
-    "app/translation/ui.py:2998",
-    "app/translation/ui.py:3171",
-    "app/translation/ui.py:3197"
+    "app/translation/ui.py:3006",
+    "app/translation/ui.py:3179",
+    "app/translation/ui.py:3205"
   ],
   "本地 OCR 识别完成，正在翻译…": [
-    "app/translation/ui.py:3207"
+    "app/translation/ui.py:3215"
   ],
   "本地 ZIP": [
     "app/storageui.py:99"
@@ -5440,7 +5441,7 @@
     "app/shortcutcommands.py:cleanup.original"
   ],
   "查看原文": [
-    "app/translation/ui.py:1939"
+    "app/translation/ui.py:1941"
   ],
   "查看原页": [
     "app/deskewui.py:60"
@@ -5497,7 +5498,7 @@
     "app/shortcutcommands.py:annotation.note_text"
   ],
   "查看／微调识别原文": [
-    "app/translation/ui.py:1017"
+    "app/translation/ui.py:1019"
   ],
   "标签格式": [
     "app/outputui.py:316"
@@ -5512,15 +5513,15 @@
     "app/scanwhiteui.py:249"
   ],
   "框选 OCR 翻译": [
-    "app/translation/ui.py:3205"
+    "app/translation/ui.py:3213"
   ],
   "框选区域": [
-    "app/translation/ui.py:2365"
+    "app/translation/ui.py:2373"
   ],
   "框选区域内未找到可翻译文字。": [
-    "app/translation/ui.py:3114",
-    "app/translation/ui.py:3164",
-    "app/translation/ui.py:3189"
+    "app/translation/ui.py:3122",
+    "app/translation/ui.py:3172",
+    "app/translation/ui.py:3197"
   ],
   "框选区域内未识别到文字，请放大选区或检查清晰度。": [
     "app/translation/extractor.py:511"
@@ -5532,7 +5533,7 @@
     "app/translation/ui.py:2062"
   ],
   "框选区域过小，请重新框选。": [
-    "app/translation/ui.py:1421"
+    "app/translation/ui.py:1423"
   ],
   "框选原文、图表或扫描区域，自动提取文字或本地 OCR 并翻译": [
     "app/ui.py:3152"
@@ -5564,7 +5565,7 @@
     "app/shortcutcommands.py:reader.region_translate"
   ],
   "框选翻译 · {p0}": [
-    "app/translation/ui.py:3169"
+    "app/translation/ui.py:3177"
   ],
   "框选翻译…": [
     "app/ui.py:3150"
@@ -5598,12 +5599,12 @@
     "app/storageui.py:150"
   ],
   "模型名称": [
-    "app/translation/ui.py:623"
+    "app/translation/ui.py:625"
   ],
   "模型未按分段格式返回译文，请重试或更换兼容模型。": [
     "app/translation/client.py:403",
-    "app/translation/ui.py:3302",
-    "app/translation/ui.py:3348"
+    "app/translation/ui.py:3310",
+    "app/translation/ui.py:3356"
   ],
   "模糊强度": [
     "app/mosaicui.py:132"
@@ -5628,7 +5629,7 @@
   ],
   "正在准备当前页文字…": [
     "app/textselection.py:133",
-    "app/translation/ui.py:3132"
+    "app/translation/ui.py:3140"
   ],
   "正在准备转换页面...": [
     "app/ui.py:1824"
@@ -5641,7 +5642,7 @@
     "app/mosaicui.py:91"
   ],
   "正在分析第 {p0} 页版面与段落…": [
-    "app/translation/ui.py:3248"
+    "app/translation/ui.py:3256"
   ],
   "正在加载对应原页": [
     "app/pdfcontentcompareui.py:347"
@@ -5650,7 +5651,7 @@
     "app/progress.py:109"
   ],
   "正在取消转换，结束后可关闭窗口": [
-    "app/ui.py:7530"
+    "app/ui.py:7537"
   ],
   "正在处理，请稍候": [
     "app/progress.py:71"
@@ -5672,7 +5673,7 @@
     "app/ui.py:3753"
   ],
   "正在提取框选区域文字（扫描区将自动尝试本地 OCR）…": [
-    "app/translation/ui.py:3172"
+    "app/translation/ui.py:3180"
   ],
   "正在更新此版本的菜单…": [
     "app/contextmenuui.py:91"
@@ -5700,10 +5701,10 @@
     "app/updateui.py:362"
   ],
   "正在检查长图尺寸…": [
-    "app/imaging.py:238"
+    "app/imaging.py:252"
   ],
   "正在测试连接…": [
-    "app/translation/ui.py:900"
+    "app/translation/ui.py:902"
   ],
   "正在渲染页面": [
     "app/ui.py:3051",
@@ -5728,7 +5729,7 @@
     "app/scanwhiteui.py:290"
   ],
   "正在用本地 OCR 识别第 {p0} 页…": [
-    "app/translation/ui.py:3248"
+    "app/translation/ui.py:3256"
   ],
   "正在结束当前步骤…": [
     "app/progress.py:110"
@@ -5737,19 +5738,19 @@
     "app/mosaicui.py:208"
   ],
   "正在编码并保存长图…": [
-    "app/imaging.py:259"
+    "app/imaging.py:273"
   ],
   "正在编辑的页面文本框": [
     "app/shortcutcommands.py:textbox.apply",
     "app/shortcutcommands.py:SCOPE_LABELS"
   ],
   "正在翻译…": [
-    "app/translation/ui.py:3005",
-    "app/translation/ui.py:3207",
-    "app/translation/ui.py:2270"
+    "app/translation/ui.py:3013",
+    "app/translation/ui.py:3215",
+    "app/translation/ui.py:2278"
   ],
   "正在翻译第 {p0} 页（{p1}/{p2} 段）…": [
-    "app/translation/ui.py:3317"
+    "app/translation/ui.py:3325"
   ],
   "正在获取…": [
     "app/updateui.py:385"
@@ -5764,8 +5765,8 @@
     "app/updateui.py:394"
   ],
   "正在重新翻译…": [
-    "app/translation/ui.py:3054",
-    "app/translation/ui.py:3020"
+    "app/translation/ui.py:3062",
+    "app/translation/ui.py:3028"
   ],
   "正在预览当前页…": [
     "app/outputui.py:338"
@@ -5974,7 +5975,7 @@
     "app/compression.py:492"
   ],
   "没有要导出的页面。": [
-    "app/imaging.py:79"
+    "app/imaging.py:84"
   ],
   "没有需要逐项核对的文字修改。": [
     "app/pdfcontentcompareui.py:221"
@@ -5999,7 +6000,7 @@
     "app/readingcolors.py:160"
   ],
   "测试连接": [
-    "app/translation/ui.py:708"
+    "app/translation/ui.py:710"
   ],
   "浏览／移动": [
     "app/shortcutcommands.py:review.browse"
@@ -6165,7 +6166,7 @@
     "app/recentui.py:403"
   ],
   "清除已存密钥": [
-    "app/translation/ui.py:738"
+    "app/translation/ui.py:740"
   ],
   "清除边缘残影（白纸打印）": [
     "app/colorcleanupui.py:455"
@@ -6196,7 +6197,7 @@
     "app/shortcutui.py:56"
   ],
   "点击在侧栏查看完整译文": [
-    "app/translation/ui.py:1448"
+    "app/translation/ui.py:1450"
   ],
   "点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。": [
     "app/editingui.py:1058"
@@ -6312,7 +6313,7 @@
     "app/editingui.py:133"
   ],
   "目标位置已有 {p0} 个同名文件。": [
-    "app/ui.py:7373"
+    "app/ui.py:7380"
   ],
   "目标文件": [
     "app/savesettings.py:117",
@@ -6408,7 +6409,7 @@
     "app/contextmenuui.py:55",
     "app/exportdialogs.py:277",
     "app/shortcutui.py:386",
-    "app/translation/ui.py:1867"
+    "app/translation/ui.py:1869"
   ],
   "移除后原 OCR 不能再搜索；此处不会自动重做识别。与可见正文重叠时会停止处理。": [
     "app/colorcleanupui.py:493"
@@ -6480,7 +6481,7 @@
     "app/recentui.py:115"
   ],
   "第 {p0} 页 / 表格 {p1}：{p2}": [
-    "app/ui.py:7493"
+    "app/ui.py:7500"
   ],
   "第 {p0} 页 · {p1}": [
     "app/scanwhiteui.py:546"
@@ -6492,25 +6493,25 @@
     "app/seamstampui.py:128"
   ],
   "第 {p0} 页为扫描图片页": [
-    "app/translation/ui.py:2395"
+    "app/translation/ui.py:2403"
   ],
   "第 {p0} 页共 {p1} 段 · 已跳过 {p2} 处页眉／页脚": [
-    "app/translation/ui.py:2448"
+    "app/translation/ui.py:2456"
   ],
   "第 {p0} 页前": [
     "app/ui.py:1042"
   ],
   "第 {p0} 页按阅读顺序共 {p1} 段": [
-    "app/translation/ui.py:2450"
+    "app/translation/ui.py:2458"
   ],
   "第 {p0} 页的渲染尺寸与预检不符，请重新打开文档后再试。": [
-    "app/imaging.py:252"
+    "app/imaging.py:266"
   ],
   "第 {p0} 页纠偏角度": [
     "app/deskewui.py:107"
   ],
   "第 {p0} 页翻译完成（共 {p1} 段）。": [
-    "app/translation/ui.py:3311"
+    "app/translation/ui.py:3319"
   ],
   "第一条分割线的位置": [
     "app/pagesplitui.py:46"
@@ -6586,7 +6587,7 @@
     "app/shortcutcommands.py:edit.paste_pages"
   ],
   "粘贴从服务商获取的 API Key": [
-    "app/translation/ui.py:656"
+    "app/translation/ui.py:658"
   ],
   "粘贴位置：{p0} · 粘贴为页面": [
     "app/ui.py:1043"
@@ -6601,7 +6602,7 @@
     "app/storageui.py:219"
   ],
   "系统加密暂不可用，API Key 仅在本次运行有效。": [
-    "app/translation/ui.py:2651"
+    "app/translation/ui.py:2659"
   ],
   "繁體中文": [
     "app/translation/config.py:57"
@@ -6696,8 +6697,8 @@
     "app/shortcutcommands.py:image.delete"
   ],
   "编辑副本": [
-    "app/ui.py:6920",
-    "app/ui.py:6923"
+    "app/ui.py:6927",
+    "app/ui.py:6930"
   ],
   "编辑备注": [
     "app/editingui.py:684"
@@ -6745,26 +6746,26 @@
     "app/signatureui.py:131"
   ],
   "翻译": [
-    "app/translation/ui.py:2002"
+    "app/translation/ui.py:2004"
   ],
   "翻译 API Key": [
-    "app/translation/ui.py:657"
+    "app/translation/ui.py:659"
   ],
   "翻译偏好已保存。": [
-    "app/translation/ui.py:2638"
+    "app/translation/ui.py:2646"
   ],
   "翻译完成 · {p0} ms": [
-    "app/translation/ui.py:1271"
+    "app/translation/ui.py:1273"
   ],
   "翻译当前页": [
-    "app/translation/ui.py:1990"
+    "app/translation/ui.py:1992"
   ],
   "翻译所选文字": [
     "app/textselection.py:319",
     "app/shortcutcommands.py:reader.translate_selection"
   ],
   "翻译接口地址": [
-    "app/translation/ui.py:617"
+    "app/translation/ui.py:619"
   ],
   "翻译接口未返回译文内容，请检查模型名称是否正确。": [
     "app/translation/client.py:119"
@@ -6780,39 +6781,39 @@
     "app/translation/client.py:109"
   ],
   "翻译服务": [
-    "app/translation/ui.py:585",
-    "app/translation/ui.py:592"
+    "app/translation/ui.py:587",
+    "app/translation/ui.py:594"
   ],
   "翻译服务暂时不可用（HTTP {p0}），请稍后重试。": [
     "app/translation/client.py:159"
   ],
   "翻译服务未返回中文译文，请重试或更换模型。": [
-    "app/translation/ui.py:3018"
+    "app/translation/ui.py:3026"
   ],
   "翻译模型名称": [
-    "app/translation/ui.py:625",
-    "app/translation/ui.py:629"
+    "app/translation/ui.py:627",
+    "app/translation/ui.py:631"
   ],
   "翻译目标语言": [
-    "app/translation/ui.py:2024",
-    "app/translation/ui.py:2025"
+    "app/translation/ui.py:2026",
+    "app/translation/ui.py:2027"
   ],
   "翻译第 {p0} 页": [
-    "app/translation/ui.py:2399"
+    "app/translation/ui.py:2407"
   ],
   "翻译结果": [
-    "app/translation/ui.py:1047"
+    "app/translation/ui.py:1049"
   ],
   "翻译结果为空，请重试或更换模型。": [
     "app/translation/client.py:131"
   ],
   "翻译设置": [
-    "app/translation/ui.py:564",
-    "app/translation/ui.py:1076",
-    "app/translation/ui.py:2012",
-    "app/translation/ui.py:2241",
-    "app/translation/ui.py:2244",
-    "app/translation/ui.py:2242",
+    "app/translation/ui.py:566",
+    "app/translation/ui.py:1078",
+    "app/translation/ui.py:2014",
+    "app/translation/ui.py:2249",
+    "app/translation/ui.py:2252",
+    "app/translation/ui.py:2250",
     "app/shortcutcommands.py:app.translation_settings",
     "app/shortcutcommands.py:app.translation_settings"
   ],
@@ -6820,13 +6821,13 @@
     "app/ui.py:3118"
   ],
   "翻译设置已保存。API Key 仅本次运行有效。": [
-    "app/translation/ui.py:2653"
+    "app/translation/ui.py:2661"
   ],
   "翻译设置已保存，下次打开会自动恢复。": [
-    "app/translation/ui.py:2655"
+    "app/translation/ui.py:2663"
   ],
   "翻译设置已保存：{p0}。": [
-    "app/translation/ui.py:2657"
+    "app/translation/ui.py:2665"
   ],
   "翻译请求失败（HTTP {p0}），请检查接口配置。": [
     "app/translation/client.py:175"
@@ -6844,7 +6845,7 @@
     "app/shortcutcommands.py:view.translation"
   ],
   "翻页后自动翻译当前页": [
-    "app/translation/ui.py:726"
+    "app/translation/ui.py:728"
   ],
   "自动": [
     "app/printing.py:1218"
@@ -6867,7 +6868,7 @@
     "app/pdfcontentcompareui.py:99"
   ],
   "自动跳过页眉、页脚与页码": [
-    "app/translation/ui.py:727"
+    "app/translation/ui.py:729"
   ],
   "自动随水印大小调整；手动设置只改变数量，不改变水印大小。": [
     "app/watermarkui.py:193"
@@ -6895,7 +6896,7 @@
     "app/shortcutcommands.py:review.ink"
   ],
   "至少保留 1 页才能保存。": [
-    "app/ui.py:7098"
+    "app/ui.py:7105"
   ],
   "英语": [
     "app/translation/config.py:58"
@@ -6907,7 +6908,7 @@
     "app/shortcutcommands.py:cleanup.copy_regions"
   ],
   "获取密钥说明 ↗": [
-    "app/translation/ui.py:595"
+    "app/translation/ui.py:597"
   ],
   "蓝奏云 ↗": [
     "app/aboutui.py:184",
@@ -6928,16 +6929,16 @@
     "app/watermarkui.py:194"
   ],
   "补全扩展名后的 Excel 文件已存在，是否覆盖？": [
-    "app/ui.py:7442"
+    "app/ui.py:7449"
   ],
   "补填 API Key": [
-    "app/translation/ui.py:2382"
+    "app/translation/ui.py:2390"
   ],
   "表格 {p0}": [
     "app/translation/extractor.py:324"
   ],
   "表格导出.xlsx": [
-    "app/ui.py:7423"
+    "app/ui.py:7430"
   ],
   "表格排版无法读取，已按普通文字复制。": [
     "app/textselection.py:297"
@@ -6953,12 +6954,12 @@
     "app/savesettings.py:106"
   ],
   "覆盖": [
-    "app/ui.py:7375"
+    "app/ui.py:7382"
   ],
   "覆盖到": [
     "app/mergeopenui.py:163"
   ],
-  "覆盖同名图片（默认跳过）": [
+  "覆盖同名图片（默认自动改名，保留两份）": [
     "app/exportdialogs.py:633"
   ],
   "覆盖指定文件": [
@@ -6968,7 +6969,7 @@
     "app/savesettings.py:56"
   ],
   "覆盖现有 Excel？": [
-    "app/ui.py:7442"
+    "app/ui.py:7449"
   ],
   "视图": [
     "app/ui.py:3217",
@@ -7045,8 +7046,8 @@
     "app/shortcutcommands.py:reader.next_group"
   ],
   "解密另存": [
-    "app/ui.py:6891",
-    "app/ui.py:6895",
+    "app/ui.py:6898",
+    "app/ui.py:6902",
     "app/shortcutcommands.py:document.decrypt",
     "app/shortcutcommands.py:document.decrypt"
   ],
@@ -7055,16 +7056,16 @@
     "app/ui.py:4258"
   ],
   "解密另存完成": [
-    "app/ui.py:6898"
+    "app/ui.py:6905"
   ],
   "解密后另存为无需密码的副本，原加密文件保留；解除权限限制需要管理密码。": [
     "app/ui.py:4263"
   ],
   "解密未完成": [
-    "app/ui.py:6903"
+    "app/ui.py:6910"
   ],
   "解密需要管理密码": [
-    "app/ui.py:6876"
+    "app/ui.py:6883"
   ],
   "触碰左侧边缘展开；取消勾选可固定侧栏，下次打开沿用选择": [
     "app/immersivereading.py:57"
@@ -7089,8 +7090,8 @@
     "app/ui.py:3124"
   ],
   "设置": [
-    "app/translation/ui.py:2240",
-    "app/translation/ui.py:2226"
+    "app/translation/ui.py:2248",
+    "app/translation/ui.py:2234"
   ],
   "设置位置无法写入": [
     "app/shortcuts.py:253"
@@ -7136,30 +7137,30 @@
     "app/ui.py:6747"
   ],
   "请先勾选上方的在线翻译数据外发确认。": [
-    "app/translation/ui.py:879"
+    "app/translation/ui.py:881"
   ],
   "请先在“翻译设置”中填写 API Key。": [
     "app/translation/client.py:234"
   ],
   "请先在“翻译设置”中配置翻译服务。": [
-    "app/translation/ui.py:3000",
-    "app/translation/ui.py:3199"
+    "app/translation/ui.py:3008",
+    "app/translation/ui.py:3207"
   ],
   "请先在“翻译设置”中阅读并勾选在线翻译数据外发确认。": [
     "app/translation/client.py:237"
   ],
   "请先在页面上拖动选择要翻译的文字。": [
-    "app/translation/ui.py:2982"
+    "app/translation/ui.py:2990"
   ],
   "请先在页面列表中选择需要转换的页面。": [
-    "app/exportdialogs.py:791"
+    "app/exportdialogs.py:792"
   ],
   "请先完成未识别页面": [
     "app/pdfcontentcompareui.py:273"
   ],
   "请先打开 PDF": [
-    "app/exportdialogs.py:801",
-    "app/ui.py:7033"
+    "app/exportdialogs.py:802",
+    "app/ui.py:7040"
   ],
   "请先打开 PDF。": [
     "app/rasterui.py:138"
@@ -7183,7 +7184,7 @@
     "app/printing.py:1747"
   ],
   "请先选择一页。": [
-    "app/ui.py:7266"
+    "app/ui.py:7273"
   ],
   "请先选择上级书签。": [
     "app/editingui.py:321"
@@ -7196,14 +7197,14 @@
     "app/translation/ui.py:2053"
   ],
   "请另存副本": [
-    "app/exportdialogs.py:734",
+    "app/exportdialogs.py:735",
     "app/scanwhiteui.py:589"
   ],
   "请另选一个新文件，以保留本次用过的原件。": [
-    "app/ui.py:7136"
+    "app/ui.py:7143"
   ],
   "请在 Windows 设置中将 .pdf 的默认应用选择为「{p0}」": [
-    "app/ui.py:7223"
+    "app/ui.py:7230"
   ],
   "请在右侧需要的页面上画框；每个页面分别选择区域。": [
     "app/annotcropui.py:343"
@@ -7215,14 +7216,14 @@
     "app/pdfcontentcompareui.py:257"
   ],
   "请填写 API Key。": [
-    "app/translation/ui.py:877"
+    "app/translation/ui.py:879"
   ],
   "请填写接口地址。": [
     "app/translation/config.py:117"
   ],
   "请填写模型名称。": [
     "app/translation/client.py:231",
-    "app/translation/ui.py:873"
+    "app/translation/ui.py:875"
   ],
   "请安装 OCR 增强包后重新比较。": [
     "app/pdfcontentcompareui.py:257"
@@ -7268,16 +7269,16 @@
     "app/editingui.py:55"
   ],
   "请输入要转换的页码范围。": [
-    "app/exportdialogs.py:796"
+    "app/exportdialogs.py:797"
   ],
   "请运行安装版或绿色版程序，再管理右键菜单。": [
     "app/contextmenuui.py:74"
   ],
   "请运行打包后的 {p0}，再从此菜单设置默认应用。": [
-    "app/ui.py:7213"
+    "app/ui.py:7220"
   ],
   "请选择 PNG、降低 DPI 或缩小导出范围。": [
-    "app/imaging.py:113"
+    "app/imaging.py:118"
   ],
   "请选择一个 PDF 进行拆分。": [
     "app/ui.py:6462"
@@ -7304,7 +7305,7 @@
     "app/pdfcontentcompareui.py:372"
   ],
   "请降低 DPI、缩小导出范围或改用逐页导出。": [
-    "app/imaging.py:115"
+    "app/imaging.py:120"
   ],
   "调整效果": [
     "app/shortcutcommands.py:cleanup.adjust"
@@ -7373,7 +7374,7 @@
     "app/compression.py:235"
   ],
   "跳过": [
-    "app/ui.py:7376"
+    "app/ui.py:7383"
   ],
   "跳过前几页": [
     "app/outputui.py:289"
@@ -7404,26 +7405,26 @@
     "app/shortcutcommands.py:convert.pdf_raster"
   ],
   "转换为 Excel": [
-    "app/ui.py:7394"
+    "app/ui.py:7401"
   ],
   "转换为 Excel…": [
-    "app/exportdialogs.py:821",
+    "app/exportdialogs.py:822",
     "app/ui.py:4234"
   ],
   "转换失败：{p0}": [
     "app/ui.py:1846"
   ],
   "转换完成！\n已生成：{p0}\n{p1}共提取表格：{p2} 个\n转换摘要：{p3}": [
-    "app/ui.py:7486"
+    "app/ui.py:7493"
   ],
   "转换已被取消": [
     "app/ui.py:1844"
   ],
   "转换成功": [
-    "app/ui.py:7497"
+    "app/ui.py:7504"
   ],
   "转换提示": [
-    "app/ui.py:7474"
+    "app/ui.py:7481"
   ],
   "转换未启动": [
     "app/wordui.py:785"
@@ -7438,7 +7439,7 @@
     "app/rasterui.py:50"
   ],
   "转换页码范围": [
-    "app/exportdialogs.py:767"
+    "app/exportdialogs.py:768"
   ],
   "较小文件 · 150 DPI，JPEG": [
     "app/rasterui.py:57"
@@ -7505,7 +7506,7 @@
     "app/storageui.py:306"
   ],
   "返回译文": [
-    "app/translation/ui.py:1939"
+    "app/translation/ui.py:1941"
   ],
   "返回调整": [
     "app/wordui.py:737"
@@ -7519,7 +7520,7 @@
     "app/ui.py:4663"
   ],
   "还差一步即可使用": [
-    "app/translation/ui.py:2383"
+    "app/translation/ui.py:2391"
   ],
   "还没有阅读记录": [
     "app/recentui.py:230",
@@ -7540,7 +7541,7 @@
     "app/themes.py:mountain"
   ],
   "连接成功（{p0} ms · 示例：{p1}）": [
-    "app/translation/ui.py:906"
+    "app/translation/ui.py:908"
   ],
   "连接被目标服务器拒绝，请检查接口地址与网络。": [
     "app/translation/client.py:167"
@@ -7681,7 +7682,7 @@
     "app/seamstampui.py:72"
   ],
   "选择图片输出文件夹": [
-    "app/ui.py:6815"
+    "app/ui.py:6818"
   ],
   "选择字体（当前：{p0}）": [
     "app/textboxui.py:139"
@@ -7763,7 +7764,7 @@
     "app/shortcutcommands.py:visual_compare.choose_right"
   ],
   "选择翻译服务商": [
-    "app/translation/ui.py:602"
+    "app/translation/ui.py:604"
   ],
   "选择范围并导出…": [
     "app/ui.py:4254"
@@ -7789,7 +7790,7 @@
   ],
   "选择输出目录": [
     "app/outputui.py:437",
-    "app/ui.py:7336",
+    "app/ui.py:7343",
     "app/shortcutcommands.py:word.choose_output",
     "app/shortcutcommands.py:markdown.output"
   ],
@@ -7831,7 +7832,7 @@
     "app/shortcuts.py:113"
   ],
   "配置翻译引擎": [
-    "app/translation/ui.py:2386"
+    "app/translation/ui.py:2394"
   ],
   "配色方案": [
     "app/readingcolors.py:151",
@@ -7874,7 +7875,7 @@
     "app/pdfcompareui.py:184"
   ],
   "重新翻译": [
-    "app/translation/ui.py:2440"
+    "app/translation/ui.py:2448"
   ],
   "重新获取": [
     "app/updateui.py:386"
@@ -7885,9 +7886,9 @@
     "app/shortcutcommands.py:whitening.detect"
   ],
   "重试": [
-    "app/translation/ui.py:1071",
-    "app/translation/ui.py:2407",
-    "app/translation/ui.py:2440"
+    "app/translation/ui.py:1073",
+    "app/translation/ui.py:2415",
+    "app/translation/ui.py:2448"
   ],
   "链接指向的页面已不在当前文档中。": [
     "app/readerinteraction.py:185"
@@ -7902,10 +7903,10 @@
     "app/imageui.py:161"
   ],
   "长图内存不足，请降低 DPI 或缩小导出范围。": [
-    "app/imaging.py:266"
+    "app/imaging.py:280"
   ],
   "长图已导出": [
-    "app/imaging.py:261"
+    "app/imaging.py:275"
   ],
   "阅读": [
     "app/ui.py:3218",
@@ -7914,7 +7915,7 @@
     "app/shortcutcommands.py:reader.read"
   ],
   "阅读偏好": [
-    "app/translation/ui.py:734"
+    "app/translation/ui.py:736"
   ],
   "阅读区": [
     "app/shortcutcommands.py:reader.select",
@@ -7986,7 +7987,7 @@
     "app/exportdialogs.py:122"
   ],
   "隐藏": [
-    "app/translation/ui.py:786"
+    "app/translation/ui.py:788"
   ],
   "集中查看和修改按键；所有改动在点击“保存”后生效。": [
     "app/shortcutui.py:119"
@@ -7998,7 +7999,7 @@
     "app/wordui.py:715"
   ],
   "需要先识别页面文字": [
-    "app/translation/ui.py:2395"
+    "app/translation/ui.py:2403"
   ],
   "需要核对": [
     "app/pdfcontentcompareui.py:30"
@@ -8012,9 +8013,9 @@
   "页内译文": [
     "app/translation/reflow.py:64",
     "app/translation/ui.py:2083",
-    "app/translation/ui.py:3110",
-    "app/translation/ui.py:3160",
-    "app/translation/ui.py:3132"
+    "app/translation/ui.py:3118",
+    "app/translation/ui.py:3168",
+    "app/translation/ui.py:3140"
   ],
   "页眉": [
     "app/translation/extractor.py:304"
@@ -8047,7 +8048,7 @@
     "app/outputui.py:277"
   ],
   "页码错误": [
-    "app/ui.py:7413"
+    "app/ui.py:7420"
   ],
   "页脚": [
     "app/translation/extractor.py:306"
@@ -8114,8 +8115,8 @@
     "app/exportdialogs.py:698"
   ],
   "页面文字提取失败，请重试。": [
-    "app/translation/ui.py:3143",
-    "app/translation/ui.py:3265"
+    "app/translation/ui.py:3151",
+    "app/translation/ui.py:3273"
   ],
   "页面文本框": [
     "app/editingui.py:691",
@@ -8200,7 +8201,7 @@
     "app/updateui.py:368"
   ],
   "预计内存超出 {p0} MiB 预算。": [
-    "app/imaging.py:109"
+    "app/imaging.py:114"
   ],
   "预计输出 {p0} 个文件": [
     "app/filesplitui.py:96"
@@ -8248,7 +8249,7 @@
     "app/mosaicui.py:68"
   ],
   "验证管理密码": [
-    "app/ui.py:6881"
+    "app/ui.py:6888"
   ],
   "骑缝章": [
     "app/seamstampui.py:30",
@@ -8285,27 +8286,27 @@
     "app/scanwhiteui.py:240"
   ],
   "默认 PDF 应用": [
-    "app/ui.py:7213"
+    "app/ui.py:7220"
   ],
   "默认不放大小页面，只有超出打印区域时才缩小。多页排列时按每个格子的大小计算。": [
     "app/printing.py:1233"
   ],
   "默认仅本次运行有效。": [
-    "app/translation/ui.py:667"
+    "app/translation/ui.py:669"
   ],
   "默认保存方式": [
     "app/savesettings.py:54",
     "app/savesettings.py:59"
   ],
   "默认应用设置": [
-    "app/ui.py:7225"
+    "app/ui.py:7232"
   ],
   "默认快捷键": [
     "app/shortcutui.py:180"
   ],
   "默认目标语言": [
-    "app/translation/ui.py:641",
-    "app/translation/ui.py:639"
+    "app/translation/ui.py:643",
+    "app/translation/ui.py:641"
   ],
   "默认视图已设为：{p0} · {p1}；新打开的文档将使用此设置。": [
     "app/ui.py:3002"

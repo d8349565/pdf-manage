@@ -35,6 +35,23 @@ def contrast(first, second):
     return (high + .05) / (low + .05)
 
 
+@pytest.mark.parametrize("blocked_path", ["zhixupdf-ui-icons", "zhixupdf-ui-icons/chevron-526b65.svg"])
+def test_theme_still_loads_arrows_when_icon_cache_is_blocked(qapp, tmp_path, monkeypatch, blocked_path):
+    from PyQt6.QtGui import QPixmap
+    from app import themes
+
+    path = tmp_path / blocked_path
+    if path.suffix:
+        path.mkdir(parents=True)
+    else:
+        path.touch()
+    monkeypatch.setattr(themes, "_CHEVRON_ICON_DIR", None)
+    assert theme_manager().apply("night")
+    default_url, disabled_url = themes.ensure_chevron_icons()
+    assert default_url.startswith(":/")  # Qt's built-in resource works without a disk cache.
+    assert not QPixmap(default_url).isNull() and not QPixmap(disabled_url).isNull()
+
+
 @pytest.mark.parametrize("theme", THEMES, ids=lambda theme: theme.key)
 def test_theme_text_and_controls_have_readable_contrast(theme):
     colors = theme.colors

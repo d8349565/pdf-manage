@@ -9,7 +9,7 @@ import struct
 
 from PIL import Image, ImageFile, ImageOps, JpegImagePlugin, PngImagePlugin
 
-from app.output import check_cancel, commit_file, stamp
+from app.output import available_path, check_cancel, commit_file, stamp
 
 
 IMAGE_SUFFIXES = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff')
@@ -23,17 +23,6 @@ class ImageCompressionResult:
     before: int
     after: int
     description: str = ''
-
-
-def available_path(source, suffix, *, tag='', folder=None):
-    source = Path(source)
-    parent = Path(folder) if folder else source.parent
-    target = parent / (source.stem + tag + suffix)
-    number = 2
-    while target.exists():
-        target = parent / f'{source.stem}{tag} ({number}){suffix}'
-        number += 1
-    return target
 
 
 def _webp_metadata(image, metadata):

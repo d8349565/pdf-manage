@@ -31,6 +31,15 @@ def test_western_flow_and_soft_hyphen():
     assert layout_from_raw(raw,[])[0]['text']=='A sample international term.'
 
 
+def test_long_word_alone_on_last_line_stays_in_paragraph():
+    raw = raw_lines([
+        ('The two teams agreed on a release plan', (40, 100, 340, 114), 12),
+        ('to improve', (40, 118, 280, 132), 12),
+        ('interoperability.', (40, 136, 135, 150), 12),
+    ])
+    assert layout_text(layout_from_raw(raw, [])) == 'The two teams agreed on a release plan to improve interoperability.'
+
+
 def test_indentation_and_list_items_are_not_merged_into_previous_paragraph():
     raw=raw_lines([('First paragraph reaches its boundary',(40,100,340,114),12),
                    ('Indented paragraph begins here',(64,118,340,132),12),

@@ -905,6 +905,30 @@ def _viewport_point(window, x, y):
     return point
 
 
+def test_target_language_names_fit_the_closed_combo(translation_window, qapp):
+    from PyQt6.QtWidgets import QStyle, QStyleOptionComboBox
+
+    window, controller, _ = translation_window
+    panel = controller.panel
+    combo = panel.lang_combo
+    splitter = window.reader_split
+    panel_index = splitter.indexOf(panel)
+    for width in (panel.minimumWidth(), panel.maximumWidth()):
+        sizes = splitter.sizes()
+        sizes[splitter.indexOf(window.reader_frame)] += sizes[panel_index] - width
+        sizes[panel_index] = width
+        splitter.setSizes(sizes)
+        assert panel.width() == width
+        for index in range(combo.count()):
+            combo.setCurrentIndex(index)
+            qapp.processEvents()
+            option = QStyleOptionComboBox()
+            combo.initStyleOption(option)
+            field = combo.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
+                                                 QStyle.SubControl.SC_ComboBoxEditField, combo)
+            assert field.width() >= combo.fontMetrics().horizontalAdvance(combo.currentText()) + 2, combo.currentText()
+
+
 def _drag_preview(window, first, last):
     view = window.preview_view.viewport()
     start = _viewport_point(window, *first)

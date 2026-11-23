@@ -12,7 +12,7 @@ from PyQt6.QtCore import QBuffer, QIODevice
 from PyQt6.QtGui import QImageReader
 
 from app.i18n import tr
-from app.output import OperationCancelled, cancellable_lock, check_cancel, commit_file, stamp
+from app.output import OperationCancelled, available_path, cancellable_lock, check_cancel, commit_file, stamp
 from app.pdfio import PdfError, PdfStore
 from app.storage import TemporaryWorkspace
 
@@ -65,13 +65,18 @@ def _long_image_peak_bytes(width, height, page_bytes, fmt):
     return canvas_bytes + max(page_bytes, encoder_bytes) + _LONG_IMAGE_MEMORY_RESERVE
 
 
+def require_saved_image_pages(pages):
+    if any(ref.edits for ref in pages):
+        raise PdfError(tr('所选页面有未保存的内容修改。请先保存或另存 PDF，再导出图片。'))
+
+
 def plan_long_image(store, pages, fmt, dpi, cancel=None):
     """Plan full-width renders from each source CropBox before allocating any pixels."""
+    pages = tuple(pages)
+    require_saved_image_pages(pages)
     source_pages = []
     for ref in pages:
         check_cancel(cancel)
-        if ref.edits:
-            raise PdfError(tr('所选页面有未保存的内容修改。请先保存或另存 PDF，再导出长图。'))
         rect = store._source(ref.source_id).sizes[ref.source_page]
         matrix = _image_matrix(ref, dpi / 72)
         source_pages.append((ref, rect, matrix, _image_pixels(rect, matrix)))
@@ -175,7 +180,7 @@ def _render_pdf_image(store, ref, matrix, cancel):
         return page.get_pixmap(matrix=matrix, colorspace=pymupdf.csRGB, alpha=False)
 
 
-def _save_pdf_image(pix, target, expected, dpi, cancel, *, verify_size=False):
+def _save_pdf_image(pix, target, expected, dpi, cancel, *, overwrite, verify_size=False):
     check_cancel(cancel)
     pix.set_dpi(dpi, dpi)
     target_path = Path(target)
@@ -191,37 +196,48 @@ def _save_pdf_image(pix, target, expected, dpi, cancel, *, verify_size=False):
             size = QImageReader(temp, target_path.suffix[1:].encode("ascii")).size()
             if (size.width(), size.height()) != (pix.width, pix.height):
                 raise PdfError(tr('无法核对长图尺寸，请重新导出。'))
-        commit_file(temp, target, expected, cancel=cancel)
+        if overwrite:
+            commit_file(temp, target, expected, cancel=cancel)
+            return target
+        while True:
+            candidate = available_path(target_path, target_path.suffix, cancel=cancel)
+            try:
+                commit_file(temp, candidate, None, cancel=cancel)
+                return str(candidate)
+            except FileExistsError:
+                # Another export took this name. Reuse the already encoded image.
+                check_cancel(cancel)
     finally:
         Path(temp).unlink(missing_ok=True)
 
 
 def pdf_to_images(store, pages, indices, folder, prefix, fmt, dpi, overwrite, progress, cancel):
     store.require_operation(pages, "copy")
-    completed, skipped, failed = [], [], []
+    require_saved_image_pages(pages)
+    completed, renamed, failed = [], [], []
     cancelled = False
     for number, (ref, index) in enumerate(zip(pages, indices), 1):
         if cancel():
             cancelled = True
             break
         target = str(Path(folder) / f"{prefix}_{index + 1:04d}.{fmt.lower()}")
-        expected = stamp(target)
-        if expected is not None and not overwrite:
-            skipped.append(target)
-            progress(number, len(pages), f"已跳过同名图片 · {Path(target).name}")
-            continue
         try:
+            expected = stamp(target) if overwrite else None
+            if overwrite and store.is_source_destination(target):
+                raise PdfError(tr('不能覆盖已打开的来源文件，请选择新的文件名。'))
             progress(number - 1, len(pages), f"正在渲染第 {index + 1} 页 · {dpi} DPI")
             pix = _render_pdf_image(store, ref, _image_matrix(ref, dpi / 72), cancel)
-            _save_pdf_image(pix, target, expected, dpi, cancel)
-            completed.append(target)
+            saved = _save_pdf_image(pix, target, expected, dpi, cancel, overwrite=overwrite)
+            completed.append(saved)
+            if saved != target:
+                renamed.append(saved)
             progress(number, len(pages), f"已导出第 {index + 1} 页")
         except OperationCancelled:
             cancelled = True
             break
         except Exception as exc:
             failed.append(f"第 {index + 1} 页：{exc}")
-    return completed, skipped, failed, cancelled
+    return completed, renamed, failed, cancelled
 
 
 def pdf_to_long_image(store, pages, indices, folder, prefix, fmt, dpi, overwrite, progress, cancel):
@@ -229,10 +245,8 @@ def pdf_to_long_image(store, pages, indices, folder, prefix, fmt, dpi, overwrite
     target = str(Path(folder) / (prefix + tr('_长图') + '.' + fmt))
     try:
         check_cancel(cancel)
-        expected = stamp(target)
-        if expected is not None and not overwrite:
-            return [], [target], [], False
-        if store.is_source_destination(target):
+        expected = stamp(target) if overwrite else None
+        if overwrite and store.is_source_destination(target):
             raise PdfError(tr('不能覆盖已打开的来源文件，请选择新的文件名。'))
 
         progress(0, 0, tr('正在检查长图尺寸…'))
@@ -257,9 +271,9 @@ def pdf_to_long_image(store, pages, indices, folder, prefix, fmt, dpi, overwrite
             progress(number, total, tr('已合成 {p0} / {p1} 页', p0=number, p1=total - 1))
 
         progress(0, 0, tr('正在编码并保存长图…'))
-        _save_pdf_image(canvas, target, expected, dpi, cancel, verify_size=True)
+        saved = _save_pdf_image(canvas, target, expected, dpi, cancel, overwrite=overwrite, verify_size=True)
         progress(total, total, tr('长图已导出'))
-        return [target], [], [], False
+        return [saved], [saved] if saved != target else [], [], False
     except OperationCancelled:
         return [], [], [], True
     except MemoryError as exc:

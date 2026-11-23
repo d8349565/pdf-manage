@@ -16,6 +16,19 @@ def check_cancel(cancel):
         raise OperationCancelled("任务已取消，未完成的临时文件已清理。")
 
 
+def available_path(source, suffix, *, tag='', folder=None, cancel=None):
+    source = Path(source)
+    parent = Path(folder) if folder else source.parent
+    stem = source.stem + tag
+    target = parent / (stem + suffix)
+    number = 2
+    while os.path.lexists(target):
+        check_cancel(cancel)
+        target = parent / f'{stem} ({number}){suffix}'
+        number += 1
+    return target
+
+
 @contextmanager
 def cancellable_lock(lock, cancel=None):
     while not lock.acquire(timeout=.05):
@@ -41,7 +54,8 @@ def commit_file(temp, target, expected, *, cancel=None):
     for attempt in range(20):
         check_cancel(cancel)
         if stamp(target) != expected:
-            raise OSError("目标文件在处理期间发生变化，未覆盖，请重新选择输出文件。")
+            error = FileExistsError if expected is None else OSError
+            raise error("目标文件在处理期间发生变化，未覆盖，请重新选择输出文件。")
         try:
             if expected is None:
                 if os.name == "nt":

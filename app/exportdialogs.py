@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QRadioButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES, plan_long_image
+from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES, plan_long_image, require_saved_image_pages
 from app.pdfio import EncryptionOptions, PdfError
 from app.workspace import parse_page_range
 from app.storage import export_path
@@ -630,7 +630,7 @@ class ImageExportDialog(QDialog):
         set_theme_style(divider, "background: #E5EEEC; border: none;")
         output_layout.addWidget(divider)
 
-        self.overwrite = QCheckBox(tr('覆盖同名图片（默认跳过）'))
+        self.overwrite = QCheckBox(tr('覆盖同名图片（默认自动改名，保留两份）'))
         output_layout.addWidget(self.overwrite)
         layout.addWidget(output_card)
 
@@ -700,11 +700,12 @@ class ImageExportDialog(QDialog):
         message = ""
         valid = True
         try:
-            indices = self.indices()
+            pages = (self.pages[i] for i in self.indices())
             if long_image:
-                plan = plan_long_image(self.store, (self.pages[i] for i in indices),
-                                       self.format.currentData(), self.dpi.currentData())
+                plan = plan_long_image(self.store, pages, self.format.currentData(), self.dpi.currentData())
                 message = plan.summary()
+            else:
+                require_saved_image_pages(pages)
         except (ValueError, PdfError) as exc:
             message = str(exc)
             valid = False

@@ -306,7 +306,10 @@ def layout_from_raw(raw, tables, *, positioned_areas=(), rejoin_ocr=False):
                     if preceding_line is not None:
                         # A long opening word can wrap before the usual right margin.
                         # Only use this evidence for consecutive lines in one PDF block.
-                        word_end = next((c['bbox'][0] for c in part if c['c'].isspace()), bounds.x0)
+                        # A lone English word may fill the final line without a trailing space.
+                        lone_word = re.fullmatch(r"[A-Za-z][\w'’-]*[.,;:!?]?", text, flags=re.ASCII)
+                        word_end = next((c['bbox'][0] for c in part if c['c'].isspace()),
+                                        bounds.x1 if lone_word else bounds.x0)
                         fragment['native_wrap'] = preceding_line, word_end - bounds.x0
                 if line.get('joined_ocr'):
                     fragment['ocr_glyphs'] = part
