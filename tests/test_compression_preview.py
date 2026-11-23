@@ -210,3 +210,76 @@ def test_dialog_controls_work_at_small_desktop_size(qapp, tmp_path):
         window.ws.reset()
         window.store.close_all()
         window.close()
+
+
+def test_custom_compression_uses_and_remembers_the_numbers_typed(qapp, tmp_path, monkeypatch):
+    from app.compression import CompressionDialog
+    from app.ui import MainWindow
+    from PyQt6.QtWidgets import QMessageBox
+    source, target = tmp_path / 'custom.pdf', tmp_path / 'export.pdf'
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((50, 80), 'Custom settings')
+        doc.save(source)
+    window = MainWindow()
+    window.ws.open_replace(window.store.load(str(source)), str(source))
+    used = []
+    write_pdf = window._write_pdf
+
+    def record_write(*args, **kwargs):
+        options = kwargs.get('options')
+        if options and options.compression == 'custom':
+            used.append((options.compression_dpi, options.compression_quality))
+        return write_pdf(*args, **kwargs)
+
+    monkeypatch.setattr(window, '_write_pdf', record_write)
+    monkeypatch.setattr('app.compression.new_pdf_path', lambda *args: str(target))
+    monkeypatch.setattr(QMessageBox, 'question', lambda *args: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: None)
+    dialog = CompressionDialog(window)
+    try:
+        dialog.show()
+        dialog.profile.setCurrentIndex(dialog.profile.findData('custom'))
+        for field, text in ((dialog.dpi, '720'), (dialog.quality, '95')):
+            field.setFocus()
+            field.selectAll()
+            QTest.keyClicks(field, text)
+            QTest.keyClick(field, Qt.Key.Key_Tab)
+        assert dialog.dpi.text() == '720'
+        assert not dialog.calculate.isEnabled() and not dialog.export.isEnabled()
+        dialog.prepare()
+        assert dialog.baseline is None
+
+        dialog.dpi.setFocus()
+        dialog.dpi.selectAll()
+        QTest.keyClicks(dialog.dpi, '450')
+        for field in (dialog.dpi, dialog.quality):
+            position = QPointF(field.rect().center())
+            event = QWheelEvent(position, position, QPoint(), QPoint(0, -120), Qt.MouseButton.NoButton,
+                                Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+            qapp.sendEvent(field, event)
+        QTest.mouseClick(dialog.calculate, Qt.MouseButton.LeftButton)
+        assert used == [(450, 95)] and dialog.export.isEnabled()
+        QTest.mouseClick(dialog.export, Qt.MouseButton.LeftButton)
+        with pymupdf.open(target) as exported:
+            assert 'Custom settings' in exported[0].get_text()
+        dialog.quality.setFocus()
+        dialog.quality.selectAll()
+        QTest.keyClicks(dialog.quality, '101')
+        assert not dialog.export.isEnabled() and not dialog.calculate.isEnabled()
+        QTest.keyClick(dialog.quality, Qt.Key.Key_Tab)
+        assert dialog.quality.text() == '101'
+        dialog.reject()
+        wait_for(qapp, lambda: not dialog.isVisible())
+        dialog.deleteLater()
+
+        dialog = CompressionDialog(window)
+        assert dialog.profile.currentData() == 'quality'
+        dialog.profile.setCurrentIndex(dialog.profile.findData('custom'))
+        assert (dialog.dpi.value(), dialog.quality.value()) == (450, 95)
+    finally:
+        dialog.reject()
+        wait_for(qapp, lambda: not dialog.folder._temp._finalizer.alive)
+        dialog.deleteLater()
+        window.ws.reset()
+        window.store.close_all()
+        window.close()

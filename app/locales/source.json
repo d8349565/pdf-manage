@@ -61,7 +61,7 @@
     "app/ui.py:5010"
   ],
   " 文字和矢量内容保留；黑白图片不降采样。": [
-    "app/compression.py:154"
+    "app/compression.py:205"
   ],
   " 页": [
     "app/filesplitui.py:24",
@@ -413,7 +413,7 @@
     "app/ui.py:6742"
   ],
   "_压缩.pdf": [
-    "app/compression.py:285"
+    "app/compression.py:347"
   ],
   "_可编辑副本.pdf": [
     "app/ui.py:6827"
@@ -778,10 +778,10 @@
     "app/pdfcompareui.py:133"
   ],
   "两侧同步 · 滚轮翻页 · Ctrl+滚轮缩放 · 拖动查看细节": [
-    "app/compression.py:122"
+    "app/compression.py:166"
   ],
   "两侧预览缩放": [
-    "app/compression.py:97"
+    "app/compression.py:141"
   ],
   "严格像素比较": [
     "app/pdfcompareui.py:311"
@@ -1180,7 +1180,7 @@
     "app/deskewui.py:69"
   ],
   "保留图片像素、文字和矢量，自动比较更小的无损编码。需要更小体积时，可选择其他档位。": [
-    "app/compression.py:76"
+    "app/compression.py:120"
   ],
   "保留尺寸，另存副本。PNG/BMP 自动比较无损 PNG 与 WebP；JPG/WebP 适度有损压缩。": [
     "app/imagequick.py:94"
@@ -1379,7 +1379,7 @@
   "关闭": [
     "app/aboutui.py:95",
     "app/aboutui.py:283",
-    "app/compression.py:124",
+    "app/compression.py:168",
     "app/contextmenuui.py:64",
     "app/contributionui.py:85",
     "app/editingui.py:75",
@@ -1772,7 +1772,7 @@
     "app/shortcutcommands.py:document.compress_image"
   ],
   "压缩 PDF": [
-    "app/compression.py:39",
+    "app/compression.py:85",
     "app/ui.py:4133",
     "app/shortcutcommands.py:document.compress",
     "app/shortcutcommands.py:document.compress"
@@ -1804,17 +1804,17 @@
     "app/ui.py:4138"
   ],
   "压缩未完成": [
-    "app/compression.py:247"
+    "app/compression.py:309"
   ],
   "压缩未完成，可调整档位后重试。": [
-    "app/compression.py:245"
+    "app/compression.py:307"
   ],
   "压缩档位": [
-    "app/compression.py:46",
-    "app/compression.py:44"
+    "app/compression.py:92",
+    "app/compression.py:90"
   ],
   "压缩结果没有变小，仍要另存吗？": [
-    "app/compression.py:280"
+    "app/compression.py:342"
   ],
   "原 ZIP 保存在您选择文件时的位置，不另存一份。\nPDF、Word、Excel、TXT 和图片结果保存在各导出窗口显示的位置。\n输出校验临时文件跟随输出目录，正常结束会删除。页面预览和搜索缓存位于内存。\n安装暂存在安装目录上一级的 .ocr-install-*；正常结束会删除。\nWord 等外部程序可能使用系统临时文件夹，其临时文件按各自设置管理。\n迁移后原组件目录保留以便恢复；确认新组件可用后，可单独清理以前组件。": [
     "app/storageui.py:236"
@@ -1885,10 +1885,10 @@
     "app/themes.py:forest"
   ],
   "原画质结果：图片像素保留，可放大对照细节。": [
-    "app/compression.py:238"
+    "app/compression.py:300"
   ],
   "原画质：保留全部图片像素，逐张比较无损编码；合并重复对象，精简静态文档中未使用的字体字符。": [
-    "app/compression.py:147"
+    "app/compression.py:197"
   ],
   "原色比较 · 原文件保留": [
     "app/pdfcompareui.py:279"
@@ -2126,12 +2126,12 @@
     "app/ui.py:7021"
   ],
   "另存压缩结果": [
-    "app/compression.py:285",
+    "app/compression.py:347",
     "app/shortcutcommands.py:compression.save",
     "app/shortcutcommands.py:compression.save"
   ],
   "另存压缩结果…": [
-    "app/compression.py:127"
+    "app/compression.py:171"
   ],
   "另存可编辑副本": [
     "app/ui.py:6828"
@@ -2414,7 +2414,7 @@
     "app/pdfcontentcompareui.py:30"
   ],
   "图片分辨率": [
-    "app/compression.py:69"
+    "app/compression.py:111"
   ],
   "图片印章和手写外观不一定是数字签名。": [
     "app/signatureui.py:137"
@@ -2473,10 +2473,10 @@
     "app/pdfcontentcompareui.py:48"
   ],
   "图片编码质量": [
-    "app/compression.py:67"
+    "app/compression.py:109"
   ],
   "图片质量": [
-    "app/compression.py:71"
+    "app/compression.py:112"
   ],
   "图片转 PDF": [
     "app/exportdialogs.py:201",
@@ -2559,7 +2559,7 @@
     "app/ui.py:2978"
   ],
   "均衡：高分辨率图片按需降至 200 DPI，JPEG 质量 85，兼顾阅读清晰度与文件大小。": [
-    "app/compression.py:149"
+    "app/compression.py:199"
   ],
   "基础按键说明": [
     "app/shortcutui.py:549",
@@ -2998,7 +2998,7 @@
     "app/exportdialogs.py:508"
   ],
   "导出失败": [
-    "app/compression.py:298"
+    "app/compression.py:360"
   ],
   "导出已保存的快捷键配置": [
     "app/shortcutui.py:533",
@@ -3054,7 +3054,7 @@
     "app/ui.py:4002"
   ],
   "小体积：高分辨率图片按需降至 120 DPI，JPEG 质量 72，图片细节损失更明显。": [
-    "app/compression.py:151"
+    "app/compression.py:201"
   ],
   "小册子打印面": [
     "app/printing.py:1296"
@@ -3228,7 +3228,7 @@
   ],
   "已取消": [
     "app/annotcropui.py:404",
-    "app/compression.py:296",
+    "app/compression.py:358",
     "app/ui.py:6715",
     "app/ui.py:6679",
     "app/ui.py:6752",
@@ -3272,7 +3272,7 @@
     "app/pdfcontentcompareui.py:236"
   ],
   "已取消，完成 0 个导出文件。": [
-    "app/compression.py:296"
+    "app/compression.py:358"
   ],
   "已取消，完成 0 个导出文件，原件保留。": [
     "app/ui.py:6679"
@@ -3351,13 +3351,13 @@
     "app/ui.py:6676"
   ],
   "已完整导出 1 个文件：\n{p0}\n大小：{p1}": [
-    "app/compression.py:293"
+    "app/compression.py:355"
   ],
   "已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}": [
     "app/ui.py:6716"
   ],
   "已导出": [
-    "app/compression.py:293"
+    "app/compression.py:355"
   ],
   "已导出 Excel: {p0}": [
     "app/ui.py:7390"
@@ -3556,7 +3556,7 @@
     "app/quickstartui.py:113"
   ],
   "开始压缩": [
-    "app/compression.py:52",
+    "app/compression.py:98",
     "app/shortcutcommands.py:compression.start",
     "app/shortcutcommands.py:compression.start"
   ],
@@ -3623,10 +3623,10 @@
     "app/updateui.py:364"
   ],
   "当前档位可能改变图片细节，请放大核对小字与细线。": [
-    "app/compression.py:239"
+    "app/compression.py:301"
   ],
   "当前档位未进一步缩小，已保留更小的无损结果。": [
-    "app/compression.py:233"
+    "app/compression.py:295"
   ],
   "当前版本": [
     "app/aboutui.py:138"
@@ -3706,7 +3706,7 @@
     "app/printing.py:1245"
   ],
   "彩色和灰度图片的目标分辨率": [
-    "app/compression.py:63"
+    "app/compression.py:107"
   ],
   "影像副本": [
     "app/rasterui.py:138"
@@ -4590,7 +4590,7 @@
     "app/shortcutcommands.py:compare.zoom_in"
   ],
   "放大两侧预览": [
-    "app/compression.py:104"
+    "app/compression.py:148"
   ],
   "放大原页": [
     "app/shortcutcommands.py:compare.zoom_in"
@@ -5719,7 +5719,7 @@
     "app/updateui.py:393"
   ],
   "正在计算压缩效果…": [
-    "app/compression.py:184"
+    "app/compression.py:250"
   ],
   "正在读取 GitHub 发布说明，请稍候。": [
     "app/updateui.py:394"
@@ -5928,10 +5928,10 @@
     "app/translation/client.py:334"
   ],
   "没有缩小": [
-    "app/compression.py:280"
+    "app/compression.py:342"
   ],
   "没有缩小，可自行决定是否导出": [
-    "app/compression.py:235"
+    "app/compression.py:297"
   ],
   "没有要导出的页面。": [
     "app/imaging.py:79"
@@ -6153,7 +6153,7 @@
     "app/editingui.py:1058"
   ],
   "点击计算后，查看压缩前后大小和页面效果。": [
-    "app/compression.py:77"
+    "app/compression.py:121"
   ],
   "点击链接跳转；拖动选择文字；": [
     "app/textselection.py:50"
@@ -6667,10 +6667,10 @@
     "app/shortcutcommands.py:compare.zoom_out"
   ],
   "缩小 {p0}%": [
-    "app/compression.py:235"
+    "app/compression.py:297"
   ],
   "缩小两侧预览": [
-    "app/compression.py:93"
+    "app/compression.py:137"
   ],
   "缩小原页": [
     "app/shortcutcommands.py:compare.zoom_out"
@@ -6836,7 +6836,7 @@
     "app/watermarkui.py:169"
   ],
   "自定义：图片按需降至 {p0} DPI，JPEG 质量 {p1}；质量 100 仍不等于无损。": [
-    "app/compression.py:152"
+    "app/compression.py:202"
   ],
   "自由画笔": [
     "app/shortcutcommands.py:review.ink"
@@ -7017,7 +7017,7 @@
     "app/immersivereading.py:53"
   ],
   "计算已取消，原件保留；可重新计算。": [
-    "app/compression.py:255"
+    "app/compression.py:317"
   ],
   "让散落的页面有处可归。": [
     "app/aboutui.py:125"
@@ -7251,7 +7251,7 @@
     "app/pdfcontentcompareui.py:372"
   ],
   "请重新计算当前档位。": [
-    "app/compression.py:155"
+    "app/compression.py:206"
   ],
   "请降低 DPI、缩小导出范围或改用逐页导出。": [
     "app/imaging.py:115"
@@ -7320,7 +7320,7 @@
     "app/ui.py:3811"
   ],
   "跳转预览页": [
-    "app/compression.py:87"
+    "app/compression.py:131"
   ],
   "跳过": [
     "app/ui.py:7270"
@@ -7332,7 +7332,7 @@
     "app/ocrui.py:91"
   ],
   "转为灰度（会移除颜色）": [
-    "app/compression.py:68"
+    "app/compression.py:110"
   ],
   "转换": [
     "app/ui.py:3102",
@@ -7507,7 +7507,7 @@
     "app/immersivereading.py:92"
   ],
   "适合外发：高分辨率图片按需降至 150 DPI，JPEG 质量 80，请核对小字与细线。": [
-    "app/compression.py:150"
+    "app/compression.py:200"
   ],
   "适合宽度": [
     "app/colorcleanupui.py:397",
@@ -7957,7 +7957,7 @@
     "app/translation/extractor.py:196"
   ],
   "页码": [
-    "app/compression.py:82",
+    "app/compression.py:126",
     "app/deskewui.py:36",
     "app/watermarkui.py:210"
   ],
@@ -8216,7 +8216,7 @@
     "app/exportdialogs.py:108"
   ],
   "高质量：高分辨率图片按需降至 300 DPI，JPEG 质量 92；无损线稿继续使用无损编码。": [
-    "app/compression.py:148"
+    "app/compression.py:198"
   ],
   "黑白打印": [
     "app/scanwhiteui.py:240"
@@ -8266,7 +8266,7 @@
     "app/pdfcontentcompareui.py:51"
   ],
   "（工作区基准）": [
-    "app/compression.py:236"
+    "app/compression.py:298"
   ],
   "（无）": [
     "app/pdfcontentcompareui.py:51"

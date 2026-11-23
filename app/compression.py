@@ -9,7 +9,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import QSignalBlocker
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QAbstractSpinBox, QCheckBox, QDialog, QGridLayout, QHBoxLayout, QLabel,
+    QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from app.exportdialogs import hint, new_pdf_path
@@ -18,11 +19,56 @@ from app.pdfio import PdfError, WriteOptions
 from app.progress import run_operation
 from app.compressionpreview import CompressionPreview
 from app.pagetoolsui import ClearComboBox, ClearSpinBox
+from app.runtime import preferences
 from app.storage import TemporaryWorkspace
 
 
 def size_text(size):
     return f"{size / 1024 / 1024:.2f} MB" if size >= 1024 * 1024 else f"{size / 1024:.1f} KB"
+
+
+class _CompressionNumber(QAbstractSpinBox):
+    """Keep the full draft visible, including numbers outside the allowed range."""
+    def __init__(self, settings, key, minimum, maximum, default):
+        super().__init__()
+        self.settings, self.key = settings, key
+        self.minimum, self.maximum = minimum, maximum
+        self.range_text = f'{minimum}–{maximum}'
+        self.setButtonSymbols(self.ButtonSymbols.PlusMinus)
+        self.lineEdit().setText(str(settings.value(key, default)))
+        if self.value() is None:
+            self.lineEdit().setText(str(default))
+        self.last_saved = self.value()
+        self.editingFinished.connect(self.remember)
+
+    def value(self):
+        number, ok = self.locale().toInt(self.text().strip())
+        return number if ok and self.minimum <= number <= self.maximum else None
+
+    def remember(self):
+        value = self.value()
+        if value is not None and value != self.last_saved:
+            self.settings.setValue(self.key, value)
+            self.last_saved = value
+
+    def stepEnabled(self):
+        flags = self.StepEnabledFlag.StepNone
+        value = self.value()
+        if value is not None:
+            if value < self.maximum:
+                flags |= self.StepEnabledFlag.StepUpEnabled
+            if value > self.minimum:
+                flags |= self.StepEnabledFlag.StepDownEnabled
+        return flags
+
+    def stepBy(self, steps):
+        value = self.value()
+        if value is not None:
+            self.lineEdit().setText(str(max(self.minimum, min(self.maximum, value + steps))))
+            self.selectAll()
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 class CompressionDialog(QDialog):
@@ -56,19 +102,17 @@ class CompressionDialog(QDialog):
         self.advanced = QWidget()
         advanced_layout = QGridLayout(self.advanced)
         advanced_layout.setContentsMargins(0, 0, 0, 0)
-        self.dpi = ClearSpinBox()
-        self.dpi.setRange(72, 600)
-        self.dpi.setValue(300)
-        self.dpi.setSuffix(" DPI")
+        settings = preferences()
+        self.dpi = _CompressionNumber(settings, 'compression/dpi', 72, 600, WriteOptions.compression_dpi)
         self.dpi.setAccessibleName(tr('彩色和灰度图片的目标分辨率'))
-        self.quality = ClearSpinBox()
-        self.quality.setRange(40, 100)
-        self.quality.setValue(92)
+        self.quality = _CompressionNumber(settings, 'compression/quality', 40, 100, WriteOptions.compression_quality)
         self.quality.setAccessibleName(tr('图片编码质量'))
         self.grayscale = QCheckBox(tr('转为灰度（会移除颜色）'))
-        advanced_layout.addWidget(QLabel(tr('图片分辨率')), 0, 0)
+        self.dpi_label = f"{tr('图片分辨率')} ({self.dpi.range_text} DPI)"
+        self.quality_label = f"{tr('图片质量')} ({self.quality.range_text})"
+        advanced_layout.addWidget(QLabel(self.dpi_label), 0, 0)
         advanced_layout.addWidget(self.dpi, 0, 1)
-        advanced_layout.addWidget(QLabel(tr('图片质量')), 0, 2)
+        advanced_layout.addWidget(QLabel(self.quality_label), 0, 2)
         advanced_layout.addWidget(self.quality, 0, 3)
         advanced_layout.addWidget(self.grayscale, 0, 4)
         layout.addWidget(self.advanced)
@@ -131,8 +175,8 @@ class CompressionDialog(QDialog):
         footer.addWidget(self.export)
         layout.addLayout(footer)
         self.profile.currentIndexChanged.connect(self.invalidate)
-        self.dpi.valueChanged.connect(self.invalidate)
-        self.quality.valueChanged.connect(self.invalidate)
+        self.dpi.lineEdit().textChanged.connect(self.invalidate)
+        self.quality.lineEdit().textChanged.connect(self.invalidate)
         self.grayscale.toggled.connect(self.invalidate)
 
     def invalidate(self):
@@ -143,20 +187,37 @@ class CompressionDialog(QDialog):
         self.result_note.hide()
         key = self.profile.currentData()
         self.advanced.setVisible(key == "custom")
+        options = self._options()
+        self.calculate.setEnabled(not self._busy and options is not None)
+        if options is None:
+            self.note.setText(self.dpi_label if self.dpi.value() is None else self.quality_label)
+            self.summary.clear()
+            return
         notes = {
             "quality": tr("原画质：保留全部图片像素，逐张比较无损编码；合并重复对象，精简静态文档中未使用的字体字符。"),
             "high": tr("高质量：高分辨率图片按需降至 300 DPI，JPEG 质量 92；无损线稿继续使用无损编码。"),
             "balanced": tr("均衡：高分辨率图片按需降至 200 DPI，JPEG 质量 85，兼顾阅读清晰度与文件大小。"),
             "send": tr("适合外发：高分辨率图片按需降至 150 DPI，JPEG 质量 80，请核对小字与细线。"),
             "small": tr("小体积：高分辨率图片按需降至 120 DPI，JPEG 质量 72，图片细节损失更明显。"),
-            "custom": tr("自定义：图片按需降至 {p0} DPI，JPEG 质量 {p1}；质量 100 仍不等于无损。", p0=self.dpi.value(), p1=self.quality.value()),
+            "custom": tr("自定义：图片按需降至 {p0} DPI，JPEG 质量 {p1}；质量 100 仍不等于无损。",
+                         p0=options.compression_dpi, p1=options.compression_quality),
         }
         self.note.setText(notes[key] + tr(' 文字和矢量内容保留；黑白图片不降采样。'))
         self.summary.setText(tr('请重新计算当前档位。'))
 
+    def _options(self):
+        key = self.profile.currentData()
+        if key != "custom":
+            return WriteOptions(compression=key)
+        dpi, quality = self.dpi.value(), self.quality.value()
+        if dpi is None or quality is None:
+            return None
+        return WriteOptions(compression=key, compression_dpi=dpi, compression_quality=quality,
+                            compression_grayscale=self.grayscale.isChecked())
+
     def _set_busy(self, busy):
         self._busy = busy
-        self.calculate.setEnabled(not busy)
+        self.calculate.setEnabled(not busy and self._options() is not None)
         self.profile.setEnabled(not busy)
         self.advanced.setEnabled(not busy)
         self.page.setEnabled(not busy and self.result is not None)
@@ -175,8 +236,13 @@ class CompressionDialog(QDialog):
         self._preview_sources.intersection_update(keep)
 
     def prepare(self):
-        if self._busy:
+        options = self._options()
+        if self._busy or options is None:
             return
+        key = options.compression
+        if key == "custom":
+            self.dpi.remember()
+            self.quality.remember()
         self.comparison.clear('正在压缩，完成后显示对照预览…')
         self.result_note.hide()
         self.result = None
@@ -200,7 +266,6 @@ class CompressionDialog(QDialog):
                     self._show_cancelled()
                     return
                 self._preview_sources.update(page.source_id for page in self.lossless.pages)
-            key = self.profile.currentData()
             path = os.path.join(self.folder.name, f"after-{key}.pdf")
             # Use a fresh target on repeated calculation; the old preview may still be loaded.
             if os.path.exists(path):
@@ -209,10 +274,7 @@ class CompressionDialog(QDialog):
                 Path(path).unlink()
             self.result = self.lossless if key == "quality" else self.owner._write_pdf(
                 list(self.baseline.pages), path, "压缩 PDF", register_result=True,
-                options=WriteOptions(compression=key, compression_dpi=self.dpi.value(),
-                    compression_quality=self.quality.value(),
-                    compression_grayscale=key == "custom" and self.grayscale.isChecked()),
-                cancellable=True)
+                options=options, cancellable=True)
             if self.result is None:
                 self._show_cancelled()
                 return
@@ -227,7 +289,7 @@ class CompressionDialog(QDialog):
             if self.result is not self.lossless and after >= os.path.getsize(self.lossless.path):
                 # Extra image recompression must not replace a smaller, clearer result.
                 # Explicit grayscale requests keep the requested appearance.
-                if not (key == "custom" and self.grayscale.isChecked()):
+                if not options.compression_grayscale:
                     self.result = self.lossless
                     after = os.path.getsize(self.lossless.path)
                     fallback_note = tr("当前档位未进一步缩小，已保留更小的无损结果。")
@@ -309,6 +371,8 @@ class CompressionDialog(QDialog):
         if self.comparison.busy:
             self._closing_result = result
             return
+        self.dpi.remember()
+        self.quality.remember()
         self.owner._release_unused_docs()
         self.folder.cleanup()
         super().done(result)
