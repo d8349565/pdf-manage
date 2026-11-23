@@ -5,8 +5,8 @@ import io
 import pymupdf as p
 import pytest
 from PIL import Image
-from PyQt6.QtCore import QEvent, QPoint, QPointF, QThreadPool, Qt
-from PyQt6.QtTest import QTest
+from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QThreadPool, Qt
+from PyQt6.QtTest import QSignalSpy, QTest
 from PyQt6.QtWidgets import QApplication, QLineEdit
 
 from app.pdfedits import apply_edits
@@ -176,6 +176,70 @@ def test_space_drag_keeps_working_after_space_release(reader_window, reader_app)
     assert view.verticalScrollBar().value() > previous
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=origin - QPoint(20, 40))
     assert not win.reader_interaction.panning
+
+
+@pytest.mark.parametrize('space', [False, True], ids=['alt', 'space'])
+def test_short_pan_moves_on_first_pixel_and_reuses_painted_page(reader_window, reader_app, space):
+    from test_reading_stability import settle
+
+    win = reader_window
+    view = win.preview_view
+    canvas = view.viewport()
+    win._set_zoom(4)
+    view.setFocus()
+    settle(win, reader_app)
+    position = canvas.rect().center()
+    painted = []
+
+    class PaintObserver(QObject):
+        def eventFilter(self, watched, event):
+            if event.type() == QEvent.Type.Paint:
+                painted.append(event.region())
+            return False
+
+    observer = PaintObserver()
+    canvas.installEventFilter(observer)
+    modifier = Qt.KeyboardModifier.NoModifier if space else Qt.KeyboardModifier.AltModifier
+    if space:
+        QTest.keyPress(view, Qt.Key.Key_Space)
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, modifier, position)
+    reader_app.processEvents()
+    painted.clear()
+    notifications = QSignalSpy(view.view_changed)
+    anchor = view.mapFromScene(QPointF(0, 0))
+    controls = (win.immersive.edge.pos(), win.reading_orb.pos())
+    step = QPoint(-1, -1)
+    QTest.mouseMove(canvas, position + step)
+    try:
+        assert view.mapFromScene(QPointF(0, 0)) == anchor + step
+        assert len(notifications) == 1
+        reader_app.processEvents()
+        assert (win.immersive.edge.pos(), win.reading_orb.pos()) == controls
+        assert painted
+        if canvas.devicePixelRatioF().is_integer():
+            assert not any(region.contains(position) for region in painted)
+    finally:
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, modifier, position + step)
+        if space:
+            QTest.keyRelease(view, Qt.Key.Key_Space)
+
+
+def test_pan_reverses_on_first_pixel_at_page_edge(reader_window):
+    view = reader_window.preview_view
+    reader_window._set_zoom(4)
+    bar = view.verticalScrollBar()
+    bar.setValue(bar.minimum())
+    canvas = view.viewport()
+    start = canvas.rect().center()
+    beyond = start + QPoint(0, 30)
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, start)
+    try:
+        QTest.mouseMove(canvas, beyond)
+        assert bar.value() == bar.minimum()
+        QTest.mouseMove(canvas, beyond - QPoint(0, 1))
+        assert bar.value() == bar.minimum() + 1
+    finally:
+        QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=beyond - QPoint(0, 1))
 
 
 def test_canvas_space_does_not_steal_text_editor_input(reader_window, reader_app):

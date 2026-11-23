@@ -28,9 +28,14 @@ class ReaderInteraction(QObject):
     def panning(self):
         return self.space or self.origin is not None
 
+    def _end_pan(self):
+        if self.origin is not None:
+            self.origin = None
+            self.view.viewport().update()
+
     def reset(self):
         self.space = False
-        self.origin = None
+        self._end_pan()
         self.hand_press = None
         self.link_press = self.link_jump = None
         if self.view.viewport().toolTip():
@@ -280,8 +285,7 @@ class ReaderInteraction(QObject):
                 and not self.busy_gesture(buttons=False)):
             if self.previous_cursor is None:
                 self.previous_cursor = self.view.viewport().cursor()
-            self.origin = (event.globalPosition(), self.view.horizontalScrollBar().value(),
-                           self.view.verticalScrollBar().value())
+            self.origin = event.globalPosition().toPoint()
             if not self.space and not event.modifiers() & Qt.KeyboardModifier.AltModifier:
                 self.hand_press = dict(position=event.position().toPoint(), dragged=False)
             self.view.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -294,13 +298,14 @@ class ReaderInteraction(QObject):
                                                     >= QApplication.startDragDistance())
                     if not self.hand_press['dragged']:
                         return True
-                delta = event.globalPosition() - self.origin[0]
-                self.view.horizontalScrollBar().setValue(self.origin[1] - round(delta.x()))
-                self.view.verticalScrollBar().setValue(self.origin[2] - round(delta.y()))
+                position = event.globalPosition().toPoint()
+                delta = position - self.origin
+                self.origin = position
+                self.view.pan_by(delta)
                 return True
             if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
                 hand_press = self.hand_press
-                self.origin = None
+                self._end_pan()
                 if self.space:
                     self.view.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
                 else:

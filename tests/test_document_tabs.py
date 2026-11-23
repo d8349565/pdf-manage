@@ -341,6 +341,37 @@ def test_new_pdf_fits_page_while_existing_tabs_keep_their_zoom(window, tmp_path,
     assert window._zoom_mode == "width" and len(window._tabs) == 2
 
 
+def test_switching_tabs_restores_panned_reading_position(window, tmp_path, qapp):
+    from test_reading_stability import settle
+
+    paths = [tmp_path / name for name in ("first.pdf", "second.pdf")]
+    for path in paths:
+        _make_pdf(path, 3, path.stem)
+    assert window.open_files_in_tabs([str(path) for path in paths])
+    window.step_tab(-1)
+    window.go_to_page(2)
+    window._set_zoom(4)
+    window.reader_tool_actions["hand"].trigger()
+    settle(window, qapp)
+
+    view = window.preview_view
+    viewport = view.viewport()
+    center = viewport.rect().center()
+    before = view.mapToScene(center)
+    QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=center)
+    QTest.mouseMove(viewport, center - QPoint(100, 80))
+    QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=center - QPoint(100, 80))
+    anchor = view.mapToScene(center)
+    assert anchor.x() > before.x() and anchor.y() > before.y()
+
+    window.step_tab(1)
+    window.step_tab(-1)
+    settle(window, qapp)
+    assert window.page_number.value() == 2
+    assert window._zoom == 4
+    assert (view.mapFromScene(anchor) - center).manhattanLength() <= 2
+
+
 def test_zone_aware_external_pdf_drop(window, tmp_path, qapp):
     doc_a = tmp_path / "A.pdf"
     doc_b = tmp_path / "B.pdf"

@@ -28,6 +28,7 @@ from PyQt6.QtCore import (
     QRectF,
     Qt,
     QSettings,
+    QSignalBlocker,
     QSize,
     QThreadPool,
     QThread,
@@ -51,6 +52,7 @@ from PyQt6.QtGui import (
     QPen,
     QPolygonF,
     QPixmap,
+    QRegion,
     QTransform,
     QUndoGroup,
     QWheelEvent,
@@ -1327,9 +1329,10 @@ class PreviewView(QGraphicsView):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setProperty("themeCanvas", "#F4F7F6")
         self.setBackgroundBrush(QColor(ui_color("#F4F7F6")))
+        # 画布每帧都填充底色；允许 Qt 在平移时复用屏幕上已有的像素。
+        self.viewport().setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         # 缩放时平滑复用页图；选区变化时整幅刷新视口，避免局部采样取整导致文字偏移一个像素。
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
@@ -1343,6 +1346,33 @@ class PreviewView(QGraphicsView):
 
     def photo(self) -> QPixmap:
         return self._item.pixmap()
+
+    def pan_by(self, delta: QPoint) -> None:
+        horizontal, vertical = self.horizontalScrollBar(), self.verticalScrollBar()
+        old_x, old_y = horizontal.value(), vertical.value()
+        rtl = self.isRightToLeft()
+        mode = self.viewportUpdateMode()
+        with QSignalBlocker(self):
+            self.setViewportUpdateMode(self.ViewportUpdateMode.NoViewportUpdate)
+            try:
+                horizontal.setValue(old_x + (delta.x() if rtl else -delta.x()))
+                vertical.setValue(old_y - delta.y())
+            finally:
+                self.setViewportUpdateMode(mode)
+        dx, dy = old_x - horizontal.value(), old_y - vertical.value()
+        if not (dx or dy):
+            return
+        if rtl:
+            dx = -dx
+        canvas = self.viewport()
+        # 两侧各留出悬浮按钮和阴影的宽度，否则 Qt 会因画布边缘被遮挡而整幅重画。
+        middle = canvas.rect().adjusted(80, 0, -80, 0)
+        if middle.isEmpty() or not canvas.childrenRegion().isEmpty():
+            canvas.update()
+        else:
+            canvas.scroll(dx, dy, middle)
+            canvas.update(QRegion(canvas.rect()).subtracted(QRegion(middle)))
+        self.view_changed.emit()
 
     def set_reading_colors(self, colors):
         if colors != self.reading_colors:
@@ -2184,7 +2214,7 @@ class _DocumentTab:
     zoom_mode: str = "page"
     reading_layout: str = "single"
     arrange_zoom: float = 1.0
-    scroll_y: int | None = None
+    scroll_position: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         if not self.tab_id:
@@ -5873,7 +5903,8 @@ class MainWindow(QMainWindow):
         cur.reading_layout = self._reading_layout
         cur.arrange_zoom = self._arrange_zoom
         if hasattr(self, "preview_view"):
-            cur.scroll_y = self.preview_view.verticalScrollBar().value()
+            view = self.preview_view
+            cur.scroll_position = (view.horizontalScrollBar().value(), view.verticalScrollBar().value())
         self._remember_reading_state()
 
     def _allow_document_switch(self) -> bool:
@@ -5924,8 +5955,10 @@ class MainWindow(QMainWindow):
         self._arrange_zoom = target.arrange_zoom
         self.arrange_zoom_label.setText(f"{int(round(self._arrange_zoom * 100))}%")
         self.refresh()
-        if target.scroll_y is not None and target.ws.pages:
-            self.preview_view.verticalScrollBar().setValue(target.scroll_y)
+        if target.scroll_position is not None and target.ws.pages:
+            x, y = target.scroll_position
+            self.preview_view.horizontalScrollBar().setValue(x)
+            self.preview_view.verticalScrollBar().setValue(y)
         elif target.ws.preview_index() is not None:
             self.preview_view.jump_to_page(target.ws.preview_index())
         self.reading_history.touch(target.ws.path)
@@ -5986,7 +6019,7 @@ class MainWindow(QMainWindow):
             tab.zoom_mode = "page"
             tab.reading_layout = "single"
             tab.arrange_zoom = 1.0
-            tab.scroll_y = None
+            tab.scroll_position = None
             self.refresh()
             self.stack.setCurrentIndex(0)
             self._release_unused_docs()
