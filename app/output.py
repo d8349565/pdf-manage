@@ -36,13 +36,12 @@ def stamp(path):
 
 
 def commit_file(temp, target, expected, *, cancel=None):
-    check_cancel(cancel)
-    if stamp(target) != expected:
-        raise OSError("目标文件在处理期间发生变化，未覆盖，请重新选择输出文件。")
     # 新文件采用排他创建，避免检查之后出现的同名文件被替换。
     # Windows readers briefly hold newly closed files; retry handles transient locks.
     for attempt in range(20):
         check_cancel(cancel)
+        if stamp(target) != expected:
+            raise OSError("目标文件在处理期间发生变化，未覆盖，请重新选择输出文件。")
         try:
             if expected is None:
                 if os.name == "nt":

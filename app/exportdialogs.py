@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QRadioButton, QVBoxLayout, QWidget,
 )
 
-from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES
-from app.pdfio import EncryptionOptions
+from app.imaging import IMAGE_FILTER, IMAGE_SUFFIXES, plan_long_image
+from app.pdfio import EncryptionOptions, PdfError
 from app.workspace import parse_page_range
 from app.storage import export_path
 
@@ -459,11 +459,12 @@ class ImageImportDialog(QDialog):
 
 
 class ImageExportDialog(QDialog):
-    def __init__(self, count, current, selected, parent=None):
+    def __init__(self, store, pages, current, selected, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr('PDF 转图片'))
         self.setMinimumWidth(440)
-        self.count, self.current, self.selected = count, current, selected
+        self.store, self.pages = store, pages
+        self.count, self.current, self.selected = len(pages), current, selected
         layout = QVBoxLayout(self)
         self.current_mode = QRadioButton(tr('当前页'))
         self.selected_mode = QRadioButton(tr('所选页面（{p0} 页）', p0=f'{len(selected)}'))
@@ -481,16 +482,24 @@ class ImageExportDialog(QDialog):
         self.range.textChanged.connect(self.validate)
         layout.addWidget(self.range)
         form = QFormLayout()
+        self.mode = QComboBox()
+        self.mode.addItem(tr('每页一张'), False)
+        self.mode.addItem(tr('合成一张长图'), True)
         self.format = QComboBox()
-        self.format.addItems(["PNG", "JPEG"])
+        self.format.addItem("PNG", "png")
+        self.format.addItem("JPEG", "jpeg")
         self.dpi = QComboBox()
-        self.dpi.addItems(["150 DPI", "300 DPI"])
+        self.dpi.addItem("150 DPI", 150)
+        self.dpi.addItem("300 DPI", 300)
+        form.addRow(tr('导出方式'), self.mode)
         form.addRow(tr('图片格式'), self.format)
         form.addRow(tr('分辨率'), self.dpi)
         layout.addLayout(form)
+        for field in (self.mode, self.format, self.dpi):
+            field.currentIndexChanged.connect(self.validate)
         self.overwrite = QCheckBox(tr('覆盖同名图片（默认跳过）'))
         layout.addWidget(self.overwrite)
-        hint(layout, tr('每页生成一个文件，页码按当前工作区顺序编号。取消保留已经完整导出的图片。'))
+        self.mode_hint = hint(layout, "")
         self.feedback = hint(layout, "")
         self.start = buttons(self, layout, tr('导出到文件夹…'))
         self.validate()
@@ -507,13 +516,27 @@ class ImageExportDialog(QDialog):
     def validate(self):
         if not hasattr(self, "start"):
             return
+        long_image = self.mode.currentData()
+        self.mode_hint.setText(
+            tr('页面按所选顺序从上到下拼接，各页等比铺满最宽页的宽度。') if long_image else
+            tr('每页生成一个文件，页码按当前工作区顺序编号。取消保留已经完整导出的图片。'))
+        message = ""
+        valid = True
         try:
-            self.indices()
-            error = ""
-        except ValueError as exc:
-            error = str(exc)
-        self.feedback.setText(error)
-        self.start.setEnabled(not error)
+            indices = self.indices()
+            if long_image:
+                plan = plan_long_image(self.store, (self.pages[i] for i in indices),
+                                       self.format.currentData(), self.dpi.currentData())
+                message = plan.summary()
+        except (ValueError, PdfError) as exc:
+            message = str(exc)
+            valid = False
+        self.feedback.setText(message)
+        self.start.setEnabled(valid)
+
+    def accept(self):
+        if self.start.isEnabled():
+            super().accept()
 
 
 def new_pdf_path(parent, store, title, suggested):

@@ -432,7 +432,7 @@ def test_tool_catalog_selectors_bind_real_controls(window, qapp, tmp_path, modul
     load_generated(window, qapp, tmp_path)
     factory = getattr(importlib.import_module('app.' + module), name)
     if arguments == 'range':
-        dialog = factory(4, 0, {0}, window)
+        dialog = factory(window.store, tuple(window.ws.pages), 0, [0], window)
     elif arguments == 'note':
         dialog = factory(window, 'Generated note')
     elif arguments == 'image':
