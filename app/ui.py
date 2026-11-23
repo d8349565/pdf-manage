@@ -17,6 +17,7 @@ from bisect import bisect_left, bisect_right
 from PyQt6.QtCore import (
     QAbstractListModel,
     QByteArray,
+    QCoreApplication,
     QEvent,
     QItemSelection,
     QItemSelectionModel,
@@ -76,7 +77,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QRadioButton,
     QScrollArea,
     QSpinBox,
     QSplitter,
@@ -98,7 +98,7 @@ from app.progress import TaskProgressDialog, run_operation
 from app.output import OperationCancelled
 from app.pdfio import (NeedPassword, PdfError, PdfStore, WriteNeedsConfirmation,
                        WriteOptions, apply_output_conflicts, is_encrypted_file)
-from app.workspace import Workspace, parse_page_range
+from app.workspace import Workspace
 from app.startup import mark
 from app.storage import TemporaryWorkspace, export_path, output_directory
 from app.rendering import RenderResult, RenderScheduler, RenderSignals
@@ -3105,8 +3105,8 @@ class MainWindow(QMainWindow):
         convert.addAction(self._act(tr('Markdown 转 PDF…'), self.convert_markdown))
         convert.addSeparator()
         convert.addAction(self._act(tr('PDF 转 Word…'), lambda: self.open_word_converter(direction="pdf_to_word")))
-        self.convert_action = self._act(tr('PDF 转 Excel…'), lambda: self.open_export_tool(2))
-        self.image_export_action = self._act(tr('PDF 转图片…'), lambda: self.open_export_tool(5))
+        self.convert_action = self._act(tr('PDF 转 Excel…'), lambda: self.convert_to_excel(choose_settings=True))
+        self.image_export_action = self._act(tr('PDF 转图片…'), self.pdf_to_images)
         self.raster_action = self._act(tr('PDF 转图片版…'), self.rasterize_document)
         convert.addAction(self.convert_action)
         convert.addAction(self._act(tr('PDF 转 TXT…'), self.export_text))
@@ -3744,38 +3744,22 @@ class MainWindow(QMainWindow):
         if not self._tools_ready:
             return
         count = len(self.ws.pages)
-        split_reason = (self.store.operation_reason(self.ws.pages, 'copy') or
-                        self.store.operation_reason(self.ws.pages, 'modify'))
+        copy_reason = self.store.operation_reason(self.ws.pages, 'copy')
+        split_reason = copy_reason or self.store.operation_reason(self.ws.pages, 'modify')
         self.split_options.set_context(count, split_reason)
         if hasattr(self, '_split_popup_options'):
             self._split_popup_options.set_context(count, split_reason)
-        for kind, button, label in (
-            ("extract", self.extract_button, self.extract_feedback),
-            ("convert", self.convert_button, self.convert_feedback),
-        ):
-            error = ""
-            summary = ""
+        self.excel_options.validate(self.convert_button, self.ws, copy_reason)
+        error = split_reason if count else '请先打开 PDF'
+        if not error:
             try:
-                if not count:
-                    raise ValueError("请先打开 PDF")
-                reason = self.store.operation_reason(self.ws.pages, "copy")
-                if kind != "convert":
-                    reason = reason or self.store.operation_reason(self.ws.pages, "modify")
-                if reason:
-                    raise ValueError(reason)
-                if kind == "extract":
-                    self.ws.extract_indices(self.extract_range.text())
-                elif kind == "convert":
-                    if self.convert_range_mode.isChecked():
-                        parse_page_range(self.convert_range.text(), count)
-                    elif self.convert_selected.isChecked() and not self.ws.target_indices():
-                        raise ValueError("请先选择要转换的页面")
+                self.ws.extract_indices(self.extract_range.text())
             except ValueError as exc:
                 error = str(exc)
-            button.setEnabled(not error)
-            button.setToolTip(error)
-            label.setText(error or summary)
-            label.setVisible(bool(error or summary))
+        self.extract_button.setEnabled(not error)
+        self.extract_button.setToolTip(error)
+        self.extract_feedback.setText(error)
+        self.extract_feedback.setVisible(bool(error))
 
     def _act(self, text, slot) -> QAction:
         text=text.removesuffix('…').removesuffix('...')
@@ -4072,7 +4056,7 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
 
     def _tools(self) -> QWidget:
-        from app.pagetoolsui import ClearComboBox
+        from app.exportdialogs import ExcelExportOptions
 
         box = QFrame()
         box.setObjectName("exportSidebar")
@@ -4140,38 +4124,10 @@ class MainWindow(QMainWindow):
         for name in ('each', 'every', 'count', 'range_mode', 'mode_group', 'range', 'feedback', 'button'):
             setattr(self, 'split_' + name, getattr(self.split_options, name))
         convert = section(tr('PDF 转 Excel'))
-        content_label = QLabel(tr('导出内容'))
-        self.convert_content = ClearComboBox()
-        self.convert_content.addItem(tr('全部内容（按页导出）'), True)
-        self.convert_content.addItem(tr('仅表格'), False)
-        self.convert_content.setAccessibleName(tr('Excel 导出内容'))
-        content_label.setBuddy(self.convert_content)
-        convert.addWidget(content_label)
-        convert.addWidget(self.convert_content)
-        self.convert_all = QRadioButton(tr('全部页面'))
-        self.convert_selected = QRadioButton(tr('所选页面'))
-        self.convert_range_mode = QRadioButton(tr('按页码范围'))
-        self.convert_mode_group = QButtonGroup(self)
-        for radio in (self.convert_all, self.convert_selected, self.convert_range_mode):
-            self.convert_mode_group.addButton(radio)
-        self.convert_all.setChecked(True)
-        convert.addWidget(self.convert_all)
-        convert.addWidget(self.convert_selected)
-        convert.addWidget(self.convert_range_mode)
-        self.convert_range = QLineEdit()
-        self.convert_range.setPlaceholderText(tr('如 1-3,5；默认全部'))
-        self.convert_range.setAccessibleName(tr('转换页码范围'))
-        self.convert_range.setVisible(False)
-        self.convert_range_mode.toggled.connect(self.convert_range.setVisible)
-        convert.addWidget(self.convert_range)
-        hint = QLabel(tr('全部内容按页保留文字、表格和图片。扫描文字需先完成 OCR；金额与行列请核对原件。'))
-        hint.setWordWrap(True)
-        hint.setObjectName("hint")
-        convert.addWidget(hint)
-        self.convert_feedback = QLabel("")
-        self.convert_feedback.setObjectName("exportFeedback")
-        self.convert_feedback.setWordWrap(True)
-        convert.addWidget(self.convert_feedback)
+        self.excel_options = ExcelExportOptions()
+        convert.addWidget(self.excel_options)
+        for name in ('content', 'all', 'selected', 'range_mode', 'range', 'feedback'):
+            setattr(self, 'convert_' + name, getattr(self.excel_options, name))
         self.convert_button = self._btn(tr('转换为 Excel…'), self.convert_to_excel, primary=True)
         convert.addWidget(self.convert_button)
         compress = section(tr('压缩 PDF'))
@@ -4209,10 +4165,8 @@ class MainWindow(QMainWindow):
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         security.addWidget(hint)
-        for field in (self.extract_range, self.convert_range):
-            field.textChanged.connect(self._update_export_controls)
-        for radio in (self.convert_all, self.convert_selected, self.convert_range_mode):
-            radio.toggled.connect(self._update_export_controls)
+        self.extract_range.textChanged.connect(self._update_export_controls)
+        self.excel_options.changed.connect(self._update_export_controls)
         return box
 
     def extract_selected(self) -> None:
@@ -6696,7 +6650,9 @@ class MainWindow(QMainWindow):
         try:
             result = run_operation(self, tr('导出文字'), lambda progress,cancel:
                 pdf_to_text(self.ws.path,path,progress,cancel), cancellable=True)
-            self.statusBar().showMessage(tr('文字已导出：{p0}', p0=f'{result}'), 6000)
+            summary = tr('文字已导出：{p0}', p0=result)
+            self.statusBar().showMessage(summary, 6000)
+            self._show_export_result(tr('已完成'), summary, str(Path(result).parent))
         except OperationCancelled:
             self.statusBar().showMessage(tr('文字导出已取消。'), 4000)
         except (ValueError, OSError) as exc:
@@ -6717,7 +6673,8 @@ class MainWindow(QMainWindow):
         try:
             result = run_operation(self, tr('图片转 PDF'), lambda progress, cancel:
                 images_to_pdf(paths, path, self.store, progress, cancel), cancellable=True)
-            QMessageBox.information(self, tr('已完成'), tr('已完整导出 1 个 PDF：\n{p0}', p0=f'{result.path}'))
+            self._show_export_result(tr('已完成'), tr('已完整导出 1 个 PDF：\n{p0}', p0=result.path),
+                                     str(Path(result.path).parent))
         except OperationCancelled:
             QMessageBox.information(self, tr('已取消'), tr('已取消，完成 0 个导出文件，原件保留。'))
         except (PdfError, OSError) as exc:
@@ -6755,10 +6712,19 @@ class MainWindow(QMainWindow):
         try:
             done, skipped, failed, cancelled = run_operation(self, tr('PDF 转图片'), lambda progress, cancel:
                 export(store, selected, indices, folder, prefix, fmt, dpi, overwrite, progress, cancel), cancellable=True)
-            box = QMessageBox(QMessageBox.Icon.Information, tr('已取消') if cancelled else tr('导出结束'),
-                tr('已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}', p0=f'{len(done)}', p1=f'{len(skipped)}', p2=f'{len(failed)}', p3=f'{folder}'), parent=self)
-            box.setDetailedText("\n".join([*(tr('成功：') + p for p in done), *(tr('跳过：') + p for p in skipped), *failed]))
+            title = tr('已取消') if cancelled else tr('导出结束')
+            summary = tr('已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}',
+                         p0=len(done), p1=len(skipped), p2=len(failed), p3=folder)
+            box = QMessageBox(QMessageBox.Icon.Information, title, summary, QMessageBox.StandardButton.Ok, self)
+            if failed:
+                box.setInformativeText(failed[0])
+                box.setDetailedText('\n'.join(failed))
+            folder_button = None
+            if done or skipped:
+                folder_button = box.addButton(tr('打开文件夹'), QMessageBox.ButtonRole.ActionRole)
             box.exec()
+            if folder_button is not None and box.clickedButton() is folder_button:
+                self._open_output_folder(folder)
         except (PdfError, OSError) as exc:
             QMessageBox.warning(self, tr('导出未完成'), str(exc))
 
@@ -6974,6 +6940,15 @@ class MainWindow(QMainWindow):
             if len(warnings) > 5:
                 box.setDetailedText("\n".join(warnings))
             box.exec()
+
+    def _show_export_result(self, title, summary, folder, *, details=()):
+        box = QMessageBox(QMessageBox.Icon.Information, title, summary, QMessageBox.StandardButton.Ok, self)
+        if details:
+            box.setDetailedText('\n'.join(details))
+        button = box.addButton(tr('打开文件夹'), QMessageBox.ButtonRole.ActionRole)
+        box.exec()
+        if box.clickedButton() is button:
+            self._open_output_folder(folder)
 
     def _open_output_folder(self, folder: str) -> None:
         from PyQt6.QtCore import QUrl
@@ -7303,41 +7278,52 @@ class MainWindow(QMainWindow):
             return "skip"
         return "cancel"
 
-    def convert_to_excel(self) -> None:
-        self._ensure_tools()
-        if not self._allow_operation("copy"):
+    def convert_to_excel(self, *, choose_settings=False) -> None:
+        if getattr(self, '_conv_thread', None) is not None or getattr(self, '_task_dialog', None) is not None:
             return
-        if getattr(self, "_conv_thread", None) is not None:
+        if not self._allow_operation('copy'):
             return
-        if not self.ws.pages:
+        workspace, store = self.ws, self.store
+        if not workspace.pages:
             QMessageBox.information(self, tr('转换为 Excel'), tr('工作区没有页面，请先打开或拖入 PDF。'))
             return
 
-        # 确定要转换的页码索引 (0-based)
-        if self.convert_selected.isChecked():
-            indices = self.ws.target_indices()
-            if not indices:
-                QMessageBox.information(self, tr('转换为 Excel'), tr('请先在页面列表中选择需要转换的页面。'))
-                return
-        elif self.convert_range_mode.isChecked():
-            text = self.convert_range.text().strip()
-            if not text:
-                QMessageBox.information(self, tr('转换为 Excel'), tr('请输入要转换的页码范围。'))
-                return
-            try:
-                indices = parse_page_range(text, len(self.ws.pages))
-            except ValueError as exc:
-                QMessageBox.warning(self, tr('页码错误'), str(exc))
-                return
-        else:
-            indices = list(range(len(self.ws.pages)))
+        self._ensure_tools()
+        settings = self.excel_options
+        dialog = None
+        try:
+            if choose_settings:
+                from app.exportdialogs import ExcelExportDialog
+                dialog = ExcelExportDialog(workspace, self)
+                dialog.options.copy_from(settings)
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    return
+                settings = dialog.options
+            indices = list(settings.indices(workspace))
+            include_all_content = bool(settings.content.currentData())
+            if dialog is not None:
+                self.excel_options.copy_from(settings)
+        except ValueError as exc:
+            QMessageBox.warning(self, tr('页码错误'), str(exc))
+            return
+        finally:
+            if dialog is not None:
+                dialog.deleteLater()
+                # Release the shortcut bindings before the dialog's Python references are collected.
+                QCoreApplication.sendPostedEvents(dialog, QEvent.Type.DeferredDelete)
 
-        # 建议的输出文件名
-        include_all_content = bool(self.convert_content.currentData())
+        target_pages = [workspace.pages[i] for i in indices]
+        source_path = workspace.path
         default_name = tr('内容导出.xlsx') if include_all_content else tr('表格导出.xlsx')
-        if self.ws.path:
-            base = os.path.splitext(os.path.basename(self.ws.path))[0]
+        if source_path:
+            base = os.path.splitext(os.path.basename(source_path))[0]
             default_name = f"{base}.xlsx"
+        # 完整未编辑的 PDF 可由转换线程直接读取，其余情况由工作区页面生成临时副本。
+        can_use_source = (
+            not workspace.dirty and source_path and not source_path.lower().endswith('.ofd')
+            and indices == list(range(len(workspace.pages)))
+        )
+        source_pdf = source_path if can_use_source else None
 
         out_path, _ = QFileDialog.getSaveFileName(
             self, tr('导出 Excel'), export_path(default_name), tr('Excel 工作簿 (*.xlsx)'),
@@ -7352,27 +7338,11 @@ class MainWindow(QMainWindow):
                     QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                 return
 
-        # 如果工作区未改动、且非加密文件、且是单文档全选，直接使用源文件；
-        # 否则（有旋转/删页/重排/合并/原文件加密），先将当前所见页面写入临时解密 PDF 进行分析
-        source_pdf = None
-
-        can_use_source = (
-            not self.ws.dirty
-            and self.ws.path
-            and not self.ws.path.lower().endswith('.ofd')
-            and len(self.ws.pages) == len(indices)
-            and indices == list(range(len(self.ws.pages)))
-        )
-
-        if can_use_source:
-            source_pdf = self.ws.path
-        target_pages = [self.ws.pages[i] for i in indices]
-
         prog = TaskProgressDialog(tr('PDF 转 Excel'), self, cancellable=True)
         prog.show()
 
         thread = ConversionThread(source_pdf, out_path, None, self,
-                                  store=self.store, pages=target_pages, include_all_content=include_all_content)
+                                  store=store, pages=target_pages, include_all_content=include_all_content)
         self._conv_thread = thread
         self._conv_prog = prog
 
@@ -7411,17 +7381,14 @@ class MainWindow(QMainWindow):
             )
             if report.warning_count > 0:
                 msg += tr('\n提示：有 {p0} 条提示，可展开详细信息查看。', p0=f'{report.warning_count}')
-            box = QMessageBox(QMessageBox.Icon.Information, tr('转换成功'), msg, parent=self)
             details = list(result.warnings)
             for table_report in report.tables:
                 details.extend(
                     tr('第 {p0} 页 / 表格 {p1}：{p2}', p0=f'{table_report.page_no}', p1=f'{table_report.table_index + 1}', p2=f'{warning}')
                     for warning in table_report.warnings
                 )
-            if details:
-                box.setDetailedText("\n".join(details))
-            box.exec()
             self.statusBar().showMessage(tr('已导出 Excel: {p0}', p0=f'{os.path.basename(out_path)}'))
+            self._show_export_result(tr('转换成功'), msg, str(Path(out_path).parent), details=details)
 
         def on_cancel():
             thread.cancel()

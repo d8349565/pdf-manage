@@ -6,7 +6,7 @@ from app.themes import set_theme_style
 from pathlib import Path
 
 import pymupdf
-from PyQt6.QtCore import QEvent, QSettings, Qt
+from PyQt6.QtCore import QEvent, QSettings, QSignalBlocker, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
@@ -464,16 +464,20 @@ class ImageExportDialog(QDialog):
         self.setWindowTitle(tr('PDF 转图片'))
         self.setMinimumWidth(440)
         self.store, self.pages = store, pages
-        self.count, self.current, self.selected = len(pages), current, selected
+        self.count, self.current, self.selected = len(pages), current, list(selected)
+        selected_count = len(self.selected)
         layout = QVBoxLayout(self)
         self.current_mode = QRadioButton(tr('当前页'))
-        self.selected_mode = QRadioButton(tr('所选页面（{p0} 页）', p0=f'{len(selected)}'))
+        self.all_mode = QRadioButton(tr('全部页面（{p0} 页）', p0=self.count))
+        self.selected_mode = QRadioButton(tr('所选页面（{p0} 页）', p0=selected_count))
         self.range_mode = QRadioButton(tr('按页码范围'))
         self.current_mode.setChecked(True)
-        self.selected_mode.setEnabled(bool(selected))
-        for radio in (self.current_mode, self.selected_mode, self.range_mode):
+        for radio in (self.current_mode, self.all_mode, self.selected_mode, self.range_mode):
             layout.addWidget(radio)
             radio.toggled.connect(self.validate)
+        self.all_mode.setVisible(self.count > 1)
+        self.selected_mode.setVisible(0 < selected_count < self.count and self.selected != [current])
+        self.range_mode.setVisible(self.count > 1)
         self.range = QLineEdit()
         self.range.setPlaceholderText(tr('例如 1-3,5'))
         self.range.setAccessibleName(tr('图片导出页码范围'))
@@ -505,6 +509,8 @@ class ImageExportDialog(QDialog):
         self.validate()
 
     def indices(self):
+        if self.all_mode.isChecked():
+            return list(range(self.count))
         if self.range_mode.isChecked():
             if not self.range.text().strip():
                 raise ValueError("请输入页码范围。")
@@ -550,3 +556,94 @@ def new_pdf_path(parent, store, title, suggested):
         QMessageBox.warning(parent, tr('请另存副本'), tr('不能覆盖已打开的来源文件，请选择新的文件名。'))
         return None
     return str(Path(path).absolute())
+
+
+class ExcelExportOptions(QWidget):
+    changed = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        from app.pagetoolsui import ClearComboBox
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        content_label = QLabel(tr('导出内容'))
+        self.content = ClearComboBox()
+        self.content.addItem(tr('全部内容（按页导出）'), True)
+        self.content.addItem(tr('仅表格'), False)
+        self.content.setAccessibleName(tr('Excel 导出内容'))
+        content_label.setBuddy(self.content)
+        layout.addWidget(content_label)
+        layout.addWidget(self.content)
+
+        self.all = QRadioButton(tr('全部页面'))
+        self.selected = QRadioButton(tr('所选页面'))
+        self.range_mode = QRadioButton(tr('按页码范围'))
+        self.all.setChecked(True)
+        for radio in (self.all, self.selected, self.range_mode):
+            layout.addWidget(radio)
+            radio.toggled.connect(self.changed)
+        self.range = QLineEdit()
+        self.range.setPlaceholderText(tr('如 1-3,5；默认全部'))
+        self.range.setAccessibleName(tr('转换页码范围'))
+        layout.addWidget(self.range)
+        self.range.hide()
+        self.range_mode.toggled.connect(self.range.setVisible)
+        self.range.textChanged.connect(self.changed)
+        hint(layout, tr('全部内容按页保留文字、表格和图片。扫描文字需先完成 OCR；金额与行列请核对原件。'))
+        self.feedback = hint(layout, '')
+        self.feedback.setObjectName('exportFeedback')
+        self.feedback.hide()
+
+    def copy_from(self, other):
+        with QSignalBlocker(self):
+            self.content.setCurrentIndex(other.content.currentIndex())
+            self.range.setText(other.range.text())
+            for name in ('all', 'selected', 'range_mode'):
+                if getattr(other, name).isChecked():
+                    getattr(self, name).setChecked(True)
+                    break
+        self.changed.emit()
+
+    def indices(self, workspace):
+        if self.selected.isChecked():
+            selected = workspace.target_indices()
+            if not selected:
+                raise ValueError(tr('请先在页面列表中选择需要转换的页面。'))
+            return selected
+        if self.range_mode.isChecked():
+            text = self.range.text().strip()
+            if not text:
+                raise ValueError(tr('请输入要转换的页码范围。'))
+            return parse_page_range(text, len(workspace.pages))
+        return range(len(workspace.pages))
+
+    def validate(self, button, workspace, reason=''):
+        error = reason if workspace.pages else tr('请先打开 PDF')
+        if not error:
+            try:
+                self.indices(workspace)
+            except ValueError as exc:
+                error = str(exc)
+        self.feedback.setText(error)
+        self.feedback.setVisible(bool(error))
+        button.setEnabled(not error)
+        button.setToolTip(error)
+
+
+class ExcelExportDialog(QDialog):
+    def __init__(self, workspace, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(tr('PDF 转 Excel'))
+        self.setMinimumWidth(440)
+        layout = QVBoxLayout(self)
+        self.options = ExcelExportOptions()
+        layout.addWidget(self.options)
+        self.start = buttons(self, layout, tr('转换为 Excel…'))
+        self.options.changed.connect(lambda: self.options.validate(self.start, workspace))
+        self.options.validate(self.start, workspace)
+
+    def accept(self):
+        if self.start.isEnabled():
+            super().accept()

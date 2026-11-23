@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pymupdf
 import pytest
-from PyQt6.QtCore import QItemSelectionModel, QMimeData, QPoint, QSize, QThreadPool, Qt
+from PyQt6.QtCore import QItemSelectionModel, QMimeData, QPoint, QSize, QThreadPool, QTimer, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtGui import QColor, QDragLeaveEvent, QDragMoveEvent, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QDesktopServices, QDragLeaveEvent, QDragMoveEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
     QFileDialog,
     QInputDialog,
     QLabel,
@@ -43,7 +46,6 @@ from app.ui import (
 def test_excel_preparation_keeps_ui_responsive(window, qapp, tmp_path, monkeypatch, ending):
     import threading
     import time
-    from PyQt6.QtCore import QTimer
     from app.pdf2excel.models import ConversionResult
     from app.pdf2excel.quality import assess_conversion
     import app.pdf2excel.converter as converter
@@ -117,34 +119,128 @@ def test_excel_preparation_keeps_ui_responsive(window, qapp, tmp_path, monkeypat
             qapp.processEvents()
 
 
-@pytest.mark.parametrize('selected', [False, True])
-def test_excel_real_worker_exports(window, qapp, tmp_path, monkeypatch, selected):
+@pytest.fixture
+def opened_export_folders(monkeypatch):
+    opened = []
+
+    def open_url(url):
+        opened.append(Path(url.toLocalFile()))
+        return True
+
+    def choose_folder(box):
+        button = next((button for button in box.buttons() if button.text() == '打开文件夹'), None)
+        if button is None:
+            return QMessageBox.StandardButton.Ok.value
+        QTimer.singleShot(0, button.click)
+        return QDialog.exec(box)
+
+    monkeypatch.setattr(QDesktopServices, 'openUrl', open_url)
+    monkeypatch.setattr(QMessageBox, 'exec', choose_folder)
+    return opened
+
+
+@pytest.mark.parametrize('selected,from_menu', [(False, False), (True, False), (True, True)])
+def test_excel_real_worker_exports(window, qapp, tmp_path, monkeypatch, selected, from_menu, opened_export_folders):
     import time
     import openpyxl
     source, output = tmp_path / 'table.pdf', tmp_path / 'out.xlsx'
     with pymupdf.open() as doc:
-        for _ in range(2):
+        for price in (123, 124):
             page = doc.new_page(width=400, height=400)
             for x in (50, 150, 250):
                 page.draw_line((x, 50), (x, 150))
             for y in (50, 100, 150):
                 page.draw_line((50, y), (250, y))
-            for r, row in enumerate([['Name', 'Price'], ['ABC', '123']]):
+            for r, row in enumerate([['Name', 'Price'], ['ABC', str(price)]]):
                 for c, value in enumerate(row):
                     page.insert_text((55 + c * 100, 75 + r * 50), value)
         doc.save(source)
-    assert window._load_one(str(source))
-    window.open_export_tool(2)
-    window.convert_content.setCurrentIndex(window.convert_content.findData(False))
-    if selected:
-        window.ws.select_index(0)
-        window.convert_selected.setChecked(True)
+    if from_menu:
+        from app import pdfstructure
+
+        signature_steps = pdfstructure.signature_steps
+
+        def deferred_signature_steps(doc):
+            yield
+            return (yield from signature_steps(doc))
+
+        monkeypatch.setattr(pdfstructure, 'signature_steps', deferred_signature_steps)
+    assert window.open_files_in_tabs([str(source)])
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *a, **k: (str(output), ''))
-    monkeypatch.setattr(QMessageBox, 'exec', lambda self: 0)
     messages = []
     monkeypatch.setattr(QMessageBox, 'warning', lambda *a: messages.append(a[-1]))
-    window.convert_to_excel()
-    worker = window._conv_thread
+    if from_menu:
+        from app.exportdialogs import ExcelExportDialog
+
+        assert window.convert_action.isEnabled()
+        window._ensure_tools()
+        window.convert_content.setCurrentIndex(window.convert_content.findData(False))
+        window.convert_range_mode.setChecked(True)
+        window.convert_range.setText('1')
+        values = window.shortcut_manager.values()
+        values['export_excel.apply'] = ['F7']
+        assert not window.shortcut_manager.apply(values)
+        panel_state = (window.act_tools.isChecked(), window._tool_index, window.stack.currentIndex())
+        settings_opened = []
+        errors = []
+
+        def choose_settings(dialog):
+            settings_opened.append(True)
+            try:
+                assert QApplication.activeModalWidget() is dialog
+                assert dialog.options.content.currentData() is False
+                assert dialog.options.range_mode.isChecked()
+                assert dialog.options.range.text() == '1'
+                dialog.options.range.setText('99')
+                assert not dialog.start.isEnabled()
+                if len(settings_opened) == 1:
+                    dialog.options.content.setCurrentIndex(dialog.options.content.findData(True))
+                    dialog.options.all.click()
+                    dialog.reject()
+                    return
+                dialog.options.range.setText('2')
+                assert dialog.start.isEnabled()
+                dialog.activateWindow()
+                dialog.options.range.setFocus()
+                qapp.processEvents()
+                QTest.keyClick(dialog.options.range, Qt.Key.Key_F7)
+                assert dialog.result() == QDialog.DialogCode.Accepted
+            except Exception as exc:
+                errors.append(exc)
+                dialog.reject()
+
+        def exec_settings(dialog):
+            # Drive this window only after its own modal loop has opened.
+            QTimer.singleShot(0, lambda: choose_settings(dialog))
+            timeout = QTimer(dialog)
+            timeout.setSingleShot(True)
+            timeout.timeout.connect(dialog.reject)
+            timeout.start(5000)
+            try:
+                return QDialog.exec(dialog)
+            finally:
+                timeout.stop()
+
+        monkeypatch.setattr(ExcelExportDialog, 'exec', exec_settings)
+        assert window.store._source(window.ws.pages[0].source_id).safety.signature == 'pending'
+        window.convert_action.trigger()
+        assert len(settings_opened) == 1 and not errors, errors
+        assert getattr(window, '_conv_thread', None) is None
+        assert window.convert_range_mode.isChecked() and window.convert_range.text() == '1'
+        assert window.convert_content.currentData() is False
+        window.convert_action.trigger()
+        assert len(settings_opened) == 2 and not errors, errors
+        assert window.convert_range_mode.isChecked() and window.convert_range.text() == '2'
+        assert (window.act_tools.isChecked(), window._tool_index, window.stack.currentIndex()) == panel_state
+    else:
+        window.open_export_tool(2)
+        window.convert_content.setCurrentIndex(window.convert_content.findData(False))
+        if selected:
+            window.ws.select_index(0)
+            window.convert_selected.setChecked(True)
+        window.convert_to_excel()
+    worker = getattr(window, '_conv_thread', None)
+    assert worker is not None
     try:
         deadline = time.monotonic() + 10
         while window._conv_thread is not None and time.monotonic() < deadline:
@@ -152,15 +248,50 @@ def test_excel_real_worker_exports(window, qapp, tmp_path, monkeypatch, selected
             time.sleep(.002)
         assert window._conv_thread is None
         assert not messages
+        assert opened_export_folders == [output.parent]
         wb = openpyxl.load_workbook(output)
-        assert len(wb.worksheets) == (1 if selected else 2)
-        for ws in wb.worksheets:
-            assert list(ws.values) == [('Name', 'Price'), ('ABC', 123)]
+        try:
+            prices = [124] if from_menu else [123] if selected else [123, 124]
+            assert [list(sheet.values) for sheet in wb.worksheets] == [
+                [('Name', 'Price'), ('ABC', price)] for price in prices
+            ]
+        finally:
+            wb.close()
     finally:
         if getattr(window, '_conv_thread', None) is not None:
             worker.cancel()
             worker.wait(10000)
             qapp.processEvents()
+
+
+@pytest.mark.parametrize('kind', ['txt', 'pdf'])
+def test_simple_conversions_open_the_output_folder(window, tmp_path, monkeypatch, kind, opened_export_folders):
+    output_dir = tmp_path / 'out'
+    output_dir.mkdir()
+    output = output_dir / f'converted.{kind}'
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *args, **kwargs: (str(output), ''))
+    if kind == 'txt':
+        source = tmp_path / 'source.pdf'
+        _make_pdf(source, 1, 'Generated text')
+        assert window._load_one(str(source))
+        window.export_text()
+        assert 'Generated text' in output.read_text(encoding='utf-8-sig')
+    else:
+        from PIL import Image
+        from app.exportdialogs import ImageImportDialog
+
+        source = tmp_path / 'source.png'
+        Image.new('RGB', (16, 16), 'white').save(source)
+
+        def select_image(dialog):
+            dialog.add_paths([str(source)])
+            return QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(ImageImportDialog, 'exec', select_image)
+        window.images_to_pdf()
+        with pymupdf.open(output) as document:
+            assert len(document) == 1
+    assert opened_export_folders == [output_dir]
 
 
 def test_excel_preparation_failure_cleans_up(window, qapp, tmp_path, monkeypatch):

@@ -7,7 +7,8 @@ import pymupdf
 import pytest
 from PIL import Image, ImageChops
 from PyQt6.QtCore import QSettings, QTimer
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
 from app import imaging, ui
 from app.exportdialogs import ImageExportDialog
@@ -33,7 +34,7 @@ def exporter(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(folder))
 
     def summary(box):
-        summaries.append((box.windowTitle(), box.text(), box.detailedText()))
+        summaries.append((box.windowTitle(), box.text()))
         return QMessageBox.StandardButton.Ok.value
 
     def warning(parent, title, message):
@@ -49,15 +50,16 @@ def exporter(qapp, tmp_path, monkeypatch):
 
 
 def _export(window, configure):
-    window.image_export_action.trigger()
-    assert window.export_tools.currentIndex() == 5
-    assert window.image_export_button.isVisible() and window.image_export_button.isEnabled()
+    panel_state = (window.act_tools.isChecked(), window._tool_index, window.stack.currentIndex())
     errors = []
+    opened = False
 
     def use_settings():
+        nonlocal opened
         dialog = QApplication.activeModalWidget()
         try:
             assert isinstance(dialog, ImageExportDialog)
+            opened = True
             configure(dialog)
             if dialog.isVisible():
                 assert dialog.start.isEnabled(), dialog.feedback.text()
@@ -67,9 +69,17 @@ def _export(window, configure):
             if isinstance(dialog, ImageExportDialog):
                 dialog.reject()
 
-    QTimer.singleShot(0, use_settings)
-    window.image_export_button.click()
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(use_settings)
+    timer.start(0)
+    try:
+        window.image_export_action.trigger()
+    finally:
+        timer.stop()
     assert not errors, errors
+    assert opened, "The menu should open the export dialog directly"
+    assert (window.act_tools.isChecked(), window._tool_index, window.stack.currentIndex()) == panel_state
 
 
 def _long_settings(dialog, fmt="png", dpi=150, *, page_range=None, overwrite=False):
@@ -114,12 +124,14 @@ def mixed_pdf(tmp_path):
 def test_default_per_page_and_single_page_png_pixels(exporter, mixed_pdf):
     window, folder, summaries, warnings = exporter
     assert window.open_files_in_tabs([mixed_pdf])
-    window.ws.set_selection([2, 0, 1], 0)
 
     def defaults(dialog):
         assert dialog.mode.currentText() == "每页一张"
         assert dialog.current_mode.isChecked()
-        dialog.selected_mode.click()
+        assert not dialog.selected_mode.isVisible()
+        assert dialog.all_mode.text() == "全部页面（3 页）"
+        assert dialog.all_mode.isVisible()
+        dialog.all_mode.click()
 
     _export(window, defaults)
     assert sorted(p.name for p in folder.iterdir()) == [f"mixed_{n:04d}.png" for n in range(1, 4)]
@@ -138,8 +150,60 @@ def test_default_per_page_and_single_page_png_pixels(exporter, mixed_pdf):
     assert not warnings and not list(folder.glob(".pageark-image-*"))
 
 
+def test_export_result_opens_the_output_folder(exporter, mixed_pdf, monkeypatch):
+    window, folder, _, warnings = exporter
+    assert window.open_files_in_tabs([mixed_pdf])
+    opened_folders = []
+    details = []
+
+    def open_url(url):
+        opened_folders.append(Path(url.toLocalFile()))
+        return True
+
+    def choose_folder(box):
+        details.append(box.detailedText())
+        button = next((button for button in box.buttons() if button.text() == "打开文件夹"), None)
+        if button is None:
+            return QMessageBox.StandardButton.Ok.value
+        QTimer.singleShot(0, button.click)
+        return QDialog.exec(box)
+
+    monkeypatch.setattr(QDesktopServices, "openUrl", open_url)
+    monkeypatch.setattr(QMessageBox, "exec", choose_folder)
+    _export(window, lambda dialog: None)
+    assert (folder / "mixed_0001.png").is_file() and not warnings
+    assert details == [""] and opened_folders == [folder]
+
+
+def test_export_result_lists_every_failed_page(exporter, mixed_pdf, monkeypatch):
+    window, folder, _, warnings = exporter
+    assert window.open_files_in_tabs([mixed_pdf])
+    failures = {"mixed_0001.png": "first write failed", "mixed_0003.png": "third write failed"}
+    original_save = imaging._save_pdf_image
+    results = []
+
+    def save(pix, target, *args, **kwargs):
+        name = Path(target).name
+        if name in failures:
+            raise OSError(failures[name])
+        return original_save(pix, target, *args, **kwargs)
+
+    def capture_result(box):
+        results.append((box.text(), box.detailedText().splitlines()))
+        return QMessageBox.StandardButton.Ok.value
+
+    monkeypatch.setattr(imaging, "_save_pdf_image", save)
+    monkeypatch.setattr(QMessageBox, "exec", capture_result)
+    _export(window, lambda dialog: dialog.all_mode.click())
+    assert (folder / "mixed_0002.png").is_file() and not warnings
+    [(summary, details)] = results
+    assert "失败 2 张" in summary
+    assert details == ["第 1 页：first write failed", "第 3 页：third write failed"]
+
+
 @pytest.mark.parametrize("fmt,dpi,scope", [
     ("png", 150, "range"), ("jpeg", 300, "range"), ("png", 150, "selected"),
+    ("png", 150, "all"),
 ])
 def test_multi_page_layout_order_and_rotation(exporter, mixed_pdf, fmt, dpi, scope):
     window, folder, summaries, warnings = exporter
@@ -152,7 +216,7 @@ def test_multi_page_layout_order_and_rotation(exporter, mixed_pdf, fmt, dpi, sco
     red = (300, 450, (255, 0, 0), False)
     green = (400, 250, (0, 255, 0), False)
     specs = [blue, red, green]
-    order = (3, 1, 2) if scope == "range" else (1, 3)
+    order = {"range": (3, 1, 2), "selected": (1, 3), "all": (1, 2, 3)}[scope]
     scale = dpi // 150
     fitted_heights = [720, 600, 250]
     height = sum(fitted_heights[index - 1] for index in order) * scale
@@ -160,7 +224,10 @@ def test_multi_page_layout_order_and_rotation(exporter, mixed_pdf, fmt, dpi, sco
 
     def configure(dialog):
         if scope == "selected":
+            assert dialog.selected_mode.isVisible()
             dialog.selected_mode.click()
+        elif scope == "all":
+            dialog.all_mode.click()
         _long_settings(dialog, fmt, dpi, page_range="3,1-2,3" if scope == "range" else None)
         assert f"{width} × {height}" in dialog.feedback.text()
         assert "预计额外峰值" in dialog.feedback.text()

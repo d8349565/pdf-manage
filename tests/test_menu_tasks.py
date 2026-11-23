@@ -28,8 +28,8 @@ def all_commands(window):
 # list was checked against the pre-migration runtime menu, not just toolbar IDs.
 EXPECTED={
     ('文件',):['打开 PDF / OFD / 图片','保存','另存为','关闭当前文件','打印','最近阅读记录','退出'],
-    ('文件','应用设置'):['界面语言 / Language','保存设置','存储管理','快捷键管理'],
-    ('编辑',):['撤销','重做','复制页面','粘贴为页面','全选','全文搜索','审阅与文字修正','框选导出图片'],
+    ('文件','应用设置'):['界面语言 / Language','保存设置','存储管理','快捷键管理','翻译设置'],
+    ('编辑',):['撤销','重做','复制页面','粘贴为页面','全选','全文搜索','审阅与文字修正','框选导出图片','框选翻译'],
     ('页面',):['插入页面','合并文件','合并已打开文件','提取页面','拆分文件','分割单页','调整页面大小','删除页面'],
     ('页面','旋转页面'):['向左旋转 90°','向右旋转 90°'],
     ('文档',):['两份 PDF 对比（实验）','页码处理','水印','骑缝章','区域摘录','签名与保护信息'],
@@ -37,7 +37,7 @@ EXPECTED={
     ('文档','安全与副本'):['加密另存','解密另存','制作可编辑副本'],
     ('扫描',):['去除彩色笔迹','扫描件增强','扫描纠偏','文字识别（OCR）'],
     ('转换',):['Word 转 PDF','图片转 PDF','Markdown 转 PDF','PDF 转 Word','PDF 转 Excel','PDF 转 TXT','PDF 转图片','PDF 转图片版'],
-    ('视图',):['阅读','整理页面','切换阅读／整理页面','全屏阅读','无边框模式','侧栏自动隐藏','大纲书签','页面栏','工具面板'],
+    ('视图',):['阅读','整理页面','切换阅读／整理页面','全屏阅读','无边框模式','侧栏自动隐藏','大纲书签','页面栏','工具面板','翻译面板'],
     ('视图','阅读设置'):['单页连续','双页对开','四页预览（2×2）','适合页面','适合宽度','手动缩放','将当前视图设为默认','阅读配色','恢复文档原色','全屏阅读','无边框模式','侧栏自动隐藏','本次运行隐藏悬浮球','手形拖动','选择文字'],
     ('视图','界面主题'):['石墨（默认）','原版绿','远山','赤陶','夜航（深色）'],
     ('视图','缩放'):['放大','缩小','适合宽度'],
@@ -77,8 +77,9 @@ def test_dynamic_copy_menu_option_survives_refresh(qapp,tmp_path,monkeypatch,sig
         assert window.editable_action.text()==label
         assert all_commands(window)[('文档','安全与副本',label)] is window.editable_action
         assert window.editable_action.isEnabled()==(signature!='none')
-        if signature!='none':
-            assert not window.delete_action.isEnabled() and not window.whiten_action.isEnabled()
+        page_editing_allowed = signature != 'unknown'
+        assert window.delete_action.isEnabled() == page_editing_allowed
+        assert window.whiten_action.isEnabled() == page_editing_allowed
         if signature=='unknown':
             called=[]
             monkeypatch.setattr(window,'rasterize_document',lambda **kwargs:called.append(kwargs))

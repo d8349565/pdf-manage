@@ -10,7 +10,7 @@ from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QFrame, QHBoxLayout, QLabel, QListWidget, QMessageBox, QPushButton, QSpinBox,
+    QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget, QMessageBox, QPushButton, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
@@ -101,6 +101,10 @@ class MarkdownDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch()
+        self.open_folder = QPushButton(tr('打开文件夹'))
+        self.open_folder.clicked.connect(self._open_result_folder)
+        footer.addWidget(self.open_folder)
+        self._set_result_folders(())
         self.start = QPushButton(tr('开始转换'))
         self.start.setProperty("primary", True)
         self.start.setFixedHeight(34)
@@ -130,6 +134,8 @@ class MarkdownDialog(QDialog):
                 self.files.addItem(path)
                 added += 1
         self.start.setEnabled(bool(self.paths))
+        if added:
+            self._set_result_folders(())
         self.feedback.setText(tr('已添加 {p0} 份，共 {p1} 份。重复文件自动忽略，已有同名 PDF 默认跳过。', p0=f'{added}', p1=f'{len(self.paths)}')
                               if self.paths else tr('请拖入或选择 .md、.markdown 文件。'))
 
@@ -158,6 +164,7 @@ class MarkdownDialog(QDialog):
 
     def convert(self):
         from app.markdownconvert import MarkdownPdfOptions, markdown_font, markdown_to_pdf
+        self._set_result_folders(())
         if not self.paths:
             self.feedback.setText(tr('请先添加 Markdown 文件。'))
             return
@@ -169,7 +176,7 @@ class MarkdownDialog(QDialog):
         markdown_font()
         overwrite = self.overwrite.isChecked()
         def work(progress, cancel):
-            results = []
+            results, folders = [], []
             for index, (source, target) in enumerate(items):
                 if cancel():
                     break
@@ -178,18 +185,38 @@ class MarkdownDialog(QDialog):
                         raise PdfError("不能覆盖主窗口中已打开的来源文件。")
                     if target.exists() and not overwrite:
                         results.append(f"跳过：{target.name}（已存在）")
+                        if target.is_file():
+                            folders.append(str(target.parent))
                     else:
                         result = markdown_to_pdf(source, target, options=options, cancel=cancel,
                             progress_callback=lambda current, total, text: progress(index, len(items), f"{Path(source).name} · {text}"))
                         results.append(f"成功：{result.path}" + ("\n" + "\n".join(result.warnings) if result.warnings else ""))
+                        folders.append(str(Path(result.path).parent))
                 except OperationCancelled:
                     break
                 except (ValueError, PdfError, OSError) as exc:
                     results.append(f"失败：{Path(source).name} · {exc}")
                 progress(index + 1, len(items), "正在转换 Markdown")
-            return results, cancel()
-        results, cancelled = run_operation(self, "Markdown 转 PDF", work, cancellable=True)
+            return results, cancel(), folders
+        results, cancelled, folders = run_operation(self, "Markdown 转 PDF", work, cancellable=True)
         self.feedback.setText((tr('已取消，完整输出已保留。') if cancelled else tr('转换结束。')) + "\n" + "\n".join(results))
+        self._set_result_folders(folders)
+
+    def _set_result_folders(self, folders):
+        self._result_folders = tuple(dict.fromkeys(folders))
+        self.open_folder.setVisible(bool(self._result_folders))
+
+    def _open_result_folder(self):
+        if not self._result_folders:
+            return
+        folder = self._result_folders[0]
+        if len(self._result_folders) > 1:
+            folder, accepted = QInputDialog.getItem(
+                self, tr('打开文件夹'), tr('输出目录'), self._result_folders, editable=False)
+            if not accepted:
+                return
+        from app.storageui import _open_folder
+        _open_folder(self, folder)
 
     def reject(self):
         task = getattr(self, "_task_dialog", None)

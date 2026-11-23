@@ -219,6 +219,68 @@ def test_export_windows_and_install_dialog_show_selected_locations(tmp_path, qap
         markdown.close()
 
 
+@pytest.mark.parametrize('shared_output', [False, True])
+def test_markdown_can_open_actual_result_folders(tmp_path, qapp, monkeypatch, shared_output):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QDesktopServices
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QInputDialog
+    from app.outputui import MarkdownDialog
+    from app.shortcuts import get_manager
+
+    inputs = [tmp_path / name / f'{name}.md' for name in ('first', 'second')]
+    for source in inputs:
+        source.parent.mkdir()
+        source.write_text('# Generated markdown', encoding='utf-8')
+    expected_dirs = [source.parent for source in inputs]
+    if shared_output:
+        output = tmp_path / 'exports'
+        output.mkdir()
+        storage.save_directory('output', output)
+        expected_dirs = [output, output]
+
+    opened, offered = [], []
+
+    def choose_folder(parent, title, label, folders, **kwargs):
+        offered.append([Path(folder) for folder in folders])
+        return str(expected_dirs[1]), True
+
+    def open_url(url):
+        opened.append(Path(url.toLocalFile()))
+        return True
+
+    monkeypatch.setattr(QInputDialog, 'getItem', choose_folder)
+    monkeypatch.setattr(QDesktopServices, 'openUrl', open_url)
+    manager = get_manager()
+    values = manager.values()
+    values['markdown.open_folder'] = ['F7']
+    assert not manager.apply(values)
+    dialog = MarkdownDialog(paths=[str(source) for source in inputs])
+    try:
+        dialog.show()
+        dialog.activateWindow()
+        qapp.processEvents()
+        assert dialog.open_folder.isHidden()
+        QTest.keyClick(dialog, Qt.Key.Key_F7)
+        assert not opened
+        dialog.convert()
+        assert all((folder / f'{source.stem}.pdf').is_file() for source, folder in zip(inputs, expected_dirs))
+        dialog.add_paths([str(inputs[0])])
+        assert not dialog.open_folder.isHidden()
+        dialog.activateWindow()
+        qapp.processEvents()
+        QTest.keyClick(dialog, Qt.Key.Key_F7)
+        assert opened == [expected_dirs[1]]
+        assert offered == ([] if shared_output else [expected_dirs])
+
+        new_source = tmp_path / 'more.md'
+        new_source.write_text('# Another generated document', encoding='utf-8')
+        dialog.add_paths([str(new_source)])
+        assert dialog.open_folder.isHidden()
+    finally:
+        dialog.close()
+
+
 def test_component_cache_and_output_paths_cannot_overlap(tmp_path):
     cache = storage.directory('cache')
     for kind, target in (('ocr', cache / 'nested'), ('cache', default_runtime_dir() / 'nested'),

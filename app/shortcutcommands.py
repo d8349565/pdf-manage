@@ -258,6 +258,7 @@ _window('markdown', 'MarkdownDialog', 'Markdown 转换窗口', [
     ('add', '添加文件', 'text:添加文件'),
     ('output', '选择输出目录', 'attr:output_button'),
     ('convert', '开始转换', 'attr:start'),
+    ('open_folder', '打开输出文件夹', 'attr:open_folder'),
 ])
 _window('quick_image', 'ImageQuickDialog', '图片快捷工具', [
     ('up', '图片上移', 'text:上移'), ('down', '图片下移', 'text:下移'),
@@ -376,6 +377,7 @@ for _prefix, _owner, _title in (
     ('encrypt', 'EncryptionDialog', '加密与权限窗口'),
     ('import_images', 'ImageImportDialog', '图片转 PDF 窗口'),
     ('export_images', 'ImageExportDialog', 'PDF 转图片窗口'),
+    ('export_excel', 'ExcelExportDialog', 'PDF 转 Excel'),
     ('merge', 'MergeOpenDialog', '合并已打开文件窗口'),
     ('mosaic', 'MosaicDialog', '马赛克设置窗口'),
     ('ocr', 'OCRDialog', '文字识别窗口'),

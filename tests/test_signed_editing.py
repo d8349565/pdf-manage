@@ -153,10 +153,13 @@ def test_signed_pdf_exports_text_and_splits_without_a_separate_editable_file(win
     monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *args, **kwargs: (str(target), 'TXT'))
     monkeypatch.setattr(QFileDialog, 'getExistingDirectory', lambda *args: str(output))
     monkeypatch.setattr(QMessageBox, 'warning', lambda *args: pytest.fail('Unexpected export warning'))
-    def accept_bookmark_note(box):
-        assert box.windowTitle() == '文件已写出' and '签名' not in box.text()
+    def accept_export_note(box):
+        if box.windowTitle() == '已完成':
+            assert '文字已导出' in box.text()
+        else:
+            assert box.windowTitle() == '文件已写出' and '签名' not in box.text()
         return QMessageBox.StandardButton.Ok
-    monkeypatch.setattr(QMessageBox, 'exec', accept_bookmark_note)
+    monkeypatch.setattr(QMessageBox, 'exec', accept_export_note)
     monkeypatch.setattr(window, '_open_output_folder', lambda folder: None)
     assert window.open_files_in_tabs([str(signed_source)])
     window.export_text()
