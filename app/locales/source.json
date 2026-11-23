@@ -443,10 +443,13 @@
     "app/progress.py:48"
   ],
   "{p0}  ·  第 {p1} 页": [
-    "app/recentui.py:150"
+    "app/recentui.py:184"
   ],
   "{p0} - 纸序 PDF": [
     "app/imagequick.py:50"
+  ],
+  "{p0} / {p1} 条记录": [
+    "app/recentui.py:378"
   ],
   "{p0} PDF 路径": [
     "app/pdfcompareui.py:295",
@@ -1323,13 +1326,13 @@
     "app/ocrui.py:104"
   ],
   "全部最近阅读记录": [
-    "app/recentui.py:254"
+    "app/recentui.py:311"
   ],
   "全部类型": [
     "app/colorcleanupui.py:471"
   ],
   "全部记录": [
-    "app/recentui.py:173"
+    "app/recentui.py:207"
   ],
   "全部页": [
     "app/printing.py:1200"
@@ -1385,7 +1388,7 @@
     "app/editingui.py:75",
     "app/outputui.py:363",
     "app/rasterui.py:182",
-    "app/recentui.py:270",
+    "app/recentui.py:350",
     "app/regioncapture.py:343",
     "app/signatureui.py:71",
     "app/storageui.py:249",
@@ -1983,6 +1986,9 @@
   "参考页面": [
     "app/pagetoolsui.py:155"
   ],
+  "双击文件，或选中后按 Enter，回到上次阅读的位置。": [
+    "app/recentui.py:299"
+  ],
   "双击第二列可单独指定保存位置 · 选中按 Delete 移除": [
     "app/wordui.py:260"
   ],
@@ -2156,7 +2162,7 @@
     "app/shortcutcommands.py:cleanup.region"
   ],
   "只清空本机阅读记录，原文件保留。是否继续？": [
-    "app/recentui.py:297"
+    "app/recentui.py:403"
   ],
   "只读": [
     "app/ui.py:3678"
@@ -3999,7 +4005,7 @@
     "app/printing.py:1192"
   ],
   "打开": [
-    "app/recentui.py:259",
+    "app/recentui.py:353",
     "app/storageui.py:227",
     "app/shortcutcommands.py:history.open",
     "app/shortcutcommands.py:storage.previous"
@@ -4028,7 +4034,7 @@
     "app/ui.py:6960"
   ],
   "打开 PDF、OFD 或图片": [
-    "app/recentui.py:134"
+    "app/recentui.py:168"
   ],
   "打开OCR 组件目录": [
     "app/shortcutcommands.py:storage.ocr_open"
@@ -4037,7 +4043,8 @@
     "app/aboutui.py:156"
   ],
   "打开一份文档，下次可以从这里继续。": [
-    "app/recentui.py:200"
+    "app/recentui.py:234",
+    "app/recentui.py:328"
   ],
   "打开任务缓存目录": [
     "app/shortcutcommands.py:storage.cache_open"
@@ -4055,13 +4062,13 @@
     "app/rasterui.py:180"
   ],
   "打开或拖入 PDF、OFD 和图片": [
-    "app/recentui.py:125"
+    "app/recentui.py:159"
   ],
   "打开所选旧组件目录": [
     "app/shortcutcommands.py:storage.previous"
   ],
   "打开文件": [
-    "app/recentui.py:130"
+    "app/recentui.py:164"
   ],
   "打开文件夹": [
     "app/imagequick.py:115",
@@ -4681,7 +4688,7 @@
     "app/shortcutcommands.py:merge.down"
   ],
   "文件仅在本机处理": [
-    "app/recentui.py:217",
+    "app/recentui.py:251",
     "app/ui.py:3687"
   ],
   "文件保护": [
@@ -5169,9 +5176,6 @@
     "app/ui.py:3856",
     "app/shortcutcommands.py:reader.last"
   ],
-  "最多保留 50 条记录；移除记录不会删除原文件。": [
-    "app/recentui.py:250"
-  ],
   "最大化": [
     "app/ui.py:2163",
     "app/ui.py:4590"
@@ -5180,10 +5184,10 @@
     "app/ui.py:2162"
   ],
   "最近阅读": [
-    "app/recentui.py:169"
+    "app/recentui.py:203"
   ],
   "最近阅读记录": [
-    "app/recentui.py:247",
+    "app/recentui.py:281",
     "app/shortcutcommands.py:file.recent",
     "app/shortcutcommands.py:file.recent"
   ],
@@ -5199,7 +5203,7 @@
     "app/shortcutcommands.py:history.clear"
   ],
   "最近阅读，单击打开，最多显示 10 条": [
-    "app/recentui.py:186"
+    "app/recentui.py:220"
   ],
   "有冲突": [
     "app/shortcutui.py:145"
@@ -5417,7 +5421,7 @@
     "app/deskewui.py:60"
   ],
   "查看和管理最近 50 条记录": [
-    "app/recentui.py:175"
+    "app/recentui.py:209"
   ],
   "查看拖入文件、缩放、移动页面与侧栏的常用操作": [
     "app/ui.py:3193"
@@ -6092,6 +6096,9 @@
   "清理蓝色笔迹": [
     "app/shortcutcommands.py:cleanup.blue"
   ],
+  "清理记录后仍可打开原文件。": [
+    "app/recentui.py:360"
+  ],
   "清空": [
     "app/exportdialogs.py:278",
     "app/shortcutui.py:386",
@@ -6114,12 +6121,12 @@
     "app/shortcutcommands.py:cleanup.clear_manual"
   ],
   "清空记录": [
-    "app/recentui.py:264",
+    "app/recentui.py:344",
     "app/shortcutcommands.py:history.clear",
     "app/shortcutcommands.py:history.clear"
   ],
   "清空阅读记录": [
-    "app/recentui.py:297"
+    "app/recentui.py:403"
   ],
   "清除已存密钥": [
     "app/translation/ui.py:637"
@@ -6371,7 +6378,7 @@
     "app/shortcutcommands.py:import_images.remove"
   ],
   "移除所选": [
-    "app/recentui.py:262",
+    "app/recentui.py:342",
     "app/wordui.py:246",
     "app/shortcutcommands.py:history.remove"
   ],
@@ -6430,7 +6437,8 @@
   "第 {p0} 页": [
     "app/editingui.py:326",
     "app/pdfcontentcompareui.py:292",
-    "app/pdfcontentcompareui.py:384"
+    "app/pdfcontentcompareui.py:384",
+    "app/recentui.py:115"
   ],
   "第 {p0} 页 / 表格 {p1}：{p2}": [
     "app/ui.py:7420"
@@ -6612,6 +6620,9 @@
     "app/storageui.py:197",
     "app/shortcutcommands.py:storage.usage",
     "app/shortcutcommands.py:storage.usage"
+  ],
+  "继续阅读": [
+    "app/recentui.py:292"
   ],
   "绿色版 · 下载 ZIP，退出软件后解压到新文件夹。": [
     "app/updateui.py:241"
@@ -7466,7 +7477,8 @@
     "app/ui.py:4590"
   ],
   "还没有阅读记录": [
-    "app/recentui.py:196"
+    "app/recentui.py:230",
+    "app/recentui.py:326"
   ],
   "这份 {p0} 的输出位置不完整，请双击第二列重新选择：\n{p1}": [
     "app/wordui.py:724"

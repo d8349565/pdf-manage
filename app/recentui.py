@@ -5,7 +5,7 @@ import os
 from PyQt6.QtCore import QRect, QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPen
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QDialog, QDialogButtonBox, QFrame, QHBoxLayout,
+    QAbstractItemView, QDialog, QFrame, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QSizePolicy,
     QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
@@ -49,6 +49,31 @@ QFrame#homeFooterLine { border: none; background: #D7E8E4; }
 QLabel#homePrivacy { font-size: 12px; color: #4D6B67; }
 '''
 
+HISTORY_STYLE = '''
+QDialog#readingHistory { background: #F3F6F5; }
+QLabel#historyTitle { font-size: 22px; font-weight: 600; color: #134E4A; }
+QLabel#historyEmptyTitle { font-size: 16px; font-weight: 600; color: #134E4A; }
+QLabel#historyHint { font-size: 13px; color: #4D6B67; }
+QFrame#historyPanel {
+    background: #FFFFFF; border: 1px solid #D7E8E4; border-radius: 12px;
+}
+QWidget#historyEmpty { background: transparent; }
+QListWidget#historyList {
+    background: #FFFFFF; border: none; padding: 0; outline: none;
+}
+QListWidget#historyList::item { padding: 0; border: none; }
+QListWidget#historyList QScrollBar::handle:vertical { background: #4D6B67; }
+QListWidget#historyList QScrollBar::handle:vertical:hover { background: #0F766E; }
+QPushButton#historyClear { background: transparent; border-color: transparent; color: #B91C1C; }
+QPushButton#historyClear:hover:enabled { background: #FEF2F2; }
+QPushButton#historyClear:pressed:enabled, QPushButton#historyClear:focus:enabled { border-color: #B91C1C; }
+QPushButton#historyClear:disabled { color: #94A3B8; }
+QPushButton#primary:hover:enabled { background: #115E59; border-color: #115E59; }
+QPushButton#primary:pressed:enabled { border-color: #134E4A; }
+QPushButton#primary:focus:enabled { border: 2px solid #134E4A; padding: 5px 13px; }
+QPushButton#primary:disabled { background: #EEF3F0; border-color: #D7E8E4; color: #94A3B8; }
+'''
+
 
 class RecentFileDelegate(QStyledItemDelegate):
     """Paint cached file metadata, with no thumbnail or document loading."""
@@ -57,19 +82,24 @@ class RecentFileDelegate(QStyledItemDelegate):
         if not path:
             return
         painter.save()
+        painter.setClipRect(option.rect)
         painter.setRenderHint(painter.RenderHint.Antialiasing)
         bounds = option.rect.adjusted(0, 1, -1, -1)
+        center_y = bounds.center().y()
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         if selected or hovered:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(ui_color('selected' if selected else 'hover')))
             painter.drawRoundedRect(QRectF(bounds), 8, 8)
+        if selected:
+            painter.setBrush(QColor(ui_color('accent')))
+            painter.drawRoundedRect(QRectF(bounds.left() + 3, center_y - 10, 3, 20), 1.5, 1.5)
         if option.state & QStyle.StateFlag.State_HasFocus:
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(ui_color('accent')), 1.5))
+            painter.setPen(QPen(QColor(ui_color('accent')), 2))
             painter.drawRoundedRect(QRectF(bounds.adjusted(1, 1, -1, -1)), 8, 8)
-        icon_box = QRect(bounds.left() + 12, bounds.center().y() - 18, 36, 36)
+        icon_box = QRect(bounds.left() + 12, center_y - 18, 36, 36)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(ui_color('subtle')))
         painter.drawRoundedRect(QRectF(icon_box), 8, 8)
@@ -80,23 +110,27 @@ class RecentFileDelegate(QStyledItemDelegate):
         small_font = QFont(option.font)
         small_font.setPixelSize(12)
         small_font.setWeight(QFont.Weight.Normal)
-        page_box = QRect(bounds.right() - 99, bounds.center().y() - 13, 88, 26)
+        small_metrics = QFontMetrics(small_font)
+        page = index.data(Qt.ItemDataRole.UserRole + 1) or 0
+        page_text = tr('第 {p0} 页', p0=page + 1)
+        page_width = min(max(76, small_metrics.horizontalAdvance(page_text) + 16), bounds.width() // 3)
+        page_box = QRect(bounds.right() - page_width - 11, center_y - 13, page_width, 26)
         text_x = icon_box.right() + 13
         text_width = max(0, page_box.left() - text_x - 16)
         painter.setFont(title_font)
         painter.setPen(QColor(ui_color('text')))
         name = QFontMetrics(title_font).elidedText(os.path.basename(path), Qt.TextElideMode.ElideMiddle, text_width)
-        painter.drawText(QRect(text_x, bounds.top() + 11, text_width, 22), Qt.AlignmentFlag.AlignVCenter, name)
+        painter.drawText(QRect(text_x, center_y - 19, text_width, 22), Qt.AlignmentFlag.AlignVCenter, name)
         painter.setFont(small_font)
-        painter.setPen(QColor(ui_color('muted')))
-        directory = QFontMetrics(small_font).elidedText(os.path.dirname(path), Qt.TextElideMode.ElideMiddle, text_width)
-        painter.drawText(QRect(text_x, bounds.top() + 35, text_width, 17), Qt.AlignmentFlag.AlignVCenter, directory)
+        painter.setPen(QColor(ui_color('text' if selected or hovered else 'muted')))
+        directory = small_metrics.elidedText(os.path.dirname(path), Qt.TextElideMode.ElideMiddle, text_width)
+        painter.drawText(QRect(text_x, center_y + 5, text_width, 17), Qt.AlignmentFlag.AlignVCenter, directory)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(ui_color('subtle')))
         painter.drawRoundedRect(QRectF(page_box), 5, 5)
         painter.setPen(QColor(ui_color('muted')))
-        page = index.data(Qt.ItemDataRole.UserRole + 1) or 0
-        painter.drawText(page_box, Qt.AlignmentFlag.AlignCenter, f'第 {page + 1} 页')
+        page_text = small_metrics.elidedText(page_text, Qt.TextElideMode.ElideRight, max(0, page_width - 16))
+        painter.drawText(page_box, Qt.AlignmentFlag.AlignCenter, page_text)
         painter.restore()
 
 
@@ -143,7 +177,7 @@ class ReadingHome(QWidget):
         outer.addStretch()
 
 
-def fill_recent_list(widget, entries, *, row_height=34):
+def fill_recent_list(widget, entries, *, row_height):
     widget.clear()
     for entry in entries:
         path = entry['path']
@@ -245,48 +279,119 @@ class ReadingHistoryDialog(QDialog):
         super().__init__(host)
         self.host = host
         self.setWindowTitle(tr('最近阅读记录'))
-        self.resize(620, 460)
+        self.setObjectName('readingHistory')
+        self.resize(660, 520)
+        set_theme_style(self, HISTORY_STYLE)
         layout = QVBoxLayout(self)
-        caption = QLabel(tr('最多保留 50 条记录；移除记录不会删除原文件。'))
-        caption.setObjectName('hint')
-        layout.addWidget(caption)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(12)
+
+        header = QVBoxLayout()
+        header.setSpacing(4)
+        heading = QHBoxLayout()
+        title = QLabel(tr('继续阅读'))
+        title.setObjectName('historyTitle')
+        heading.addWidget(title, 1)
+        self.count = QLabel()
+        self.count.setObjectName('historyHint')
+        heading.addWidget(self.count)
+        header.addLayout(heading)
+        self.hint = QLabel(tr('双击文件，或选中后按 Enter，回到上次阅读的位置。'))
+        self.hint.setObjectName('historyHint')
+        self.hint.setWordWrap(True)
+        header.addWidget(self.hint)
+        layout.addLayout(header)
+
+        panel = QFrame()
+        panel.setObjectName('historyPanel')
+        body = QVBoxLayout(panel)
+        body.setContentsMargins(7, 7, 7, 7)
         self.files = QListWidget()
+        self.files.setObjectName('historyList')
         self.files.setAccessibleName(tr('全部最近阅读记录'))
+        self.files.setItemDelegate(RecentFileDelegate(self.files))
+        self.files.setUniformItemSizes(True)
+        self.files.setMouseTracking(True)
+        self.files.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.files.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.files.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.files.itemActivated.connect(self.open_item)
-        layout.addWidget(self.files)
+        body.addWidget(self.files, 1)
+
+        self.empty = QWidget()
+        self.empty.setObjectName('historyEmpty')
+        empty_layout = QVBoxLayout(self.empty)
+        empty_layout.setSpacing(6)
+        empty_layout.addStretch()
+        empty_title = QLabel(tr('还没有阅读记录'))
+        empty_title.setObjectName('historyEmptyTitle')
+        empty_hint = QLabel(tr('打开一份文档，下次可以从这里继续。'))
+        empty_hint.setObjectName('historyHint')
+        for label in (empty_title, empty_hint):
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setWordWrap(True)
+            empty_layout.addWidget(label)
+        empty_layout.addStretch()
+        body.addWidget(self.empty, 1)
+        layout.addWidget(panel, 1)
+
+        footer = QVBoxLayout()
+        footer.setSpacing(6)
         row = QHBoxLayout()
-        self.open_button = QPushButton(tr('打开'))
-        self.open_button.setObjectName('primary')
-        self.open_button.clicked.connect(lambda: self.open_item(self.files.currentItem()))
+        row.setSpacing(8)
         self.remove_button = QPushButton(tr('移除所选'))
         self.remove_button.clicked.connect(self.remove_selected)
         self.clear_button = QPushButton(tr('清空记录'))
+        self.clear_button.setObjectName('historyClear')
         self.clear_button.clicked.connect(self.clear_history)
-        for button in (self.open_button, self.remove_button, self.clear_button):
-            row.addWidget(button)
+        row.addWidget(self.remove_button)
+        row.addWidget(self.clear_button)
         row.addStretch()
-        box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        box.button(QDialogButtonBox.StandardButton.Close).setText(tr('关闭'))
-        box.rejected.connect(self.reject)
-        row.addWidget(box)
-        layout.addLayout(row)
+        close_button = QPushButton(tr('关闭'))
+        close_button.clicked.connect(self.reject)
+        row.addWidget(close_button)
+        self.open_button = QPushButton(tr('打开'))
+        self.open_button.setObjectName('primary')
+        self.open_button.setMinimumWidth(92)
+        self.open_button.setDefault(True)
+        self.open_button.clicked.connect(lambda: self.open_item())
+        row.addWidget(self.open_button)
+        footer.addLayout(row)
+        self.note = QLabel(tr('清理记录后仍可打开原文件。'))
+        self.note.setObjectName('historyHint')
+        self.note.setWordWrap(True)
+        footer.addWidget(self.note)
+        layout.addLayout(footer)
+
         self.files.itemSelectionChanged.connect(self.sync_buttons)
         host.reading_history.changed.connect(self.refresh)
         self.refresh()
+        if self.files.count():
+            self.files.setCurrentRow(0)
+            self.files.setFocus()
 
     def refresh(self):
-        fill_recent_list(self.files, self.host.reading_history.entries)
+        history = self.host.reading_history
+        fill_recent_list(self.files, history.entries, row_height=52)
+        count = self.files.count()
+        has_entries = count > 0
+        self.count.setText(tr('{p0} / {p1} 条记录', p0=count, p1=history.LIMIT))
+        self.files.setVisible(has_entries)
+        self.empty.setVisible(not has_entries)
+        self.hint.setVisible(has_entries)
+        self.note.setVisible(has_entries)
         self.sync_buttons()
 
     def sync_buttons(self):
-        self.open_button.setEnabled(bool(self.files.currentItem()))
-        self.remove_button.setEnabled(bool(self.files.selectedItems()))
+        selected_count = len(self.files.selectedItems())
+        self.open_button.setEnabled(selected_count == 1)
+        self.remove_button.setEnabled(selected_count > 0)
         self.clear_button.setEnabled(bool(self.files.count()))
 
-    def open_item(self, item):
-        if item is not None:
-            path = item.data(Qt.ItemDataRole.UserRole)
+    def open_item(self, item=None):
+        selected = self.files.selectedItems()
+        if len(selected) == 1 and (item is None or item.isSelected()):
+            path = selected[0].data(Qt.ItemDataRole.UserRole)
             self.accept()
             self.host.open_recent_file(path)
 
@@ -294,5 +399,9 @@ class ReadingHistoryDialog(QDialog):
         self.host.reading_history.remove([item.data(Qt.ItemDataRole.UserRole) for item in self.files.selectedItems()])
 
     def clear_history(self):
-        if QMessageBox.question(self, tr('清空阅读记录'), tr('只清空本机阅读记录，原文件保留。是否继续？')) == QMessageBox.StandardButton.Yes:
+        decision = QMessageBox.question(
+            self, tr('清空阅读记录'), tr('只清空本机阅读记录，原文件保留。是否继续？'),
+            defaultButton=QMessageBox.StandardButton.No,
+        )
+        if decision == QMessageBox.StandardButton.Yes:
             self.host.reading_history.remove([entry['path'] for entry in self.host.reading_history.entries])
