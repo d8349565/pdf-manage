@@ -139,6 +139,43 @@ def test_outline_width_follows_user_across_restart_and_auto_hide(windows, qapp, 
     assert restored.immersive.overlay.width() == 300
 
 
+@pytest.mark.parametrize('layout_change', ['reopen', 'pin', 'borderless', 'drag_closed'])
+@pytest.mark.parametrize('panel_name', ['tools', 'translation'])
+def test_right_sidebar_reopens_at_readable_width(windows, qapp, tmp_path, layout_change, panel_name):
+    source = tmp_path / 'sidebars.pdf'
+    with pymupdf.open() as document:
+        document.new_page()
+        document.save(source)
+    window = windows()
+    assert window.open_files_in_tabs([str(source)])
+    action = window.act_tools if panel_name == 'tools' else window.act_translation
+    action.trigger()
+    qapp.processEvents()
+    panel = window.tools_panel if panel_name == 'tools' else window._translation.panel
+    split = window.reader_split
+    assert panel.visibleRegion().boundingRect().width() >= panel.minimumWidth()
+    if layout_change == 'reopen':
+        split.moveSplitter(split.width() - split.handleWidth() - 315, split.indexOf(panel))
+        assert split.sizes()[split.indexOf(panel)] == 315
+    if layout_change == 'drag_closed':
+        split.moveSplitter(split.width(), split.indexOf(panel))
+        assert split.sizes()[split.indexOf(panel)] == 0
+    action.trigger()
+    qapp.processEvents()
+    if layout_change == 'pin':
+        window.immersive.pin.click()
+    elif layout_change == 'borderless':
+        window.immersive.borderless_action.trigger()
+        window.immersive.borderless_action.trigger()
+    action.trigger()
+    qapp.processEvents()
+    assert action.isChecked() and panel.isVisible()
+    assert panel.visibleRegion().boundingRect().width() >= panel.minimumWidth()
+    if layout_change == 'reopen':
+        assert split.sizes()[split.indexOf(panel)] == 315
+    assert window.reader_frame.visibleRegion().boundingRect().width() > 0
+
+
 def test_restoring_interface_layout_resets_the_sidebar_preference(windows, qapp):
     window = windows()
     window.immersive.pin.click()

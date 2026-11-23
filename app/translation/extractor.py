@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from statistics import median
 import re
@@ -51,6 +52,43 @@ class PageExtraction:
     via_ocr: bool = False
     selection_snapshot: dict | None = None
 
+    @cached_property
+    def _segment_notes(self) -> dict[str, tuple[str, str]]:
+        section = ''
+        columns = {}
+        notes = {}
+        for index, seg in enumerate(self.segments):
+            if seg.role == 'heading':
+                section = 'Section: ' + seg.text[:120]
+                notes[seg.segment_id] = ('Section heading', '')
+                continue
+            parts = [section] if section and seg.role in ('body', 'table') else []
+            if seg.cell is not None:
+                cell = seg.cell
+                if cell.row == 0:
+                    for col in range(cell.col, cell.col + cell.col_span):
+                        columns[seg.table_id, col] = seg.text[:80]
+                    parts.append('Table first row')
+                else:
+                    first_row = columns.get((seg.table_id, cell.col))
+                    if first_row:
+                        parts.append('First row of this column: ' + first_row)
+            preceding = ''
+            if not section and seg.role == 'body' and index and self.segments[index - 1].role == 'body':
+                preceding = self.segments[index - 1].text[-160:]
+            notes[seg.segment_id] = (' | '.join(parts), preceding)
+        return notes
+
+    def reference_for(self, batch: list[PageSegment]) -> str:
+        groups = {}
+        for index, seg in enumerate(batch):
+            note, preceding = self._segment_notes[seg.segment_id]
+            if index == 0 and preceding:
+                note = 'Preceding passage: ' + preceding
+            if note:
+                groups.setdefault(note, []).append(seg.segment_id)
+        return '\n'.join(f'{", ".join(ids)} — {note}' for note, ids in groups.items())
+
 
 @dataclass(frozen=True)
 class RegionExtraction:
@@ -58,6 +96,76 @@ class RegionExtraction:
     source: str  # 'text' | 'ocr'
     ocr_missing: bool = False
     message: str = ''
+
+
+def selection_reference(snapshot, area, target: str) -> str:
+    """Read a short passage at the selected glyphs from the existing PDF/OCR snapshot."""
+    import pymupdf as p
+    from app.pdfedits import selected_lines
+
+    if not snapshot or area is None or not target.strip() or len(target) > 320:
+        return ''
+    area = p.Rect(area)
+    for table in snapshot.get('tables', ()):
+        if area.intersects(p.Rect(table.bbox)):
+            for cell in table.cells:
+                if cell.bbox and p.Rect(cell.bbox).contains(area) and cell.text.count(target) == 1:
+                    start = cell.text.index(target)
+                    return _sentence_around(cell.text, start, start + len(target))
+            return ''
+
+    hits = selected_lines(snapshot['raw'], area)
+    if not hits:
+        return ''
+    first, last = hits[0][1][0][0], hits[-1][1][-1][0]
+    for block in snapshot['raw'].get('blocks', ()):
+        lines = block.get('lines', ())
+        if not lines or (block.get('bbox') and not p.Rect(block['bbox']).intersects(area)):
+            continue
+        matched = [i for i, line in enumerate(lines) if line is hits[0][0] or line is hits[-1][0]]
+        if not matched or lines[matched[0]] is not hits[0][0] or lines[matched[-1]] is not hits[-1][0]:
+            continue
+        lo, hi = matched[0], matched[-1]
+        # Adjacent wraps in the same column can complete the sentence.
+        def continues(a, b):
+            a, b = p.Rect(a['bbox']), p.Rect(b['bbox'])
+            return (b.y0 >= (a.y0 + a.y1) / 2 and b.y0 - a.y1 <= a.height
+                    and a.x0 < b.x1 and b.x0 < a.x1)
+
+        if lo and continues(lines[lo - 1], lines[lo]):
+            lo -= 1
+        if hi + 1 < len(lines) and continues(lines[hi], lines[hi + 1]):
+            hi += 1
+        pieces = []
+        offset = 0
+        start = end = None
+        for line in lines[lo:hi + 1]:
+            for span in line.get('spans', ()):
+                for char in span.get('chars', ()):
+                    if char is first:
+                        start = offset
+                    pieces.append(char['c'])
+                    offset += len(char['c'])
+                    if char is last:
+                        end = offset
+            pieces.append(' ')
+            offset += 1
+        passage = ''.join(pieces)
+        if start is not None and end is not None and ''.join(passage[start:end].split()) == ''.join(target.split()):
+            return _sentence_around(passage, start, end)
+    return ''
+
+
+def _sentence_around(passage: str, start: int, end: int) -> str:
+    boundary = r'(?<=[。！？])\s*|(?<=[.!?])\s+'
+    before = re.split(boundary, passage[max(0, start - 160):start])
+    after = re.split(boundary, passage[end:end + 160], maxsplit=1)
+    left, right = before[-1], after[0]
+    if not any(ch.isalnum() for ch in left + right):
+        if len(before) == 1 or not before[-2].strip():
+            return ''
+        left = before[-2] + ' ' + left
+    return (left + passage[start:end] + right).strip()
 
 
 def _cancel_fn(cancel):

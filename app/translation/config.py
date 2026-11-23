@@ -158,6 +158,11 @@ class TranslationSettings:
     show_bilingual: bool = False
     skip_header_footer: bool = True
     auto_translate_on_page_turn: bool = False
+    online_selection_context: bool = False
+
+    @property
+    def use_selection_context(self) -> bool:
+        return self.is_local or (self.privacy_accepted and self.online_selection_context)
 
     @property
     def is_local(self) -> bool:
@@ -236,6 +241,8 @@ def load_settings(qsettings, *, runtime_key: str = '') -> TranslationSettings:
         api_key=runtime_key,
         session_only_key=session_only,
         privacy_accepted=privacy and stored_provider == provider,
+        online_selection_context=privacy and stored_provider == provider and qsettings.value(
+            SETTINGS_PREFIX + 'onlineSelectionContext', False, type=bool),
         target_language=target_lang,
         view_mode=view_mode,
         auto_translate_selection=qsettings.value(SETTINGS_PREFIX + 'autoTranslateSelection', False, type=bool),
@@ -287,6 +294,7 @@ def save_settings(qsettings, config: TranslationSettings, *, update_key: bool = 
         qsettings.setValue(SETTINGS_PREFIX + 'endpoint', saved.endpoint)
         qsettings.setValue(SETTINGS_PREFIX + 'model', saved.model)
         qsettings.setValue(SETTINGS_PREFIX + 'privacyAccepted', saved.privacy_accepted)
+        qsettings.setValue(SETTINGS_PREFIX + 'onlineSelectionContext', saved.online_selection_context and saved.privacy_accepted)
     qsettings.setValue(SETTINGS_PREFIX + 'targetLanguage', saved.target_language)
     qsettings.setValue(SETTINGS_PREFIX + 'viewMode', saved.view_mode)
     qsettings.setValue(SETTINGS_PREFIX + 'autoTranslateSelection', saved.auto_translate_selection)

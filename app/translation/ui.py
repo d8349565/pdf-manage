@@ -68,7 +68,7 @@ from app.icons import toolbar_icon
 from app.output import OperationCancelled
 from app.pagetoolsui import ClearComboBox
 from app.themes import set_theme_style, theme_manager, ui_color
-from app.translation.client import OpenAICompatibleClient
+from app.translation.client import OpenAICompatibleClient, selection_missing_chinese
 from app.translation.reflow import ReflowedPage
 from app.translation.config import (
     DEEPSEEK_MODELS,
@@ -94,6 +94,7 @@ from app.translation.extractor import (
     extract_region_for_translation,
     group_segments_into_batches,
     ocr_page_for_translation,
+    selection_reference,
 )
 
 
@@ -682,6 +683,11 @@ class TranslationSettingsDialog(QDialog):
         self.privacy_check = QCheckBox(tr('我同意将待译文字发送至上述服务商'), self.privacy_box)
         self.privacy_check.setChecked(config.privacy_accepted)
         p_lay.addWidget(self.privacy_check)
+        self.context_check = QCheckBox(tr('划词时一并发送附近原文，帮助判断词义'), self.privacy_box)
+        self.context_check.setChecked(config.online_selection_context and config.privacy_accepted)
+        self.context_check.setEnabled(config.privacy_accepted)
+        self.privacy_check.toggled.connect(self.context_check.setEnabled)
+        p_lay.addWidget(self.context_check)
         layout.addWidget(self.privacy_box)
 
         # Local privacy reassurance box
@@ -821,6 +827,7 @@ class TranslationSettingsDialog(QDialog):
         self.key_edit.clear()
         self.remember_key_check.setChecked(False)
         self.privacy_check.setChecked(False)
+        self.context_check.setChecked(False)
 
     def _open_console(self) -> None:
         preset = PRESETS_BY_KEY.get(self.provider_combo.currentData())
@@ -852,6 +859,7 @@ class TranslationSettingsDialog(QDialog):
             api_key=self.key_edit.text().strip(),
             session_only_key=not self.remember_key_check.isChecked(),
             privacy_accepted=self.privacy_check.isChecked(),
+            online_selection_context=self.privacy_check.isChecked() and self.context_check.isChecked(),
             target_language=self.lang_combo.currentData() or 'zh-CN',
         )
 
@@ -2483,16 +2491,35 @@ class TranslationPanel(QFrame):
         if cached.error:
             self.show_error_banner(cached.error, use_ocr=ext.via_ocr)
 
-    def highlight_card(self, segment_id: str | None, *, reveal: bool = True) -> None:
+    def highlight_card(self, segment_id: str | None, *, align_y: int | None = None) -> None:
         selected = self._cards.get(segment_id)
         for card in set(self._cards.values()):
             card.set_linked(card is selected)
-            if card is selected and reveal:
-                if card.height() > self.scroll.viewport().height() - 48:
-                    top = card.dst_label.mapTo(self.content, QPoint()).y()
-                    self.scroll.verticalScrollBar().setValue(top - 12)
-                else:
-                    self.scroll.ensureWidgetVisible(card, 12, 24)
+        if selected is None or align_y is None:
+            return
+
+        layout = self.content_layout
+        layout.activate()
+        viewport = self.scroll.viewport()
+        label = selected.dst_label
+        tail = layout.itemAt(layout.count() - 1).spacerItem()
+        # A newly visible scrollbar narrows the labels and can wrap earlier paragraphs.
+        for _ in range(2):
+            width = viewport.width()
+            top = label.mapTo(self.content, QPoint()).y()
+            fits = align_y <= top and align_y + label.height() + 8 <= viewport.height()
+            offset = max(0, top - (max(12, align_y) if fits else 12))
+            # Leave just enough space below the last card for the selected text to move up.
+            padding = max(0, offset + viewport.height() - tail.geometry().top() - layout.contentsMargins().bottom())
+            if padding == tail.sizeHint().height():
+                break
+            tail.changeSize(0, padding, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.MinimumExpanding)
+            layout.invalidate()
+            layout.activate()
+            QApplication.sendPostedEvents(viewport, QEvent.Type.LayoutRequest)
+            if viewport.width() == width:
+                break
+        self.scroll.verticalScrollBar().setValue(offset)
 
 
 class TranslationController(QObject):
@@ -2514,13 +2541,14 @@ class TranslationController(QObject):
         self._page_pump.setSingleShot(True)
         self._page_pump.timeout.connect(self._dispatch_next_batch)
         self._bubble_handle = None
+        self._selection_reference = ''
         self._region_cancel: Event | None = None
         self._active_page_key = None
         self._active_page_index = None
         self._pending_batches: list[list[PageSegment]] = []
         self._active_cached: CachedPageTranslation | None = None
         self._total_segments = 0
-        self._bubble_is_ocr = False
+        self._bubble_source = None
         self._rendered_signature = None
         self._overlay_generation = None
         self._preview_page_index = None
@@ -2682,7 +2710,7 @@ class TranslationController(QObject):
         if show and self.host.act_tools.isChecked():
             # Keep right-hand side clean: translation panel and export tools are mutually exclusive.
             self.host.act_tools.setChecked(False)
-        self.panel.setVisible(show)
+        self.host._set_right_panel_visible(self.panel, show)
         if not show:
             self._cancel_selection_mode()
         if show:
@@ -2698,12 +2726,7 @@ class TranslationController(QObject):
         elif not self.panel.isVisible():
             self.set_panel_visible(True)
         if self.panel.isVisible():
-            splitter = self.host.reader_split
-            sizes = splitter.sizes()
-            panel_index = splitter.indexOf(self.panel)
-            if sizes[panel_index] < self.panel.minimumWidth():
-                sizes[panel_index] = self.panel.minimumWidth()
-                splitter.setSizes(sizes)
+            self.host._set_right_panel_visible(self.panel, True, expand=True)
 
     def _selection_font_px(self) -> int | None:
         selection = self.host.text_selection
@@ -2815,7 +2838,7 @@ class TranslationController(QObject):
             )
             self._refresh_inline_layer()
             if self._linked_segment_id:
-                self.panel.highlight_card(self._linked_segment_id, reveal=False)
+                self.panel.highlight_card(self._linked_segment_id)
                 self._highlight_source(self._linked_segment_id)
             return
 
@@ -2897,7 +2920,7 @@ class TranslationController(QObject):
         if self._linked_segment_id is not None:
             self._linked_segment_id = None
             self.inline_layer.clear_highlight()
-            self.panel.highlight_card(None, reveal=False)
+            self.panel.highlight_card(None)
         if self.bubble.floating:
             self._dismiss_bubble()
 
@@ -2962,7 +2985,8 @@ class TranslationController(QObject):
 
     def _translate_selection_text(self, text: str) -> None:
         self._cancel_bubble_request()
-        self._bubble_is_ocr = False
+        self._selection_reference = ''
+        self._bubble_source = 'selection'
         lang_label = tr(TARGET_LANGUAGE_MAP.get(self.config.target_language, ('简体中文', ''))[0])
         title = tr('划词翻译 · {p0}', p0=lang_label)
         cached = self._matching_excerpt(text)
@@ -2979,11 +3003,26 @@ class TranslationController(QObject):
             )
             return
         self._show_detail(title, tr(self.config.provider_label), tr('正在翻译…'), source_text=text, near_selection=True)
+        selection = self.host.text_selection
+        if self.config.use_selection_context and not selection.selecting_translation and text == selection.text.strip():
+            self._selection_reference = selection_reference(selection.snapshot, selection.area, text)
+        self._request_selection_text(text)
+
+    def _request_selection_text(self, text: str, *, correct_language=False) -> None:
+        config = self.config
+
+        def received(translated: str, elapsed_ms: int) -> None:
+            if not selection_missing_chinese(text, translated, config.target_language):
+                self._on_bubble_success(translated, elapsed_ms, False)
+            elif correct_language:
+                self._on_bubble_error(tr('翻译服务未返回中文译文，请重试或更换模型。'))
+            else:
+                self.bubble.set_result_text(tr('正在重新翻译…'))
+                self._request_selection_text(text, correct_language=True)
+
         self._bubble_handle = self.client.translate_text(
-            self.config,
-            text,
-            on_success=lambda dst, ms: self._on_bubble_success(dst, ms, False),
-            on_error=self._on_bubble_error,
+            config, text, on_success=received, on_error=self._on_bubble_error, correct_language=correct_language,
+            selection_context=self._selection_reference,
         )
 
     def _matching_excerpt(self, text: str) -> str:
@@ -3001,7 +3040,10 @@ class TranslationController(QObject):
         words = text.split()
         for seg in cached.extraction.segments:
             if p.Rect(seg.bbox).contains(center) and seg.text.split() == words:
-                return cached.translations.get(seg.segment_id, '')
+                translated = cached.translations.get(seg.segment_id, '')
+                if seg.role != 'code' and selection_missing_chinese(text, translated, self.config.target_language):
+                    return ''
+                return translated
         return ''
 
     def _retranslate_bubble_text(self, text: str) -> None:
@@ -3012,7 +3054,10 @@ class TranslationController(QObject):
         self.bubble.set_result_text(tr('正在重新翻译…'))
         self.bubble.copy_btn.setEnabled(False)
         self.bubble.pin_btn.setEnabled(False)
-        is_ocr = self._bubble_is_ocr
+        if self._bubble_source == 'selection':
+            self._request_selection_text(text)
+            return
+        is_ocr = self._bubble_source == 'ocr'
         self._bubble_handle = self.client.translate_text(
             self.config,
             text,
@@ -3038,6 +3083,7 @@ class TranslationController(QObject):
 
     def _dismiss_bubble(self) -> None:
         self._cancel_bubble_request()
+        self._selection_reference = ''
         if self.bubble.floating:
             self.panel.set_detail_visible(False)
             return
@@ -3060,7 +3106,7 @@ class TranslationController(QObject):
 
     def _on_reflow_region(self, text):
         self._cancel_bubble_request()
-        self._bubble_is_ocr = False
+        self._bubble_source = 'region'
         self._show_detail(tr('页内译文'), tr(self.config.provider_label), '')
         if text:
             self.bubble.show_result(text)
@@ -3110,7 +3156,7 @@ class TranslationController(QObject):
         scene_rect = local.translated(self.view.page_rects[page_index].topLeft())
         if not text and not any(item.boundingRect().contains(scene_rect) for item in self.inline_layer._items):
             return False
-        self._bubble_is_ocr = False
+        self._bubble_source = 'region'
         self._show_detail(tr('页内译文'), tr(self.config.provider_label), '')
         if text:
             self.bubble.show_result(text)
@@ -3146,7 +3192,7 @@ class TranslationController(QObject):
             )
             return
         is_ocr = result.source == 'ocr'
-        self._bubble_is_ocr = is_ocr
+        self._bubble_source = result.source
         if not self.config.is_ready:
             self.bubble.show_loading(title, tr('未配置'), '', source_text=result.text, is_ocr=is_ocr)
             self.bubble.show_error(
@@ -3307,7 +3353,8 @@ class TranslationController(QObject):
             self._page_pump.start(0)
 
         items = [(seg.segment_id, seg.text) for seg in batch]
-        handle = self.client.translate_batch(self.config, items, on_success=received, on_error=failed)
+        handle = self.client.translate_batch(self.config, items, reference=cached.extraction.reference_for(batch),
+                                             on_success=received, on_error=failed)
         if ticket in self._page_requests:
             self._page_requests[ticket] = handle
 
@@ -3427,7 +3474,7 @@ class TranslationController(QObject):
         self.host.text_selection.clear()
         self._linked_segment_id = segment_id
         self._highlight_source(segment_id, ensure_visible=True)
-        self.panel.highlight_card(segment_id, reveal=False)
+        self.panel.highlight_card(segment_id)
 
     def activate_page_segment(self, page_index: int, segment: PageSegment) -> None:
         if page_index != self.host.ws.preview_index():
@@ -3437,7 +3484,7 @@ class TranslationController(QObject):
             pair = self._current_cached_page()
             if pair is None:
                 return
-            self._bubble_is_ocr = False
+            self._bubble_source = 'page'
             self._show_detail(tr('{p0} · 完整译文', p0=segment.label),
                               tr(self.config.provider_label), '', source_text=segment.text)
             self.bubble.show_result(pair[1].translations[segment.segment_id])
@@ -3445,7 +3492,12 @@ class TranslationController(QObject):
             self._reveal_sidebar()
             self._linked_segment_id = segment.segment_id
             self._highlight_source(segment.segment_id)
-            self.panel.highlight_card(segment.segment_id)
+            align_y = 0
+            if not self.inline_layer.reflow.isVisible() and 0 <= page_index < len(self.view.page_rects):
+                start = self.view.page_rects[page_index].topLeft() + QPointF(*segment.bbox[:2])
+                source_top = self.view.viewport().mapToGlobal(self.view.mapFromScene(start))
+                align_y = self.panel.scroll.viewport().mapFromGlobal(source_top).y()
+            self.panel.highlight_card(segment.segment_id, align_y=align_y)
 
     # --- Helpers ---
 

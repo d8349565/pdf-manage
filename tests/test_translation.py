@@ -563,6 +563,51 @@ def test_region_extraction_native_vs_ocr_fallback(tmp_path, monkeypatch):
         store.close_all()
 
 
+def test_selection_reference_uses_the_selected_occurrence_across_a_line_wrap():
+    import pymupdf
+    from app.translation.extractor import selection_reference
+
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((40, 60), 'Inspect the cell. Recharge each cell\nbefore use. Other sentence.')
+        area = page.search_for('cell')[1]
+        snapshot = dict(raw=page.get_text('rawdict'))
+        assert selection_reference(snapshot, area, 'cell') == 'Recharge each cell before use.'
+        assert not selection_reference(snapshot, area, 'different selection')
+
+
+def test_single_translation_checks_context_for_the_key_before_sending(qapp):
+    manager = _FakeNetworkManager(_translation_reply)
+    client = OpenAICompatibleClient(network_manager=manager)
+    config = TranslationSettings(api_key='unit-"quoted"-key', privacy_accepted=True, online_selection_context=True)
+    errors = []
+    client.translate_text(config, 'cell', selection_context='nearby ' + config.api_key,
+                          on_success=lambda *_: pytest.fail('unexpected response'), on_error=errors.append)
+    assert not manager.requests and len(errors) == 1 and config.api_key not in errors[0]
+
+
+def test_page_batch_carries_its_section_and_column_across_batches():
+    from app.pdf2excel.models import CellModel
+
+    box = (0, 0, 100, 20)
+    def field(sid, row, col, text, span=1):
+        return PageSegment(sid, 'table', '', text, box, table_id='t1',
+                           cell=CellModel(row, col, text, col_span=span))
+
+    segments = (PageSegment('h', 'heading', '', 'Battery testing', box),
+                field('a', 0, 0, 'Component'), field('b', 0, 1, 'Charge status', 2),
+                field('c', 1, 2, 'Low'), PageSegment('h2', 'heading', '', 'Packaging', box),
+                PageSegment('p', 'body', '', 'Wrap separately.', box))
+    page = PageExtraction(segments)
+    note = page.reference_for([segments[3]])
+    assert 'Battery testing' in note and 'Charge status' in note and 'Component' not in note
+    next_section = page.reference_for([segments[-1]])
+    assert 'Packaging' in next_section and 'Battery testing' not in next_section
+    plain = PageExtraction((segments[-1], PageSegment('p2', 'body', '', 'Then seal.', box)))
+    assert 'Wrap separately.' in plain.reference_for([plain.segments[-1]])
+    assert not plain.reference_for(list(plain.segments))
+
+
 def test_batch_grouping_and_cache_lru():
     segs = [PageSegment(f's{i}', 'body', f'段 {i}', 'word ' * 120, (0, i * 20, 100, i * 20 + 15)) for i in range(8)]
     batches = group_segments_into_batches(segs, max_items=3, max_chars=1500)
@@ -646,7 +691,7 @@ assert not kernel.GetModuleHandleW('libssl-3-x64.dll')
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_settings_dialog_uses_official_models_and_allows_local_compatible_addresses(qapp):
+def test_settings_dialog_uses_official_models_and_allows_local_compatible_addresses(qapp, tmp_path):
     from app.translation.ui import TranslationSettingsDialog
 
     mgr = _FakeNetworkManager(lambda r, p: _FakeReply(200, _openai_ok_bytes('你好')))
@@ -664,16 +709,23 @@ def test_settings_dialog_uses_official_models_and_allows_local_compatible_addres
         assert [dlg.deepseek_model_combo.itemText(index) for index in range(dlg.deepseek_model_combo.count())] == list(DEEPSEEK_MODELS)
         assert dlg.deepseek_model_combo.currentText() == 'deepseek-flash'
         assert dlg.privacy_box.isVisible()
+        assert not dlg.context_check.isEnabled() and not dlg.context_check.isChecked()
         dlg._save()
         assert dlg.result_config is None  # blocked because privacy consent unchecked
         assert '隐私' in dlg.feedback.text() or '数据外发' in dlg.feedback.text()
 
         dlg.privacy_check.setChecked(True)
+        dlg.context_check.setChecked(True)
         dlg.deepseek_model_combo.setCurrentText('deepseek-v4-pro')
         dlg._save()
         assert dlg.result_config is not None
         assert dlg.result_config.provider == 'deepseek'
         assert dlg.result_config.model == 'deepseek-v4-pro'
+        assert dlg.result_config.use_selection_context
+        settings = QSettings(str(tmp_path / 'translation.ini'), QSettings.Format.IniFormat)
+        assert not load_settings(settings).use_selection_context
+        save_settings(settings, dlg.result_config)
+        assert load_settings(settings).use_selection_context
 
         dlg2 = TranslationSettingsDialog(TranslationSettings(), client)
         dlg2.show()
@@ -904,9 +956,11 @@ def test_settings_switch_cancels_test_and_resets_key_and_consent(qapp):
 
         dialog.key_edit.setText('sk-second')
         dialog.privacy_check.setChecked(True)
+        dialog.context_check.setChecked(True)
         dialog.endpoint_edit.setText('https://gateway.example.invalid/v1')
         assert not dialog.key_edit.text()
         assert not dialog.privacy_check.isChecked()
+        assert not dialog.context_check.isChecked()
 
         dialog.provider_combo.setCurrentIndex(dialog.provider_combo.findData('deepseek'))
         assert dialog.endpoint_edit.text() == DEEPSEEK_ENDPOINT and dialog.endpoint_edit.isReadOnly()
@@ -1276,6 +1330,55 @@ def test_source_click_and_wrapped_cell_drag_have_distinct_actions(translation_wi
         controller.page_original.click()
         QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=_viewport_point(window, 70, 228))
         _wait_until(lambda: controller.panel._cards[other.segment_id].property('linked'))
+
+
+@pytest.mark.parametrize('count, target_index, long_translation',
+                         [(20, 9, False), (20, 19, False), (5, 4, False), (20, 9, True)])
+def test_page_click_positions_translation_start(translation_window, count, target_index, long_translation):
+    window, controller, manager = translation_window
+    view = window.preview_view
+    panel = controller.panel
+    segments = tuple(PageSegment(str(i), 'body', '', f'Source paragraph {i}',
+                                 (50, 80 + 25*i, 275, 100 + 25*i)) for i in range(count))
+    target = segments[target_index]
+    translations = {seg.segment_id: '对应的译文' for seg in segments}
+    if long_translation:
+        translations[target.segment_id] = '这是一段需要滚动阅读的译文。' * 180
+    controller.config = replace(controller.config, show_bilingual=True)
+    controller.cache.put(controller._page_cache_key(window.ws.pages[0]),
+                         CachedPageTranslation(PageExtraction(segments), translations, complete=True))
+    controller.sync_page(force=True)
+    window._set_zoom(1.)
+    view.centerOn(view.page_rects[0].topLeft() + QPointF(160, target.bbox[1] + 15))
+    QApplication.processEvents()
+    viewport = panel.scroll.viewport()
+    card = panel._cards[target.segment_id]
+    if count == 5:
+        # Fill one line so the first appearance of a scrollbar can wrap the cards.
+        sample = 'Word '
+        metrics = card.dst_label.fontMetrics()
+        while metrics.horizontalAdvance(sample + 'i') < card.dst_label.width():
+            sample += 'i'
+        for entry in panel._cards.values():
+            entry.dst_label.setText(sample)
+        QApplication.processEvents()
+    source = _viewport_point(window, 60, target.bbox[1])
+    source_y = viewport.mapFromGlobal(view.viewport().mapToGlobal(source)).y()
+    assert 20 < source_y < viewport.height() - 20
+    if not long_translation and target_index == 9:
+        # The old reveal behavior left an already-visible card at the bottom.
+        panel.scroll.ensureWidgetVisible(card)
+    pdf_scroll = view.verticalScrollBar().value()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=_viewport_point(window, 60, target.bbox[1] + 8))
+    _wait_until(lambda: card.property('linked'))
+    QApplication.processEvents()
+    translated_y = card.dst_label.mapTo(viewport, QPoint()).y()
+    if long_translation:
+        assert 0 <= translated_y <= 16
+    else:
+        assert translated_y == pytest.approx(source_y, abs=2)
+    assert view.verticalScrollBar().value() == pdf_scroll and not manager.requests
 
 
 @pytest.mark.parametrize('sidebar_state', ['closed', 'collapsed', 'borderless'])
@@ -1693,7 +1796,7 @@ def test_parallel_page_batches_are_bounded_ordered_and_resumable(translation_win
     controller.cache.put(controller._page_cache_key(window.ws.pages[0]), cached)
     requests = []
 
-    def send(_config, items, *, on_success, on_error):
+    def send(_config, items, *, reference, on_success, on_error):
         request = SimpleNamespace(ids=[sid for sid, _ in items], ok=on_success, error=on_error, cancelled=False)
         request.cancel = lambda: setattr(request, 'cancelled', True)
         requests.append(request)
@@ -1800,7 +1903,10 @@ def test_page_partial_batch_resume_cancel_and_auto_page_turn(translation_window)
     manager.responder = lambda *_: _FakeReply(200, _openai_ok_bytes('待取消的译文'), delay_ms=500)
     _button(controller.panel, '重试').click()
     _wait_until(lambda: len(manager.requests) == 4)
-    assert 'Thermal Management Overview' not in manager.requests[-1][1]['messages'][-1]['content']
+    user_message = manager.requests[-1][1]['messages'][-1]['content']
+    notes, targets = user_message.split('\n\n', 1)
+    assert 'Thermal Management Overview' in json.loads(notes)['reference']
+    assert 'Thermal Management Overview' not in targets
     assert controller.panel.primary_btn.text() == '停止翻译'
     controller.panel.primary_btn.click()
     assert not controller.panel._busy and controller.panel.primary_btn.text() != '停止翻译'
@@ -1859,6 +1965,83 @@ def test_drag_selection_unconfigured_retry_pin_and_auto(translation_window):
     _wait_until(lambda: controller.bubble.isVisible() and controller.bubble.copy_btn.isEnabled())
     assert not controller.mini_bar.isVisible()
     assert len(manager.requests) == 3
+
+
+@pytest.mark.parametrize('english_from', ['service', 'page_cache'])
+def test_selection_in_chinese_recovers_from_english_result(translation_window, english_from):
+    window, controller, manager = translation_window
+    combo = controller.panel.lang_combo
+    combo.setCurrentIndex(combo.findData('en'))
+    combo.setCurrentIndex(combo.findData('zh-CN'))
+    source = 'Thermal Management Overview'
+    if english_from == 'page_cache':
+        heading = PageSegment('title', 'heading', '', source, (50, 99, 340, 128))
+        page = CachedPageTranslation(PageExtraction((heading,)), {'title': source}, complete=True)
+        controller.cache.put(controller._page_cache_key(window.ws.pages[0]), page)
+
+    answers = iter(([source] if english_from == 'service' else []) + ['热管理概述'])
+    manager.responder = lambda *_: _FakeReply(200, _openai_ok_bytes(next(answers)))
+    window.store.text_snapshot(window.ws.pages[0], include_tables=False)
+    controller.panel.selection_btn.click()
+    _drag_preview(window, (49, 115), (345, 115))
+    _wait_until(controller.bubble.copy_btn.isEnabled)
+    assert controller.bubble.title_label.text() == '划词翻译 · 简体中文'
+    assert controller.bubble.result_edit.toPlainText() == '热管理概述'
+    assert len(manager.requests) == (2 if english_from == 'service' else 1)
+    for _, request in manager.requests:
+        assert 'Simplified Chinese' in request['messages'][0]['content']
+        assert request['messages'][-1]['content'] == source
+    if english_from == 'service':
+        assert manager.requests[0][1]['messages'][0] != manager.requests[1][1]['messages'][0]
+
+
+def test_selection_repeated_english_can_be_retried_manually(translation_window):
+    _, controller, manager = translation_window
+    manager.responder = lambda *_: _FakeReply(200, _openai_ok_bytes('A different English phrase'))
+    controller._translate_selection_text('Overview')
+    _wait_until(controller.bubble.retry_btn.isVisible)
+    assert len(manager.requests) == 2
+    assert '未返回中文译文' in controller.bubble.result_edit.toPlainText()
+    assert not controller.bubble.copy_btn.isEnabled() and not controller.bubble.pin_btn.isEnabled()
+    manager.responder = _translation_reply
+    controller.bubble.retry_btn.click()
+    _wait_until(controller.bubble.copy_btn.isEnabled)
+    assert controller.bubble.result_edit.toPlainText() == '单段译文'
+    assert len(manager.requests) == 3
+
+
+def test_selection_language_check_preserves_literals_and_requested_language():
+    from app.translation.client import selection_missing_chinese
+
+    for literal in ('https://docs.example.com/reference', 'get_value()', '42', '12 kg'):
+        assert not selection_missing_chinese(literal, literal, 'zh-CN')
+    assert not selection_missing_chinese('Enable HTTPS', '启用 HTTPS', 'zh-CN')
+    assert not selection_missing_chinese('Overview', 'Overview', 'en')
+    assert selection_missing_chinese('(Overview)', 'Overview', 'zh-TW')
+
+
+@pytest.mark.parametrize('service', ['online_default', 'online_opt_in', 'local'])
+def test_word_request_context_and_request_count(translation_window, service):
+    window, controller, manager = translation_window
+    if service == 'online_opt_in':
+        controller.config = replace(controller.config, online_selection_context=True)
+    elif service == 'local':
+        controller.config = replace(controller.config, provider='custom', endpoint='http://localhost:9000/v1',
+                                    api_key='', privacy_accepted=False)
+    window.store.text_snapshot(window.ws.pages[0], include_tables=False)
+    controller.panel.selection_btn.click()
+    _drag_preview(window, (49, 166), (79, 166))
+    _wait_until(controller.bubble.copy_btn.isEnabled)
+    assert len(manager.requests) == 1
+    message = manager.requests[0][1]['messages'][-1]['content']
+    target = window.text_selection.text.strip()
+    assert target and 'velocity' not in target
+    if service == 'online_default':
+        assert message == target
+    else:
+        data = json.loads(message)
+        assert data['target'] == target and 'airflow velocity' in data['reference']
+        assert 'MOSFET' not in data['reference']
 
 
 def test_selection_right_click_and_configured_shortcut(translation_window, monkeypatch):

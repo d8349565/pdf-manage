@@ -2915,7 +2915,18 @@ class MainWindow(QMainWindow):
                 hasattr(self, 'immersive') and (self.immersive.fullscreen or self.immersive.borderless))
             if show and getattr(self, 'act_translation', None) is not None and self.act_translation.isChecked():
                 self.act_translation.setChecked(False)
-            panel.setVisible(show)
+            self._set_right_panel_visible(panel, show)
+
+    def _set_right_panel_visible(self, panel, show, *, expand=False):
+        opening = show and (panel.isHidden() or expand)
+        panel.setVisible(show)
+        if opening:
+            split = self.reader_split
+            index = split.indexOf(panel)
+            split.refresh()  # Apply the visibility change before checking the pane's width.
+            if split.sizes()[index] == 0:
+                # Both right panels share the trailing edge; reopen the collapsed handle.
+                split.moveSplitter(split.width() - split.handleWidth() - panel.minimumWidth(), index)
 
     @property
     def export_tools(self):

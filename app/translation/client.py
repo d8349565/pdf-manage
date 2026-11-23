@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from time import monotonic
+import unicodedata
 
 from PyQt6.QtCore import QByteArray, QObject, QTimer, QUrl
 
@@ -27,6 +28,19 @@ def target_language_prompt_name(code: str) -> str:
     return pair[1] if pair else 'Simplified Chinese'
 
 
+def selection_missing_chinese(source: str, result: str, target_lang: str) -> bool:
+    """Check word selections without requiring Han characters in numbers or structured tokens."""
+    if target_lang not in ('zh-CN', 'zh-TW') or not re.search(r'[a-zA-Z]', result):
+        return False
+    if any(unicodedata.name(ch, '').startswith(('CJK UNIFIED IDEOGRAPH', 'CJK COMPATIBILITY IDEOGRAPH'))
+           for ch in result):
+        return False
+    if re.fullmatch(r'[\d.,+\-]+\s*[a-zA-Z°%]+(?:/[a-zA-Z]+)?', source.strip()):
+        return False
+    return any(re.fullmatch(r"[A-Za-z]+(?:[-'’][A-Za-z]+)*", word.lstrip("([{\"'“‘").rstrip(")]}\"'”’.,!?;:"))
+               for word in source.split())
+
+
 def clean_model_output(text: str) -> str:
     cleaned = _THINK_RE.sub('', text or '').strip()
     if cleaned.startswith('```') and cleaned.endswith('```'):
@@ -36,30 +50,36 @@ def clean_model_output(text: str) -> str:
     return cleaned
 
 
-def build_single_messages(text: str, target_lang: str) -> list[dict[str, str]]:
+def build_single_messages(text: str, target_lang: str, reference: str = '') -> list[dict[str, str]]:
     lang_name = target_language_prompt_name(target_lang)
     system = (
         f'You are a professional document translator. Translate the user text accurately into {lang_name}. '
         'Preserve paragraph breaks, list markers, numbers, units, formulas, code identifiers, URLs, and table structure. '
-        'Output ONLY the translation without explanations, greetings, or quotation marks. '
+        'Preserve negation and uncertainty. Output ONLY the translation without explanations, greetings, or quotation marks. '
         f'If the input is already in {lang_name}, keep it natural and clear.'
     )
+    if reference:
+        system += ' Use the reference only to resolve meaning and terminology. Translate only the target field.'
+        text = json.dumps({'reference': reference, 'target': text}, ensure_ascii=False)
     return [
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': text},
     ]
 
 
-def build_batch_messages(items: list[tuple[str, str]], target_lang: str) -> list[dict[str, str]]:
+def build_batch_messages(items: list[tuple[str, str]], target_lang: str, reference: str = '') -> list[dict[str, str]]:
     lang_name = target_language_prompt_name(target_lang)
     system = (
         f'You are a professional PDF document translator. Translate every marked segment into {lang_name}, '
-        'keeping terminology consistent across the page. Preserve numbers, units, formulas, and identifiers. '
+        'keeping terminology consistent across the page. Preserve negation, uncertainty, numbers, units, formulas, and identifiers. '
         'Return EVERY segment using the exact wrapper format:\n'
         '<<<SEG:id>>>\n<translated text>\n<<<END>>>\n'
         'Do not merge, omit, or reorder segments, and do not output any text outside the wrappers.'
     )
     parts = [f'<<<SEG:{seg_id}>>>\n{text}\n<<<END>>>' for seg_id, text in items]
+    if reference:
+        system += ' Use the reference notes for section and table context. Translate only the marked segments.'
+        parts.insert(0, json.dumps({'reference': reference}, ensure_ascii=False))
     return [
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': '\n\n'.join(parts)},
@@ -216,7 +236,8 @@ class OpenAICompatibleClient(QObject):
         if not is_local and not config.privacy_accepted:
             on_error(tr('请先在“翻译设置”中阅读并勾选在线翻译数据外发确认。'))
             return None
-        if key and any(key in message['content'] for message in messages):
+        key_forms = (key, json.dumps(key)[1:-1])
+        if key and any(form in message['content'] for message in messages for form in key_forms):
             on_error(tr('待发送的文字包含当前 API Key，已停止发送。'))
             return None
 
@@ -328,12 +349,25 @@ class OpenAICompatibleClient(QObject):
         timer.start()
         return handle
 
-    def translate_text(self, config: TranslationSettings, text: str, *, on_success, on_error):
+    def translate_text(self, config: TranslationSettings, text: str, *, on_success, on_error,
+                       correct_language=False, selection_context: str = ''):
+        reference = selection_context if selection_context and config.use_selection_context else ''
+        return self._translate_single(config, text, reference, on_success=on_success, on_error=on_error,
+                                      correct_language=correct_language)
+
+    def _translate_single(self, config, text, reference, *, on_success, on_error, correct_language=False):
         snippet = (text or '').strip()
         if not snippet:
             on_error(tr('没有可翻译的文字内容。'))
             return None
-        messages = build_single_messages(snippet, config.target_language)
+        messages = build_single_messages(snippet, config.target_language, reference)
+        if correct_language:
+            language = target_language_prompt_name(config.target_language)
+            messages[0]['content'] += (
+                f' The previous output lacked a Chinese translation. Give the meaning of the selection in {language}, '
+                'including single words and headings. If a term keeps its original spelling, '
+                f'include a brief gloss in {language}.'
+            )
         return self._post_chat(
             config,
             messages,
@@ -348,20 +382,20 @@ class OpenAICompatibleClient(QObject):
         *,
         on_success,
         on_error,
+        reference: str = '',
     ):
         if not items:
             on_success({}, 0)
             return None
         if len(items) == 1:
             seg_id, text = items[0]
-            return self.translate_text(
-                config,
-                text,
+            return self._translate_single(
+                config, text, reference,
                 on_success=lambda translated, ms: on_success({seg_id: translated}, ms),
                 on_error=on_error,
             )
         expected_ids = [seg_id for seg_id, _ in items]
-        messages = build_batch_messages(items, config.target_language)
+        messages = build_batch_messages(items, config.target_language, reference)
 
         def handle_raw(content: str, elapsed_ms: int):
             parsed = parse_batch_output(content, expected_ids)
