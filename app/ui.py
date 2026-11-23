@@ -6733,33 +6733,33 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
 
     def pdf_to_images(self):
-        if not self._allow_operation("copy") or not self.ws.pages:
+        if not self.ws.pages or getattr(self, "_task_dialog", None) or not self._allow_operation("copy"):
             return
         from app.exportdialogs import ImageExportDialog
-        from app.imaging import pdf_to_images
-        dialog = ImageExportDialog(len(self.ws.pages), self.ws.preview_index() or 0,
-                                   sorted(self.ws.selected), self)
+        from app.imaging import pdf_to_images, pdf_to_long_image
+        store, pages = self.store, tuple(self.ws.pages)
+        prefix = Path(self.ws.path or tr('文档.pdf')).stem
+        dialog = ImageExportDialog(store, pages, self.ws.preview_index() or 0, sorted(self.ws.selected), self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             dialog.deleteLater()
             return
-        indices = dialog.indices()
-        fmt = "png" if dialog.format.currentIndex() == 0 else "jpeg"
-        dpi = 150 if dialog.dpi.currentIndex() == 0 else 300
+        indices = tuple(dialog.indices())
+        selected = tuple(pages[i] for i in indices)
+        export = pdf_to_long_image if dialog.mode.currentData() else pdf_to_images
+        fmt, dpi = dialog.format.currentData(), dialog.dpi.currentData()
         overwrite = dialog.overwrite.isChecked()
         dialog.deleteLater()
         folder = QFileDialog.getExistingDirectory(self, tr('选择图片输出文件夹'), str(output_directory() or ''))
         if not folder:
             return
-        prefix = Path(self.ws.path or tr('文档.pdf')).stem
         try:
             done, skipped, failed, cancelled = run_operation(self, tr('PDF 转图片'), lambda progress, cancel:
-                pdf_to_images(self.store, [self.ws.pages[i] for i in indices], indices, folder, prefix,
-                              fmt, dpi, overwrite, progress, cancel), cancellable=True)
+                export(store, selected, indices, folder, prefix, fmt, dpi, overwrite, progress, cancel), cancellable=True)
             box = QMessageBox(QMessageBox.Icon.Information, tr('已取消') if cancelled else tr('导出结束'),
                 tr('已完整输出 {p0} 张图片，跳过 {p1} 张，失败 {p2} 张。\n{p3}', p0=f'{len(done)}', p1=f'{len(skipped)}', p2=f'{len(failed)}', p3=f'{folder}'), parent=self)
             box.setDetailedText("\n".join([*(tr('成功：') + p for p in done), *(tr('跳过：') + p for p in skipped), *failed]))
             box.exec()
-        except PdfError as exc:
+        except (PdfError, OSError) as exc:
             QMessageBox.warning(self, tr('导出未完成'), str(exc))
 
     def encrypt_copy(self):
