@@ -50,18 +50,34 @@ def release_entries(notes: str) -> list[tuple[str, str]]:
     return entries
 
 
-def show_update_dialog(parent, updates: UpdateChecker) -> None:
+def show_update_dialog(parent, updates: UpdateChecker, *, confirm=False) -> None:
     dialog = UpdateDialog(updates, parent)
-    if not updates.release_notes and not updates.busy:
+    if confirm and updates.update_available:
+        dialog.confirmed_tag = updates.latest_tag
+    if dialog.confirmed_tag and dialog.can_download():
+        dialog.confirmed_tag = None
+        QTimer.singleShot(0, dialog.confirm_update)
+    elif not updates.busy and ((dialog.installed and not updates.last_check_succeeded)
+                               or (not dialog.installed and not updates.release_notes)):
         QTimer.singleShot(0, updates.check)
     dialog.exec()
+    package = dialog.package
     dialog.deleteLater()
+    if package is not None:
+        host = updates.parent()
+        if isinstance(parent, QDialog) and parent is not host:
+            parent.accept()
+        QTimer.singleShot(0, lambda: host.install_update(package))
 
 
 class UpdateDialog(QDialog):
     def __init__(self, updates: UpdateChecker, parent=None):
         super().__init__(parent)
         self.updates = updates
+        self.installed = updates.can_self_update
+        self.confirmed_tag = None
+        self.package = None
+        self.download_error = ''
         self._rendered_notes = None
         self.setObjectName("releaseDialog")
         self.setWindowTitle(tr('{p0} · 版本更新', p0=tr(APP_NAME)))
@@ -115,6 +131,12 @@ class UpdateDialog(QDialog):
                 background: {colors['accent']}; color: {colors['on_accent']}; border-color: {colors['accent']};
             }}
             QDialog#releaseDialog QPushButton#releaseDownload:hover {{ background: {colors['hover']}; }}
+            QDialog#releaseDialog QPushButton#releaseDownload:disabled {{
+                color: {colors['muted']}; background: {colors['soft']}; border-color: {colors['edge']};
+            }}
+            QDialog#releaseDialog QPushButton[manualFallback="true"] {{
+                color: {colors['accent']}; background: {colors['soft']}; border-color: {colors['accent']};
+            }}
             QDialog#releaseDialog QPushButton#releaseLater {{
                 color: {colors['muted']}; border-color: transparent; background: transparent; font-weight: 400;
             }}
@@ -238,7 +260,8 @@ class UpdateDialog(QDialog):
         self._divider(layout)
         layout.addSpacing(14)
         portable = portable_root() is not None
-        footer_note = (tr('绿色版 · 下载 ZIP，退出软件后解压到新文件夹。') if portable
+        footer_note = (tr('更新包下载并校验后，软件将退出、安装更新并重新打开。') if self.installed else
+                       tr('绿色版 · 下载 ZIP，退出软件后解压到新文件夹。') if portable
                        else tr('安装版 · 下载完成后，请关闭软件再运行安装包。'))
         layout.addWidget(self._label(footer_note, muted=True))
         layout.addSpacing(12)
@@ -249,15 +272,17 @@ class UpdateDialog(QDialog):
         later.clicked.connect(self.reject)
         actions.addWidget(later)
         actions.addStretch()
-        github = QPushButton(tr('GitHub 下载'))
-        github.setAccessibleName(tr('打开 GitHub 绿色版发布页') if portable else tr('打开 GitHub 安装版发布页'))
-        github.clicked.connect(self.updates.open_release_page)
-        actions.addWidget(github)
+        self.github_button = QPushButton(tr('确定更新') if self.installed else tr('GitHub 下载'))
+        self.github_button.setAccessibleName(tr('确定更新') if self.installed else
+                                            tr('打开 GitHub 绿色版发布页') if portable else tr('打开 GitHub 安装版发布页'))
+        self.github_button.clicked.connect(self.confirm_update if self.installed else self.updates.open_release_page)
         self.lanzou_button = QPushButton(tr('蓝奏云下载'))
-        self.lanzou_button.setObjectName("releaseDownload")
+        (self.github_button if self.installed else self.lanzou_button).setObjectName("releaseDownload")
         self.lanzou_button.setToolTip(tr('打开蓝奏云，自动复制密码 {p0}', p0=f'{LANZOU_PASSWORD}'))
         self.lanzou_button.clicked.connect(self._open_lanzou)
-        actions.addWidget(self.lanzou_button)
+        for button in ((self.lanzou_button, self.github_button) if self.installed else
+                       (self.github_button, self.lanzou_button)):
+            actions.addWidget(button)
         layout.addLayout(actions)
         self.lanzou_status = self._label("", muted=True)
         layout.addWidget(self.lanzou_status)
@@ -400,6 +425,82 @@ class UpdateDialog(QDialog):
             self.empty_detail.setText(tr('可点击“重新获取”，或打开“完整发布说明”查看。'))
         self.error_label.setText(updates.error + tr('\n当前显示已保存的同版更新说明。') if updates.error and has_notes else "")
         self.error_label.setVisible(bool(updates.error and has_notes))
+        if self.installed:
+            if updates.busy:
+                self.download_error = ''
+            self.github_button.setEnabled(self.can_download())
+            self.github_button.setVisible(updates.update_available)
+            self.lanzou_button.setText(tr('蓝奏云手动更新'))
+            if self.confirmed_tag and not updates.busy:
+                if self.confirmed_tag == updates.latest_tag and self.can_download():
+                    QTimer.singleShot(0, self.confirm_update)
+                self.confirmed_tag = None
+            fallback = bool(self.download_error or updates.error or
+                            (updates.update_available and not updates.busy and not updates.installer))
+            if self.lanzou_button.property('manualFallback') != fallback:
+                self.lanzou_button.setProperty('manualFallback', fallback)
+                self.lanzou_button.style().unpolish(self.lanzou_button)
+                self.lanzou_button.style().polish(self.lanzou_button)
+            if fallback:
+                detail = self.download_error or tr('GitHub 暂时不可用。')
+                message = detail + ' ' + tr('可重试，或前往蓝奏云手动更新。')
+                if self.empty.isHidden():
+                    self.error_label.setText(message)
+                    self.error_label.show()
+                else:
+                    self.empty_detail.setText(message)
+
+    def can_download(self):
+        updates = self.updates
+        return bool(self.installed and updates.update_available and updates.last_check_succeeded
+                    and not (updates.busy or updates.downloading) and updates.installer
+                    and updates.installer.tag == updates.latest_tag)
+
+    def confirm_update(self):
+        if not self.isVisible() or not self.can_download():
+            return
+        from app.installerupdate import InstallerTransfer, installer_cache
+        from app.progress import TaskProgressDialog
+        updates = self.updates
+        if updates.downloaded and updates.downloaded.asset == updates.installer and updates.downloaded.path.is_file():
+            self.package = updates.downloaded
+            self.accept()
+            return
+        self.download_error = ''
+        updates.downloading = True
+        progress = TaskProgressDialog(tr('正在远程下载更新包'), self, cancellable=True)
+        progress.stage.setText(tr('正在连接 GitHub…'))
+        progress.hint.setText(tr('校验通过后将自动安装并重新打开软件。'))
+        progress.detail.setText(updates.latest_tag)
+        def report(received, total):
+            progress.stage.setText(tr('正在下载 {tag}', tag=updates.latest_tag))
+            mib = 1024 * 1024
+            if total:
+                percent = received * 100 // total
+                progress.bar.setRange(0, 100)
+                progress.bar.setValue(percent)
+                progress.percent.setText(f'{percent}%')
+                progress.detail.setText(f'{received / mib:.1f} / {total / mib:.1f} MiB')
+            else:
+                progress.detail.setText(f'{received / mib:.1f} MiB')
+        try:
+            transfer = InstallerTransfer(updates.installer, installer_cache(), progress)
+            transfer.progress.connect(report)
+            progress.canceled.connect(transfer.cancel)
+            transfer.finished.connect(progress.complete)
+            QTimer.singleShot(0, transfer.start)
+            progress.exec()
+            transfer.cancel()
+            self.download_error = transfer.error
+            if transfer.result is not None:
+                self.package = updates.downloaded = transfer.result
+                self.accept()
+        except OSError as exc:
+            self.download_error = str(exc)
+        finally:
+            updates.downloading = False
+            progress.deleteLater()
+            self._refresh()
 
     def _open_lanzou(self) -> None:
         self.lanzou_status.setText(open_lanzou_download())

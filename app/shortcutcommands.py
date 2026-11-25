@@ -340,7 +340,7 @@ _window('about', 'AboutDialog', '关于窗口', [
     ('lanzou', '打开蓝奏云下载', 'text:蓝奏云 ↗'),
 ])
 _window('updates', 'UpdateDialog', '更新内容窗口', [
-    ('github', 'GitHub 下载', 'text:GitHub 下载'), ('lanzou', '蓝奏云下载', 'text:蓝奏云下载'),
+    ('github', 'GitHub 下载', 'attr:github_button'), ('lanzou', '蓝奏云下载', 'attr:lanzou_button'),
 ])
 _window('storage', 'StorageDialog', '存储管理窗口', [
     ('usage', '统计用量', 'text:统计用量'), ('backups', '查看旧备份', 'text:查看旧备份'),

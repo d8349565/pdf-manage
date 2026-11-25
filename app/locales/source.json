@@ -12,7 +12,7 @@
     "app/ui.py:7384"
   ],
   "\n当前显示已保存的同版更新说明。": [
-    "app/updateui.py:401"
+    "app/updateui.py:426"
   ],
   "\n所选内容需要另存副本，暂不支持覆盖。": [
     "app/mergeopenui.py:384"
@@ -173,21 +173,26 @@
     "app/ui.py:7453"
   ],
   "GitHub 下载": [
-    "app/updateui.py:252",
-    "app/shortcutcommands.py:updates.github",
+    "app/updateui.py:275",
     "app/shortcutcommands.py:updates.github"
   ],
   "GitHub 下载 ↗": [
-    "app/aboutui.py:303"
+    "app/aboutui.py:310"
+  ],
+  "GitHub 下载地址无效。": [
+    "app/installerupdate.py:200"
   ],
   "GitHub 发布页 ↗": [
-    "app/aboutui.py:303"
+    "app/aboutui.py:310"
+  ],
+  "GitHub 暂时不可用。": [
+    "app/updateui.py:445"
   ],
   "GitHub 绿色版下载 ↗": [
-    "app/aboutui.py:301"
+    "app/aboutui.py:308"
   ],
   "GitHub 绿色版发布页 ↗": [
-    "app/aboutui.py:301"
+    "app/aboutui.py:308"
   ],
   "Markdown 转 PDF": [
     "app/outputui.py:29",
@@ -471,7 +476,7 @@
     "app/quickstartui.py:42"
   ],
   "{p0} · 版本更新": [
-    "app/updateui.py:67"
+    "app/updateui.py:83"
   ],
   "{p0} × {p1} mm · 保持原图比例": [
     "app/seamstampui.py:244"
@@ -600,7 +605,7 @@
     "app/shortcutcommands.py:compression.zoom_out"
   ],
   "♡  赞赏项目": [
-    "app/aboutui.py:235"
+    "app/aboutui.py:236"
   ],
   "。原图保留。": [
     "app/imagequick.py:238"
@@ -743,6 +748,9 @@
   ],
   "下移书签（含子项）": [
     "app/shortcutcommands.py:outline.move_down"
+  ],
+  "下载超时。": [
+    "app/installerupdate.py:113"
   ],
   "不保存": [
     "app/ui.py:5914"
@@ -955,7 +963,7 @@
     "app/printing.py:1299"
   ],
   "仅向 GitHub 查询版本，不上传文档。运行安装包前请关闭软件。": [
-    "app/aboutui.py:225"
+    "app/aboutui.py:226"
   ],
   "仅奇数页": [
     "app/printing.py:1200"
@@ -1010,8 +1018,8 @@
     "app/shortcutcommands.py:progress.cancel"
   ],
   "优化": [
-    "app/updateui.py:340",
-    "app/updateui.py:344"
+    "app/updateui.py:365",
+    "app/updateui.py:369"
   ],
   "会记住上次确认的加密格式，下次无需重新选择。": [
     "app/exportdialogs.py:107"
@@ -1037,7 +1045,7 @@
     "app/translation/config.py:140"
   ],
   "使用前须知": [
-    "app/updateui.py:202"
+    "app/updateui.py:224"
   ],
   "使用已安装的离线 OCR 增强包；未识别页面会明确提示，不能当作无修改。": [
     "app/pdfcontentcompareui.py:100"
@@ -1046,7 +1054,7 @@
     "app/pdfcompareui.py:165"
   ],
   "使用微信扫一扫": [
-    "app/aboutui.py:264"
+    "app/aboutui.py:265"
   ],
   "使用源目录": [
     "app/wordui.py:291",
@@ -1234,8 +1242,8 @@
     "app/storageui.py:223"
   ],
   "修复": [
-    "app/updateui.py:341",
-    "app/updateui.py:345"
+    "app/updateui.py:366",
+    "app/updateui.py:370"
   ],
   "修复此版本右键菜单": [
     "app/contextmenuui.py:55",
@@ -1387,10 +1395,10 @@
     "app/ui.py:7502"
   ],
   "关于": [
-    "app/aboutui.py:89"
+    "app/aboutui.py:90"
   ],
   "关于 {p0}": [
-    "app/aboutui.py:28"
+    "app/aboutui.py:29"
   ],
   "关于{p0}": [
     "app/ui.py:3270"
@@ -1408,8 +1416,8 @@
     "app/shortcutcommands.py:app.about"
   ],
   "关闭": [
-    "app/aboutui.py:95",
-    "app/aboutui.py:283",
+    "app/aboutui.py:96",
+    "app/aboutui.py:284",
     "app/compression.py:335",
     "app/contextmenuui.py:64",
     "app/contributionui.py:85",
@@ -1423,11 +1431,11 @@
     "app/ui.py:2227",
     "app/ui.py:2228",
     "app/ui.py:2229",
-    "app/updateui.py:150",
+    "app/updateui.py:172",
     "app/watermarkui.py:253"
   ],
   "关闭关于窗口": [
-    "app/aboutui.py:96"
+    "app/aboutui.py:97"
   ],
   "关闭后不再自动弹出，随时可点顶部“操作指南”重新查看。": [
     "app/quickstartui.py:80"
@@ -1450,14 +1458,14 @@
     "app/searchui.py:131"
   ],
   "关闭文档": [
-    "app/ui.py:7602"
+    "app/ui.py:7621"
   ],
   "关闭此标签页": [
     "app/ui.py:2317",
     "app/ui.py:2318"
   ],
   "关闭版本更新窗口": [
-    "app/updateui.py:151"
+    "app/updateui.py:173"
   ],
   "关闭译文详情": [
     "app/translation/ui.py:1013"
@@ -2076,7 +2084,7 @@
     "app/pdfcontentcompareui.py:46"
   ],
   "发现新版本": [
-    "app/aboutui.py:295"
+    "app/aboutui.py:296"
   ],
   "发现新版本 {p0}，点击“查看更新”了解更新内容。": [
     "app/ui.py:3412"
@@ -2247,7 +2255,7 @@
     "app/colorcleanupui.py:416"
   ],
   "可点击“重新获取”，或打开“完整发布说明”查看。": [
-    "app/updateui.py:400"
+    "app/updateui.py:425"
   ],
   "可直接操作，修改将另存为副本。": [
     "app/signatureui.py:98"
@@ -2256,7 +2264,7 @@
     "app/signatureui.py:86"
   ],
   "可获取新版本 {p0}。\n{p1}": [
-    "app/aboutui.py:296"
+    "app/aboutui.py:297"
   ],
   "可见格式": [
     "app/outputui.py:296"
@@ -2266,6 +2274,11 @@
   ],
   "可调整行数和每行个数；单页最多 200 个，数量多时可能重叠。": [
     "app/watermarkui.py:447"
+  ],
+  "可重试，或前往蓝奏云手动更新。": [
+    "app/aboutui.py:306",
+    "app/ui.py:7570",
+    "app/updateui.py:446"
   ],
   "右侧装订": [
     "app/printing.py:1292"
@@ -2394,7 +2407,7 @@
     "app/annotcropui.py:224"
   ],
   "后台检查，每天最多一次。": [
-    "app/aboutui.py:214"
+    "app/aboutui.py:215"
   ],
   "向内裁一点": [
     "app/scanwhiteui.py:262",
@@ -2594,7 +2607,7 @@
     "app/editingui.py:1138"
   ],
   "在主窗口显示「查看更新」，关闭后仍可手动检查。": [
-    "app/aboutui.py:219"
+    "app/aboutui.py:220"
   ],
   "在原文位置显示译文": [
     "app/translation/ui.py:2084"
@@ -2789,7 +2802,7 @@
     "app/exportdialogs.py:767"
   ],
   "如果{p0} 帮到了你，欢迎支持项目的持续维护。赞赏完全自愿。": [
-    "app/aboutui.py:238"
+    "app/aboutui.py:239"
   ],
   "字号": [
     "app/outputui.py:307"
@@ -2886,6 +2899,21 @@
   "安装到此位置": [
     "app/storageui.py:112"
   ],
+  "安装包信息不完整。": [
+    "app/installerupdate.py:28",
+    "app/installerupdate.py:128"
+  ],
+  "安装包大小与发布记录不符。": [
+    "app/installerupdate.py:176",
+    "app/installerupdate.py:172"
+  ],
+  "安装包校验失败，请重新下载。": [
+    "app/installerupdate.py:90",
+    "app/installerupdate.py:93",
+    "app/installerupdate.py:96",
+    "app/installerupdate.py:209",
+    "app/installerupdate.py:214"
+  ],
   "安装增强包": [
     "app/shortcutcommands.py:storage.install",
     "app/shortcutcommands.py:storage.install"
@@ -2905,7 +2933,7 @@
     "app/ocrui.py:135"
   ],
   "安装版 · 下载完成后，请关闭软件再运行安装包。": [
-    "app/updateui.py:242"
+    "app/updateui.py:265"
   ],
   "安装识别组件": [
     "app/shortcutcommands.py:word.install_ocr"
@@ -2944,7 +2972,7 @@
     "app/seamstampui.py:213"
   ],
   "完整发布说明": [
-    "app/updateui.py:176"
+    "app/updateui.py:198"
   ],
   "完整校验后安装到以下位置；原 ZIP 保留，已有组件会保留一份备份。": [
     "app/storageui.py:97"
@@ -3162,7 +3190,7 @@
     "app/shortcutcommands.py:outline.expand"
   ],
   "展开完整使用说明": [
-    "app/updateui.py:354"
+    "app/updateui.py:379"
   ],
   "展开更多打印设置": [
     "app/printing.py:1325",
@@ -3256,7 +3284,7 @@
     "app/ui.py:6916"
   ],
   "已保存的发布说明": [
-    "app/updateui.py:370"
+    "app/updateui.py:395"
   ],
   "已保存：{p0}": [
     "app/regioncapture.py:375"
@@ -3653,8 +3681,8 @@
     "app/shortcutcommands.py:markdown.convert"
   ],
   "当前 v{p0}": [
-    "app/updateui.py:165",
-    "app/updateui.py:377"
+    "app/updateui.py:187",
+    "app/updateui.py:402"
   ],
   "当前为单个水印；勾选整页平铺可重复多个。": [
     "app/watermarkui.py:448"
@@ -3666,7 +3694,7 @@
     "app/ui.py:5911"
   ],
   "当前已是最新版本": [
-    "app/updateui.py:370"
+    "app/updateui.py:395"
   ],
   "当前快捷键": [
     "app/shortcutui.py:180"
@@ -3694,7 +3722,7 @@
     "app/ui.py:3760"
   ],
   "当前显示已保存的更新说明": [
-    "app/updateui.py:364"
+    "app/updateui.py:389"
   ],
   "当前样式": [
     "app/arrowstyleui.py:263"
@@ -3706,7 +3734,7 @@
     "app/compression.py:490"
   ],
   "当前版本": [
-    "app/aboutui.py:138"
+    "app/aboutui.py:139"
   ],
   "当前版本的实际界面示例": [
     "app/quickstartui.py:22"
@@ -3831,10 +3859,10 @@
     "app/wordui.py:194"
   ],
   "微信赞赏": [
-    "app/aboutui.py:250"
+    "app/aboutui.py:251"
   ],
   "微信赞赏码，使用微信扫一扫": [
-    "app/aboutui.py:253"
+    "app/aboutui.py:254"
   ],
   "微调上移": [
     "app/shortcutcommands.py:whitening.nudge_up",
@@ -4082,10 +4110,10 @@
     "app/shortcutcommands.py:storage.previous"
   ],
   "打开 GitHub 安装版发布页": [
-    "app/updateui.py:253"
+    "app/updateui.py:277"
   ],
   "打开 GitHub 绿色版发布页": [
-    "app/updateui.py:253"
+    "app/updateui.py:277"
   ],
   "打开 OFD": [
     "app/ui.py:6577"
@@ -4111,7 +4139,7 @@
     "app/shortcutcommands.py:storage.ocr_open"
   ],
   "打开{p0} 项目地址": [
-    "app/aboutui.py:156"
+    "app/aboutui.py:157"
   ],
   "打开一份文档，下次可以从这里继续。": [
     "app/recentui.py:234",
@@ -4121,7 +4149,7 @@
     "app/shortcutcommands.py:storage.cache_open"
   ],
   "打开发布页": [
-    "app/aboutui.py:180"
+    "app/aboutui.py:181"
   ],
   "打开密码": [
     "app/exportdialogs.py:103"
@@ -4162,16 +4190,16 @@
     "app/storageui.py:173"
   ],
   "打开绿色版发布页": [
-    "app/aboutui.py:180"
+    "app/aboutui.py:181"
   ],
   "打开蓝奏云下载": [
     "app/shortcutcommands.py:about.lanzou"
   ],
   "打开蓝奏云下载，自动复制密码 {p0}": [
-    "app/aboutui.py:188"
+    "app/aboutui.py:189"
   ],
   "打开蓝奏云，自动复制密码 {p0}": [
-    "app/updateui.py:258"
+    "app/updateui.py:281"
   ],
   "打开识别后的 PDF": [
     "app/ocrui.py:200"
@@ -4639,7 +4667,7 @@
     "app/seamstampui.py:66"
   ],
   "收起使用说明": [
-    "app/updateui.py:354"
+    "app/updateui.py:379"
   ],
   "收起侧栏": [
     "app/immersivereading.py:276"
@@ -4921,8 +4949,8 @@
     "app/annotcropui.py:220"
   ],
   "新增": [
-    "app/updateui.py:339",
-    "app/updateui.py:343"
+    "app/updateui.py:364",
+    "app/updateui.py:368"
   ],
   "新增条款": [
     "app/pdfcontentcompareui.py:29"
@@ -4942,7 +4970,7 @@
     "app/pdfcontentcompareui.py:255"
   ],
   "新版 ": [
-    "app/updateui.py:376"
+    "app/updateui.py:401"
   ],
   "新版内容": [
     "app/pdfcontentcompareui.py:298"
@@ -4964,7 +4992,7 @@
     "app/pdfcompareui.py:50"
   ],
   "新版本提醒": [
-    "app/aboutui.py:219"
+    "app/aboutui.py:220"
   ],
   "新版页码": [
     "app/pdfcompareui.py:170",
@@ -4993,6 +5021,10 @@
   "无损图片 · 200 DPI（文件较大）": [
     "app/rasterui.py:57"
   ],
+  "无法从 GitHub 获取更新文件。": [
+    "app/installerupdate.py:194",
+    "app/installerupdate.py:203"
+  ],
   "无法使用图片": [
     "app/seamstampui.py:189"
   ],
@@ -5001,6 +5033,9 @@
   ],
   "无法保存设置，请检查当前用户的写入权限。": [
     "app/savesettings.py:90"
+  ],
+  "无法写入下载文件。": [
+    "app/installerupdate.py:178"
   ],
   "无法分析扫描角度": [
     "app/deskewui.py:155"
@@ -5040,6 +5075,11 @@
   ],
   "无法打开文件夹": [
     "app/storageui.py:84"
+  ],
+  "无法核对安装包的 SHA-256 校验值。": [
+    "app/installerupdate.py:41",
+    "app/installerupdate.py:130",
+    "app/installerupdate.py:165"
   ],
   "无法核对长图尺寸，请重新导出。": [
     "app/imaging.py:198"
@@ -5188,10 +5228,10 @@
     "app/editingui.py:232"
   ],
   "暂时无法获取更新内容": [
-    "app/updateui.py:396"
+    "app/updateui.py:421"
   ],
   "暂未获取到更新说明": [
-    "app/updateui.py:399"
+    "app/updateui.py:424"
   ],
   "暖灰底色，陶红点缀": [
     "app/themes.py:terracotta"
@@ -5234,10 +5274,10 @@
     "app/watermarkui.py:363"
   ],
   "更新内容": [
-    "app/updateui.py:157"
+    "app/updateui.py:179"
   ],
   "更新内容尚未获取": [
-    "app/updateui.py:364"
+    "app/updateui.py:389"
   ],
   "更新内容窗口": [
     "app/shortcutcommands.py:updates.github",
@@ -5245,8 +5285,14 @@
     "app/shortcutcommands.py:updates.lanzou",
     "app/shortcutcommands.py:updates.lanzou"
   ],
+  "更新包下载并校验后，软件将退出、安装更新并重新打开。": [
+    "app/updateui.py:263"
+  ],
+  "更新尚未安装，可稍后从更新窗口继续。": [
+    "app/ui.py:7548"
+  ],
   "更新设置": [
-    "app/aboutui.py:211"
+    "app/aboutui.py:212"
   ],
   "更清晰 · 300 DPI，无损图片（文件较大）": [
     "app/rasterui.py:56"
@@ -5294,7 +5340,7 @@
     "app/pdfcompareui.py:50"
   ],
   "有新版本可下载": [
-    "app/updateui.py:366"
+    "app/updateui.py:391"
   ],
   "有未保存的修改": [
     "app/ui.py:3750",
@@ -5405,6 +5451,9 @@
   ],
   "未检测到表格": [
     "app/ui.py:7497"
+  ],
+  "未能启动更新": [
+    "app/ui.py:7570"
   ],
   "未能复制密码，请手动输入：{p0}。": [
     "app/updateui.py:31"
@@ -5534,7 +5583,7 @@
     "app/ui.py:3409"
   ],
   "查看更新内容": [
-    "app/aboutui.py:172",
+    "app/aboutui.py:173",
     "app/shortcutcommands.py:about.updates",
     "app/shortcutcommands.py:about.updates"
   ],
@@ -5542,7 +5591,7 @@
     "app/signatureui.py:39"
   ],
   "查看正式版更新": [
-    "app/updateui.py:372"
+    "app/updateui.py:397"
   ],
   "查看清理效果": [
     "app/shortcutcommands.py:cleanup.cleaned"
@@ -5562,6 +5611,9 @@
   ],
   "标题 {p0}": [
     "app/translation/extractor.py:302"
+  ],
+  "校验通过后将自动安装并重新打开软件。": [
+    "app/updateui.py:473"
   ],
   "样式设置作用于当前框选的已有文字；可直接应用，无需重新输入": [
     "app/editingui.py:2024"
@@ -5634,9 +5686,9 @@
     "app/compression.py:395"
   ],
   "检查更新": [
-    "app/aboutui.py:176",
-    "app/aboutui.py:299",
-    "app/updateui.py:386",
+    "app/aboutui.py:177",
+    "app/aboutui.py:300",
+    "app/updateui.py:411",
     "app/shortcutcommands.py:about.check",
     "app/shortcutcommands.py:about.check"
   ],
@@ -5673,6 +5725,9 @@
   ],
   "橙色": [
     "app/arrowstyleui.py:176"
+  ],
+  "正在下载 {tag}": [
+    "app/updateui.py:476"
   ],
   "正在从原图生成更小的 WebP…": [
     "app/imagequick.py:200"
@@ -5712,7 +5767,10 @@
     "app/progress.py:109"
   ],
   "正在取消转换，结束后可关闭窗口": [
-    "app/ui.py:7548"
+    "app/ui.py:7558"
+  ],
+  "正在启动更新安装程序": [
+    "app/ui.py:7567"
   ],
   "正在处理，请稍候": [
     "app/progress.py:71"
@@ -5750,7 +5808,7 @@
     "app/mosaicui.py:137"
   ],
   "正在检查…": [
-    "app/aboutui.py:299"
+    "app/aboutui.py:300"
   ],
   "正在检查保护信息": [
     "app/signatureui.py:15"
@@ -5759,7 +5817,7 @@
     "app/ui.py:6658"
   ],
   "正在检查更新…": [
-    "app/updateui.py:362"
+    "app/updateui.py:387"
   ],
   "正在检查长图尺寸…": [
     "app/imaging.py:252"
@@ -5814,10 +5872,10 @@
     "app/translation/ui.py:3325"
   ],
   "正在获取…": [
-    "app/updateui.py:385"
+    "app/updateui.py:410"
   ],
   "正在获取更新内容": [
-    "app/updateui.py:393"
+    "app/updateui.py:418"
   ],
   "正在计算压缩效果…": [
     "app/compression.py:445"
@@ -5826,7 +5884,13 @@
     "app/arrowstyleui.py:263"
   ],
   "正在读取 GitHub 发布说明，请稍候。": [
-    "app/updateui.py:394"
+    "app/updateui.py:419"
+  ],
+  "正在远程下载更新包": [
+    "app/updateui.py:471"
+  ],
+  "正在连接 GitHub…": [
+    "app/updateui.py:472"
   ],
   "正在重新翻译…": [
     "app/translation/ui.py:3062",
@@ -5836,7 +5900,7 @@
     "app/outputui.py:338"
   ],
   "正式版更新": [
-    "app/updateui.py:157"
+    "app/updateui.py:179"
   ],
   "正数顺时针、负数逆时针，支持 ±10°。右侧滚动查看上下页；不可靠建议需勾选确认。": [
     "app/deskewui.py:48"
@@ -5858,6 +5922,9 @@
   ],
   "此操作在输入框内使用，请选择不占用文字输入和原生编辑的组合或功能键。": [
     "app/shortcuts.py:55"
+  ],
+  "此更新仅适用于已安装的旧版本。": [
+    "app/installerupdate.py:87"
   ],
   "此次保存将覆盖源文件，原文件内容将被修改。其他源文件保留。": [
     "app/savesettings.py:104"
@@ -6419,6 +6486,11 @@
   "确定": [
     "app/arrowstyleui.py:211"
   ],
+  "确定更新": [
+    "app/aboutui.py:302",
+    "app/updateui.py:275",
+    "app/updateui.py:276"
+  ],
   "确认并保存副本": [
     "app/savesettings.py:194"
   ],
@@ -6520,7 +6592,7 @@
     "app/storageui.py:215"
   ],
   "稍后再说": [
-    "app/updateui.py:247"
+    "app/updateui.py:270"
   ],
   "窄边距 5 毫米": [
     "app/printing.py:77"
@@ -6752,7 +6824,7 @@
     "app/arrowstyleui.py:177"
   ],
   "绿色版 · 下载 ZIP，退出软件后解压到新文件夹。": [
-    "app/updateui.py:241"
+    "app/updateui.py:264"
   ],
   "编辑": [
     "app/ui.py:3127",
@@ -6946,7 +7018,7 @@
     "app/printing.py:1220"
   ],
   "自动检查更新": [
-    "app/aboutui.py:214"
+    "app/aboutui.py:215"
   ],
   "自动识别扫描页文字": [
     "app/pdfcontentcompareui.py:99"
@@ -7000,19 +7072,21 @@
     "app/translation/ui.py:597"
   ],
   "蓝奏云 ↗": [
-    "app/aboutui.py:184",
+    "app/aboutui.py:185",
     "app/shortcutcommands.py:about.lanzou"
   ],
   "蓝奏云下载": [
-    "app/updateui.py:256",
-    "app/shortcutcommands.py:updates.lanzou",
+    "app/updateui.py:279",
     "app/shortcutcommands.py:updates.lanzou"
   ],
   "蓝奏云下载，复制密码并打开网盘": [
-    "app/aboutui.py:189"
+    "app/aboutui.py:190"
   ],
   "蓝奏云密码：{p0}（点击“蓝奏云”自动复制）": [
-    "app/aboutui.py:197"
+    "app/aboutui.py:198"
+  ],
+  "蓝奏云手动更新": [
+    "app/updateui.py:433"
   ],
   "蓝色": [
     "app/arrowstyleui.py:177"
@@ -7169,7 +7243,7 @@
     "app/compression.py:519"
   ],
   "让散落的页面有处可归。": [
-    "app/aboutui.py:125"
+    "app/aboutui.py:126"
   ],
   "设为主键": [
     "app/shortcutui.py:382"
@@ -7979,7 +8053,7 @@
     "app/translation/ui.py:2448"
   ],
   "重新获取": [
-    "app/updateui.py:386"
+    "app/updateui.py:411"
   ],
   "重新识别纸边": [
     "app/scanwhiteui.py:261",
@@ -8282,7 +8356,7 @@
     "app/watermarkui.py:592"
   ],
   "项目地址": [
-    "app/aboutui.py:138"
+    "app/aboutui.py:139"
   ],
   "预览内容": [
     "app/pdfcompareui.py:343"
@@ -8306,7 +8380,7 @@
     "app/mosaicui.py:176"
   ],
   "预览版：仅检查正式版更新": [
-    "app/updateui.py:368"
+    "app/updateui.py:393"
   ],
   "预计内存超出 {p0} MiB 预算。": [
     "app/imaging.py:114"
@@ -8452,11 +8526,11 @@
     "app/editingui.py:700"
   ],
   "（绿色版）": [
-    "app/runtime.py:29"
+    "app/runtime.py:49"
   ],
   "（预览版）": [
-    "app/aboutui.py:142",
-    "app/runtime.py:29"
+    "app/aboutui.py:143",
+    "app/runtime.py:49"
   ],
   "＋ 新增水印": [
     "app/watermarkui.py:117"

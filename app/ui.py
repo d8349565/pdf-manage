@@ -7539,8 +7539,18 @@ class MainWindow(QMainWindow):
                 self.open_files_in_tabs(paths)
         event.acceptProposedAction()
 
+    def install_update(self, package):
+        self._pending_installer = package
+        try:
+            if self.close():
+                QApplication.instance().quit()
+            else:
+                self.statusBar().showMessage(tr('更新尚未安装，可稍后从更新窗口继续。'), 6500)
+        finally:
+            self._pending_installer = None
+
     def closeEvent(self, event) -> None:
-        if self._saving or self._confirming_leave or getattr(self, "_task_dialog", None) is not None:
+        if self._saving or self._confirming_leave or self.updates.downloading or getattr(self, "_task_dialog", None) is not None:
             event.ignore()
             return
         if getattr(self, "_conv_thread", None) is not None:
@@ -7551,6 +7561,15 @@ class MainWindow(QMainWindow):
         reading_tab = self._active_tab()
         self._save_current_tab_state()
         if self._confirm_leave_all_tabs():
+            package = getattr(self, '_pending_installer', None)
+            if package is not None:
+                try:
+                    run_operation(self, tr('正在启动更新安装程序'), lambda progress: package.launch(), show_delay_ms=0)
+                except (OSError, ValueError) as exc:
+                    self.updates.downloaded = None
+                    QMessageBox.warning(self, tr('未能启动更新'), str(exc) + '\n' + tr('可重试，或前往蓝奏云手动更新。'))
+                    event.ignore()
+                    return
             if reading_tab is not None and reading_tab.ws.path and self.reading_history.find(reading_tab.ws.path):
                 self.reading_history.touch(reading_tab.ws.path)
             self._history_timer.stop()

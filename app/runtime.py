@@ -4,7 +4,7 @@ import sys
 
 from PyQt6.QtCore import QSettings
 
-from app import APP_IS_PRERELEASE, APP_NAME, APP_ORGANIZATION, APP_SLUG
+from app import APP_EXE_NAME, APP_IS_PRERELEASE, APP_NAME, APP_ORGANIZATION, APP_SLUG
 
 PORTABLE_MARKER = 'portable.ini'
 
@@ -22,6 +22,26 @@ def portable_root(executable=None):
 def portable_data():
     root = portable_root()
     return root / 'Data' if root else None
+
+
+def installed_directory():
+    """Only the frozen executable at this product's registered Inno Setup location."""
+    if sys.platform != 'win32' or not getattr(sys, 'frozen', False) or portable_root() is not None:
+        return None
+    exe = Path(sys.executable).resolve()
+    if exe.name.casefold() != APP_EXE_NAME.casefold():
+        return None
+    import winreg
+    key = r'Software\Microsoft\Windows\CurrentVersion\Uninstall\{0E4A38D0-8475-4A57-98C2-1AD3F468A0E8}_is1'
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(hive, key, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as entry:
+                folder, _ = winreg.QueryValueEx(entry, 'InstallLocation')
+            if folder and Path(folder).resolve() == exe.parent:
+                return exe.parent
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def display_name():

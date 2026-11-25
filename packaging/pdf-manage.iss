@@ -154,10 +154,47 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF"; ValueTy
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PageArkWordToPDF\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --word-to-pdf ""%1"""; Tasks: contextmenus
 
 [Run]
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent runasoriginaluser; Check: IsInAppUpdate
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 {#MyAppName}"; Flags: nowait postinstall skipifsilent
 Filename: "ms-settings:defaultapps?registeredAppUser=PDFManage"; Description: "在 Windows 设置中选择默认 PDF 应用"; Flags: shellexec postinstall skipifsilent unchecked
 
 [Code]
+function OpenProcess(Access: LongWord; InheritHandle: Boolean; ProcessId: LongWord): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: LongWord): LongWord;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function UpdateCallerPid: Integer;
+begin
+  Result := StrToIntDef(ExpandConstant('{param:ZhiXuUpdatePid|0}'), 0);
+end;
+
+function IsInAppUpdate: Boolean;
+begin
+  Result := WizardSilent and (UpdateCallerPid > 0);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Caller: THandle;
+begin
+  Result := '';
+  if not IsInAppUpdate then Exit;
+  Caller := OpenProcess($00100000, False, UpdateCallerPid);  { SYNCHRONIZE only }
+  if Caller = 0 then begin
+    if DLLGetLastError <> 87 then Result := '无法确认纸序 PDF 已退出。请关闭软件后重试。';
+    Exit;  { ERROR_INVALID_PARAMETER: process has already exited }
+  end;
+  try
+    if WaitForSingleObject(Caller, 120000) <> 0 then
+      Result := '纸序 PDF 仍在运行，更新未开始。请关闭软件后重试。';
+  finally
+    CloseHandle(Caller);
+  end;
+end;
+
 procedure InitializeWizard;
 var
   ToolsHint: TNewStaticText;

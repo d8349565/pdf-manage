@@ -16,6 +16,8 @@ For Windows x64. Neither the installer nor the portable edition requires a separ
 2. Drag a PDF, OFD, or image into the window, or open it from the **File** menu, to view its pages.
 3. Switch to the page organizer to reorder, rotate, or copy pages. Choose **File → Save As** to create a new PDF. Open that copy to see the saved result.
 
+In the installed edition, open the update notice and choose **Update now** to download the installer from GitHub. The app verifies the download, prompts for unsaved changes, closes, installs the update, and reopens. If GitHub is unavailable, choose the manual Lanzou Cloud download. Older installations need one manual upgrade to a version with this feature.
+
 For the portable edition, keep `_internal` and `portable.ini` beside the executable and extract everything into a separate, writable folder. Settings, caches, and the default OCR components are stored in its own `Data` folder. Explorer context-menu tools are optional; see the [portable edition notes (中文)](docs/USAGE.md#安装版与绿色版) before moving or deleting the folder.
 
 **To recognize text in scans**, download the separate [OCR add-on](https://github.com/d8349565/pdf-manage/releases/latest/download/ZhiXuPDF-OCR-win-x64.zip) and import its ZIP from the text recognition (OCR) dialog in the **Scan** menu. Compatible components can be reused when updating the main app. [OCR setup and usage (中文)](docs/OCR.md)

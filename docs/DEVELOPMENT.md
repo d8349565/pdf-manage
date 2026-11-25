@@ -349,13 +349,17 @@ OCR 的 PRD 评估、独立 CPU 增强包构建、合成 PoC、性能记录和�
 
 检查优先使用 GitHub 公开接口 `GET /repos/d8349565/pdf-manage/releases/latest`（若遇 `403` / `429` 限流则自动回退至 `HEAD /d8349565/pdf-manage/releases/latest` 读取 `302 Location` 标签），不需要令牌，不读取或上传文档、文件路径及账号信息。按数字比较 `X.Y.Z` / `vX.Y.Z`，忽略预发布和草稿，接口模式下要求 Release 已完成上传非空的 `ZhiXuPDF-Setup.exe`（兼容历史上的 `ZhiXuPDF-Setup vX.Y.Z.exe` 以及 GitHub 上传自动替换空格生成的 `ZhiXuPDF-Setup.vX.Y.Z.exe`，版本须与标签一致）。发布时应先上传安装包，再将 Release 设为正式最新版本；只推送标签或生成 Actions artifact 不会提供应用更新。
 
-网络使用异步 Qt Network，保留证书验证、拒绝重定向、限制响应为 1 MiB，并设 10 秒无数据超时与 15 秒总超时。安装包不在程序内下载或执行；用户点击后，由系统浏览器打开固定仓库的 Release 页面，下载后先关闭纸序 PDF，再运行原有按用户安装器。关闭主窗口取消在途请求。
+版本查询使用异步 Qt Network，校验证书，元数据限 1 MiB，10 秒无数据或总耗时达 15 秒时停止。安装版通过 Inno 卸载项的 InstallLocation 与当前 EXE 路径识别；绿色标记优先，源码运行和直接复制的构建目录均使用原手动入口。
+
+“确定更新”仅接受刚从 GitHub 确认的新版标签。下载器从固定仓库及标签构造安装包地址，只允许 HTTPS 和 GitHub 的发布附件 CDN。下载先写入本用户更新目录中的临时文件，流式核对大小与 SHA-256；API 限流或缺少 digest 时读取同一标签的 SHA256SUMS.txt。下载失败或取消会清理本次临时文件，界面保留蓝奏云手动入口。
+
+关闭主窗口时先走原有的逐标签保存确认，校验通过且安装器启动成功后才退出。安装器使用 /SILENT 显示安装进度，等待指定的旧进程退出后再写入原安装目录；成功安装后由专用 [Run] 条目启动新版。手动安装继续使用原向导。自动更新模式不强制关闭其他应用，也不重启 Windows。
 
 `pdf-manage.spec` 保留 `QtNetwork.pyd`、`Qt6Network.dll` 和 Windows 原生 `tls/qschannelbackend.dll`；继续排除 Python SSL / OpenSSL，不引入新的下载器、提权、计划任务或常驻更新服务。`packaging/verify_exe.py` 会静态核对这些打包依赖。Qt 官方的 [TLS 打包说明](https://doc.qt.io/qt-6/ssl.html#considerations-while-packaging-your-application) 支持 Windows 仅携带 Schannel 后端。
 
-该方案减少程序自行更新的行为，不能保证消除安全软件误报。SmartScreen 会检查文件及发布者信誉，新文件即使已签名也可能提示；正式分发应使用一致的可信发布者身份签名程序与安装器，保持现有目录式打包、禁用 UPX，不能引导用户关闭杀毒或绕过证书验证。依据见 [Microsoft SmartScreen 信誉说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)。
+SmartScreen 会检查文件及发布者信誉，新文件即使已签名也可能提示；正式分发应使用一致的可信发布者身份签名程序与安装器，保持现有目录式打包、禁用 UPX。依据见 [Microsoft SmartScreen 信誉说明](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)。
 
-新增回归代码见 `tests/test_updates.py`，本次仅做源码与打包配置静态检查，未运行模拟测试、联网功能验收、安全软件扫描或安装升级验证。发布前需由用户核对手动检查、自动提示与关闭选项、网络失败后重试、打包后的 HTTPS 能力及保留文件关联的覆盖安装。
+版本检查回归见 `tests/test_updates.py`，下载、失败恢复及保存确认见 `tests/test_installer_updates.py`。正式发布前还应使用实际安装的前一版本验证覆盖更新、文件关联和重新启动。
 
 ## 版本与提交规则
 

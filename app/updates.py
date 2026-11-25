@@ -1,4 +1,4 @@
-"""Read public Release metadata; downloads and installation stay in the browser."""
+"""Check stable public releases and select the matching distribution asset."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 
 from app import APP_IS_PRERELEASE, APP_PROJECT_URL, APP_SLUG, APP_VERSION_PARTS, __version__
-from app.runtime import portable_root
+from app.runtime import installed_directory, portable_root
 
 RELEASES_URL = f"{APP_PROJECT_URL}/releases"
 LATEST_RELEASE_URL = f"{RELEASES_URL}/latest"
@@ -21,10 +21,19 @@ MAX_NOTES_CHARS = 64 * 1024
 
 
 @dataclass(frozen=True)
+class InstallerAsset:
+    tag: str
+    name: str
+    size: int = 0
+    sha256: str = ""
+
+
+@dataclass(frozen=True)
 class ReleaseInfo:
     tag: str
     notes: str = ""
     published_at: str = ""
+    installer: InstallerAsset | None = None
 
 
 def _notes_text(value) -> str:
@@ -42,6 +51,18 @@ def version_parts(tag: str) -> tuple[int, int, int]:
     return tuple(map(int, tag.removeprefix("v").split(".")))
 
 
+def installer_names(tag):
+    version_parts(tag)
+    number = tag.removeprefix('v')
+    return (f'{APP_SLUG}-Setup.exe', f'{APP_SLUG}-Setup v{number}.exe',
+            f'{APP_SLUG}-Setup.v{number}.exe', f'{APP_SLUG}-Setup.{number}.exe')
+
+
+def newer_than_current(tag):
+    latest = version_parts(tag)
+    return latest > APP_VERSION_PARTS or (APP_IS_PRERELEASE and latest == APP_VERSION_PARTS)
+
+
 def release_info(payload: bytes, *, portable=None) -> ReleaseInfo:
     """Only accept a stable release with a completed Windows installer upload."""
     if len(payload) > MAX_RESPONSE_BYTES:
@@ -53,28 +74,23 @@ def release_info(payload: bytes, *, portable=None) -> ReleaseInfo:
     if not isinstance(release, dict) or release.get("draft") is not False or release.get("prerelease") is not False:
         raise ValueError("暂未获取到正式版本，请打开发布页查看。")
     tag = release.get("tag_name")
-    version_parts(tag)
     # Older Releases used a version suffix; GitHub replaces spaces with dots on upload.
-    raw_ver = tag.removeprefix("v")
-    installer_names = (
-        f"{APP_SLUG}-Setup.exe",
-        f"{APP_SLUG}-Setup v{raw_ver}.exe",
-        f"{APP_SLUG}-Setup.v{raw_ver}.exe",
-        f"{APP_SLUG}-Setup.{raw_ver}.exe",
-    )
+    names = installer_names(tag)
     portable = portable_root() is not None if portable is None else portable
     if portable:
-        installer_names = (f'{APP_SLUG}-Portable-v{raw_ver}.zip',)
+        names = (f'{APP_SLUG}-Portable-v{tag.removeprefix("v")}.zip',)
     assets = release.get("assets")
-    if not isinstance(assets, list) or not any(
-        isinstance(asset, dict) and asset.get("name") in installer_names
-        and asset.get("state") == "uploaded" and type(asset.get("size")) is int and asset["size"] > 0
-        for asset in assets
-    ):
+    selected = next((asset for asset in assets if isinstance(asset, dict) and asset.get("name") in names
+                     and asset.get("state") == "uploaded" and type(asset.get("size")) is int
+                     and asset["size"] > 0), None) if isinstance(assets, list) else None
+    if selected is None:
         raise ValueError("正式版" + ('绿色 ZIP' if portable else '安装包') + "尚未就绪，请稍后重试或打开发布页。")
     published_at = release.get("published_at")
+    digest = selected.get('digest')
+    sha256 = digest[7:].lower() if isinstance(digest, str) and re.fullmatch(r'sha256:[0-9a-fA-F]{64}', digest) else ''
     return ReleaseInfo(tag, _notes_text(release.get("body")),
-                       published_at if isinstance(published_at, str) and len(published_at) <= 40 else "")
+                       published_at if isinstance(published_at, str) and len(published_at) <= 40 else "",
+                       None if portable else InstallerAsset(tag, selected['name'], selected['size'], sha256))
 
 
 def release_tag(payload: bytes, *, portable=None) -> str:
@@ -106,6 +122,9 @@ class UpdateChecker(QObject):
         self.message = "点击检查最新正式版。"
         self.error = ""
         self.last_check_succeeded = False
+        self.installer = None  # Only live GitHub responses may authorize an installer, never cached settings.
+        self.downloading = False
+        self.downloaded = None
         self.latest_tag = str(settings.value("updates/latestTag", ""))
         try:
             version_parts(self.latest_tag)
@@ -144,8 +163,11 @@ class UpdateChecker(QObject):
     def update_available(self) -> bool:
         if not self.latest_tag:
             return False
-        latest = version_parts(self.latest_tag)
-        return latest > APP_VERSION_PARTS or (APP_IS_PRERELEASE and latest == APP_VERSION_PARTS)
+        return newer_than_current(self.latest_tag)
+
+    @property
+    def can_self_update(self):
+        return callable(getattr(self.parent(), 'install_update', None)) and installed_directory() is not None
 
     @property
     def automatic(self) -> bool:
@@ -171,6 +193,9 @@ class UpdateChecker(QObject):
         self.changed.emit()
 
     def start(self) -> None:
+        if installed_directory() is not None:
+            from app.installerupdate import clear_installed_packages
+            QTimer.singleShot(0, clear_installed_packages)
         # Called by production entry points, never implicitly by a test window.
         if not self.automatic:
             return
@@ -196,13 +221,14 @@ class UpdateChecker(QObject):
         self.check()
 
     def check(self) -> None:
-        if self.busy:
+        if self.busy or self.downloading:
             return
         self.settings.setValue("updates/lastAttempt", time.time())
         self.settings.sync()
         self.busy = True
         self.message = "正在检查更新…"
         self.error = ""
+        self.installer = None
         self._fallback = False
         self._start_request(LATEST_RELEASE_API, head=False)
         self.changed.emit()
@@ -275,6 +301,7 @@ class UpdateChecker(QObject):
                     self.release_notes = ""
                     self.published_at = ""
                 self.latest_tag = tag
+                self.installer = None if portable_root() else InstallerAsset(tag, f'{APP_SLUG}-Setup.exe')
             else:
                 if status in (403, 429):
                     raise ValueError("GitHub 暂时限制了请求，请稍后重试或打开发布页。")
@@ -288,6 +315,7 @@ class UpdateChecker(QObject):
                 self.latest_tag = info.tag
                 self.release_notes = info.notes
                 self.published_at = info.published_at
+                self.installer = info.installer
             self.settings.setValue("updates/latestTag", self.latest_tag)
             self.settings.setValue("updates/releaseDetails", json.dumps({
                 "tag": self.latest_tag, "notes": self.release_notes, "published_at": self.published_at,
@@ -302,6 +330,7 @@ class UpdateChecker(QObject):
             else:
                 self.message = f"当前已是最新版本（v{__version__}）。"
         except ValueError as exc:
+            self.installer = None
             self.message = str(exc)
             self.error = self.message
             self.last_check_succeeded = False

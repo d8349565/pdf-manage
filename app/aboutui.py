@@ -24,6 +24,7 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None, updates=None):
         super().__init__(parent)
         self.updates = updates if updates is not None else UpdateChecker(preferences(QSettings), self)
+        self.installed_updates = self.updates.can_self_update
         self.setObjectName("aboutDialog")
         self.setWindowTitle(tr('关于 {p0}', p0=tr(APP_NAME)))
         self.setWindowIcon(brand_icon())
@@ -179,7 +180,7 @@ class AboutDialog(QDialog):
         update_buttons.addWidget(self.check_update_button)
         self.get_update_button = QPushButton(tr('打开绿色版发布页') if portable_root() else tr('打开发布页'))
         self.get_update_button.setObjectName("aboutGetUpdate")
-        self.get_update_button.clicked.connect(self.updates.open_release_page)
+        self.get_update_button.clicked.connect(self._get_update)
         update_buttons.addWidget(self.get_update_button)
         self.lanzou_button = QPushButton(tr('蓝奏云 ↗'))
         self.lanzou_button.setObjectName("aboutLanzouDownload")
@@ -297,10 +298,22 @@ class AboutDialog(QDialog):
         self.update_status.setText(message)
         self.check_update_button.setEnabled(not self.updates.busy)
         self.check_update_button.setText(tr('正在检查…') if self.updates.busy else tr('检查更新'))
-        if portable_root():
+        if self.installed_updates:
+            self.get_update_button.setText(tr('确定更新'))
+            self.get_update_button.setVisible(self.updates.update_available)
+            self.get_update_button.setEnabled(not self.updates.busy and not self.updates.downloading)
+            if self.updates.error:
+                self.update_status.setText(message + '\n' + tr('可重试，或前往蓝奏云手动更新。'))
+        elif portable_root():
             self.get_update_button.setText(tr('GitHub 绿色版下载 ↗') if self.updates.update_available else tr('GitHub 绿色版发布页 ↗'))
         else:
             self.get_update_button.setText(tr('GitHub 下载 ↗') if self.updates.update_available else tr('GitHub 发布页 ↗'))
+
+    def _get_update(self):
+        if self.installed_updates:
+            show_update_dialog(self, self.updates, confirm=True)
+        else:
+            self.updates.open_release_page()
 
     def _open_lanzou_download(self) -> None:
         self.lanzou_status.setText(open_lanzou_download())
