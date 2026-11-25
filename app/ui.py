@@ -3161,6 +3161,7 @@ class MainWindow(QMainWindow):
         self.delete_action = self._act(tr('删除页面'), self.delete_pages)
         tools = self._menubar.addMenu(tr('页面'))
         tools.addActions([self.insert_action,self.append_action,self.merge_open_action])
+        tools.addAction(self._act(tr('交叉合并两个 PDF…'), self.interleave_files))
         tools.addSeparator()
         self.extract_action = self._act(tr('提取页面…'), lambda: self.open_export_tool(0))
         self.split_action = self._act(tr('拆分文件…'), lambda: self.open_export_tool(1))
@@ -6249,7 +6250,7 @@ class MainWindow(QMainWindow):
             return False
         if signed_merge and (self.store.has_signed_pages(before) or any(
                 self.store.has_signed_pages(pages) for _, pages in batches)):
-            return self._merge_signature_batches(batches, include_current=True)
+            return self._merge_file_batches(batches, include_current=True)
         incoming = []
         for path, pages in batches:
             reason = self.store.operation_reason(pages, 'modify')
@@ -6427,7 +6428,17 @@ class MainWindow(QMainWindow):
         from app.mergeopenui import merge_open_files
         return merge_open_files(self)
 
-    def _merge_signature_batches(self, batches, *, include_current=False):
+    def interleave_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('选择两份 PDF'), '', 'PDF (*.pdf)')
+        if not paths:
+            return False
+        if len(paths) != 2:
+            QMessageBox.information(self, tr('交叉合并两个 PDF'), tr('交叉合并需要勾选两份 PDF。'))
+            return False
+        batches = self._load_file_batches(paths)
+        return batches is not None and self._merge_file_batches(batches, interleave=True)
+
+    def _merge_file_batches(self, batches, *, include_current=False, interleave=False):
         from app.mergeopenui import merge_open_files
         tabs = [self._active_tab()] if include_current and self.ws.pages else []
         for path, pages in batches:
@@ -6435,7 +6446,7 @@ class MainWindow(QMainWindow):
             workspace.open_replace(pages, path)
             tabs.append(_DocumentTab(ws=workspace))
         try:
-            return merge_open_files(self, tabs=tabs)
+            return merge_open_files(self, tabs=tabs, interleave=interleave)
         finally:
             self._release_unused_docs()
 
@@ -6471,7 +6482,7 @@ class MainWindow(QMainWindow):
             if batches is None:
                 return False
             if any(self.store.has_signed_pages(pages) for _, pages in batches):
-                return self._merge_signature_batches(batches)
+                return self._merge_file_batches(batches)
             if not self._replace_from_batches(batches):
                 return False
         elif not self._ingest(paths, replace=True):
@@ -6548,7 +6559,7 @@ class MainWindow(QMainWindow):
             if batches is None:
                 return False
             if signed_merge and len(batches) > 1 and any(self.store.has_signed_pages(pages) for _, pages in batches):
-                return self._merge_signature_batches(batches)
+                return self._merge_file_batches(batches)
             return self._replace_from_batches(batches)
         loaded = True
         for index, path in enumerate(paths, start=1):

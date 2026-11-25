@@ -9,19 +9,19 @@
     "app/wordui.py:795"
   ],
   "\n已完整写出的文件会保留。": [
-    "app/ui.py:7373"
+    "app/ui.py:7384"
   ],
   "\n当前显示已保存的同版更新说明。": [
     "app/updateui.py:401"
   ],
   "\n所选内容需要另存副本，暂不支持覆盖。": [
-    "app/mergeopenui.py:264"
+    "app/mergeopenui.py:384"
   ],
   "\n所选标签没有可覆盖的文件位置，请另存新文件。": [
-    "app/mergeopenui.py:265"
+    "app/mergeopenui.py:385"
   ],
   "\n提示：有 {p0} 条提示，可展开详细信息查看。": [
-    "app/ui.py:7496"
+    "app/ui.py:7507"
   ],
   "\n文件权限：": [
     "app/signatureui.py:106"
@@ -30,16 +30,16 @@
     "app/updateui.py:33"
   ],
   "\n无法打开：": [
-    "app/ui.py:6464"
+    "app/ui.py:6475"
   ],
   "\n至少选择 2 份 PDF。": [
-    "app/mergeopenui.py:224"
+    "app/mergeopenui.py:336"
   ],
   "\n阅读区较窄，当前暂用单页。": [
     "app/readingsettings.py:205"
   ],
   " · 保存期间的修改仍待保存": [
-    "app/ui.py:7196"
+    "app/ui.py:7207"
   ],
   " · 已命中缓存": [
     "app/translation/ui.py:2460"
@@ -48,17 +48,17 @@
     "app/pdfcompareui.py:454"
   ],
   " · 文件 {p0} / {p1}": [
-    "app/ui.py:6568"
+    "app/ui.py:6579"
   ],
   " · 源文件已旋转 {p0}°": [
     "app/ui.py:1904",
-    "app/ui.py:5110"
+    "app/ui.py:5111"
   ],
   " · 第 {p0} 页": [
     "app/pdfcontentcompareui.py:299"
   ],
   " · 阅读器标签：{p0}": [
-    "app/ui.py:5113"
+    "app/ui.py:5114"
   ],
   " 文字和矢量内容保留；黑白图片不降采样。": [
     "app/compression.py:394"
@@ -74,10 +74,10 @@
     "app/ui.py:2375"
   ],
   "/ 0 页": [
-    "app/ui.py:3925"
+    "app/ui.py:3926"
   ],
   "/ {p0} 页": [
-    "app/ui.py:3777"
+    "app/ui.py:3778"
   ],
   "0 份": [
     "app/wordui.py:199"
@@ -158,7 +158,7 @@
     "app/translation/config.py:40"
   ],
   "Enter 应用修改 · Esc 取消": [
-    "app/editingui.py:1731"
+    "app/editingui.py:2004"
   ],
   "Esc 保留用于取消当前操作，请选择其他组合。": [
     "app/shortcuts.py:45"
@@ -170,7 +170,7 @@
     "app/exportdialogs.py:754"
   ],
   "Excel 工作簿 (*.xlsx)": [
-    "app/ui.py:7442"
+    "app/ui.py:7453"
   ],
   "GitHub 下载": [
     "app/updateui.py:252",
@@ -195,7 +195,7 @@
     "app/shortcutcommands.py:convert.markdown_pdf"
   ],
   "Markdown 转 PDF…": [
-    "app/ui.py:3207"
+    "app/ui.py:3208"
   ],
   "Markdown 转换窗口": [
     "app/shortcutcommands.py:markdown.add",
@@ -257,18 +257,18 @@
     "app/ocrui.py:96"
   ],
   "OFD 工作副本 · 原件保留": [
-    "app/ui.py:3757"
+    "app/ui.py:3758"
   ],
   "OFD 转换提示": [
-    "app/ui.py:6576"
+    "app/ui.py:6587"
   ],
   "OpenAI 兼容": [
     "app/translation/config.py:45"
   ],
   "PDF / OFD / 图片 (*.pdf *.ofd *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)": [
-    "app/ui.py:6122",
-    "app/ui.py:6416",
-    "app/ui.py:6492"
+    "app/ui.py:6123",
+    "app/ui.py:6417",
+    "app/ui.py:6503"
   ],
   "PDF 加密格式": [
     "app/exportdialogs.py:88"
@@ -293,23 +293,23 @@
   ],
   "PDF 转 Excel": [
     "app/exportdialogs.py:817",
-    "app/ui.py:3522",
-    "app/ui.py:4229",
-    "app/ui.py:7454",
+    "app/ui.py:3523",
+    "app/ui.py:4230",
+    "app/ui.py:7465",
     "app/shortcutcommands.py:convert.pdf_excel",
     "app/shortcutcommands.py:convert.pdf_excel",
     "app/shortcutcommands.py:export_excel.apply",
     "app/shortcutcommands.py:export_excel.apply"
   ],
   "PDF 转 Excel…": [
-    "app/ui.py:3210"
+    "app/ui.py:3211"
   ],
   "PDF 转 TXT": [
     "app/shortcutcommands.py:convert.pdf_text",
     "app/shortcutcommands.py:convert.pdf_text"
   ],
   "PDF 转 TXT…": [
-    "app/ui.py:3214"
+    "app/ui.py:3215"
   ],
   "PDF 转 Word": [
     "app/wordui.py:155",
@@ -317,17 +317,17 @@
     "app/shortcutcommands.py:convert.pdf_word"
   ],
   "PDF 转 Word…": [
-    "app/ui.py:3209"
+    "app/ui.py:3210"
   ],
   "PDF 转图片": [
     "app/exportdialogs.py:523",
-    "app/ui.py:4249",
-    "app/ui.py:6822",
+    "app/ui.py:4250",
+    "app/ui.py:6833",
     "app/shortcutcommands.py:convert.pdf_images",
     "app/shortcutcommands.py:convert.pdf_images"
   ],
   "PDF 转图片…": [
-    "app/ui.py:3211"
+    "app/ui.py:3212"
   ],
   "PDF 转图片版": [
     "app/rasterui.py:36",
@@ -335,7 +335,7 @@
     "app/shortcutcommands.py:convert.pdf_raster"
   ],
   "PDF 转图片版…": [
-    "app/ui.py:3212"
+    "app/ui.py:3213"
   ],
   "PDF 转图片窗口": [
     "app/shortcutcommands.py:export_images.apply",
@@ -375,7 +375,7 @@
     "app/shortcutcommands.py:convert.word_pdf"
   ],
   "Word 转 PDF…": [
-    "app/ui.py:3205"
+    "app/ui.py:3206"
   ],
   "Word 转换窗口": [
     "app/shortcutcommands.py:word.word_pdf",
@@ -405,24 +405,24 @@
     "app/wordui.py:324"
   ],
   "_副本.pdf": [
-    "app/ui.py:7133",
-    "app/ui.py:6713",
-    "app/ui.py:6688"
+    "app/ui.py:7144",
+    "app/ui.py:6724",
+    "app/ui.py:6699"
   ],
   "_加密.pdf": [
-    "app/ui.py:6855"
+    "app/ui.py:6866"
   ],
   "_压缩.pdf": [
     "app/compression.py:550"
   ],
   "_可编辑副本.pdf": [
-    "app/ui.py:6940"
+    "app/ui.py:6951"
   ],
   "_增强.png": [
     "app/scanwhiteui.py:585"
   ],
   "_解密.pdf": [
-    "app/ui.py:6898"
+    "app/ui.py:6909"
   ],
   "_长图": [
     "app/imaging.py:245"
@@ -433,11 +433,14 @@
   "{key} 同时用于“{left}”和“{right}”，生效位置重叠（{left_scope}／{right_scope}）。": [
     "app/shortcuts.py:228"
   ],
+  "{name} · 第 {page} 页": [
+    "app/mergeopenui.py:217"
+  ],
   "{p0}\n{p1}\n\n请单独打开阅读。": [
-    "app/ui.py:6626"
+    "app/ui.py:6637"
   ],
   "{p0}\n无法自动打开文件夹：{p1}": [
-    "app/ui.py:7072"
+    "app/ui.py:7083"
   ],
   "{p0}  /  任务进度": [
     "app/progress.py:48"
@@ -514,13 +517,13 @@
     "app/wordui.py:378"
   ],
   "{p0} 限制了文档权限，请输入管理密码：": [
-    "app/ui.py:6884"
+    "app/ui.py:6895"
   ],
   "{p0} 需要密码": [
-    "app/ui.py:6587"
+    "app/ui.py:6598"
   ],
   "{p0} 页": [
-    "app/ui.py:4428"
+    "app/ui.py:4429"
   ],
   "{p0} 页 · {p1} · 图片盖章，不提供数字签名或验签": [
     "app/seamstampui.py:235"
@@ -529,19 +532,16 @@
     "app/annotcropui.py:395"
   ],
   "{p0}{p1}\n覆盖会替换这些文件；签名与权限检查不通过的目标不会覆盖。": [
-    "app/ui.py:7381"
+    "app/ui.py:7392"
   ],
   "{p0}。旋转、删除、抽取作用于已选页面。": [
-    "app/ui.py:5090"
+    "app/ui.py:5091"
   ],
   "{p0}位置": [
     "app/pdfcontentcompareui.py:157"
   ],
   "{p0}原页，也可用 Ctrl+滚轮缩放": [
     "app/pdfcontentcompareui.py:134"
-  ],
-  "{p0}备注": [
-    "app/editingui.py:682"
   ],
   "{p0}密码": [
     "app/pdfcompareui.py:301",
@@ -558,7 +558,7 @@
     "app/pdfcontentcompareui.py:307"
   ],
   "{p0}模式": [
-    "app/ui.py:3482"
+    "app/ui.py:3483"
   ],
   "{p0}第 {p1} 页尚未识别": [
     "app/pdfcontentcompareui.py:255"
@@ -579,7 +579,7 @@
     "app/signatureui.py:107"
   ],
   "–{p0} / {p1} 页": [
-    "app/ui.py:3777"
+    "app/ui.py:3778"
   ],
   "“{label}”的一个异常绑定已停用。": [
     "app/shortcuts.py:185"
@@ -644,13 +644,15 @@
     "app/quickstartui.py:92"
   ],
   "上一组页面": [
-    "app/ui.py:3783"
+    "app/ui.py:3784"
   ],
   "上一页": [
     "app/compression.py:223",
     "app/compression.py:224",
-    "app/ui.py:3911",
-    "app/ui.py:3783",
+    "app/mergeopenui.py:229",
+    "app/mergeopenui.py:230",
+    "app/ui.py:3912",
+    "app/ui.py:3784",
     "app/shortcutcommands.py:cleanup.previous",
     "app/shortcutcommands.py:cleanup.previous"
   ],
@@ -671,7 +673,7 @@
   ],
   "上移": [
     "app/exportdialogs.py:275",
-    "app/mergeopenui.py:144",
+    "app/mergeopenui.py:160",
     "app/shortcutcommands.py:quick_image.up",
     "app/shortcutcommands.py:merge.up"
   ],
@@ -703,13 +705,15 @@
     "app/quickstartui.py:113"
   ],
   "下一组页面": [
-    "app/ui.py:3784"
+    "app/ui.py:3785"
   ],
   "下一页": [
     "app/compression.py:245",
     "app/compression.py:246",
-    "app/ui.py:3927",
-    "app/ui.py:3784",
+    "app/mergeopenui.py:239",
+    "app/mergeopenui.py:240",
+    "app/ui.py:3928",
+    "app/ui.py:3785",
     "app/shortcutcommands.py:cleanup.next",
     "app/shortcutcommands.py:cleanup.next"
   ],
@@ -733,7 +737,7 @@
   ],
   "下移": [
     "app/exportdialogs.py:276",
-    "app/mergeopenui.py:145",
+    "app/mergeopenui.py:161",
     "app/shortcutcommands.py:quick_image.down",
     "app/shortcutcommands.py:merge.down"
   ],
@@ -741,16 +745,16 @@
     "app/shortcutcommands.py:outline.move_down"
   ],
   "不保存": [
-    "app/ui.py:5913"
+    "app/ui.py:5914"
   ],
   "不支持此快捷键配置版本。": [
     "app/shortcuts.py:111"
   ],
   "不能合并只读文档": [
-    "app/ui.py:6627"
+    "app/ui.py:6638"
   ],
   "不能覆盖原件": [
-    "app/ui.py:7143"
+    "app/ui.py:7154"
   ],
   "不能覆盖已打开的原图或 PDF。": [
     "app/scanwhiteui.py:589"
@@ -761,8 +765,8 @@
     "app/imaging.py:227"
   ],
   "不能覆盖来源": [
-    "app/ui.py:7251",
-    "app/ui.py:7353"
+    "app/ui.py:7262",
+    "app/ui.py:7364"
   ],
   "不透明度": [
     "app/watermarkui.py:156"
@@ -780,7 +784,7 @@
     "app/shortcutcommands.py:document.compare"
   ],
   "两份 PDF 对比（实验）…": [
-    "app/ui.py:3178"
+    "app/ui.py:3179"
   ],
   "两份文件已选齐，请拖到旧版或新版文件框替换对应文件。": [
     "app/pdfcompareui.py:133"
@@ -829,6 +833,7 @@
     "app/shortcutcommands.py:pages.insert",
     "app/shortcutcommands.py:pages.append",
     "app/shortcutcommands.py:pages.merge_open",
+    "app/shortcutcommands.py:pages.interleave",
     "app/shortcutcommands.py:pages.extract",
     "app/shortcutcommands.py:pages.split",
     "app/shortcutcommands.py:pages.split_page",
@@ -922,11 +927,26 @@
     "app/shortcutcommands.py:SCOPE_LABELS"
   ],
   "主题": [
-    "app/ui.py:3538"
+    "app/ui.py:3539"
   ],
   "书签名称": [
-    "app/editingui.py:326",
-    "app/editingui.py:343"
+    "app/editingui.py:358",
+    "app/editingui.py:375"
+  ],
+  "交叉合并两个 PDF": [
+    "app/mergeopenui.py:93",
+    "app/ui.py:6436",
+    "app/shortcutcommands.py:pages.interleave",
+    "app/shortcutcommands.py:pages.interleave"
+  ],
+  "交叉合并两个 PDF…": [
+    "app/ui.py:3164"
+  ],
+  "交叉合并需要勾选两份 PDF。": [
+    "app/mergeopenui.py:37",
+    "app/mergeopenui.py:289",
+    "app/mergeopenui.py:356",
+    "app/ui.py:6436"
   ],
   "仅偶数页": [
     "app/printing.py:1200"
@@ -962,7 +982,7 @@
     "app/imagequick.py:107"
   ],
   "从本机字体中选择，应用于当前框选的文字": [
-    "app/editingui.py:1788"
+    "app/editingui.py:2061"
   ],
   "从页面取色": [
     "app/shortcutcommands.py:cleanup.pick"
@@ -1041,14 +1061,14 @@
     "app/shortcutcommands.py:visual_compare.help"
   ],
   "使用顶部加减或 Ctrl+滚轮调整": [
-    "app/ui.py:4038"
+    "app/ui.py:4039"
   ],
   "例如 1-3, 5": [
     "app/printing.py:1193"
   ],
   "例如 1-3,5": [
     "app/exportdialogs.py:565",
-    "app/ui.py:4213",
+    "app/ui.py:4214",
     "app/watermarkui.py:208"
   ],
   "例如 1-3,5,8": [
@@ -1067,11 +1087,11 @@
     "app/shortcutcommands.py:view.auto_sidebar"
   ],
   "侧栏视图": [
-    "app/ui.py:3888"
+    "app/ui.py:3889"
   ],
   "便签备注": [
-    "app/editingui.py:29",
-    "app/editingui.py:593",
+    "app/editingui.py:61",
+    "app/editingui.py:625",
     "app/shortcutcommands.py:review.note"
   ],
   "便签窗口": [
@@ -1084,8 +1104,8 @@
     "app/shortcutui.py:268",
     "app/translation/ui.py:774",
     "app/ui.py:3103",
-    "app/ui.py:3758",
-    "app/ui.py:5912",
+    "app/ui.py:3759",
+    "app/ui.py:5913",
     "app/shortcutcommands.py:file.save",
     "app/shortcutcommands.py:file.save"
   ],
@@ -1093,8 +1113,8 @@
     "app/ocrui.py:156"
   ],
   "保存 PDF": [
-    "app/ui.py:7157",
-    "app/ui.py:7134"
+    "app/ui.py:7168",
+    "app/ui.py:7145"
   ],
   "保存位置已有同名图片，是否替换？": [
     "app/regioncapture.py:369"
@@ -1103,7 +1123,7 @@
     "app/savesettings.py:178"
   ],
   "保存修改": [
-    "app/editingui.py:68",
+    "app/editingui.py:100",
     "app/seamstampui.py:209",
     "app/watermarkui.py:450",
     "app/shortcutcommands.py:note.save"
@@ -1122,10 +1142,10 @@
     "app/regioncapture.py:335"
   ],
   "保存失败": [
-    "app/ui.py:7162"
+    "app/ui.py:7173"
   ],
   "保存完成，请留意以下信息：\n": [
-    "app/ui.py:7051"
+    "app/ui.py:7062"
   ],
   "保存已取消，修改仍保留，可继续编辑。": [
     "app/colorcleanupui.py:923"
@@ -1136,7 +1156,7 @@
   ],
   "保存当前页面布局和适配方式，新打开的文档使用此设置": [
     "app/readingsettings.py:199",
-    "app/ui.py:4044"
+    "app/ui.py:4045"
   ],
   "保存影像副本": [
     "app/rasterui.py:124"
@@ -1145,13 +1165,13 @@
     "app/shortcutui.py:564"
   ],
   "保存方式": [
-    "app/mergeopenui.py:161"
+    "app/mergeopenui.py:186"
   ],
   "保存时会移除所选旧文字并写入新文字。请核对字体和位置。": [
-    "app/editingui.py:2103"
+    "app/editingui.py:2380"
   ],
   "保存时选择新文件位置": [
-    "app/ui.py:3744"
+    "app/ui.py:3745"
   ],
   "保存设置": [
     "app/savesettings.py:48",
@@ -1176,7 +1196,7 @@
     "app/shortcutcommands.py:cleanup.keep"
   ],
   "保留原文件，合并件不含原数字签名。": [
-    "app/mergeopenui.py:225"
+    "app/mergeopenui.py:337"
   ],
   "保留原版式（推荐）": [
     "app/wordui.py:323"
@@ -1208,7 +1228,7 @@
     "app/colorcleanupui.py:492"
   ],
   "保留混合样式": [
-    "app/editingui.py:1865"
+    "app/editingui.py:2138"
   ],
   "保留的原组件及缓存位置": [
     "app/storageui.py:223"
@@ -1222,7 +1242,7 @@
     "app/shortcutcommands.py:context.repair"
   ],
   "修改仍保留在当前窗口，可另存到其他位置，或取消后继续编辑。": [
-    "app/ui.py:7163"
+    "app/ui.py:7174"
   ],
   "修改内容": [
     "app/signatureui.py:103"
@@ -1232,7 +1252,7 @@
     "app/pdfcontentcompareui.py:294"
   ],
   "修改未应用": [
-    "app/editingui.py:1969"
+    "app/editingui.py:2242"
   ],
   "候选第 {p0} 页": [
     "app/pdfcontentcompareui.py:292"
@@ -1257,13 +1277,16 @@
   ],
   "先保存当前文档": [
     "app/ocrui.py:220",
-    "app/ui.py:6747"
+    "app/ui.py:6758"
+  ],
+  "先取「{p0}」一页，再取「{p1}」一页，交替到末尾。多出的页接在最后。": [
+    "app/mergeopenui.py:354"
   ],
   "先在页面中选中批注": [
-    "app/editingui.py:1155"
+    "app/editingui.py:1234"
   ],
   "先在页面或下拉框中选中批注": [
-    "app/editingui.py:900"
+    "app/editingui.py:925"
   ],
   "先横向，再纵向": [
     "app/printing.py:1339"
@@ -1301,11 +1324,11 @@
     "app/searchui.py:124"
   ],
   "全选": [
-    "app/mergeopenui.py:112",
-    "app/mergeopenui.py:227",
-    "app/ui.py:4175",
+    "app/mergeopenui.py:127",
+    "app/mergeopenui.py:339",
+    "app/ui.py:4176",
     "app/ui.py:3142",
-    "app/ui.py:4111",
+    "app/ui.py:4112",
     "app/shortcutcommands.py:edit.select_all",
     "app/shortcutcommands.py:edit.select_all"
   ],
@@ -1361,7 +1384,7 @@
     "app/deskewui.py:233"
   ],
   "共导出页面：{p0} 页\n": [
-    "app/ui.py:7491"
+    "app/ui.py:7502"
   ],
   "关于": [
     "app/aboutui.py:89"
@@ -1370,7 +1393,7 @@
     "app/aboutui.py:28"
   ],
   "关于{p0}": [
-    "app/ui.py:3269"
+    "app/ui.py:3270"
   ],
   "关于窗口": [
     "app/shortcutcommands.py:about.updates",
@@ -1390,7 +1413,7 @@
     "app/compression.py:335",
     "app/contextmenuui.py:64",
     "app/contributionui.py:85",
-    "app/editingui.py:75",
+    "app/editingui.py:107",
     "app/outputui.py:363",
     "app/rasterui.py:182",
     "app/recentui.py:350",
@@ -1421,13 +1444,13 @@
     "app/ui.py:3106"
   ],
   "关闭或打开其他文件前，选择是否写入当前文档。": [
-    "app/ui.py:5911"
+    "app/ui.py:5912"
   ],
   "关闭搜索 (Esc)": [
     "app/searchui.py:131"
   ],
   "关闭文档": [
-    "app/ui.py:7591"
+    "app/ui.py:7602"
   ],
   "关闭此标签页": [
     "app/ui.py:2317",
@@ -1486,7 +1509,7 @@
     "app/shortcutcommands.py:compare.zoom_out"
   ],
   "内容导出.xlsx": [
-    "app/ui.py:7430"
+    "app/ui.py:7441"
   ],
   "内容核对说明": [
     "app/pdfcontentcompareui.py:445"
@@ -1495,23 +1518,23 @@
     "app/exportdialogs.py:104"
   ],
   "准备分割预览": [
-    "app/ui.py:7280"
+    "app/ui.py:7291"
   ],
   "准备编辑功能": [
-    "app/ui.py:6648"
+    "app/ui.py:6659"
   ],
   "准备翻译第 {p0} 页": [
     "app/translation/ui.py:2410"
   ],
   "分割单页": [
     "app/pagesplitui.py:16",
-    "app/ui.py:7273",
+    "app/ui.py:7284",
     "app/shortcutcommands.py:pages.split_page",
     "app/shortcutcommands.py:pages.split_page"
   ],
   "分割单页…": [
-    "app/ui.py:3167",
-    "app/ui.py:4104"
+    "app/ui.py:3168",
+    "app/ui.py:4105"
   ],
   "分割单页窗口": [
     "app/shortcutcommands.py:split_page.apply",
@@ -1536,7 +1559,7 @@
     "app/pagesplitui.py:74"
   ],
   "分割失败": [
-    "app/ui.py:7306"
+    "app/ui.py:7317"
   ],
   "分割方向": [
     "app/pagesplitui.py:33"
@@ -1546,7 +1569,7 @@
   ],
   "分割页面": [
     "app/pagesplitui.py:110",
-    "app/ui.py:7299"
+    "app/ui.py:7310"
   ],
   "分成 2 页": [
     "app/pagesplitui.py:35"
@@ -1567,7 +1590,7 @@
     "app/shortcutcommands.py:word.word_pdf"
   ],
   "切换阅读／整理页面": [
-    "app/ui.py:3222",
+    "app/ui.py:3223",
     "app/shortcutcommands.py:reader.mode",
     "app/shortcutcommands.py:reader.mode"
   ],
@@ -1593,14 +1616,15 @@
     "app/translation/ui.py:1213"
   ],
   "删除": [
+    "app/editingui.py:1389",
     "app/imageui.py:164",
-    "app/ui.py:4184"
+    "app/ui.py:4185"
   ],
   "删除书签（含子项）": [
     "app/shortcutcommands.py:outline.delete"
   ],
   "删除便签": [
-    "app/editingui.py:61",
+    "app/editingui.py:93",
     "app/shortcutcommands.py:note.delete"
   ],
   "删除图片（Delete）": [
@@ -1620,7 +1644,7 @@
     "app/shortcutcommands.py:watermark.delete"
   ],
   "删除所选页": [
-    "app/ui.py:3514"
+    "app/ui.py:3515"
   ],
   "删除条款": [
     "app/pdfcontentcompareui.py:29"
@@ -1639,14 +1663,14 @@
   ],
   "删除页面": [
     "app/ui.py:3161",
-    "app/ui.py:4096",
+    "app/ui.py:4097",
     "app/shortcutcommands.py:pages.delete",
     "app/shortcutcommands.py:pages.delete"
   ],
   "制作可编辑副本": [
-    "app/ui.py:3670",
-    "app/ui.py:6945",
-    "app/ui.py:3674",
+    "app/ui.py:3671",
+    "app/ui.py:6956",
+    "app/ui.py:3675",
     "app/shortcutcommands.py:document.editable_copy",
     "app/shortcutcommands.py:document.editable_copy",
     "app/shortcutcommands.py:signature.editable",
@@ -1654,13 +1678,13 @@
   ],
   "制作可编辑副本…": [
     "app/signatureui.py:64",
-    "app/ui.py:3196",
-    "app/ui.py:4259"
+    "app/ui.py:3197",
+    "app/ui.py:4260"
   ],
   "制作影像副本": [
     "app/rasterui.py:36",
-    "app/ui.py:3670",
-    "app/ui.py:3674",
+    "app/ui.py:3671",
+    "app/ui.py:3675",
     "app/shortcutcommands.py:signature.raster",
     "app/shortcutcommands.py:signature.raster"
   ],
@@ -1672,10 +1696,10 @@
     "app/shortcutcommands.py:watermark.preview"
   ],
   "副本未完成": [
-    "app/ui.py:6962"
+    "app/ui.py:6973"
   ],
   "加密 PDF": [
-    "app/ui.py:6586"
+    "app/ui.py:6597"
   ],
   "加密与权限窗口": [
     "app/shortcutcommands.py:encrypt.apply",
@@ -1683,26 +1707,26 @@
   ],
   "加密另存": [
     "app/exportdialogs.py:70",
-    "app/ui.py:6855",
-    "app/ui.py:6859",
+    "app/ui.py:6866",
+    "app/ui.py:6870",
     "app/shortcutcommands.py:document.encrypt",
     "app/shortcutcommands.py:document.encrypt"
   ],
   "加密另存…": [
-    "app/ui.py:3194",
-    "app/ui.py:4257"
+    "app/ui.py:3195",
+    "app/ui.py:4258"
   ],
   "加密另存完成": [
-    "app/ui.py:6862"
+    "app/ui.py:6873"
   ],
   "加密未完成": [
-    "app/ui.py:6867"
+    "app/ui.py:6878"
   ],
   "加密格式": [
     "app/exportdialogs.py:95"
   ],
   "加粗": [
-    "app/editingui.py:1809"
+    "app/editingui.py:2082"
   ],
   "加载已取消，点击左侧这一项可重试。": [
     "app/pdfcontentcompareui.py:366"
@@ -1731,7 +1755,7 @@
     "app/shortcutcommands.py:document.crop"
   ],
   "区域摘录…": [
-    "app/ui.py:3185"
+    "app/ui.py:3186"
   ],
   "区域摘录完成": [
     "app/annotcropui.py:401"
@@ -1763,6 +1787,12 @@
   "单击选择一页；Ctrl+单击加选或取消，Shift+单击连续选择。拖动调整顺序，Ctrl+拖动复制页面。": [
     "app/ui.py:970"
   ],
+  "单向实心": [
+    "app/arrowstyleui.py:127"
+  ],
+  "单向开口": [
+    "app/arrowstyleui.py:127"
+  ],
   "单行文字修正": [
     "app/shortcutcommands.py:review.replace"
   ],
@@ -1773,7 +1803,7 @@
     "app/readingsettings.py:207"
   ],
   "单页连续": [
-    "app/ui.py:4017",
+    "app/ui.py:4018",
     "app/shortcutcommands.py:reader.single",
     "app/shortcutcommands.py:reader.single"
   ],
@@ -1784,13 +1814,13 @@
     "app/seamstampui.py:113"
   ],
   "压缩": [
-    "app/ui.py:3189",
+    "app/ui.py:3190",
     "app/shortcutcommands.py:document.compress",
     "app/shortcutcommands.py:document.compress_image"
   ],
   "压缩 PDF": [
     "app/compression.py:86",
-    "app/ui.py:4236",
+    "app/ui.py:4237",
     "app/shortcutcommands.py:document.compress",
     "app/shortcutcommands.py:document.compress"
   ],
@@ -1805,7 +1835,7 @@
     "app/shortcutcommands.py:compression.zoom_out"
   ],
   "压缩 PDF…": [
-    "app/ui.py:3190"
+    "app/ui.py:3191"
   ],
   "压缩前": [
     "app/compression.py:285"
@@ -1821,10 +1851,10 @@
     "app/shortcutcommands.py:document.compress_image"
   ],
   "压缩图片…": [
-    "app/ui.py:3191"
+    "app/ui.py:3192"
   ],
   "压缩并预览…": [
-    "app/ui.py:4241"
+    "app/ui.py:4242"
   ],
   "压缩未完成": [
     "app/compression.py:511"
@@ -1846,13 +1876,13 @@
     "app/signatureui.py:96"
   ],
   "原件保留。副本保留签章外观，不含原数字签名。": [
-    "app/ui.py:6928"
+    "app/ui.py:6939"
   ],
   "原件签名结构无法确认。副本只保存页面影像，不保留数字签名效力。": [
     "app/rasterui.py:45"
   ],
   "原加密不能沿用 · 请选择输出保护": [
-    "app/ui.py:6695"
+    "app/ui.py:6706"
   ],
   "原图": [
     "app/scanwhiteui.py:299"
@@ -1863,7 +1893,7 @@
     "app/shortcutcommands.py:whitening.compare"
   ],
   "原处文字修改": [
-    "app/editingui.py:1730"
+    "app/editingui.py:2003"
   ],
   "原工作区已改变，请关闭后重新打开清理工具。": [
     "app/colorcleanupui.py:897"
@@ -1891,13 +1921,13 @@
     "app/pdfcontentcompareui.py:364"
   ],
   "原文字体": [
-    "app/editingui.py:1787"
+    "app/editingui.py:2060"
   ],
   "原文字号": [
-    "app/editingui.py:1799"
+    "app/editingui.py:2072"
   ],
   "原文颜色": [
-    "app/editingui.py:1829"
+    "app/editingui.py:2102"
   ],
   "原有 OCR 组件保留。": [
     "app/ocrui.py:48"
@@ -1938,7 +1968,7 @@
     "app/colorcleanupui.py:345"
   ],
   "去除彩色笔迹…": [
-    "app/ui.py:3201"
+    "app/ui.py:3202"
   ],
   "去除彩色笔迹窗口": [
     "app/shortcutcommands.py:cleanup.undo",
@@ -2012,6 +2042,12 @@
   "双击第二列可单独指定保存位置 · 选中按 Delete 移除": [
     "app/wordui.py:260"
   ],
+  "双向实心": [
+    "app/arrowstyleui.py:128"
+  ],
+  "双向开口": [
+    "app/arrowstyleui.py:128"
+  ],
   "双重保护 · 打开密码与独立管理密码": [
     "app/exportdialogs.py:80"
   ],
@@ -2032,7 +2068,7 @@
     "app/readingsettings.py:207"
   ],
   "双页对开": [
-    "app/ui.py:4018",
+    "app/ui.py:4019",
     "app/shortcutcommands.py:reader.spread",
     "app/shortcutcommands.py:reader.spread"
   ],
@@ -2043,20 +2079,21 @@
     "app/aboutui.py:295"
   ],
   "发现新版本 {p0}，点击“查看更新”了解更新内容。": [
-    "app/ui.py:3411"
+    "app/ui.py:3412"
   ],
   "发送打印任务时出错：{p0}\n\n任务可能已经部分发送，请检查系统打印队列后再重试。": [
     "app/printing.py:1764"
   ],
   "取消": [
     "app/annotcropui.py:249",
+    "app/arrowstyleui.py:212",
     "app/deskewui.py:74",
-    "app/editingui.py:2122",
+    "app/editingui.py:2399",
     "app/exportdialogs.py:60",
     "app/imagequick.py:197",
     "app/imagequick.py:119",
     "app/imagequick.py:182",
-    "app/mergeopenui.py:179",
+    "app/mergeopenui.py:256",
     "app/mosaicui.py:100",
     "app/pagesplitui.py:111",
     "app/pagetoolsui.py:205",
@@ -2072,14 +2109,14 @@
     "app/shortcutui.py:270",
     "app/storageui.py:111",
     "app/translation/ui.py:745",
-    "app/ui.py:7384",
-    "app/ui.py:5914",
-    "app/ui.py:6931",
-    "app/ui.py:7165",
-    "app/ui.py:6705"
+    "app/ui.py:7395",
+    "app/ui.py:5915",
+    "app/ui.py:6942",
+    "app/ui.py:7176",
+    "app/ui.py:6716"
   ],
   "取消 (Esc)": [
-    "app/editingui.py:1856"
+    "app/editingui.py:2129"
   ],
   "取消中": [
     "app/progress.py:112"
@@ -2090,19 +2127,19 @@
     "app/shortcutcommands.py:progress.cancel"
   ],
   "取消全选": [
-    "app/mergeopenui.py:227"
+    "app/mergeopenui.py:339"
   ],
   "取消固定，回到正文后自动收起；下次打开沿用选择": [
     "app/immersivereading.py:152"
   ],
   "取消文字修改": [
-    "app/editingui.py:1855"
+    "app/editingui.py:2128"
   ],
   "取消文本框输入": [
-    "app/textboxui.py:97"
+    "app/textboxui.py:103"
   ],
   "取消本次输入（Esc）": [
-    "app/textboxui.py:96"
+    "app/textboxui.py:102"
   ],
   "取消本页勾选": [
     "app/shortcutcommands.py:cleanup.clear_annotations"
@@ -2128,28 +2165,28 @@
     "app/shortcutcommands.py:file.save_as"
   ],
   "另存为 PDF": [
-    "app/ui.py:3758",
-    "app/ui.py:7134"
+    "app/ui.py:3759",
+    "app/ui.py:7145"
   ],
   "另存为 PDF…": [
     "app/exportdialogs.py:299"
   ],
   "另存为…": [
-    "app/ui.py:7164"
+    "app/ui.py:7175"
   ],
   "另存为新文件（默认）": [
-    "app/mergeopenui.py:159",
+    "app/mergeopenui.py:184",
     "app/savesettings.py:55"
   ],
   "另存副本": [
-    "app/ui.py:6713",
-    "app/ui.py:6688"
+    "app/ui.py:6724",
+    "app/ui.py:6699"
   ],
   "另存副本前确认": [
-    "app/ui.py:6703"
+    "app/ui.py:6714"
   ],
   "另存副本（不含原数字签名）": [
-    "app/ui.py:7134"
+    "app/ui.py:7145"
   ],
   "另存压缩结果": [
     "app/compression.py:550",
@@ -2160,13 +2197,13 @@
     "app/compression.py:338"
   ],
   "另存可编辑副本": [
-    "app/ui.py:6941"
+    "app/ui.py:6952"
   ],
   "另存新文件，保留签名外观；不保留原数字签名验证结构。": [
     "app/signatureui.py:82"
   ],
   "另存未加密副本；有权限限制时需输入管理密码。": [
-    "app/ui.py:3666"
+    "app/ui.py:3667"
   ],
   "另存清理副本": [
     "app/colorcleanupui.py:901",
@@ -2185,7 +2222,7 @@
     "app/recentui.py:403"
   ],
   "只读": [
-    "app/ui.py:3751"
+    "app/ui.py:3752"
   ],
   "可减少扫描错位误报，也可能忽略真实整页移动；默认关闭": [
     "app/pdfcompareui.py:314"
@@ -2234,11 +2271,11 @@
     "app/printing.py:1292"
   ],
   "右转": [
-    "app/ui.py:4095",
-    "app/ui.py:4183"
+    "app/ui.py:4096",
+    "app/ui.py:4184"
   ],
   "右转所选页": [
-    "app/ui.py:3513"
+    "app/ui.py:3514"
   ],
   "右键入口无法启动": [
     "app/__main__.py:143",
@@ -2246,7 +2283,7 @@
   ],
   "右键快捷工具": [
     "app/contextmenuui.py:30",
-    "app/ui.py:3437",
+    "app/ui.py:3438",
     "app/shortcutcommands.py:app.shell_tools",
     "app/shortcutcommands.py:app.shell_tools"
   ],
@@ -2265,19 +2302,19 @@
     "app/shortcutcommands.py:context.remove"
   ],
   "合并 PDF / 图片": [
-    "app/ui.py:6415"
+    "app/ui.py:6416"
   ],
   "合并为副本": [
-    "app/mergeopenui.py:256"
+    "app/mergeopenui.py:376"
   ],
   "合并副本.pdf": [
-    "app/mergeopenui.py:307"
+    "app/mergeopenui.py:429"
   ],
   "合并包含未保存修改。": [
-    "app/mergeopenui.py:257"
+    "app/mergeopenui.py:377"
   ],
   "合并包含未保存修改。仅覆盖指定文件，其他文件和标签保留。": [
-    "app/mergeopenui.py:261"
+    "app/mergeopenui.py:381"
   ],
   "合并同页选区": [
     "app/annotcropui.py:223"
@@ -2286,7 +2323,7 @@
     "app/imagequick.py:70"
   ],
   "合并完成 · 请核对": [
-    "app/mergeopenui.py:397"
+    "app/mergeopenui.py:522"
   ],
   "合并已打开文件": [
     "app/ui.py:3157",
@@ -2304,34 +2341,39 @@
     "app/shortcutcommands.py:merge.apply"
   ],
   "合并已打开的文件": [
-    "app/mergeopenui.py:83",
-    "app/mergeopenui.py:103"
+    "app/mergeopenui.py:93"
   ],
   "合并并另存": [
-    "app/mergeopenui.py:180",
-    "app/mergeopenui.py:260"
+    "app/mergeopenui.py:257",
+    "app/mergeopenui.py:380"
   ],
   "合并并打开": [
     "app/imagequick.py:119"
   ],
   "合并并覆盖": [
-    "app/mergeopenui.py:260"
+    "app/mergeopenui.py:380"
   ],
   "合并文件": [
     "app/shortcutcommands.py:pages.append",
     "app/shortcutcommands.py:pages.append"
   ],
   "合并文件.pdf": [
-    "app/mergeopenui.py:307"
+    "app/mergeopenui.py:429"
   ],
   "合并文件…": [
     "app/ui.py:3156"
   ],
   "合并结果保存方式": [
-    "app/mergeopenui.py:158"
+    "app/mergeopenui.py:183"
+  ],
+  "合并结果页码": [
+    "app/mergeopenui.py:233"
+  ],
+  "合并结果预览": [
+    "app/mergeopenui.py:202"
   ],
   "合并覆盖目标": [
-    "app/mergeopenui.py:165"
+    "app/mergeopenui.py:190"
   ],
   "合成一张长图": [
     "app/exportdialogs.py:594"
@@ -2360,12 +2402,12 @@
     "app/shortcutcommands.py:whitening.inset"
   ],
   "向右旋转 90°": [
-    "app/ui.py:3174",
+    "app/ui.py:3175",
     "app/shortcutcommands.py:pages.rotate_right",
     "app/shortcutcommands.py:pages.rotate_right"
   ],
   "向左旋转 90°": [
-    "app/ui.py:3173",
+    "app/ui.py:3174",
     "app/shortcutcommands.py:pages.rotate_left",
     "app/shortcutcommands.py:pages.rotate_left"
   ],
@@ -2390,7 +2432,7 @@
     "app/readingsettings.py:207"
   ],
   "四页预览（2×2）": [
-    "app/ui.py:4019",
+    "app/ui.py:4020",
     "app/shortcutcommands.py:reader.four",
     "app/shortcutcommands.py:reader.four"
   ],
@@ -2413,7 +2455,7 @@
     "app/immersivereading.py:71"
   ],
   "图片": [
-    "app/editingui.py:829",
+    "app/editingui.py:844",
     "app/imageui.py:154",
     "app/watermarkui.py:142"
   ],
@@ -2431,10 +2473,10 @@
     "app/shortcutcommands.py:import_images.down"
   ],
   "图片修改已应用；Ctrl+Z 撤销，Ctrl+S 保存。": [
-    "app/imageui.py:395"
+    "app/imageui.py:396"
   ],
   "图片修改未应用": [
-    "app/imageui.py:399"
+    "app/imageui.py:400"
   ],
   "图片内容变化": [
     "app/pdfcontentcompareui.py:30"
@@ -2446,10 +2488,10 @@
     "app/signatureui.py:137"
   ],
   "图片另存为 PDF": [
-    "app/ui.py:6776"
+    "app/ui.py:6787"
   ],
   "图片合并.pdf": [
-    "app/ui.py:6776"
+    "app/ui.py:6787"
   ],
   "图片导入窗口的图片列表": [
     "app/shortcutcommands.py:import_images.remove"
@@ -2458,7 +2500,7 @@
     "app/exportdialogs.py:566"
   ],
   "图片已作为页面加入；可继续拖入 PDF 或图片，保存时另存 PDF。": [
-    "app/ui.py:6222"
+    "app/ui.py:6223"
   ],
   "图片已经比较紧凑，本次没有找到更小的结果，原图保留。": [
     "app/imagequick.py:240"
@@ -2484,7 +2526,7 @@
     "app/imageui.py:293"
   ],
   "图片未选中": [
-    "app/imageui.py:325"
+    "app/imageui.py:326"
   ],
   "图片格式": [
     "app/exportdialogs.py:606"
@@ -2506,8 +2548,8 @@
   ],
   "图片转 PDF": [
     "app/exportdialogs.py:201",
-    "app/ui.py:4243",
-    "app/ui.py:6780",
+    "app/ui.py:4244",
+    "app/ui.py:6791",
     "app/shortcutcommands.py:convert.images_pdf",
     "app/shortcutcommands.py:convert.images_pdf"
   ],
@@ -2525,13 +2567,13 @@
     "app/shortcutcommands.py:import_images.apply"
   ],
   "图片转 PDF…": [
-    "app/ui.py:3206"
+    "app/ui.py:3207"
   ],
   "图片转 PDF、图片压缩、PDF 拆分／合并、Word 与 Markdown 转 PDF。\n仅管理这份程序的菜单，其他版本独立；Windows 11 中可能在“显示更多选项”内。": [
     "app/contextmenuui.py:45"
   ],
   "图片转换未完成": [
-    "app/ui.py:6787"
+    "app/ui.py:6798"
   ],
   "图片输出为空": [
     "app/imaging.py:194"
@@ -2549,7 +2591,7 @@
     "app/translation/ui.py:1326"
   ],
   "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消工具。": [
-    "app/editingui.py:1059"
+    "app/editingui.py:1138"
   ],
   "在主窗口显示「查看更新」，关闭后仍可手动检查。": [
     "app/aboutui.py:219"
@@ -2564,10 +2606,10 @@
     "app/annotcropui.py:200"
   ],
   "在当前阅读页添加书签。": [
-    "app/editingui.py:152"
+    "app/editingui.py:184"
   ],
   "在当前页拖选或绘制；Esc 取消工具。": [
-    "app/editingui.py:1062"
+    "app/editingui.py:1141"
   ],
   "在当前页点击放置图片；Esc 取消。": [
     "app/imageui.py:289"
@@ -2635,7 +2677,7 @@
     "app/pagetoolsui.py:118"
   ],
   "备注内容": [
-    "app/editingui.py:2024"
+    "app/editingui.py:2300"
   ],
   "备用快捷键": [
     "app/shortcutui.py:370",
@@ -2703,8 +2745,8 @@
     "app/watermarkui.py:150"
   ],
   "大纲书签": [
-    "app/ui.py:3225",
-    "app/ui.py:3887",
+    "app/ui.py:3226",
+    "app/ui.py:3888",
     "app/shortcutcommands.py:view.outline",
     "app/shortcutcommands.py:view.outline",
     "app/shortcutcommands.py:outline.add",
@@ -2732,7 +2774,7 @@
     "app/shortcutcommands.py:SCOPE_LABELS"
   ],
   "大纲未修改": [
-    "app/editingui.py:313"
+    "app/editingui.py:345"
   ],
   "奇偶页筛选": [
     "app/printing.py:1199"
@@ -2756,7 +2798,7 @@
     "app/pdfcontentcompareui.py:274"
   ],
   "字号（pt）": [
-    "app/editingui.py:1798"
+    "app/editingui.py:2071"
   ],
   "存储位置": [
     "app/shortcutcommands.py:ocr.storage",
@@ -2767,7 +2809,7 @@
   ],
   "存储管理": [
     "app/storageui.py:130",
-    "app/ui.py:3428",
+    "app/ui.py:3429",
     "app/shortcutcommands.py:app.storage",
     "app/shortcutcommands.py:app.storage"
   ],
@@ -2817,8 +2859,8 @@
     "app/pdfcontentcompareui.py:284"
   ],
   "安全与副本": [
-    "app/ui.py:3193",
-    "app/ui.py:4256",
+    "app/ui.py:3194",
+    "app/ui.py:4257",
     "app/shortcutcommands.py:document.encrypt",
     "app/shortcutcommands.py:document.decrypt",
     "app/shortcutcommands.py:document.editable_copy"
@@ -2876,7 +2918,7 @@
     "app/wordui.py:801"
   ],
   "完成文本框": [
-    "app/textboxui.py:93"
+    "app/textboxui.py:99"
   ],
   "完成裁纸": [
     "app/scanwhiteui.py:371",
@@ -2922,7 +2964,11 @@
     "app/shortcutcommands.py:reader.page_number"
   ],
   "实时效果预览": [
+    "app/arrowstyleui.py:47",
     "app/outputui.py:329"
+  ],
+  "实线": [
+    "app/arrowstyleui.py:129"
   ],
   "实际大小": [
     "app/colorcleanupui.py:397"
@@ -2934,7 +2980,7 @@
     "app/pagetoolsui.py:188"
   ],
   "审阅与文字修正": [
-    "app/ui.py:3491",
+    "app/ui.py:3492",
     "app/shortcutcommands.py:review.open",
     "app/shortcutcommands.py:review.open"
   ],
@@ -2942,8 +2988,8 @@
     "app/ui.py:3145"
   ],
   "审阅工具": [
-    "app/editingui.py:799",
-    "app/editingui.py:808",
+    "app/editingui.py:814",
+    "app/editingui.py:823",
     "app/shortcutcommands.py:review.browse",
     "app/shortcutcommands.py:review.select",
     "app/shortcutcommands.py:review.highlight",
@@ -2987,7 +3033,7 @@
     "app/exportdialogs.py:75"
   ],
   "密码验证未通过": [
-    "app/ui.py:6891"
+    "app/ui.py:6902"
   ],
   "对应关系待确认": [
     "app/pdfcontentcompareui.py:30"
@@ -3002,7 +3048,7 @@
     "app/translation/ui.py:2098"
   ],
   "导入图片": [
-    "app/ui.py:6566"
+    "app/ui.py:6577"
   ],
   "导入快捷键配置": [
     "app/shortcutui.py:507",
@@ -3012,10 +3058,10 @@
     "app/shortcutui.py:527"
   ],
   "导出 Excel": [
-    "app/ui.py:7442"
+    "app/ui.py:7453"
   ],
   "导出 TXT": [
-    "app/ui.py:6750"
+    "app/ui.py:6761"
   ],
   "导出内容": [
     "app/exportdialogs.py:750"
@@ -3036,7 +3082,7 @@
     "app/shortcutcommands.py:whitening.png"
   ],
   "导出文字": [
-    "app/ui.py:6757"
+    "app/ui.py:6768"
   ],
   "导出新 PDF": [
     "app/shortcutcommands.py:crop.export"
@@ -3048,10 +3094,10 @@
     "app/exportdialogs.py:590"
   ],
   "导出未完成": [
-    "app/ui.py:6842"
+    "app/ui.py:6853"
   ],
   "导出结束": [
-    "app/ui.py:6824"
+    "app/ui.py:6835"
   ],
   "导出范围": [
     "app/exportdialogs.py:541"
@@ -3060,7 +3106,7 @@
     "app/ui.py:3139"
   ],
   "将当前视图设为默认": [
-    "app/ui.py:4043",
+    "app/ui.py:4044",
     "app/shortcutcommands.py:reader.save_view",
     "app/shortcutcommands.py:reader.save_view"
   ],
@@ -3080,7 +3126,7 @@
     "app/pagesplitui.py:24"
   ],
   "将选中页沿分割线切成 2 或 3 页，可撤销": [
-    "app/ui.py:4105"
+    "app/ui.py:4106"
   ],
   "小体积：高分辨率图片按需降至 120 DPI，JPEG 质量 72，图片细节损失更明显。": [
     "app/compression.py:390"
@@ -3101,7 +3147,7 @@
     "app/ocrui.py:134"
   ],
   "尚未打开文档": [
-    "app/ui.py:3742"
+    "app/ui.py:3743"
   ],
   "尚未设置统一输出目录，可在每个导出窗口中查看并选择位置。": [
     "app/storageui.py:315"
@@ -3110,7 +3156,7 @@
     "app/translation/ui.py:2394"
   ],
   "展开全部": [
-    "app/editingui.py:102"
+    "app/editingui.py:134"
   ],
   "展开全部书签": [
     "app/shortcutcommands.py:outline.expand"
@@ -3131,28 +3177,28 @@
     "app/shortcutcommands.py:seam.advanced"
   ],
   "工作区已改变，请重新选择插入位置。": [
-    "app/ui.py:6248"
+    "app/ui.py:6249"
   ],
   "工作区已改变，请重新选择粘贴位置。": [
-    "app/ui.py:6320"
+    "app/ui.py:6321"
   ],
   "工作区没有页面": [
-    "app/ui.py:7336"
+    "app/ui.py:7347"
   ],
   "工作区没有页面可供打印": [
-    "app/ui.py:7209"
+    "app/ui.py:7220"
   ],
   "工作区没有页面，请先打开或拖入 PDF。": [
-    "app/ui.py:7401"
+    "app/ui.py:7412"
   ],
   "工作区第 {p0} / {p1} 页 · 来自 {p2} 原第 {p3} 页 · {p4}×{p5} pt · 本次旋转 {p6}°{p7}": [
-    "app/ui.py:5115"
+    "app/ui.py:5116"
   ],
   "工作区第 {p0} 页": [
-    "app/ui.py:5118"
+    "app/ui.py:5119"
   ],
   "工作模式": [
-    "app/ui.py:3468"
+    "app/ui.py:3469"
   ],
   "工具窗口": [
     "app/shortcutui.py:171"
@@ -3174,11 +3220,11 @@
     "app/pagesplitui.py:29"
   ],
   "左转": [
-    "app/ui.py:4094",
-    "app/ui.py:4182"
+    "app/ui.py:4095",
+    "app/ui.py:4183"
   ],
   "左转所选页": [
-    "app/ui.py:3512"
+    "app/ui.py:3513"
   ],
   "差异 {p0}": [
     "app/pdfcompareui.py:483"
@@ -3193,21 +3239,21 @@
     "app/readerinteraction.py:179"
   ],
   "已使用 {p0} 加密，原件保留：\n{p1}": [
-    "app/ui.py:6862"
+    "app/ui.py:6873"
   ],
   "已保存": [
-    "app/ui.py:3746"
+    "app/ui.py:3747"
   ],
   "已保存到 {p0}": [
-    "app/ui.py:7194",
-    "app/ui.py:6958",
-    "app/ui.py:6954"
+    "app/ui.py:7205",
+    "app/ui.py:6969",
+    "app/ui.py:6965"
   ],
   "已保存合并结果，可从“文件 → 打开”查看：{p0}": [
-    "app/mergeopenui.py:399"
+    "app/mergeopenui.py:524"
   ],
   "已保存无需密码的 PDF 副本，原加密文件保留：\n{p0}": [
-    "app/ui.py:6905"
+    "app/ui.py:6916"
   ],
   "已保存的发布说明": [
     "app/updateui.py:370"
@@ -3226,25 +3272,25 @@
     "app/shortcutui.py:145"
   ],
   "已关闭当前文件，返回首页": [
-    "app/ui.py:6100"
+    "app/ui.py:6101"
   ],
   "已关闭标签页": [
-    "app/ui.py:6112"
+    "app/ui.py:6113"
   ],
   "已写出 {p0} 个文件，工作区未改动": [
-    "app/ui.py:7368"
+    "app/ui.py:7379"
   ],
   "已分割为 {p0} 页；可撤销。": [
-    "app/ui.py:7304"
+    "app/ui.py:7315"
   ],
   "已分片盖骑缝章": [
     "app/seamstampui.py:321"
   ],
   "已切换为“{p0}”主题，下次打开时继续使用。": [
-    "app/ui.py:3366"
+    "app/ui.py:3367"
   ],
   "已切换为“{p0}”主题，但无法保存设置，本次运行有效。": [
-    "app/ui.py:3366"
+    "app/ui.py:3367"
   ],
   "已加密 · 当前为阅读权限": [
     "app/signatureui.py:105"
@@ -3253,15 +3299,15 @@
     "app/signatureui.py:16"
   ],
   "已发送打印任务": [
-    "app/ui.py:7216"
+    "app/ui.py:7227"
   ],
   "已取消": [
     "app/annotcropui.py:404",
     "app/compression.py:561",
-    "app/ui.py:6824",
-    "app/ui.py:6785",
-    "app/ui.py:6865",
-    "app/ui.py:6908"
+    "app/ui.py:6835",
+    "app/ui.py:6796",
+    "app/ui.py:6876",
+    "app/ui.py:6919"
   ],
   "已取消保存，修改仍保留，可继续编辑。": [
     "app/colorcleanupui.py:927"
@@ -3273,13 +3319,13 @@
     "app/scanwhiteui.py:645"
   ],
   "已取消当前工具，返回浏览。": [
-    "app/editingui.py:1306"
+    "app/editingui.py:1517"
   ],
   "已取消打印": [
     "app/printing.py:1762"
   ],
   "已取消打开，原文件未修改": [
-    "app/ui.py:6581"
+    "app/ui.py:6592"
   ],
   "已取消框选。": [
     "app/regioncapture.py:449"
@@ -3292,7 +3338,7 @@
     "app/regioncapture.py:512"
   ],
   "已取消解密，原加密文件保留。": [
-    "app/ui.py:6908"
+    "app/ui.py:6919"
   ],
   "已取消读取签名信息，原文件保持不变。": [
     "app/signatureui.py:159"
@@ -3304,11 +3350,11 @@
     "app/compression.py:561"
   ],
   "已取消，完成 0 个导出文件，原件保留。": [
-    "app/ui.py:6785"
+    "app/ui.py:6796"
   ],
   "已取消，完成 0 个输出文件。": [
-    "app/ui.py:6865",
-    "app/ui.py:6960"
+    "app/ui.py:6876",
+    "app/ui.py:6971"
   ],
   "已取消，完整输出已保留。": [
     "app/outputui.py:202"
@@ -3328,10 +3374,10 @@
     "app/scanwhiteui.py:604"
   ],
   "已合并并保存到指定文件。": [
-    "app/mergeopenui.py:401"
+    "app/mergeopenui.py:526"
   ],
   "已合并并打开新 PDF。": [
-    "app/mergeopenui.py:401"
+    "app/mergeopenui.py:526"
   ],
   "已合成 {p0} / {p1} 页": [
     "app/imaging.py:271"
@@ -3343,10 +3389,10 @@
     "app/translation/ui.py:1841"
   ],
   "已在末尾插入 {p0} 页 · 可拖动调整顺序": [
-    "app/ui.py:6508"
+    "app/ui.py:6519"
   ],
   "已在第 {p0} 页后插入 {p1} 页 · 可拖动排序，或在「页面工具」中匹配尺寸": [
-    "app/ui.py:6506"
+    "app/ui.py:6517"
   ],
   "已增强 {p0} 页；Ctrl+Z 可撤销，保存时另存 PDF。": [
     "app/scanwhiteui.py:643"
@@ -3355,10 +3401,10 @@
     "app/textselection.py:297"
   ],
   "已复制 {p0} 页 · 可撤销": [
-    "app/ui.py:6403"
+    "app/ui.py:6404"
   ],
   "已复制 {p0} 页 · 可粘贴到本文件或其他标签页": [
-    "app/ui.py:6362"
+    "app/ui.py:6363"
   ],
   "已复制当前页全部译文（{p0} 段）。": [
     "app/translation/ui.py:3539"
@@ -3370,26 +3416,26 @@
     "app/translation/ui.py:1207"
   ],
   "已完成": [
-    "app/ui.py:6761",
-    "app/ui.py:6782"
+    "app/ui.py:6772",
+    "app/ui.py:6793"
   ],
   "已完成 {p0} / {p1}": [
     "app/progress.py:98"
   ],
   "已完整导出 1 个 PDF：\n{p0}": [
-    "app/ui.py:6782"
+    "app/ui.py:6793"
   ],
   "已完整导出 1 个文件：\n{p0}\n大小：{p1}": [
     "app/compression.py:558"
   ],
   "已完整输出 {p0} 张图片，其中自动改名 {p1} 张，失败 {p2} 张。\n{p3}": [
-    "app/ui.py:6825"
+    "app/ui.py:6836"
   ],
   "已导出": [
     "app/compression.py:558"
   ],
   "已导出 Excel: {p0}": [
-    "app/ui.py:7503"
+    "app/ui.py:7514"
   ],
   "已导出 {p0} 个区域，共 {p1} 页：\n{p2}": [
     "app/annotcropui.py:402"
@@ -3398,13 +3444,13 @@
     "app/shortcutui.py:546"
   ],
   "已恢复文档原色。": [
-    "app/ui.py:3399"
+    "app/ui.py:3400"
   ],
   "已抽取到 {p0}": [
-    "app/ui.py:7259"
+    "app/ui.py:7270"
   ],
   "已插入 {p0} 页 · 可拖动调整顺序或撤销": [
-    "app/ui.py:6278"
+    "app/ui.py:6279"
   ],
   "已收集 {p0} 份 {p1}{p2}，确认输出位置后点击“开始转换”。": [
     "app/wordui.py:546"
@@ -3440,7 +3486,7 @@
     "app/contextmenuui.py:96"
   ],
   "已粘贴 {p0} 页 · 可撤销，原文件保留。": [
-    "app/ui.py:6325"
+    "app/ui.py:6326"
   ],
   "已纠偏 {p0} 页；Ctrl+Z 可撤销，保存时另存副本。": [
     "app/deskewui.py:254"
@@ -3461,7 +3507,7 @@
     "app/shortcuts.py:169"
   ],
   "已载入 {p0} 个 PDF，共 {p1} 页 · 检查顺序后保存": [
-    "app/ui.py:6485"
+    "app/ui.py:6496"
   ],
   "已输出：": [
     "app/outputui.py:429"
@@ -3470,11 +3516,11 @@
     "app/annotcropui.py:341"
   ],
   "已选 {p0} 页": [
-    "app/ui.py:4447",
-    "app/ui.py:4430"
+    "app/ui.py:4448",
+    "app/ui.py:4431"
   ],
   "已选全部 {p0} 页": [
-    "app/ui.py:4443"
+    "app/ui.py:4444"
   ],
   "已选区域": [
     "app/annotcropui.py:226"
@@ -3486,13 +3532,13 @@
     "app/textselection.py:207"
   ],
   "已选择 {p0} 份 · 共 {p1} 页": [
-    "app/mergeopenui.py:223"
+    "app/mergeopenui.py:335"
   ],
   "已选择 {p0} 张图片，按以下顺序合并：": [
     "app/imagequick.py:68"
   ],
   "已选第 {p0} 页": [
-    "app/ui.py:4446"
+    "app/ui.py:4447"
   ],
   "已选（{p0} 页）": [
     "app/printing.py:1175"
@@ -3504,10 +3550,10 @@
     "app/translation/ui.py:2454"
   ],
   "已重新读取磁盘上的最新文件": [
-    "app/ui.py:6165"
+    "app/ui.py:6166"
   ],
   "帮助": [
-    "app/ui.py:3264",
+    "app/ui.py:3265",
     "app/shortcutcommands.py:app.quick_start",
     "app/shortcutcommands.py:app.quick_start",
     "app/shortcutcommands.py:app.contributions",
@@ -3529,10 +3575,10 @@
     "app/translation/ui.py:701"
   ],
   "应用修改": [
-    "app/editingui.py:2120"
+    "app/editingui.py:2397"
   ],
   "应用修改 (Enter)": [
-    "app/editingui.py:1848"
+    "app/editingui.py:2121"
   ],
   "应用到文档": [
     "app/scanwhiteui.py:330",
@@ -3548,11 +3594,10 @@
     "app/deskewui.py:73"
   ],
   "应用当前选择的颜色与线宽": [
-    "app/editingui.py:623",
-    "app/editingui.py:695"
+    "app/editingui.py:1385"
   ],
   "应用文字修改": [
-    "app/editingui.py:1847"
+    "app/editingui.py:2120"
   ],
   "应用水印": [
     "app/watermarkui.py:250"
@@ -3618,7 +3663,7 @@
     "app/ocrui.py:220"
   ],
   "当前工作区有未保存的更改。": [
-    "app/ui.py:5910"
+    "app/ui.py:5911"
   ],
   "当前已是最新版本": [
     "app/updateui.py:370"
@@ -3637,19 +3682,22 @@
     "app/signatureui.py:165"
   ],
   "当前文档未加密。": [
-    "app/ui.py:6874"
+    "app/ui.py:6885"
   ],
   "当前文档未加密，无需解密。": [
-    "app/ui.py:3667"
+    "app/ui.py:3668"
   ],
   "当前文档页：{p0}": [
     "app/signatureui.py:130"
   ],
   "当前显示为转换后的 PDF，不提供 OFD 原件签名验证。": [
-    "app/ui.py:3759"
+    "app/ui.py:3760"
   ],
   "当前显示已保存的更新说明": [
     "app/updateui.py:364"
+  ],
+  "当前样式": [
+    "app/arrowstyleui.py:263"
   ],
   "当前档位可能改变图片细节，请放大核对小字与细线。": [
     "app/compression.py:503"
@@ -3685,7 +3733,7 @@
     "app/translation/client.py:153"
   ],
   "当前选区包含不同样式；调整字号将统一当前选区的字号（pt）": [
-    "app/editingui.py:1867"
+    "app/editingui.py:2140"
   ],
   "当前页": [
     "app/exportdialogs.py:546",
@@ -3693,10 +3741,10 @@
     "app/rasterui.py:48"
   ],
   "当前页、所选页或页码范围；PNG / JPEG，150 / 300 DPI。": [
-    "app/ui.py:4250"
+    "app/ui.py:4251"
   ],
   "当前页批注": [
-    "app/editingui.py:886"
+    "app/editingui.py:911"
   ],
   "当前页文字已准备好，可继续拖动选择。": [
     "app/textselection.py:196"
@@ -3705,13 +3753,13 @@
     "app/textselection.py:184"
   ],
   "当前页暂无批注": [
-    "app/editingui.py:1137"
+    "app/editingui.py:1216"
   ],
   "当前页未检测到可翻译的文字段落。": [
     "app/translation/ui.py:3282"
   ],
   "当前页没有可修改的文字层。扫描图片或已转为线条的工程图纸可用文本框、画笔或便签标注。": [
-    "app/editingui.py:2047"
+    "app/editingui.py:2323"
   ],
   "当前页没有可选择的文字层。": [
     "app/textselection.py:188"
@@ -3723,7 +3771,7 @@
     "app/outputui.py:407"
   ],
   "当前页面批注": [
-    "app/editingui.py:887"
+    "app/editingui.py:912"
   ],
   "当前页面预览": [
     "app/readingcolors.py:207"
@@ -3771,7 +3819,7 @@
     "app/translation/client.py:241"
   ],
   "待合并文件，勾选并拖动排序": [
-    "app/mergeopenui.py:124"
+    "app/mergeopenui.py:140"
   ],
   "待转换 Markdown 文件 · 可直接拖入": [
     "app/outputui.py:44"
@@ -3808,10 +3856,10 @@
     "app/translation/config.py:61"
   ],
   "快捷工具": [
-    "app/ui.py:4192"
+    "app/ui.py:4193"
   ],
   "快捷工具面板": [
-    "app/ui.py:4194"
+    "app/ui.py:4195"
   ],
   "快捷键冲突及保存提示": [
     "app/shortcutui.py:233"
@@ -3870,8 +3918,8 @@
     "app/shortcutcommands.py:storage.cache_reset"
   ],
   "恢复原样式": [
-    "app/editingui.py:1839",
-    "app/editingui.py:1840"
+    "app/editingui.py:2112",
+    "app/editingui.py:2113"
   ],
   "恢复原色": [
     "app/readingcolors.py:224",
@@ -3885,7 +3933,7 @@
     "app/shortcutcommands.py:cleanup.whole"
   ],
   "恢复文档原色": [
-    "app/ui.py:4048",
+    "app/ui.py:4049",
     "app/shortcutcommands.py:reader.original_colors",
     "app/shortcutcommands.py:reader.original_colors"
   ],
@@ -3893,7 +3941,7 @@
     "app/shortcutui.py:223"
   ],
   "恢复界面布局": [
-    "app/ui.py:3263",
+    "app/ui.py:3264",
     "app/shortcutcommands.py:view.reset",
     "app/shortcutcommands.py:view.reset"
   ],
@@ -3907,7 +3955,7 @@
     "app/shortcutcommands.py:storage.output_reset"
   ],
   "感谢为项目提供建议和问题反馈的朋友": [
-    "app/ui.py:3268"
+    "app/ui.py:3269"
   ],
   "感谢每一份参与": [
     "app/contributionui.py:46"
@@ -3922,7 +3970,7 @@
     "app/readingcolors.py:198"
   ],
   "所选文件目前仅支持另存新文件，请切换保存方式。": [
-    "app/mergeopenui.py:252"
+    "app/mergeopenui.py:372"
   ],
   "所选水印所在页面": [
     "app/watermarkui.py:203"
@@ -3947,7 +3995,7 @@
     "app/rasterui.py:48"
   ],
   "所选页面中未检测到可提取的表格，未生成或覆盖 Excel 文件。\n跳过页面：{p0}。\n可选择“全部内容”保留正文与图片；扫描文字需先完成 OCR。": [
-    "app/ui.py:7487"
+    "app/ui.py:7498"
   ],
   "所选页面尺寸异常，请缩小导出范围后重试。": [
     "app/imaging.py:49",
@@ -3962,7 +4010,7 @@
     "app/pagetoolsui.py:115"
   ],
   "手动缩放": [
-    "app/ui.py:4033",
+    "app/ui.py:4034",
     "app/shortcutcommands.py:reader.zoom_manual",
     "app/shortcutcommands.py:reader.zoom_manual"
   ],
@@ -3973,7 +4021,7 @@
     "app/colorcleanupui.py:435"
   ],
   "手形拖动": [
-    "app/ui.py:3985",
+    "app/ui.py:3986",
     "app/shortcutcommands.py:reader.hand",
     "app/shortcutcommands.py:reader.hand"
   ],
@@ -4040,21 +4088,21 @@
     "app/updateui.py:253"
   ],
   "打开 OFD": [
-    "app/ui.py:6566"
+    "app/ui.py:6577"
   ],
   "打开 PDF": [
     "app/imagequick.py:111",
-    "app/ui.py:6566",
+    "app/ui.py:6577",
     "app/shortcutcommands.py:quick_image.open_pdf"
   ],
   "打开 PDF / OFD / 图片": [
     "app/ui.py:3099",
-    "app/ui.py:6121",
+    "app/ui.py:6122",
     "app/shortcutcommands.py:file.open",
     "app/shortcutcommands.py:file.open"
   ],
   "打开 PDF 后即可高亮、备注、绘图或修正文字。": [
-    "app/ui.py:7040"
+    "app/ui.py:7051"
   ],
   "打开 PDF、OFD 或图片": [
     "app/recentui.py:168"
@@ -4099,13 +4147,13 @@
     "app/outputui.py:104",
     "app/outputui.py:215",
     "app/rasterui.py:181",
-    "app/ui.py:7061",
-    "app/ui.py:6837"
+    "app/ui.py:7072",
+    "app/ui.py:6848"
   ],
   "打开新 PDF 标签页": [
     "app/ui.py:2450",
     "app/ui.py:2451",
-    "app/ui.py:4390"
+    "app/ui.py:4391"
   ],
   "打开源 {p0} 所在目录": [
     "app/wordui.py:513"
@@ -4157,7 +4205,7 @@
     "app/shortcutcommands.py:tools.excel"
   ],
   "扫描": [
-    "app/ui.py:3198",
+    "app/ui.py:3199",
     "app/shortcutcommands.py:scan.cleanup",
     "app/shortcutcommands.py:scan.cleanup",
     "app/shortcutcommands.py:scan.whiten",
@@ -4174,7 +4222,7 @@
     "app/shortcutcommands.py:scan.whiten"
   ],
   "扫描件增强…": [
-    "app/ui.py:3199"
+    "app/ui.py:3200"
   ],
   "扫描件增强窗口": [
     "app/shortcutcommands.py:whitening.more",
@@ -4227,7 +4275,7 @@
     "app/shortcutcommands.py:scan.deskew"
   ],
   "扫描纠偏…": [
-    "app/ui.py:3200"
+    "app/ui.py:3201"
   ],
   "扫描纠偏窗口": [
     "app/shortcutcommands.py:deskew.analyze",
@@ -4242,10 +4290,12 @@
     "app/signatureui.py:104"
   ],
   "批注线宽": [
-    "app/editingui.py:873"
+    "app/arrowstyleui.py:204",
+    "app/arrowstyleui.py:206",
+    "app/editingui.py:888"
   ],
   "批注线宽（pt）": [
-    "app/editingui.py:874"
+    "app/editingui.py:889"
   ],
   "批量 {p0} 转 {p1}": [
     "app/wordui.py:148"
@@ -4281,56 +4331,56 @@
     "app/pdfcompareui.py:163"
   ],
   "折叠全部": [
-    "app/editingui.py:104"
+    "app/editingui.py:136"
   ],
   "折叠全部书签": [
     "app/shortcutcommands.py:outline.collapse"
   ],
   "抽取": [
-    "app/ui.py:7241"
-  ],
-  "抽取.pdf": [
-    "app/ui.py:7243"
-  ],
-  "抽取为": [
-    "app/ui.py:7243"
-  ],
-  "抽取写出的是另一个文件，不能覆盖当前文档或本次用过的源文件。请另选位置。": [
     "app/ui.py:7252"
   ],
+  "抽取.pdf": [
+    "app/ui.py:7254"
+  ],
+  "抽取为": [
+    "app/ui.py:7254"
+  ],
+  "抽取写出的是另一个文件，不能覆盖当前文档或本次用过的源文件。请另选位置。": [
+    "app/ui.py:7263"
+  ],
   "抽取失败": [
-    "app/ui.py:7262"
+    "app/ui.py:7273"
   ],
   "抽取页面": [
-    "app/ui.py:7257"
+    "app/ui.py:7268"
   ],
   "拆分": [
-    "app/ui.py:7336",
-    "app/ui.py:7341",
-    "app/ui.py:7346"
+    "app/ui.py:7347",
+    "app/ui.py:7352",
+    "app/ui.py:7357"
   ],
   "拆分 PDF": [
-    "app/ui.py:7366"
+    "app/ui.py:7377"
   ],
   "拆分写出的是新文件，不能覆盖当前文档或本次用过的源文件。\n受阻：{p0}": [
-    "app/ui.py:7354"
+    "app/ui.py:7365"
   ],
   "拆分到文件夹…": [
-    "app/ui.py:4225",
-    "app/ui.py:3564"
+    "app/ui.py:4226",
+    "app/ui.py:3565"
   ],
   "拆分失败": [
-    "app/ui.py:7373"
+    "app/ui.py:7384"
   ],
   "拆分文件": [
-    "app/ui.py:3521",
-    "app/ui.py:4223",
-    "app/ui.py:3563",
+    "app/ui.py:3522",
+    "app/ui.py:4224",
+    "app/ui.py:3564",
     "app/shortcutcommands.py:pages.split",
     "app/shortcutcommands.py:pages.split"
   ],
   "拆分文件…": [
-    "app/ui.py:3166"
+    "app/ui.py:3167"
   ],
   "拆分页码范围": [
     "app/filesplitui.py:45"
@@ -4345,17 +4395,17 @@
     "app/pdfcompareui.py:125"
   ],
   "拖动可实时预览位置；也可点击后选位置，Esc 取消": [
-    "app/editingui.py:697"
+    "app/editingui.py:702"
   ],
   "拖动四角，或框选纸张": [
     "app/scanwhiteui.py:375"
   ],
   "拖动排序，双击阅读。按住 Alt 悬停可放大，或右键选择放大预览。Ctrl 加选，Shift 连选；Ctrl + 滚轮缩放。": [
-    "app/ui.py:4127"
+    "app/ui.py:4128"
   ],
   "拖动文件或选中后点上移／下移排序。\n包含未保存修改，原文件和原标签保持不变。": [
-    "app/mergeopenui.py:152",
-    "app/mergeopenui.py:262"
+    "app/mergeopenui.py:168",
+    "app/mergeopenui.py:382"
   ],
   "拖动橙色分割线调整位置，也可输入百分比。": [
     "app/pagesplitui.py:94"
@@ -4364,13 +4414,13 @@
     "app/watermarkpreview.py:61"
   ],
   "拖动绘制椭圆；按住 Shift 画正圆；Esc 取消工具。": [
-    "app/editingui.py:1061"
+    "app/editingui.py:1140"
   ],
   "拖动缩略图，调整页序": [
     "app/quickstartui.py:61"
   ],
   "拖动调整文本框宽高；文字放不下时高度会自动增长": [
-    "app/textboxui.py:49"
+    "app/textboxui.py:55"
   ],
   "拖动选择要翻译的文字": [
     "app/translation/ui.py:2056"
@@ -4379,7 +4429,7 @@
     "app/translation/ui.py:2980"
   ],
   "拖选或点击操作；Ctrl+Z 撤销": [
-    "app/editingui.py:905"
+    "app/editingui.py:930"
   ],
   "拼到 A4 上，便于打印": [
     "app/annotcropui.py:218"
@@ -4409,7 +4459,7 @@
     "app/quickstartui.py:58"
   ],
   "按住拖动以移动批注，或点击后点选新位置": [
-    "app/editingui.py:449"
+    "app/editingui.py:481"
   ],
   "按住空格或 Alt，再按住鼠标左键拖动": [
     "app/quickstartui.py:51"
@@ -4421,10 +4471,13 @@
     "app/translation/ui.py:1034"
   ],
   "按列表顺序生成页面，多帧 TIFF 按帧展开。": [
-    "app/ui.py:4244"
+    "app/ui.py:4245"
   ],
   "按文件名自然排序，可拖动或用上移、下移调整。": [
     "app/imagequick.py:88"
+  ],
+  "按文件顺序合并": [
+    "app/mergeopenui.py:174"
   ],
   "按正文内容核对 · 原文件只读": [
     "app/pdfcontentcompareui.py:93"
@@ -4475,39 +4528,39 @@
     "app/shortcutcommands.py:outline.raise"
   ],
   "提取到新 PDF…": [
-    "app/ui.py:4221"
+    "app/ui.py:4222"
   ],
   "提取所选页": [
-    "app/ui.py:3515",
+    "app/ui.py:3516",
     "app/shortcutcommands.py:pages.extract_selected"
   ],
   "提取所选页…": [
-    "app/ui.py:4112"
+    "app/ui.py:4113"
   ],
   "提取页码范围": [
-    "app/ui.py:4214"
+    "app/ui.py:4215"
   ],
   "提取页面": [
-    "app/ui.py:4207",
+    "app/ui.py:4208",
     "app/shortcutcommands.py:pages.extract",
     "app/shortcutcommands.py:pages.extract"
   ],
   "提取页面…": [
-    "app/ui.py:3165"
+    "app/ui.py:3166"
   ],
   "插入 PDF / 图片": [
-    "app/ui.py:6491"
+    "app/ui.py:6502"
   ],
   "插入 PDF 页面（已选页面后或末尾）": [
-    "app/ui.py:4102"
+    "app/ui.py:4103"
   ],
   "插入图片": [
-    "app/editingui.py:847",
+    "app/editingui.py:862",
     "app/imageui.py:268",
     "app/shortcutcommands.py:review.image"
   ],
   "插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）": [
-    "app/editingui.py:830"
+    "app/editingui.py:845"
   ],
   "插入页面": [
     "app/shortcutcommands.py:pages.insert",
@@ -4515,7 +4568,7 @@
   ],
   "插入页面…": [
     "app/ui.py:3155",
-    "app/ui.py:4101"
+    "app/ui.py:4102"
   ],
   "搜索全文": [
     "app/searchui.py:105"
@@ -4562,7 +4615,7 @@
     "app/imagequick.py:220"
   ],
   "操作指南": [
-    "app/ui.py:3265",
+    "app/ui.py:3266",
     "app/shortcutcommands.py:app.quick_start",
     "app/shortcutcommands.py:app.quick_start"
   ],
@@ -4592,8 +4645,8 @@
     "app/immersivereading.py:276"
   ],
   "收起审阅工具": [
-    "app/editingui.py:916",
-    "app/editingui.py:917",
+    "app/editingui.py:942",
+    "app/editingui.py:943",
     "app/shortcutcommands.py:annotation.deactivate"
   ],
   "收起更多打印设置": [
@@ -4611,9 +4664,9 @@
   "放大": [
     "app/pdfcontentcompareui.py:133",
     "app/printing.py:1077",
-    "app/ui.py:3944",
-    "app/ui.py:3258",
-    "app/ui.py:4125",
+    "app/ui.py:3945",
+    "app/ui.py:3259",
+    "app/ui.py:4126",
     "app/shortcutcommands.py:view.zoom_in",
     "app/shortcutcommands.py:view.zoom_in",
     "app/shortcutcommands.py:print.zoom_in",
@@ -4663,12 +4716,12 @@
     "app/__main__.py:107"
   ],
   "整理工作区": [
-    "app/ui.py:6639"
+    "app/ui.py:6650"
   ],
   "整理页面": [
     "app/signatureui.py:103",
-    "app/ui.py:3219",
-    "app/ui.py:3477",
+    "app/ui.py:3220",
+    "app/ui.py:3478",
     "app/shortcutcommands.py:reader.arrange",
     "app/shortcutcommands.py:reader.arrange"
   ],
@@ -4715,11 +4768,11 @@
   ],
   "文件仅在本机处理": [
     "app/recentui.py:251",
-    "app/ui.py:3760"
+    "app/ui.py:3761"
   ],
   "文件保护": [
-    "app/ui.py:6656",
-    "app/ui.py:6878"
+    "app/ui.py:6667",
+    "app/ui.py:6889"
   ],
   "文件夹包含子文件夹（默认仅当前层）": [
     "app/wordui.py:314"
@@ -4729,22 +4782,22 @@
   ],
   "文件已保存": [
     "app/savesettings.py:223",
-    "app/ui.py:7200"
+    "app/ui.py:7211"
   ],
   "文件已保存到：\n{p0}": [
     "app/rasterui.py:178"
   ],
   "文件已写出": [
-    "app/ui.py:7051"
+    "app/ui.py:7062"
   ],
   "文件已存在": [
-    "app/ui.py:7377"
+    "app/ui.py:7388"
   ],
   "文件已成功保存到：\n{p0}\n界面刷新未完成，请重新打开该文件查看。": [
-    "app/ui.py:7200"
+    "app/ui.py:7211"
   ],
   "文件顺序": [
-    "app/mergeopenui.py:111"
+    "app/mergeopenui.py:126"
   ],
   "文字": [
     "app/watermarkui.py:137"
@@ -4759,19 +4812,19 @@
     "app/pdfcontentcompareui.py:29"
   ],
   "文字修正预览": [
-    "app/editingui.py:2098"
+    "app/editingui.py:2375"
   ],
   "文字导出已取消。": [
-    "app/ui.py:6763"
+    "app/ui.py:6774"
   ],
   "文字差异仍需核对。": [
     "app/pdfcontentcompareui.py:282"
   ],
   "文字已导出：{p0}": [
-    "app/ui.py:6759"
+    "app/ui.py:6770"
   ],
   "文字未导出": [
-    "app/ui.py:6765"
+    "app/ui.py:6776"
   ],
   "文字识别窗口": [
     "app/shortcutcommands.py:ocr.install",
@@ -4788,26 +4841,29 @@
     "app/shortcutcommands.py:scan.ocr"
   ],
   "文字识别（OCR）…": [
-    "app/ui.py:3202"
+    "app/ui.py:3203"
+  ],
+  "文字超出页面，请减小字号、增大框宽或减少内容。": [
+    "app/textboxui.py:192"
   ],
   "文字颜色": [
-    "app/editingui.py:1825",
+    "app/editingui.py:2098",
     "app/readingcolors.py:187"
   ],
   "文字高亮": [
     "app/shortcutcommands.py:review.highlight"
   ],
   "文本文件 (*.txt)": [
-    "app/ui.py:6751"
+    "app/ui.py:6762"
   ],
   "文本框字体": [
-    "app/textboxui.py:72"
+    "app/textboxui.py:78"
   ],
   "文本框字号": [
-    "app/textboxui.py:84"
+    "app/textboxui.py:90"
   ],
   "文档": [
-    "app/ui.py:3177",
+    "app/ui.py:3178",
     "app/shortcutcommands.py:document.compare",
     "app/shortcutcommands.py:document.compare",
     "app/shortcutcommands.py:document.signature",
@@ -4832,16 +4888,16 @@
     "app/shortcutcommands.py:document.editable_copy"
   ],
   "文档.pdf": [
-    "app/ui.py:6807",
-    "app/ui.py:6855",
-    "app/ui.py:6898",
-    "app/ui.py:6940"
+    "app/ui.py:6818",
+    "app/ui.py:6866",
+    "app/ui.py:6909",
+    "app/ui.py:6951"
   ],
   "文档原色": [
     "app/readingcolors.py:158"
   ],
   "文档大纲书签": [
-    "app/editingui.py:138"
+    "app/editingui.py:170"
   ],
   "文档已改变，请关闭后重新打开水印设置。": [
     "app/watermarkui.py:732"
@@ -4859,7 +4915,7 @@
     "app/pdfcompareui.py:349"
   ],
   "斜体": [
-    "app/editingui.py:1810"
+    "app/editingui.py:2083"
   ],
   "新 PDF 的排版方式": [
     "app/annotcropui.py:220"
@@ -4921,7 +4977,7 @@
     "app/deskewui.py:36"
   ],
   "旋转页面": [
-    "app/ui.py:3172",
+    "app/ui.py:3173",
     "app/shortcutcommands.py:pages.rotate_left",
     "app/shortcutcommands.py:pages.rotate_right"
   ],
@@ -4932,7 +4988,7 @@
     "app/pdfcompareui.py:455"
   ],
   "无损、高质量、均衡或自定义压缩；查看大小与页面预览后另存。": [
-    "app/ui.py:4237"
+    "app/ui.py:4238"
   ],
   "无损图片 · 200 DPI（文件较大）": [
     "app/rasterui.py:57"
@@ -4941,7 +4997,7 @@
     "app/seamstampui.py:189"
   ],
   "无法保存": [
-    "app/ui.py:7105"
+    "app/ui.py:7116"
   ],
   "无法保存设置，请检查当前用户的写入权限。": [
     "app/savesettings.py:90"
@@ -4950,7 +5006,7 @@
     "app/deskewui.py:155"
   ],
   "无法创建压缩缓存": [
-    "app/ui.py:6724"
+    "app/ui.py:6735"
   ],
   "无法加载差异页": [
     "app/pdfcompareui.py:496"
@@ -4968,12 +5024,12 @@
     "app/pdfcontentcompareui.py:376"
   ],
   "无法打开": [
-    "app/ui.py:6598",
-    "app/ui.py:6595"
+    "app/ui.py:6609",
+    "app/ui.py:6606"
   ],
   "无法打开右键入口": [
-    "app/ui.py:6457",
-    "app/ui.py:6465"
+    "app/ui.py:6468",
+    "app/ui.py:6476"
   ],
   "无法打开合并入口": [
     "app/pdfshell.py:104"
@@ -5002,7 +5058,7 @@
     "app/translation/client.py:169"
   ],
   "无法识别此操作，请重新选择拆分或合并。": [
-    "app/ui.py:6457"
+    "app/ui.py:6468"
   ],
   "无法读取保护信息": [
     "app/signatureui.py:162"
@@ -5023,7 +5079,7 @@
     "app/translation/client.py:176"
   ],
   "无法预览页面": [
-    "app/ui.py:7283"
+    "app/ui.py:7294"
   ],
   "无边框模式": [
     "app/immersivereading.py:89",
@@ -5034,7 +5090,7 @@
     "app/printing.py:76"
   ],
   "无需解密": [
-    "app/ui.py:6874"
+    "app/ui.py:6885"
   ],
   "日语": [
     "app/translation/config.py:59"
@@ -5129,7 +5185,7 @@
     "app/printing.py:1261"
   ],
   "暂无大纲，可为关键页面添加书签。": [
-    "app/editingui.py:200"
+    "app/editingui.py:232"
   ],
   "暂时无法获取更新内容": [
     "app/updateui.py:396"
@@ -5141,8 +5197,8 @@
     "app/themes.py:terracotta"
   ],
   "更多审阅工具": [
-    "app/editingui.py:946",
-    "app/editingui.py:947"
+    "app/editingui.py:973",
+    "app/editingui.py:974"
   ],
   "更多快捷键操作": [
     "app/shortcutui.py:247"
@@ -5199,12 +5255,12 @@
     "app/regioncapture.py:369"
   ],
   "最后一页": [
-    "app/ui.py:3929",
+    "app/ui.py:3930",
     "app/shortcutcommands.py:reader.last"
   ],
   "最大化": [
     "app/ui.py:2223",
-    "app/ui.py:4663"
+    "app/ui.py:4664"
   ],
   "最小化": [
     "app/ui.py:2222"
@@ -5241,8 +5297,8 @@
     "app/updateui.py:366"
   ],
   "有未保存的修改": [
-    "app/ui.py:3749",
-    "app/ui.py:3746"
+    "app/ui.py:3750",
+    "app/ui.py:3747"
   ],
   "有页面尚未识别，比较未完成": [
     "app/pdfcontentcompareui.py:231"
@@ -5263,13 +5319,13 @@
     "app/translation/client.py:115"
   ],
   "未保存": [
-    "app/ui.py:4432"
+    "app/ui.py:4433"
   ],
   "未保存 · 保存为新文件": [
-    "app/ui.py:3745"
+    "app/ui.py:3746"
   ],
   "未保存的更改": [
-    "app/ui.py:5909"
+    "app/ui.py:5910"
   ],
   "未加密": [
     "app/signatureui.py:105"
@@ -5291,14 +5347,14 @@
   ],
   "未命名": [
     "app/ui.py:2217",
-    "app/ui.py:4415"
+    "app/ui.py:4416"
   ],
   "未命名.pdf": [
-    "app/ui.py:7133"
+    "app/ui.py:7144"
   ],
   "未命名文档": [
     "app/ui.py:2335",
-    "app/ui.py:3741"
+    "app/ui.py:3742"
   ],
   "未完成：{p0}": [
     "app/imagequick.py:220"
@@ -5348,13 +5404,13 @@
     "app/wordui.py:715"
   ],
   "未检测到表格": [
-    "app/ui.py:7486"
+    "app/ui.py:7497"
   ],
   "未能复制密码，请手动输入：{p0}。": [
     "app/updateui.py:31"
   ],
   "未能完成合并": [
-    "app/mergeopenui.py:408"
+    "app/mergeopenui.py:533"
   ],
   "未设置": [
     "app/shortcutui.py:145"
@@ -5374,7 +5430,7 @@
     "app/progress.py:81"
   ],
   "本机处理": [
-    "app/ui.py:3746"
+    "app/ui.py:3747"
   ],
   "本次仅覆盖您明确选择的一个文件。": [
     "app/savesettings.py:144"
@@ -5386,8 +5442,8 @@
     "app/printing.py:1301"
   ],
   "本次操作未应用": [
-    "app/editingui.py:1553",
-    "app/editingui.py:2151"
+    "app/editingui.py:1834",
+    "app/editingui.py:2428"
   ],
   "本次未检出正文修改": [
     "app/pdfcontentcompareui.py:307",
@@ -5432,7 +5488,7 @@
     "app/pdfcompareui.py:489"
   ],
   "来源文档": [
-    "app/ui.py:6388"
+    "app/ui.py:6389"
   ],
   "查看 OCR、缓存和输出位置，选择保存目录或清理旧文件": [
     "app/ui.py:3114"
@@ -5450,7 +5506,7 @@
     "app/recentui.py:209"
   ],
   "查看拖入文件、缩放、移动页面与侧栏的常用操作": [
-    "app/ui.py:3266"
+    "app/ui.py:3267"
   ],
   "查看整页": [
     "app/pdfcontentcompareui.py:129",
@@ -5475,7 +5531,7 @@
     "app/shortcutcommands.py:storage.backups"
   ],
   "查看更新 {p0}": [
-    "app/ui.py:3408"
+    "app/ui.py:3409"
   ],
   "查看更新内容": [
     "app/aboutui.py:172",
@@ -5492,9 +5548,10 @@
     "app/shortcutcommands.py:cleanup.cleaned"
   ],
   "查看版本、检查更新、项目地址与赞赏信息": [
-    "app/ui.py:3270"
+    "app/ui.py:3271"
   ],
   "查看／修改批注备注": [
+    "app/editingui.py:1383",
     "app/shortcutcommands.py:annotation.note_text"
   ],
   "查看／微调识别原文": [
@@ -5507,7 +5564,7 @@
     "app/translation/extractor.py:302"
   ],
   "样式设置作用于当前框选的已有文字；可直接应用，无需重新输入": [
-    "app/editingui.py:1751"
+    "app/editingui.py:2024"
   ],
   "根据检测到的文字行与横线校正局部倾斜，文字不足时保留原状；请核对效果。": [
     "app/scanwhiteui.py:249"
@@ -5593,7 +5650,7 @@
     "app/shortcutcommands.py:review.ellipse"
   ],
   "椭圆（按住 Shift 画正圆）": [
-    "app/editingui.py:761"
+    "app/editingui.py:773"
   ],
   "模型、字典与推理程序。迁移会复制并校验，原位置保留。": [
     "app/storageui.py:150"
@@ -5614,11 +5671,14 @@
     "app/pagetoolsui.py:178",
     "app/printing.py:1218"
   ],
+  "橙色": [
+    "app/arrowstyleui.py:176"
+  ],
   "正在从原图生成更小的 WebP…": [
     "app/imagequick.py:200"
   ],
   "正在保存，请在保存结束后切换或打开文档。": [
-    "app/ui.py:5985"
+    "app/ui.py:5986"
   ],
   "正在停止，原图保留…": [
     "app/imagequick.py:259"
@@ -5639,6 +5699,7 @@
   ],
   "正在准备预览…": [
     "app/compressionpreview.py:95",
+    "app/editingui.py:2484",
     "app/mosaicui.py:91"
   ],
   "正在分析第 {p0} 页版面与段落…": [
@@ -5651,26 +5712,26 @@
     "app/progress.py:109"
   ],
   "正在取消转换，结束后可关闭窗口": [
-    "app/ui.py:7537"
+    "app/ui.py:7548"
   ],
   "正在处理，请稍候": [
     "app/progress.py:71"
   ],
   "正在打开 PDF": [
     "app/ui.py:3055",
-    "app/ui.py:5641"
+    "app/ui.py:5642"
   ],
   "正在打开 PDF…": [
-    "app/ui.py:3961"
+    "app/ui.py:3962"
   ],
   "正在打开 PDF…\n{p0}": [
-    "app/ui.py:5079"
+    "app/ui.py:5080"
   ],
   "正在打开 · {p0}": [
-    "app/ui.py:4425"
+    "app/ui.py:4426"
   ],
   "正在打开…": [
-    "app/ui.py:3753"
+    "app/ui.py:3754"
   ],
   "正在提取框选区域文字（扫描区将自动尝试本地 OCR）…": [
     "app/translation/ui.py:3180"
@@ -5695,7 +5756,7 @@
     "app/signatureui.py:15"
   ],
   "正在检查原文件保护信息": [
-    "app/ui.py:6647"
+    "app/ui.py:6658"
   ],
   "正在检查更新…": [
     "app/updateui.py:362"
@@ -5709,8 +5770,8 @@
   "正在渲染页面": [
     "app/ui.py:3051",
     "app/ui.py:3055",
-    "app/ui.py:5656",
-    "app/ui.py:5662"
+    "app/ui.py:5657",
+    "app/ui.py:5663"
   ],
   "正在生成清晰预览…": [
     "app/arrangepreview.py:64"
@@ -5723,7 +5784,7 @@
   ],
   "正在生成缩略图": [
     "app/ui.py:3055",
-    "app/ui.py:5648"
+    "app/ui.py:5649"
   ],
   "正在生成预览…": [
     "app/scanwhiteui.py:290"
@@ -5761,6 +5822,9 @@
   "正在计算压缩效果…": [
     "app/compression.py:445"
   ],
+  "正在试看": [
+    "app/arrowstyleui.py:263"
+  ],
   "正在读取 GitHub 发布说明，请稍候。": [
     "app/updateui.py:394"
   ],
@@ -5784,7 +5848,7 @@
     "app/readingcolors.py:209"
   ],
   "此书签目标已删除，可修改或撤销页面删除。": [
-    "app/editingui.py:298"
+    "app/editingui.py:330"
   ],
   "此位置尚未创建、已清理或暂时不可访问：\n{p0}": [
     "app/storageui.py:82"
@@ -5904,7 +5968,7 @@
     "app/watermarkui.py:80"
   ],
   "水印…": [
-    "app/ui.py:3183"
+    "app/ui.py:3184"
   ],
   "水印宽度占页面宽度的比例": [
     "app/watermarkui.py:149"
@@ -5981,8 +6045,8 @@
     "app/pdfcontentcompareui.py:221"
   ],
   "沿用原字体": [
-    "app/editingui.py:1784",
-    "app/editingui.py:1786"
+    "app/editingui.py:2057",
+    "app/editingui.py:2059"
   ],
   "沿短边装订": [
     "app/printing.py:1354"
@@ -6022,8 +6086,8 @@
     "app/wordui.py:376"
   ],
   "添加书签": [
-    "app/editingui.py:112",
-    "app/editingui.py:326"
+    "app/editingui.py:144",
+    "app/editingui.py:358"
   ],
   "添加可见页码": [
     "app/outputui.py:284"
@@ -6039,15 +6103,14 @@
     "app/exportdialogs.py:230"
   ],
   "添加备注": [
-    "app/editingui.py:687",
-    "app/editingui.py:2024"
+    "app/editingui.py:2300"
   ],
   "添加备用快捷键": [
     "app/shortcutui.py:221"
   ],
   "添加子书签": [
-    "app/editingui.py:119",
-    "app/editingui.py:326",
+    "app/editingui.py:151",
+    "app/editingui.py:358",
     "app/shortcutcommands.py:outline.add_child"
   ],
   "添加对应页": [
@@ -6182,7 +6245,7 @@
     "app/printing.py:1246"
   ],
   "点一下添加便签；Esc 取消工具。": [
-    "app/editingui.py:1060"
+    "app/editingui.py:1139"
   ],
   "点击“统计用量”查看当前组件、可清理缓存和旧备份的占用空间。": [
     "app/storageui.py:193"
@@ -6200,13 +6263,16 @@
     "app/translation/ui.py:1450"
   ],
   "点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。": [
-    "app/editingui.py:1058"
+    "app/editingui.py:1137"
   ],
   "点击链接跳转；拖动选择文字；": [
     "app/textselection.py:50"
   ],
   "点击顶部的“整理页面”图标，再拖动页面调整顺序；左侧缩略图也支持拖动。操作有误时，可从“编辑”菜单撤销。": [
     "app/quickstartui.py:62"
+  ],
+  "点线": [
+    "app/arrowstyleui.py:129"
   ],
   "版式与图形检查": [
     "app/pdfcontentcompareui.py:102",
@@ -6263,7 +6329,7 @@
     "app/shortcutcommands.py:cleanup.brush"
   ],
   "界面主题": [
-    "app/ui.py:3229",
+    "app/ui.py:3230",
     "app/shortcutcommands.py:theme.graphite",
     "app/shortcutcommands.py:theme.forest",
     "app/shortcutcommands.py:theme.mountain",
@@ -6271,16 +6337,16 @@
     "app/shortcutcommands.py:theme.night"
   ],
   "界面主题，当前为{p0}": [
-    "app/ui.py:3375"
+    "app/ui.py:3376"
   ],
   "界面主题：{p0}，点击切换": [
-    "app/ui.py:3374"
+    "app/ui.py:3375"
   ],
   "界面已恢复默认，文档与存储设置保留。": [
     "app/ui.py:3021"
   ],
   "界面恢复": [
-    "app/ui.py:3261",
+    "app/ui.py:3262",
     "app/shortcutcommands.py:reader.show_orb",
     "app/shortcutcommands.py:view.reset"
   ],
@@ -6295,7 +6361,7 @@
     "app/shortcutcommands.py:app.language"
   ],
   "留空使用所选页面，或输入页码范围。": [
-    "app/ui.py:4208"
+    "app/ui.py:4209"
   ],
   "白色": [
     "app/colorcleanupui.py:434"
@@ -6310,10 +6376,10 @@
     "app/seamstampui.py:81"
   ],
   "目录": [
-    "app/editingui.py:133"
+    "app/editingui.py:165"
   ],
   "目标位置已有 {p0} 个同名文件。": [
-    "app/ui.py:7380"
+    "app/ui.py:7391"
   ],
   "目标文件": [
     "app/savesettings.py:117",
@@ -6323,7 +6389,7 @@
     "app/pagetoolsui.py:160"
   ],
   "目标页已删除；撤销删除可恢复跳转。": [
-    "app/editingui.py:191"
+    "app/editingui.py:223"
   ],
   "目标页面宽度": [
     "app/pagetoolsui.py:182"
@@ -6350,11 +6416,14 @@
     "app/shortcutcommands.py:theme.graphite",
     "app/shortcutcommands.py:theme.graphite"
   ],
+  "确定": [
+    "app/arrowstyleui.py:211"
+  ],
   "确认并保存副本": [
     "app/savesettings.py:194"
   ],
   "确认并另存副本": [
-    "app/ui.py:6704"
+    "app/ui.py:6715"
   ],
   "确认搜索／下一处": [
     "app/searchui.py:173"
@@ -6394,13 +6463,16 @@
     "app/ocrui.py:227"
   ],
   "磁盘文件已有变化；当前标签保留未保存修改。请先另存副本，再关闭并重新打开文件。": [
-    "app/ui.py:6155"
+    "app/ui.py:6156"
   ],
   "离线排版标题、列表、表格、代码块和中文。仅加载 Markdown 目录内图片；公式和 Mermaid 按源码显示。": [
     "app/outputui.py:35"
   ],
   "移动当前批注": [
     "app/shortcutcommands.py:annotation.move"
+  ],
+  "移动批注": [
+    "app/editingui.py:1387"
   ],
   "移动页面": [
     "app/shortcutcommands.py:cleanup.move"
@@ -6475,13 +6547,13 @@
     "app/translation/extractor.py:309"
   ],
   "第 {p0} 页": [
-    "app/editingui.py:326",
+    "app/editingui.py:358",
     "app/pdfcontentcompareui.py:292",
     "app/pdfcontentcompareui.py:384",
     "app/recentui.py:115"
   ],
   "第 {p0} 页 / 表格 {p1}：{p2}": [
-    "app/ui.py:7500"
+    "app/ui.py:7511"
   ],
   "第 {p0} 页 · {p1}": [
     "app/scanwhiteui.py:546"
@@ -6517,7 +6589,7 @@
     "app/pagesplitui.py:46"
   ],
   "第一页": [
-    "app/ui.py:3909",
+    "app/ui.py:3910",
     "app/shortcutcommands.py:reader.first"
   ],
   "第二条": [
@@ -6535,7 +6607,7 @@
     "app/shortcutcommands.py:document.signature"
   ],
   "签名与保护信息…": [
-    "app/ui.py:3179"
+    "app/ui.py:3180"
   ],
   "签名与保护信息窗口": [
     "app/shortcutcommands.py:signature.locate",
@@ -6546,7 +6618,7 @@
     "app/shortcutcommands.py:signature.raster"
   ],
   "签名原件只读。可编辑副本保留签名外观，原数字签名效力不会保留。": [
-    "app/ui.py:4267"
+    "app/ui.py:4268"
   ],
   "签名声明与检查原因详情": [
     "app/signatureui.py:56"
@@ -6573,10 +6645,16 @@
     "app/translation/config.py:56"
   ],
   "管理…": [
-    "app/editingui.py:125"
+    "app/editingui.py:157"
   ],
   "箭头": [
     "app/shortcutcommands.py:review.arrow"
+  ],
+  "箭头样式": [
+    "app/arrowstyleui.py:103",
+    "app/editingui.py:894",
+    "app/editingui.py:897",
+    "app/editingui.py:1385"
   ],
   "米色纸面": [
     "app/readingcolors.py:159"
@@ -6593,10 +6671,10 @@
     "app/ui.py:1043"
   ],
   "粘贴图片为页面": [
-    "app/ui.py:6316"
+    "app/ui.py:6317"
   ],
   "粘贴已取消，页面未改变。": [
-    "app/ui.py:6330"
+    "app/ui.py:6331"
   ],
   "系统临时": [
     "app/storageui.py:219"
@@ -6604,8 +6682,14 @@
   "系统加密暂不可用，API Key 仅在本次运行有效。": [
     "app/translation/ui.py:2659"
   ],
+  "紫色": [
+    "app/arrowstyleui.py:177"
+  ],
   "繁體中文": [
     "app/translation/config.py:57"
+  ],
+  "红色": [
+    "app/arrowstyleui.py:176"
   ],
   "纵向": [
     "app/pagesplitui.py:70",
@@ -6664,6 +6748,9 @@
   "继续阅读": [
     "app/recentui.py:292"
   ],
+  "绿色": [
+    "app/arrowstyleui.py:177"
+  ],
   "绿色版 · 下载 ZIP，退出软件后解压到新文件夹。": [
     "app/updateui.py:241"
   ],
@@ -6697,21 +6784,18 @@
     "app/shortcutcommands.py:image.delete"
   ],
   "编辑副本": [
-    "app/ui.py:6927",
-    "app/ui.py:6930"
-  ],
-  "编辑备注": [
-    "app/editingui.py:684"
+    "app/ui.py:6938",
+    "app/ui.py:6941"
   ],
   "编辑文本框": [
-    "app/editingui.py:692"
+    "app/editingui.py:1381"
   ],
   "缩小": [
     "app/pdfcontentcompareui.py:133",
     "app/printing.py:1076",
-    "app/ui.py:3937",
-    "app/ui.py:3259",
-    "app/ui.py:4119",
+    "app/ui.py:3938",
+    "app/ui.py:3260",
+    "app/ui.py:4120",
     "app/shortcutcommands.py:view.zoom_out",
     "app/shortcutcommands.py:view.zoom_out",
     "app/shortcutcommands.py:print.zoom_out",
@@ -6737,7 +6821,7 @@
     "app/shortcutcommands.py:compression.zoom_out"
   ],
   "缩放": [
-    "app/ui.py:3257",
+    "app/ui.py:3258",
     "app/shortcutcommands.py:view.fit",
     "app/shortcutcommands.py:view.zoom_in",
     "app/shortcutcommands.py:view.zoom_out"
@@ -6883,6 +6967,8 @@
     "app/pagesplitui.py:66"
   ],
   "自定义颜色": [
+    "app/arrowstyleui.py:190",
+    "app/arrowstyleui.py:331",
     "app/readingcolors.py:161",
     "app/readingcolors.py:264"
   ],
@@ -6896,7 +6982,10 @@
     "app/shortcutcommands.py:review.ink"
   ],
   "至少保留 1 页才能保存。": [
-    "app/ui.py:7105"
+    "app/ui.py:7116"
+  ],
+  "至少选择 2 份 PDF。": [
+    "app/mergeopenui.py:289"
   ],
   "英语": [
     "app/translation/config.py:58"
@@ -6925,11 +7014,17 @@
   "蓝奏云密码：{p0}（点击“蓝奏云”自动复制）": [
     "app/aboutui.py:197"
   ],
+  "蓝色": [
+    "app/arrowstyleui.py:177"
+  ],
+  "虚线": [
+    "app/arrowstyleui.py:129"
+  ],
   "行数": [
     "app/watermarkui.py:194"
   ],
   "补全扩展名后的 Excel 文件已存在，是否覆盖？": [
-    "app/ui.py:7449"
+    "app/ui.py:7460"
   ],
   "补填 API Key": [
     "app/translation/ui.py:2390"
@@ -6938,7 +7033,7 @@
     "app/translation/extractor.py:324"
   ],
   "表格导出.xlsx": [
-    "app/ui.py:7430"
+    "app/ui.py:7441"
   ],
   "表格排版无法读取，已按普通文字复制。": [
     "app/textselection.py:297"
@@ -6954,25 +7049,25 @@
     "app/savesettings.py:106"
   ],
   "覆盖": [
-    "app/ui.py:7382"
+    "app/ui.py:7393"
   ],
   "覆盖到": [
-    "app/mergeopenui.py:163"
+    "app/mergeopenui.py:188"
   ],
   "覆盖同名图片（默认自动改名，保留两份）": [
     "app/exportdialogs.py:633"
   ],
   "覆盖指定文件": [
-    "app/mergeopenui.py:160"
+    "app/mergeopenui.py:185"
   ],
   "覆盖源文件": [
     "app/savesettings.py:56"
   ],
   "覆盖现有 Excel？": [
-    "app/ui.py:7449"
+    "app/ui.py:7460"
   ],
   "视图": [
-    "app/ui.py:3217",
+    "app/ui.py:3218",
     "app/shortcutcommands.py:reader.read",
     "app/shortcutcommands.py:reader.read",
     "app/shortcutcommands.py:reader.arrange",
@@ -7046,26 +7141,26 @@
     "app/shortcutcommands.py:reader.next_group"
   ],
   "解密另存": [
-    "app/ui.py:6898",
-    "app/ui.py:6902",
+    "app/ui.py:6909",
+    "app/ui.py:6913",
     "app/shortcutcommands.py:document.decrypt",
     "app/shortcutcommands.py:document.decrypt"
   ],
   "解密另存…": [
-    "app/ui.py:3195",
-    "app/ui.py:4258"
+    "app/ui.py:3196",
+    "app/ui.py:4259"
   ],
   "解密另存完成": [
-    "app/ui.py:6905"
+    "app/ui.py:6916"
   ],
   "解密后另存为无需密码的副本，原加密文件保留；解除权限限制需要管理密码。": [
-    "app/ui.py:4263"
+    "app/ui.py:4264"
   ],
   "解密未完成": [
-    "app/ui.py:6910"
+    "app/ui.py:6921"
   ],
   "解密需要管理密码": [
-    "app/ui.py:6883"
+    "app/ui.py:6894"
   ],
   "触碰左侧边缘展开；取消勾选可固定侧栏，下次打开沿用选择": [
     "app/immersivereading.py:57"
@@ -7099,9 +7194,6 @@
   "设置变化后自动更新预览": [
     "app/watermarkui.py:236"
   ],
-  "设置字体、字号与颜色": [
-    "app/editingui.py:693"
-  ],
   "设置未保存": [
     "app/savesettings.py:90"
   ],
@@ -7134,7 +7226,7 @@
     "app/wordui.py:750"
   ],
   "请先保存或另存当前 PDF，再导出文字。": [
-    "app/ui.py:6747"
+    "app/ui.py:6758"
   ],
   "请先勾选上方的在线翻译数据外发确认。": [
     "app/translation/ui.py:881"
@@ -7160,7 +7252,7 @@
   ],
   "请先打开 PDF": [
     "app/exportdialogs.py:802",
-    "app/ui.py:7040"
+    "app/ui.py:7051"
   ],
   "请先打开 PDF。": [
     "app/rasterui.py:138"
@@ -7172,7 +7264,7 @@
     "app/outputui.py:398"
   ],
   "请先打开加密 PDF。": [
-    "app/ui.py:3665"
+    "app/ui.py:3666"
   ],
   "请先打开要识别的 PDF。": [
     "app/ocrui.py:215"
@@ -7184,14 +7276,14 @@
     "app/printing.py:1747"
   ],
   "请先选择一页。": [
-    "app/ui.py:7273"
+    "app/ui.py:7284"
   ],
   "请先选择上级书签。": [
-    "app/editingui.py:321"
+    "app/editingui.py:353"
   ],
   "请先选择页面": [
-    "app/ui.py:5886",
-    "app/ui.py:5894"
+    "app/ui.py:5887",
+    "app/ui.py:5895"
   ],
   "请划选文字": [
     "app/translation/ui.py:2053"
@@ -7201,10 +7293,10 @@
     "app/scanwhiteui.py:589"
   ],
   "请另选一个新文件，以保留本次用过的原件。": [
-    "app/ui.py:7143"
+    "app/ui.py:7154"
   ],
   "请在 Windows 设置中将 .pdf 的默认应用选择为「{p0}」": [
-    "app/ui.py:7230"
+    "app/ui.py:7241"
   ],
   "请在右侧需要的页面上画框；每个页面分别选择区域。": [
     "app/annotcropui.py:343"
@@ -7254,19 +7346,19 @@
     "app/imagequick.py:222"
   ],
   "请等待当前任务结束后再粘贴页面。": [
-    "app/ui.py:6284"
+    "app/ui.py:6285"
   ],
   "请等待当前文件任务结束，再更改位置或清理文件。": [
     "app/storageui.py:274"
   ],
   "请结束或取消转换后再关闭当前文件": [
-    "app/ui.py:6066"
+    "app/ui.py:6067"
   ],
   "请调整输出位置": [
     "app/wordui.py:723"
   ],
   "请输入便签内容…": [
-    "app/editingui.py:55"
+    "app/editingui.py:87"
   ],
   "请输入要转换的页码范围。": [
     "app/exportdialogs.py:797"
@@ -7275,16 +7367,16 @@
     "app/contextmenuui.py:74"
   ],
   "请运行打包后的 {p0}，再从此菜单设置默认应用。": [
-    "app/ui.py:7220"
+    "app/ui.py:7231"
   ],
   "请选择 PNG、降低 DPI 或缩小导出范围。": [
     "app/imaging.py:118"
   ],
   "请选择一个 PDF 进行拆分。": [
-    "app/ui.py:6462"
+    "app/ui.py:6473"
   ],
   "请选择可调整层级的书签。": [
-    "app/editingui.py:381"
+    "app/editingui.py:413"
   ],
   "请选择已有文件夹：\n{p0}": [
     "app/wordui.py:727"
@@ -7293,10 +7385,10 @@
     "app/colorcleanupui.py:490"
   ],
   "请选择有效的 PDF 文件进行合并。": [
-    "app/ui.py:6462"
+    "app/ui.py:6473"
   ],
   "请选择要覆盖的文件": [
-    "app/mergeopenui.py:211"
+    "app/mergeopenui.py:323"
   ],
   "请选择要覆盖的源文件": [
     "app/savesettings.py:112"
@@ -7311,7 +7403,7 @@
     "app/shortcutcommands.py:cleanup.adjust"
   ],
   "调整文本框尺寸": [
-    "app/textboxui.py:50"
+    "app/textboxui.py:56"
   ],
   "调整水印": [
     "app/watermarkui.py:737"
@@ -7330,7 +7422,7 @@
     "app/shortcutcommands.py:pages.resize"
   ],
   "调整页面大小…": [
-    "app/ui.py:3170"
+    "app/ui.py:3171"
   ],
   "调整页面配对": [
     "app/pdfcompareui.py:155",
@@ -7340,7 +7432,7 @@
   ],
   "贡献": [
     "app/contributionui.py:32",
-    "app/ui.py:3267",
+    "app/ui.py:3268",
     "app/shortcutcommands.py:app.contributions",
     "app/shortcutcommands.py:app.contributions"
   ],
@@ -7368,13 +7460,13 @@
     "app/readerinteraction.py:228"
   ],
   "跳转到页码": [
-    "app/ui.py:3914"
+    "app/ui.py:3915"
   ],
   "跳转预览页": [
     "app/compression.py:235"
   ],
   "跳过": [
-    "app/ui.py:7383"
+    "app/ui.py:7394"
   ],
   "跳过前几页": [
     "app/outputui.py:289"
@@ -7386,7 +7478,7 @@
     "app/compression.py:127"
   ],
   "转换": [
-    "app/ui.py:3204",
+    "app/ui.py:3205",
     "app/shortcutcommands.py:convert.word_pdf",
     "app/shortcutcommands.py:convert.word_pdf",
     "app/shortcutcommands.py:convert.images_pdf",
@@ -7405,26 +7497,26 @@
     "app/shortcutcommands.py:convert.pdf_raster"
   ],
   "转换为 Excel": [
-    "app/ui.py:7401"
+    "app/ui.py:7412"
   ],
   "转换为 Excel…": [
     "app/exportdialogs.py:822",
-    "app/ui.py:4234"
+    "app/ui.py:4235"
   ],
   "转换失败：{p0}": [
     "app/ui.py:1846"
   ],
   "转换完成！\n已生成：{p0}\n{p1}共提取表格：{p2} 个\n转换摘要：{p3}": [
-    "app/ui.py:7493"
+    "app/ui.py:7504"
   ],
   "转换已被取消": [
     "app/ui.py:1844"
   ],
   "转换成功": [
-    "app/ui.py:7504"
+    "app/ui.py:7515"
   ],
   "转换提示": [
-    "app/ui.py:7481"
+    "app/ui.py:7492"
   ],
   "转换未启动": [
     "app/wordui.py:785"
@@ -7451,7 +7543,7 @@
     "app/savesettings.py:171"
   ],
   "输入任意页码，按 Enter 跳转到所在页面组": [
-    "app/ui.py:3790"
+    "app/ui.py:3791"
   ],
   "输入关键词搜索全文；": [
     "app/searchui.py:173"
@@ -7460,11 +7552,11 @@
     "app/searchui.py:106"
   ],
   "输入文字…": [
-    "app/textboxui.py:34"
+    "app/textboxui.py:40"
   ],
   "输入页码，按 Enter 跳转": [
-    "app/ui.py:3915",
-    "app/ui.py:3791"
+    "app/ui.py:3916",
+    "app/ui.py:3792"
   ],
   "输出 {p0} 文件": [
     "app/wordui.py:224",
@@ -7517,7 +7609,7 @@
     "app/shortcutcommands.py:colors.schemes"
   ],
   "还原": [
-    "app/ui.py:4663"
+    "app/ui.py:4664"
   ],
   "还差一步即可使用": [
     "app/translation/ui.py:2391"
@@ -7547,7 +7639,7 @@
     "app/translation/client.py:167"
   ],
   "连续页面预览，滚轮查看上下页": [
-    "app/pagepreviewlist.py:135"
+    "app/pagepreviewlist.py:141"
   ],
   "连续预览 · 滚轮查看上下页": [
     "app/seamstampui.py:124"
@@ -7569,9 +7661,9 @@
   ],
   "适合宽度": [
     "app/colorcleanupui.py:397",
-    "app/ui.py:3946",
-    "app/ui.py:3260",
-    "app/ui.py:4032",
+    "app/ui.py:3947",
+    "app/ui.py:3261",
+    "app/ui.py:4033",
     "app/shortcutcommands.py:reader.fit_width",
     "app/shortcutcommands.py:reader.fit_width",
     "app/shortcutcommands.py:view.fit",
@@ -7583,14 +7675,14 @@
     "app/shortcutcommands.py:visual_compare.fit"
   ],
   "适合窗口": [
-    "app/ui.py:4126"
+    "app/ui.py:4127"
   ],
   "适合纸张": [
     "app/printing.py:1231"
   ],
   "适合页面": [
     "app/colorcleanupui.py:397",
-    "app/ui.py:4031",
+    "app/ui.py:4032",
     "app/shortcutcommands.py:reader.fit_page",
     "app/shortcutcommands.py:reader.fit_page"
   ],
@@ -7606,7 +7698,7 @@
     "app/readingcolors.py:142"
   ],
   "选中书签后可添加同级或子书签；在“管理”中调整顺序。": [
-    "app/editingui.py:200"
+    "app/editingui.py:232"
   ],
   "选区仅用于本次导出；没画框的页面会跳过，原 PDF 保留。": [
     "app/annotcropui.py:236"
@@ -7615,13 +7707,13 @@
     "app/regioncapture.py:299"
   ],
   "选区含不同样式；只调整需要改变的属性，其余保留": [
-    "app/editingui.py:1866"
+    "app/editingui.py:2139"
   ],
   "选区来源": [
     "app/annotcropui.py:216"
   ],
   "选区没有文字层；扫描图片或已转为线条的工程图纸可用画笔、文本框或便签标注。": [
-    "app/editingui.py:2063"
+    "app/editingui.py:2339"
   ],
   "选择 PDF": [
     "app/pdfcompareui.py:386",
@@ -7648,7 +7740,10 @@
     "app/storageui.py:75"
   ],
   "选择与排列图片…": [
-    "app/ui.py:4248"
+    "app/ui.py:4249"
+  ],
+  "选择两份 PDF": [
+    "app/ui.py:6432"
   ],
   "选择两份文件后，点击“开始比较”": [
     "app/pdfcontentcompareui.py:105"
@@ -7682,13 +7777,13 @@
     "app/seamstampui.py:72"
   ],
   "选择图片输出文件夹": [
-    "app/ui.py:6818"
+    "app/ui.py:6829"
   ],
   "选择字体（当前：{p0}）": [
-    "app/textboxui.py:139"
+    "app/textboxui.py:145"
   ],
   "选择字号": [
-    "app/textboxui.py:83"
+    "app/textboxui.py:89"
   ],
   "选择安装位置": [
     "app/shortcutcommands.py:runtime.location"
@@ -7703,7 +7798,7 @@
     "app/watermarkui.py:119"
   ],
   "选择当前页批注…": [
-    "app/editingui.py:1134"
+    "app/editingui.py:1213"
   ],
   "选择或拖入{p0} PDF": [
     "app/pdfcompareui.py:293",
@@ -7716,8 +7811,11 @@
     "app/pdfcompareui.py:383"
   ],
   "选择批注颜色": [
-    "app/editingui.py:859",
-    "app/editingui.py:860",
+    "app/editingui.py:874",
+    "app/editingui.py:875",
+    "app/editingui.py:1054",
+    "app/editingui.py:1032",
+    "app/editingui.py:1050",
     "app/shortcutcommands.py:annotation.choose_color"
   ],
   "选择操作后修改快捷键": [
@@ -7732,13 +7830,13 @@
     "app/shortcutcommands.py:visual_compare.choose_right"
   ],
   "选择文件并调整顺序。": [
-    "app/mergeopenui.py:237"
+    "app/mergeopenui.py:358"
   ],
   "选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。": [
-    "app/mergeopenui.py:238"
+    "app/mergeopenui.py:359"
   ],
   "选择文字": [
-    "app/ui.py:3985",
+    "app/ui.py:3986",
     "app/shortcutcommands.py:reader.select",
     "app/shortcutcommands.py:reader.select"
   ],
@@ -7767,10 +7865,10 @@
     "app/translation/ui.py:604"
   ],
   "选择范围并导出…": [
-    "app/ui.py:4254"
+    "app/ui.py:4255"
   ],
   "选择要压缩的图片": [
-    "app/ui.py:6792"
+    "app/ui.py:6803"
   ],
   "选择转图片处理": [
     "app/shortcutcommands.py:cleanup.raster"
@@ -7790,7 +7888,7 @@
   ],
   "选择输出目录": [
     "app/outputui.py:437",
-    "app/ui.py:7343",
+    "app/ui.py:7354",
     "app/shortcutcommands.py:word.choose_output",
     "app/shortcutcommands.py:markdown.output"
   ],
@@ -7798,8 +7896,8 @@
     "app/shortcutcommands.py:mosaic.color"
   ],
   "选择页面后可旋转或删除": [
-    "app/ui.py:4171",
-    "app/ui.py:3700"
+    "app/ui.py:4172",
+    "app/ui.py:3701"
   ],
   "选择页面批注": [
     "app/shortcutcommands.py:review.select"
@@ -7812,6 +7910,9 @@
   ],
   "选择默认输出目录": [
     "app/storageui.py:282"
+  ],
+  "逐页交叉合并": [
+    "app/mergeopenui.py:175"
   ],
   "逐页纠偏角度与确认状态": [
     "app/deskewui.py:46"
@@ -7854,7 +7955,7 @@
     "app/shortcutcommands.py:cleanup.redo"
   ],
   "重命名书签": [
-    "app/editingui.py:343",
+    "app/editingui.py:375",
     "app/shortcutcommands.py:outline.rename"
   ],
   "重新安装本地 OCR 增强包…": [
@@ -7909,8 +8010,8 @@
     "app/imaging.py:275"
   ],
   "阅读": [
-    "app/ui.py:3218",
-    "app/ui.py:3477",
+    "app/ui.py:3219",
+    "app/ui.py:3478",
     "app/shortcutcommands.py:reader.read",
     "app/shortcutcommands.py:reader.read"
   ],
@@ -7924,7 +8025,6 @@
     "app/shortcutcommands.py:reader.translate_selection",
     "app/shortcutcommands.py:annotation.style",
     "app/shortcutcommands.py:annotation.note_text",
-    "app/shortcutcommands.py:annotation.delete",
     "app/shortcutcommands.py:annotation.move",
     "app/shortcutcommands.py:annotation.choose_color",
     "app/shortcutcommands.py:annotation.deactivate",
@@ -7940,15 +8040,19 @@
     "app/shortcutcommands.py:SCOPE_LABELS"
   ],
   "阅读区较窄，当前暂用单页": [
-    "app/ui.py:4008"
+    "app/ui.py:4009"
+  ],
+  "阅读区选中的批注": [
+    "app/shortcutcommands.py:annotation.delete",
+    "app/shortcutcommands.py:SCOPE_LABELS"
   ],
   "阅读工具": [
-    "app/ui.py:4012"
+    "app/ui.py:4013"
   ],
   "阅读设置": [
     "app/readingsettings.py:35",
-    "app/ui.py:3994",
-    "app/ui.py:3996",
+    "app/ui.py:3995",
+    "app/ui.py:3997",
     "app/shortcutcommands.py:reader.single",
     "app/shortcutcommands.py:reader.spread",
     "app/shortcutcommands.py:reader.four",
@@ -7968,7 +8072,7 @@
   "阅读配色": [
     "app/readingcolors.py:116",
     "app/readingcolors.py:138",
-    "app/ui.py:4047",
+    "app/ui.py:4048",
     "app/shortcutcommands.py:reader.colors",
     "app/shortcutcommands.py:reader.colors"
   ],
@@ -8008,7 +8112,7 @@
     "app/translation/config.py:60"
   ],
   "页": [
-    "app/editingui.py:133"
+    "app/editingui.py:165"
   ],
   "页内译文": [
     "app/translation/reflow.py:64",
@@ -8036,7 +8140,7 @@
     "app/outputui.py:260"
   ],
   "页码处理…": [
-    "app/ui.py:3182"
+    "app/ui.py:3183"
   ],
   "页码处理窗口": [
     "app/shortcutcommands.py:numbers.export",
@@ -8048,7 +8152,7 @@
     "app/outputui.py:277"
   ],
   "页码错误": [
-    "app/ui.py:7420"
+    "app/ui.py:7431"
   ],
   "页脚": [
     "app/translation/extractor.py:306"
@@ -8060,13 +8164,15 @@
   ],
   "页面": [
     "app/ui.py:3162",
-    "app/ui.py:3883",
+    "app/ui.py:3884",
     "app/shortcutcommands.py:pages.insert",
     "app/shortcutcommands.py:pages.insert",
     "app/shortcutcommands.py:pages.append",
     "app/shortcutcommands.py:pages.append",
     "app/shortcutcommands.py:pages.merge_open",
     "app/shortcutcommands.py:pages.merge_open",
+    "app/shortcutcommands.py:pages.interleave",
+    "app/shortcutcommands.py:pages.interleave",
     "app/shortcutcommands.py:pages.extract",
     "app/shortcutcommands.py:pages.extract",
     "app/shortcutcommands.py:pages.split",
@@ -8102,14 +8208,14 @@
     "app/readingcolors.py:187"
   ],
   "页面大小": [
-    "app/ui.py:4109"
+    "app/ui.py:4110"
   ],
   "页面大小窗口": [
     "app/shortcutcommands.py:page_size.apply",
     "app/shortcutcommands.py:page_size.apply"
   ],
   "页面布局": [
-    "app/ui.py:4014"
+    "app/ui.py:4015"
   ],
   "页面按所选顺序从上到下拼接，各页等比铺满最宽页的宽度。": [
     "app/exportdialogs.py:698"
@@ -8119,14 +8225,13 @@
     "app/translation/ui.py:3273"
   ],
   "页面文本框": [
-    "app/editingui.py:691",
     "app/shortcutcommands.py:review.freetext"
   ],
   "页面文本框内容": [
-    "app/textboxui.py:35"
+    "app/textboxui.py:41"
   ],
   "页面暂时无法加载，请重新选择该页重试。": [
-    "app/ui.py:5508"
+    "app/ui.py:5509"
   ],
   "页面栏": [
     "app/ui.py:2836",
@@ -8139,13 +8244,13 @@
     "app/printing.py:1235"
   ],
   "页面缩略图": [
-    "app/ui.py:3887"
+    "app/ui.py:3888"
   ],
   "页面范围": [
     "app/annotcropui.py:211"
   ],
   "页面适配": [
-    "app/ui.py:4028"
+    "app/ui.py:4029"
   ],
   "页面适配方式": [
     "app/colorcleanupui.py:398"
@@ -8166,6 +8271,9 @@
     "app/shortcutcommands.py:pairing.remove",
     "app/shortcutcommands.py:pairing.apply",
     "app/shortcutcommands.py:pairing.apply"
+  ],
+  "页面顺序": [
+    "app/mergeopenui.py:177"
   ],
   "页面预览": [
     "app/watermarkui.py:218"
@@ -8207,6 +8315,8 @@
     "app/filesplitui.py:96"
   ],
   "颜色": [
+    "app/arrowstyleui.py:174",
+    "app/editingui.py:996",
     "app/watermarkui.py:160"
   ],
   "颜色模式": [
@@ -8249,7 +8359,7 @@
     "app/mosaicui.py:68"
   ],
   "验证管理密码": [
-    "app/ui.py:6888"
+    "app/ui.py:6899"
   ],
   "骑缝章": [
     "app/seamstampui.py:30",
@@ -8257,7 +8367,7 @@
     "app/shortcutcommands.py:document.seam_stamp"
   ],
   "骑缝章…": [
-    "app/ui.py:3184"
+    "app/ui.py:3185"
   ],
   "骑缝章窗口": [
     "app/shortcutcommands.py:seam.image",
@@ -8285,8 +8395,11 @@
   "黑白打印": [
     "app/scanwhiteui.py:240"
   ],
+  "黑色": [
+    "app/arrowstyleui.py:176"
+  ],
   "默认 PDF 应用": [
-    "app/ui.py:7220"
+    "app/ui.py:7231"
   ],
   "默认不放大小页面，只有超出打印区域时才缩小。多页排列时按每个格子的大小计算。": [
     "app/printing.py:1233"
@@ -8299,7 +8412,7 @@
     "app/savesettings.py:59"
   ],
   "默认应用设置": [
-    "app/ui.py:7232"
+    "app/ui.py:7243"
   ],
   "默认快捷键": [
     "app/shortcutui.py:180"
@@ -8336,7 +8449,7 @@
     "app/pdfcontentcompareui.py:51"
   ],
   "（暂无备注内容，点击编辑添加）": [
-    "app/editingui.py:683"
+    "app/editingui.py:700"
   ],
   "（绿色版）": [
     "app/runtime.py:29"
@@ -8352,9 +8465,9 @@
     "app/seamstampui.py:56"
   ],
   "，点击立即切换并自动保存。": [
-    "app/ui.py:3247"
+    "app/ui.py:3248"
   ],
   "📌 便签备注内容": [
-    "app/editingui.py:49"
+    "app/editingui.py:81"
   ]
 }

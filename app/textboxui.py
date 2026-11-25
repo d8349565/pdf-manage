@@ -4,7 +4,7 @@ from app.themes import set_theme_style
 import math
 import pymupdf as p
 from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QGuiApplication
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QComboBox, QFontComboBox,
                             QFrame, QHBoxLayout, QLabel, QTextEdit, QToolButton,
                             QVBoxLayout, QWidget)
@@ -12,6 +12,9 @@ from app.icons import toolbar_icon
 
 
 class InlineTextBox(QObject):
+    initial_width = 144
+    initial_height = 36
+
     def __init__(self, tools, area, index, ref, text="", settings=None, identifier=None):
         super().__init__(tools)
         settings = settings or {}
@@ -19,13 +22,16 @@ class InlineTextBox(QObject):
         self.index, self.ref, self.identifier = index, ref, identifier
         self.matrix = p.Matrix(tools.snapshot["matrix"])
         self.base_area = self.area = self.original_area = p.Rect(area)
+        self.manual_size = bool(settings.get('manual_size'))
+        self._measure_doc = None
+        self._measure_key = None
         self.closed = self.committing = self.positioning = self.preedit = False
         self._resize_state = None
         self.frame = QFrame(self.view.viewport())
         self.frame.setObjectName("pageTextBox")
         self.frame.setStyleSheet("QFrame#pageTextBox { background: white; border: 1px dashed #0F766E; border-radius: 0; }")
         layout = QVBoxLayout(self.frame)
-        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setContentsMargins(1, 1, 1, 1)
         self.editor = QTextEdit(self.frame)
         self.editor.setFrameShape(QFrame.Shape.NoFrame)
         self.editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -33,7 +39,7 @@ class InlineTextBox(QObject):
         self.editor.setPlainText(text)
         self.editor.setPlaceholderText(tr('输入文字…'))
         self.editor.setAccessibleName(tr('页面文本框内容'))
-        self.editor.document().setDocumentMargin(2)
+        self.editor.document().setDocumentMargin(0)
         layout.addWidget(self.editor)
         self.handles = {}
         cursors = dict(nw=Qt.CursorShape.SizeFDiagCursor, n=Qt.CursorShape.SizeVerCursor,
@@ -41,7 +47,7 @@ class InlineTextBox(QObject):
                        se=Qt.CursorShape.SizeFDiagCursor, s=Qt.CursorShape.SizeVerCursor,
                        sw=Qt.CursorShape.SizeBDiagCursor, w=Qt.CursorShape.SizeHorCursor)
         for edge, cursor in cursors.items():
-            handle = QFrame(self.frame)
+            handle = QFrame(self.view.viewport())
             handle.setObjectName('textBoxResizeHandle')
             set_theme_style(handle, 'QFrame#textBoxResizeHandle { background: #0F766E; border: 1px solid white; border-radius: 2px; }')
             handle.setFixedSize(10, 10)
@@ -124,7 +130,7 @@ class InlineTextBox(QObject):
         return button
 
     def settings(self):
-        return dict(font=self.font.currentFont().family(), fontsize=self.size.currentData(),
+        return dict(font=self.font.currentFont().family(), fontsize=self.size.currentData(), manual_size=self.manual_size,
                     color=(self.color.redF(), self.color.greenF(), self.color.blueF()))
 
     def choose_color(self):
@@ -144,6 +150,57 @@ class InlineTextBox(QObject):
         self.error.hide()
         QTimer.singleShot(0, self.position)
 
+    def fitted_size(self, visible, page, font, scale):
+        """Measure with the same font and line breaker as PDF output, in page points."""
+        from app.pdfedits import replacement_font
+        text = self.editor.toPlainText()
+        if not text and not self.manual_size and self.identifier is None:
+            metrics = QFontMetricsF(font, self.editor)
+            width = max(self.initial_width, visible.width, (metrics.horizontalAdvance(self.editor.placeholderText()) + 20) / scale)
+            height = max(self.initial_height, visible.height, (metrics.height() + 12) / scale)
+            return min(width, page.width()), min(height, page.height())
+        if not text.strip() or len(text) > 20000:
+            return visible.width, visible.height
+        if (self.identifier and text == self.original_text and self.settings() == self.original_settings
+                and self.base_area == self.original_area):
+            return visible.width, visible.height
+        family, size = self.font.currentFont().family(), self.size.currentData()
+        key = (text, family, size, self.manual_size, tuple(visible), page.width(), page.height())
+        if key == self._measure_key:
+            return self._measured_size
+        glyphs = set(text) - {'\r', '\n', '\t'}
+        if (self._measure_doc is None or family != self._measure_family
+                or self._font_name == 'ZhiXuCJK' and not self._measure_chars.issubset(glyphs)
+                or any(not self._pdf_font.has_glyph(ord(c)) for c in glyphs - self._measure_chars)):
+            if self._measure_doc is not None:
+                self._measure_doc.close()
+            self._measure_doc = p.open()
+            self._measure_page = self._measure_doc.new_page()
+            self._measure_family = None
+            self._pdf_font, self._font_name, buffer = replacement_font(self._measure_page, glyphs, family)
+            self._measure_page.insert_font(fontname=self._font_name, fontbuffer=buffer)
+            self._measure_family, self._measure_chars = family, set()
+        self._measure_chars.update(glyphs)
+        available = page.height() - visible.y0
+        if self.manual_size:
+            width = visible.width
+        else:
+            longest = max(self._pdf_font.text_length(line.expandtabs(1), fontsize=size) for line in text.splitlines())
+            width = min(page.width() - visible.x0, max(24, longest + 8))
+        spare = self._measure_page.new_shape().insert_textbox(
+            p.Rect(0, 0, width, available), text, fontname=self._font_name, fontsize=size)
+        warning = tr('文字超出页面，请减小字号、增大框宽或减少内容。')
+        too_wide = any(self._pdf_font.glyph_advance(ord(c)) * size > width + .001 for c in glyphs)
+        if spare < -.001 or too_wide:
+            self.error.setText(warning)
+            self.error.show()
+        elif self.error.text() == warning:
+            self.error.hide()
+        height = max(size * 1.6, available - spare + 2, visible.height if self.manual_size else 0)
+        self._measure_key = key
+        self._measured_size = width, min(height, available)
+        return self._measured_size
+
     def position(self, *_):
         if self.closed or self.positioning or self.index >= len(self.view.page_rects):
             return
@@ -151,19 +208,32 @@ class InlineTextBox(QObject):
         try:
             visible = self.base_area * self.matrix
             page = self.view.page_rects[self.index]
-            scene = QRectF(page.x() + visible.x0, page.y() + visible.y0, visible.width, visible.height)
-            rect = self.view.mapFromScene(scene).boundingRect()
-            viewport = self.view.viewport()
-            active = self.area * self.matrix
-            active_scene = QRectF(page.x() + active.x0, page.y() + active.y0, active.width, active.height)
-            if not self.view.isVisible() or not viewport.rect().intersects(self.view.mapFromScene(active_scene).boundingRect()):
-                self.frame.hide()
-                self.toolbar.hide()
-                return
             scale = max(.01, self.view.transform().m11())
             pixels = max(1, round(self.size.currentData() * math.hypot(self.matrix.a, self.matrix.b) * scale))
             font = self.font.currentFont()
             font.setPixelSize(pixels)
+            try:
+                width, height = self.fitted_size(visible, page, font, scale)
+                if self.editor.document().isEmpty() and not self.manual_size and not self.identifier:
+                    dx = min(0, page.width() - visible.x0 - width)
+                    dy = min(0, page.height() - visible.y0 - height)
+                    if dx or dy:
+                        visible += (dx, dy, dx, dy)
+                        self.base_area = visible * ~self.matrix
+                visible.x1, visible.y1 = visible.x0 + width, visible.y0 + height
+            except (ValueError, RuntimeError) as exc:
+                self.error.setText(str(exc))
+                self.error.show()
+            scene = QRectF(page.x() + visible.x0, page.y() + visible.y0, visible.width, visible.height)
+            rect = self.view.mapFromScene(scene).boundingRect()
+            viewport = self.view.viewport()
+            self.area = visible * ~self.matrix
+            if not self.view.isVisible() or not viewport.rect().intersects(rect):
+                self.frame.hide()
+                for handle in self.handles.values():
+                    handle.hide()
+                self.toolbar.hide()
+                return
             if self.editor.font() != font:
                 self.editor.setFont(font)
             if self.editor.document().defaultFont() != font:
@@ -173,22 +243,15 @@ class InlineTextBox(QObject):
             if self.editor.styleSheet() != style:
                 self.editor.setStyleSheet(style)
             self.frame.setGeometry(rect)
-            self.frame.layout().activate()
-            wanted = max(visible.height, (self.editor.document().size().height() + 8) / scale)
-            visible.y1 = min(page.height(), visible.y0 + wanted)
-            self.area = visible * ~self.matrix
-            scene.setHeight(visible.height)
-            rect = self.view.mapFromScene(scene).boundingRect()
-            self.frame.setGeometry(rect)
-            self._place_handles()
             self.frame.show()
             self.frame.raise_()
+            self._place_handles()
             self.toolbar.adjustSize()
             width, height = self.toolbar.width(), self.toolbar.height()
             x = max(2, min(rect.right() - width + 1, viewport.width() - width - 2))
-            y = rect.bottom() + 5
+            y = rect.bottom() + 12
             if y + height > viewport.height() - 2:
-                y = max(2, rect.top() - height - 5)
+                y = max(2, rect.top() - height - 12)
             self.toolbar.move(x, y)
             self.toolbar.show()
             self.toolbar.raise_()
@@ -196,22 +259,24 @@ class InlineTextBox(QObject):
             self.positioning = False
 
     def _place_handles(self):
-        width, height = self.frame.width() - 10, self.frame.height() - 10
+        # Keep the grips outside the text, even for a box containing one character.
+        rect = self.frame.geometry()
         for edge, handle in self.handles.items():
-            x = width / 2 if edge in ('n', 's') else width if 'e' in edge else 0
-            y = height / 2 if edge in ('e', 'w') else height if 's' in edge else 0
-            handle.move(round(x), round(y))
+            x = rect.center().x() - 5 if edge in ('n', 's') else rect.right() if 'e' in edge else rect.left() - 9
+            y = rect.center().y() - 5 if edge in ('e', 'w') else rect.bottom() if 's' in edge else rect.top() - 9
+            handle.move(x, y)
+            handle.show()
             handle.raise_()
 
     def _resize_drag(self, event):
-        edge, start, original, _ = self._resize_state
+        edge, start, original, _, _ = self._resize_state
         scale = max(.01, self.view.transform().m11())
         dx = (event.globalPosition().x() - start.x()) / scale
         dy = (event.globalPosition().y() - start.y()) / scale
         rect = p.Rect(original)
         page = self.view.page_rects[self.index]
         min_width = 16
-        min_height = max(16, (self.editor.document().size().height() + 8) / scale)
+        min_height = max(16, self.size.currentData() * 1.6)
         if 'w' in edge:
             rect.x0 = max(0, min(rect.x0 + dx, rect.x1 - min_width))
         if 'e' in edge:
@@ -221,6 +286,7 @@ class InlineTextBox(QObject):
         if 's' in edge:
             rect.y1 = min(page.height(), max(rect.y1 + dy, rect.y0 + min_height))
         self.base_area = rect * ~self.matrix
+        self.manual_size = True
         self.position()
 
     def show_error(self, text):
@@ -266,6 +332,9 @@ class InlineTextBox(QObject):
         if self.closed:
             return
         self.closed = True
+        if self._measure_doc is not None:
+            self._measure_doc.close()
+            self._measure_doc = None
         if self._resize_state:
             for handle in self.handles.values():
                 handle.releaseMouse()
@@ -273,6 +342,9 @@ class InlineTextBox(QObject):
         QApplication.instance().removeEventFilter(self)
         self.view.view_changed.disconnect(self.position)
         self.frame.hide()
+        for handle in self.handles.values():
+            handle.hide()
+            handle.deleteLater()
         self.toolbar.hide()
         self.font.hidePopup()
         self.size.hidePopup()
@@ -294,7 +366,7 @@ class InlineTextBox(QObject):
             if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 edge = next(name for name, handle in self.handles.items() if handle is watched)
                 self._resize_state = (edge, event.globalPosition(),
-                                      self.area * self.matrix, p.Rect(self.base_area))
+                                      self.area * self.matrix, p.Rect(self.base_area), self.manual_size)
                 watched.grabMouse()
                 return True
             if self._resize_state and kind == QEvent.Type.MouseMove:
@@ -321,6 +393,7 @@ class InlineTextBox(QObject):
             if event.key() == Qt.Key.Key_Escape and not self.preedit:
                 if self._resize_state:
                     self.base_area = self._resize_state[3]
+                    self.manual_size = self._resize_state[4]
                     self._resize_state = None
                     for handle in self.handles.values():
                         handle.releaseMouse()

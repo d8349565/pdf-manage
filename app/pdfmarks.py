@@ -87,6 +87,8 @@ def _add_text_box(page, edit):
         scratch = document.new_page(width=visible.width, height=available)
         glyphs = "".join(c for c in edit.text if c not in "\r\n\t")
         font, name, buffer = replacement_font(scratch, glyphs, settings.get("font", "Microsoft YaHei"))
+        if any(font.glyph_advance(ord(c)) * fontsize > visible.width + .001 for c in set(glyphs)):
+            raise ValueError("文字超出页面，请减小字号、增大框宽或减少内容。")
         scratch.insert_font(fontname=name, fontbuffer=buffer)
         box = p.Rect(0, 0, visible.width, min(max(visible.height, fontsize * 1.6), available))
         result = scratch.insert_textbox(box, edit.text, fontname=name, fontsize=fontsize, color=edit.color)

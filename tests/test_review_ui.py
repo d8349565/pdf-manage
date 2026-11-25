@@ -171,6 +171,429 @@ def test_text_box_escape_preserves_the_original_page(reader, qapp):
     assert win.ws.pages[0] is before
 
 
+@pytest.mark.parametrize('near_edge', [False, True])
+def test_new_text_box_has_room_for_the_whole_hint(reader, qapp, near_edge):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('freetext'))
+    view = reader.preview_view
+    page = view.page_rects[0]
+    click = page.bottomRight() - QPointF(3, 3) if near_edge else page.topLeft() + QPointF(90, 240)
+    view.centerOn(click)
+    settle(qapp)
+    tools.finish('freetext', [click, click])
+    box = tools._inline_text_box
+    qapp.processEvents()
+    metrics = box.editor.fontMetrics()
+    assert box.editor.viewport().width() >= metrics.horizontalAdvance(box.editor.placeholderText()) + 12
+    assert box.editor.viewport().height() >= metrics.height() + 6
+    assert page.width() >= (box.area * box.matrix).x1
+    assert page.height() >= (box.area * box.matrix).y1
+    box.close()
+
+
+@pytest.mark.parametrize('rotation,tool', [(0, 'arrow'), (90, 'browse')])
+def test_arrow_drag_translates_both_ends_and_preserves_saved_appearance(reader, qapp, tmp_path, rotation, tool):
+    tools, view = reader.annotation_tools, reader.preview_view
+    reader.open_annotation_tools()
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    top = view.page_rects[0].topLeft()
+    tools.arrow_style = dict(head='double_open', line='dashed')
+    tools.finish('arrow', [top + QPointF(120, 280), top + QPointF(220, 320)])
+    before = reader.ws.pages[0]
+    identifier = before.edits[-1].annotation_id
+    source = tmp_path / 'before-move.pdf'
+    reader.store.write([before.rotated(rotation)], str(source))
+    if rotation:
+        assert reader.open_files_in_tabs([str(source)])
+    try:
+        tools.tool.setCurrentIndex(tools.tool.findData(tool))
+        assert tools.ensure_snapshot(geometry_only=True)
+        ref = reader.ws.pages[0]
+        box = next(a for a in tools.snapshot['annotations'] if a['id'] == identifier)
+        matrix = p.Matrix(tools.snapshot['matrix'])
+        middle = (p.Point(box['vertices'][0]) + p.Point(box['vertices'][1])) * .5 * matrix
+        center = view.page_rects[0].topLeft() + QPointF(*middle)
+        view.centerOn(center)
+        settle(qapp)
+        start = view.mapFromScene(center)
+        end = start + QPoint(36, 23)
+        local_delta = view.mapToScene(end) - view.mapToScene(start)
+        shift = p.Point(local_delta.x(), local_delta.y()) * ~matrix - p.Point(0, 0) * ~matrix
+        for cancel in (True, False):
+            QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+            QTest.mouseMove(view.viewport(), end)
+            assert tools._move_state and tools._move_state['direct']
+            assert reader.ws.pages[0] is ref
+            if cancel:
+                QTest.keyClick(view, Qt.Key.Key_Escape)
+            QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+            if cancel:
+                assert reader.ws.pages[0] is ref
+                tools.tool.setCurrentIndex(tools.tool.findData(tool))
+        moved = reader.ws.pages[0]
+        assert moved.edits[-1].kind == 'move'
+        reader.ws.undo_stack.undo()
+        assert reader.ws.pages[0] is ref
+        reader.ws.undo_stack.redo()
+        target = tmp_path / 'after-move.pdf'
+        reader.store.write([reader.ws.pages[0]], str(target))
+        with p.open(source) as original, p.open(target) as saved:
+            first, last = original[0], saved[0]
+            a, b = [next(mark for mark in pg.annots() if mark.info['id'] == identifier) for pg in (first, last)]
+            assert len(list(first.annots())) == len(list(last.annots()))
+            for old, new in zip(a.vertices, b.vertices):
+                assert tuple(new) == pytest.approx(tuple(p.Point(old) + shift), abs=.01)
+            assert a.line_ends == b.line_ends and a.colors == b.colors and a.border == b.border
+            def appearance(doc, annot):
+                return doc.xref_stream(int(doc.xref_get_key(annot.xref, 'AP/N')[1].split()[0]))
+            assert appearance(original, a) == appearance(saved, b)
+    finally:
+        if rotation:
+            reader.ws.reset()
+            reader.close_tab(reader._active_tab_id)
+
+
+def test_text_box_fits_changes_and_persists_pdf_bounds(reader, tmp_path):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot()
+    tools.start_text_box((60, 180, 180, 230), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText('A')
+    box.position()
+    small = p.Rect(box.area)
+    scale = reader.preview_view.transform().m11()
+    assert box.frame.width() == pytest.approx(small.width * scale, abs=2)
+    assert box.frame.height() == pytest.approx(small.height * scale, abs=2)
+    box.editor.setPlainText('说明 ABC ' * 22 + '\n末行')
+    box.position()
+    large = p.Rect(box.area)
+    assert large.width > small.width and large.height > small.height
+    assert large.x1 <= reader.preview_view.page_rects[0].width()
+    box.editor.setPlainText('说明 ABC')
+    box.position()
+    final = p.Rect(box.area)
+    assert small.width < final.width < large.width
+    assert box.apply()
+    target = tmp_path / 'text.pdf'
+    reader.store.write([reader.ws.pages[0]], str(target))
+    with p.open(target) as doc:
+        page = doc[0]
+        annot = next(a for a in page.annots() if a.type[0] == p.PDF_ANNOT_FREE_TEXT)
+        assert tuple(annot.rect) == pytest.approx(tuple(final), abs=.1)
+        assert annot.info['content'] == '说明 ABC'
+        assert annot.get_text().split() == ['说明', 'ABC']
+    assert reader.open_files_in_tabs([str(target)])
+    assert tools.ensure_snapshot()
+    annot = next(a for a in tools.snapshot['annotations'] if a['kind'] == 2)
+    tools.edit_text_box(annot, 0, reader.ws.pages[0])
+    reopened = tools._inline_text_box
+    reopened.editor.setPlainText('B')
+    reopened.position()
+    assert reopened.area.width < final.width
+    reopened.close()
+    assert reader.close_tab(reader._active_tab_id)
+
+
+def test_arrow_quick_release_while_preparing_preview_keeps_drop_point(reader, qapp, monkeypatch):
+    from PyQt6.QtCore import QTimer
+    from app import editingui
+    reader.open_annotation_tools()
+    tools, view = reader.annotation_tools, reader.preview_view
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    top = view.page_rects[0].topLeft()
+    tools.finish('arrow', [top + QPointF(100, 230), top + QPointF(200, 270)])
+    settle(qapp)
+    start = view.mapFromScene(top + QPointF(150, 250))
+    end = start + QPoint(44, 24)
+    run = editingui.run_operation
+    def release_during_prepare(parent, title, work, **kwargs):
+        if tools._drag_preparation is not None:
+            QTimer.singleShot(0, lambda: QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end))
+        return run(parent, title, work, **kwargs)
+    monkeypatch.setattr(editingui, 'run_operation', release_during_prepare)
+    ref = reader.ws.pages[0]
+    rect = next(a['rect'] for a in tools.snapshot['annotations'] if a['kind'] == 3)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), start + QPoint(13, 4))
+    assert tools._move_state is None and reader.ws.pages[0].edits[-1].kind == 'move'
+    offset = view.mapToScene(end) - view.mapToScene(start)
+    assert reader.ws.pages[0].edits[-1].points[0] == pytest.approx((rect[0] + offset.x(), rect[1] + offset.y()), abs=.02)
+    reader.ws.undo_stack.undo()
+    assert reader.ws.pages[0] is ref
+
+
+@pytest.mark.parametrize('rotation,mode', [(0, 'select'), (90, 'hand')])
+def test_text_drag_shows_ink_and_commits_only_on_release(reader, qapp, tmp_path, rotation, mode):
+    tools, view = reader.annotation_tools, reader.preview_view
+    reader.set_reading_tool(mode)
+    if rotation:
+        reader.ws.set_selection({0}, 0)
+        reader.ws.rotate(rotation)
+        reader.refresh()
+        reader._set_zoom(1.25)
+    assert tools.ensure_snapshot()
+    tools.start_text_box((100, 240, 300, 300), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText('Drag this text')
+    assert box.apply()
+    settle(qapp)
+    ref = reader.ws.pages[0]
+    visible = box.area * box.matrix
+    center = view.page_rects[0].topLeft() + QPointF(visible.x0 + 12, visible.y0 + 8)
+    view.centerOn(center)
+    settle(qapp)
+    start = view.mapFromScene(center)
+    end = start + QPoint(58, 21)
+    for cancel in (True, False):
+        QTest.mouseMove(view.viewport(), start - QPoint(20, 15))
+        QTest.mouseMove(view.viewport(), start)
+        assert view.viewport().cursor().shape() == Qt.CursorShape.SizeAllCursor
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(view.viewport(), end)
+        state = tools._move_state
+        assert state and state['direct'] and state['artwork'].pos() != state['artwork_origin']
+        assert state['artwork'].pixmap().hasAlphaChannel() and not state['backdrop'].pixmap().isNull()
+        assert reader.ws.pages[0] is ref
+        if cancel:
+            QTest.keyClick(view, Qt.Key.Key_Escape)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        assert tools._move_state is None
+        if cancel:
+            assert reader.ws.pages[0] is ref
+    moved = reader.ws.pages[0].edits[-1]
+    assert moved.kind == 'move' and moved.points[0] == pytest.approx(tuple(state['target']))
+    target = tmp_path / 'moved.pdf'
+    reader.store.write([reader.ws.pages[0]], str(target))
+    with p.open(target) as doc:
+        page = doc[0]
+        annot = next(a for a in page.annots() if a.info['id'] == moved.annotation_id)
+        assert tuple(annot.rect.tl) == pytest.approx(moved.points[0], abs=.01)
+        assert annot.info['content'] == 'Drag this text'
+    reader.ws.undo_stack.undo()
+    assert reader.ws.pages[0] is ref
+
+
+def test_arrow_style_controls_roundtrip_and_undo(reader, tmp_path, monkeypatch):
+    from PyQt6.QtPrintSupport import QPrinter
+    from app.arrows import ENDS, read_style
+    from app.printing import PrintOptions, render_pages_to_printer
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    chosen = ['double_open', 'dotted']
+    def choose(dialog):
+        assert len(dialog.tiles) == 12
+        assert all(not tile.icon().isNull() for tile in dialog.tiles.values())
+        before = dialog.sample.grab().toImage()
+        tile = dialog.tiles[tuple(chosen)]
+        color = '#2563eb' if dialog.quick else '#dc2626'
+        if dialog.color.name() != color:
+            dialog.swatches[color].click()
+            assert dialog.color.name() == color and dialog.swatches[color].isChecked()
+            if dialog.quick:
+                return QDialog.DialogCode.Accepted
+        dialog.eventFilter(tile, QEvent(QEvent.Type.Enter))
+        assert dialog.chosen != dialog.preview_style
+        assert dialog.sample.grab().toImage() != before
+        tile.click()
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(QDialog, 'exec', choose)
+    tools.arrow_options.click()
+    tools.arrow_options.click()
+    top = reader.preview_view.page_rects[0].topLeft()
+    tools.finish('arrow', [top + QPointF(120, 300), top + QPointF(200, 340)])
+    original = reader.ws.pages[0]
+    identifier = original.edits[-1].annotation_id
+    chosen[:] = ['open', 'dashed']
+    tools.apply_style_to(identifier)
+    updated = reader.ws.pages[0]
+    assert updated.edits[-1].kind == 'style'
+    reader.ws.undo_stack.undo()
+    assert reader.ws.pages[0] is original
+    reader.ws.undo_stack.redo()
+    for n, (ref, head, line) in enumerate(((original, 'double_open', 'dotted'), (updated, 'open', 'dashed'))):
+        target = tmp_path / f'style-{n}.pdf'
+        reader.store.write([ref], str(target))
+        with p.open(target) as doc:
+            page = doc[0]
+            annot = next(a for a in page.annots() if a.info['id'] == identifier)
+            assert annot.line_ends == ENDS[head] and read_style(annot) == dict(head=head, line=line)
+            from PyQt6.QtGui import QColor
+            assert QColor.fromRgbF(*annot.colors['stroke']).name() == ('#2563eb' if n == 0 else '#dc2626')
+            assert annot.flags & p.PDF_ANNOT_IS_PRINT
+            assert any(annot.get_pixmap(alpha=True).samples[3::4])
+    printed = tmp_path / 'printed.pdf'
+    printer = QPrinter()
+    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+    printer.setOutputFileName(str(printed))
+    render_pages_to_printer(printer, reader.store, [updated], PrintOptions(page_indices=[0]))
+    with p.open(printed) as doc:
+        pix = doc[0].get_pixmap()
+        rgb = pix.samples
+        assert any(r > g + 100 and r > b + 100 for r, g, b in zip(rgb[::3], rgb[1::3], rgb[2::3]))
+
+
+def test_text_box_context_delete_and_keyboard_target(reader, qapp, monkeypatch):
+    from PyQt6.QtGui import QContextMenuEvent
+    from PyQt6.QtWidgets import QMenu
+    tools, view = reader.annotation_tools, reader.preview_view
+    assert tools.ensure_snapshot()
+    tools.start_text_box((80, 200, 220, 240), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText('Editable annotation')
+    assert box.apply()
+    settle(qapp)
+    ref = reader.ws.pages[0]
+    top = view.page_rects[0].topLeft()
+    pos = view.mapFromScene(top + QPointF(90, 208))
+    note = view.mapFromScene(top + QPointF(348, 158))
+    QTest.mouseMove(view.viewport(), pos)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    assert tools.hover_bar.isHidden() and tools.selection.ref is ref
+    QTest.mouseMove(view.viewport(), note)
+    assert tools.hover_bar.isVisible()
+    QTest.keyClick(view, Qt.Key.Key_Delete)
+    assert reader.ws.pages[0].edits[-1].annotation_id == ref.edits[-1].annotation_id
+    assert len(reader.ws.pages) == 2
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    settle(qapp)
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    editor = tools._inline_text_box
+    assert editor and editor.original_text == 'Editable annotation'
+    QTest.keyClick(editor.editor, Qt.Key.Key_Home)
+    QTest.keyClick(editor.editor, Qt.Key.Key_Delete)
+    assert editor.editor.toPlainText() == 'ditable annotation' and reader.ws.pages[0] is ref
+    editor.close()
+    def choose(menu, *args):
+        return next(action for action in menu.actions() if '删除' in action.text())
+    monkeypatch.setattr(QMenu, 'exec', choose)
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, pos, view.viewport().mapToGlobal(pos))
+    QApplication.sendEvent(view.viewport(), event)
+    assert reader.ws.pages[0].edits[-1].kind == 'delete' and reader.ws.pages[0].edits[-1].annotation_id == ref.edits[-1].annotation_id
+
+
+def test_arrow_gallery_previews_without_committing_until_a_tile_is_chosen(reader, monkeypatch):
+    from PyQt6.QtCore import QTimer
+    from app.arrowstyleui import ArrowStyleDialog
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    real_exec = ArrowStyleDialog.exec
+    observed = []
+    def open_gallery(dialog):
+        def interact():
+            tile = dialog.tiles['double_filled', 'dashed']
+            tile.setFocus()
+            observed.append((dialog.windowType(), dialog.preview_style, tools.arrow_style.copy()))
+            QTest.keyClick(tile, Qt.Key.Key_Escape if len(observed) == 1 else Qt.Key.Key_Return)
+        QTimer.singleShot(0, interact)
+        return real_exec(dialog)
+    monkeypatch.setattr(ArrowStyleDialog, 'exec', open_gallery)
+    initial = tools.arrow_style.copy()
+    tools.arrow_options.click()
+    assert tools.arrow_style == initial
+    tools.arrow_options.click()
+    expected = dict(head='double_filled', line='dashed')
+    assert observed == [(Qt.WindowType.Popup, expected, initial)] * 2
+    assert tools.arrow_style == expected
+
+
+def test_arrow_custom_color_and_cancel_from_quick_gallery(reader, monkeypatch):
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QColorDialog
+    from app.arrowstyleui import ArrowStyleDialog
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    real_exec = ArrowStyleDialog.exec
+    def open_gallery(dialog):
+        QTimer.singleShot(0, dialog.color_button.click)
+        return real_exec(dialog)
+    monkeypatch.setattr(ArrowStyleDialog, 'exec', open_gallery)
+    picked = iter([QColor('#7140b2'), QColor()])
+    monkeypatch.setattr(QColorDialog, 'getColor', lambda *args: next(picked))
+    tools.arrow_options.click()
+    assert tools.color.name() == '#7140b2'
+    tools.tool.setCurrentIndex(tools.tool.findData('rect'))
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    tools.arrow_options.click()
+    assert tools.color.name() == '#7140b2'
+
+
+def test_arrow_gallery_marks_applied_ink_while_trying_another(reader, qapp):
+    from PyQt6.QtGui import QColor
+    from app.arrowstyleui import ArrowStyleDialog
+    tools = reader.annotation_tools
+    reader.open_annotation_tools()
+    tools.tool.setCurrentIndex(tools.tool.findData('arrow'))
+    before = tools.arrow_options.icon().pixmap(30, 16).toImage()
+    dialog = ArrowStyleDialog(tools, tools.arrow_style, tools.color, tools.width.value(), quick=True)
+    dialog.anchor_to(tools.arrow_options)
+    dialog.show()
+    qapp.processEvents()
+    red, purple = dialog.swatches['#dc2626'], dialog.swatches['#7c3aed']
+    try:
+        dialog.tiles['double_open', 'dotted'].setFocus()
+        assert dialog.preview_style != dialog.chosen
+        dialog.eventFilter(purple, QEvent(QEvent.Type.Enter))
+        assert dialog.preview_color == QColor('#7c3aed') and dialog.preview_style == dialog.chosen
+        purple.setFocus()
+        qapp.processEvents()
+        assert dialog.status_label.text() == '正在试看' and '紫色' in dialog.caption.text()
+        assert red.isChecked() and not purple.isChecked() and tools.color == QColor('#dc2626')
+        assert tools.arrow_options.icon().pixmap(30, 16).toImage() == before
+        dialog.tiles['filled', 'solid'].setFocus()
+        qapp.processEvents()
+        assert dialog.status_label.text() == '当前样式' and '红色' in dialog.caption.text()
+        assert red.width() <= 28 and red.height() <= 28
+        assert dialog.tiles['filled', 'solid'].height() <= 32
+        dialog.set_color(QColor('white'))
+        paper = dialog.sample.grab().toImage()
+        assert paper.pixelColor(5, 5).lightness() < 80
+        assert paper.pixelColor(paper.width() // 2, paper.height() // 2).lightness() > 220
+    finally:
+        dialog.reject()
+
+
+def test_gallery_anchor_stays_in_owner_and_flips_above_if_needed(qapp):
+    from PyQt6.QtCore import QRect
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QPushButton, QWidget
+    from app.arrowstyleui import ArrowStyleDialog
+    owner = QWidget()
+    screen = owner.screen().availableGeometry()
+    owner.resize(min(screen.width()-40, 640), min(screen.height()-40, 560))
+    owner.move(screen.topLeft() + QPoint(10, 10))
+    anchor = QPushButton('箭头样式', owner)
+    anchor.resize(95, 30)
+    owner.show()
+    qapp.processEvents()
+    dialog = ArrowStyleDialog(owner, dict(head='filled', line='solid'), QColor('red'), 1.5, quick=True)
+    try:
+        bounds = QRect(owner.mapToGlobal(QPoint()), owner.size()).intersected(screen)
+        for bottom in (False, True):
+            anchor.move(owner.width()-anchor.width()-12, owner.height()-45 if bottom else 10)
+            dialog.anchor_to(anchor)
+            dialog.show()
+            qapp.processEvents()
+            anchor_rect = QRect(anchor.mapToGlobal(QPoint()), anchor.size())
+            assert bounds.contains(dialog.geometry())
+            assert dialog.geometry().right() == anchor_rect.right()
+            if bottom:
+                assert dialog.geometry().bottom() < anchor_rect.top()
+            else:
+                assert dialog.geometry().top() > anchor_rect.bottom()
+            dialog.hide()
+    finally:
+        dialog.close()
+        owner.close()
+
+
 def test_text_box_resize_without_text_change_is_saved_and_undoable(reader, qapp):
     win = reader
     win.open_annotation_tools()
@@ -891,19 +1314,18 @@ def test_watermark_saved_reopened_selected_and_deleted_through_ui(reader, qapp, 
         reopened.close()
 
 
-def test_note_hover_has_only_edit_move_delete_and_shape_keeps_style(reader):
+def test_only_notes_open_the_hover_panel(reader):
     reader.open_annotation_tools()
     tools = reader.annotation_tools
     assert tools.ensure_snapshot(geometry_only=True)
     note = next(item for item in tools.snapshot["annotations"] if item["kind"] == 0)
     bar = tools.hover_bar
     bar.show_for_annot(note, 0)
-    assert bar.style_btn.isHidden()
     assert all(not button.isHidden() for button in (bar.edit_btn, bar.move_btn, bar.delete_btn))
     assert tools.commit(PageEdit("rect", (50, 210, 180, 250), annotation_id="shape-style"))
     shape = next(item for item in tools.snapshot["annotations"] if item["id"] == "shape-style")
     bar.show_for_annot(shape, 0)
-    assert not bar.style_btn.isHidden()
+    assert bar.isHidden()
 
 
 @pytest.fixture(scope="session")
@@ -1484,6 +1906,7 @@ def test_notes_hover_in_reader_and_single_click_does_not_open_dialog(reader, qap
     calls = []
     monkeypatch.setattr("app.editingui.NoteViewerDialog.exec", lambda self: calls.append(self) or QDialog.DialogCode.Rejected)
     pos = reader.preview_view.mapFromScene(reader.preview_view.page_rects[0].topLeft() + QPointF(348, 158))
+    QTest.mouseMove(reader.preview_view.viewport(), QPoint(1, 1))
     QTest.mouseMove(reader.preview_view.viewport(), pos)
     qapp.processEvents()
     assert tools.hover_bar.isVisible()
@@ -1492,6 +1915,7 @@ def test_notes_hover_in_reader_and_single_click_does_not_open_dialog(reader, qap
     QTest.mouseClick(reader.preview_view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     assert not calls
     QTest.mouseDClick(reader.preview_view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(reader.preview_view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     assert len(calls) == 1
     QTest.mouseMove(reader.preview_view.viewport(), pos)
     QTest.mouseMove(reader.preview_view.viewport(), reader.preview_view.viewport().rect().bottomLeft())
@@ -1522,6 +1946,7 @@ def test_reader_hover_uses_cached_annotations_without_text_or_table_analysis(rea
     monkeypatch.setattr(reader.store, 'text_snapshot', unexpected_snapshot)
     point = reader.preview_view.page_rects[0].topLeft() + QPointF(348, 158)
     pos = reader.preview_view.mapFromScene(point)
+    QTest.mouseMove(reader.preview_view.viewport(), QPoint(1, 1))
     QTest.mouseMove(reader.preview_view.viewport(), pos)
     qapp.processEvents()
     assert tools.hover_bar.isVisible()

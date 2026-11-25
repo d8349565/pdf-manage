@@ -63,6 +63,8 @@ class _Pages(QAbstractListModel):
         if not index.isValid():
             return None
         if role == Qt.ItemDataRole.DisplayRole:
+            if self.view.page_caption:
+                return self.view.page_caption(self.view.rows[index.row()])
             return f'第 {self.view.rows[index.row()] + 1} 页'
         if role == Qt.ItemDataRole.SizeHintRole:
             return self.view.item_size(index.row())
@@ -75,8 +77,11 @@ class _Paper(QStyledItemDelegate):
         area = view.paper_rect(source_row,option.rect)
         painter.save()
         painter.setPen(QColor(ui_color('#53635B')))
-        painter.drawText(option.rect.adjusted(18, 2, -18, 0), Qt.AlignmentFlag.AlignTop,
-                         f'第 {source_row + 1} 页 · {index.row() + 1} / {len(view.rows)}')
+        caption = (view.page_caption(source_row) if view.page_caption else
+                   f'第 {source_row + 1} 页 · {index.row() + 1} / {len(view.rows)}')
+        header = option.rect.adjusted(18, 2, -18, 0)
+        painter.drawText(header, Qt.AlignmentFlag.AlignTop,
+                         painter.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideMiddle, header.width()))
         painter.fillRect(area, QColor('white'))
         key = view.image_key(source_row)
         image = view.images.get(key)
@@ -102,11 +107,12 @@ class ScrollablePagePreview(QListView):
     page_changed = pyqtSignal(int)
     image_ready = pyqtSignal(int)
 
-    def __init__(self, store, pages, parent=None, *, paper_size=None, draw_content=None):
+    def __init__(self, store, pages, parent=None, *, paper_size=None, draw_content=None, page_caption=None):
         super().__init__(parent)
         self.store, self.pages = store, pages
         self.paper_size = paper_size or (lambda row: store.page_size(pages[row]))
         self.draw_content = draw_content
+        self.page_caption = page_caption
         self.fit_page = False
         self.max_paper_width = 520
         self.render_when_hidden = False

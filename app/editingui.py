@@ -3,24 +3,56 @@ from __future__ import annotations
 from app.i18n import tr, mark_text
 from app.themes import set_theme_style, ui_color
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from bisect import bisect_right
 import math
 import uuid
 from time import perf_counter
 
 from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSignalBlocker, QSize, QTimer, Qt
-from PyQt6.QtGui import QAction, QActionGroup, QColor, QFont, QFontMetrics, QPainterPath, QPen, QPixmap
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QContextMenuEvent, QFont, QFontMetrics, QImage, QPainterPath, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QApplication, QBoxLayout, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QMenu, QMessageBox, QProxyStyle, QPushButton, QSizePolicy, QStyle, QTextEdit, QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QLineEdit, QMenu, QMessageBox, QProxyStyle, QPushButton, QSizePolicy, QStyle, QStyleOptionButton, QTextEdit, QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from app.icons import toolbar_icon
 from app.pdfio import PdfError
 from app.progress import run_operation
-from app.workspace import OutlineEntry, PageEdit
+from app.workspace import OutlineEntry, PageEdit, PageRef
+
+
+@dataclass(frozen=True)
+class _AnnotationSelection:
+    index: int
+    ref: PageRef
+    active_index: int
+    annot: dict
+    local_rect: QRectF
+
+
+def _near_segment(point, start, end, tolerance):
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    px, py = point.x - start[0], point.y - start[1]
+    length_squared = dx * dx + dy * dy
+    along = max(0, min(1, (px * dx + py * dy) / length_squared)) if length_squared else 0
+    return math.hypot(px - along * dx, py - along * dy) <= tolerance
+
+
+def _on_arrowhead(point, item, tolerance):
+    import pymupdf as p
+    from app.arrows import geometry
+    vertices = item['vertices']
+    if not item.get('arrow_style') or len(vertices) != 2 or abs(p.Point(vertices[1]) - p.Point(vertices[0])) < .01:
+        return False
+    _, tips = geometry(*vertices, item['width'], item['arrow_style']['head'])
+    for left, tip, right, filled in tips:
+        if _near_segment(point, left, tip, tolerance) or _near_segment(point, tip, right, tolerance):
+            return True
+        if filled and QPolygonF([QPointF(*v) for v in (left, tip, right)]).containsPoint(QPointF(*point), Qt.FillRule.OddEvenFill):
+            return True
+    return False
 
 
 class NoteViewerDialog(QDialog):
@@ -618,25 +650,19 @@ class AnnotationHoverBar(QFrame):
         self.move_btn.clicked.connect(self._on_move_click)
         btn_layout.addWidget(self.move_btn)
 
-        self.style_btn = QToolButton(self)
-        self.style_btn.setObjectName("styleBtn")
-        self.style_btn.setToolTip(tr('应用当前选择的颜色与线宽'))
-        self.style_btn.clicked.connect(self._on_style)
-        btn_layout.addWidget(self.style_btn)
-
         self.delete_btn = QToolButton(self)
         self.delete_btn.setObjectName("deleteBtn")
         self.delete_btn.clicked.connect(self._on_delete)
         manager = tools.host.shortcut_manager
         for key, button, label in (('note_text', self.edit_btn, '查看／修改批注备注'),
-                ('move', self.move_btn, '移动当前批注'), ('style', self.style_btn, '应用批注样式'),
+                ('move', self.move_btn, '移动当前批注'),
                 ('delete', self.delete_btn, '删除批注')):
             manager.watch_hint('annotation.' + key, button, label)
         btn_layout.addWidget(self.delete_btn)
         btn_layout.addStretch()
         for button, icon, title in (
             (self.edit_btn, "pen", "编辑备注"), (self.move_btn, "move", "移动批注"),
-            (self.style_btn, "circle", "应用当前颜色与线宽"), (self.delete_btn, "trash", "删除批注"),
+            (self.delete_btn, "trash", "删除批注"),
         ):
             button.setFixedSize(28, 28)
             button.setIconSize(QSize(16, 16))
@@ -660,7 +686,7 @@ class AnnotationHoverBar(QFrame):
 
     def show_for_annot(self, annot, page_index):
         import pymupdf as p
-        if annot.get("watermark"):
+        if annot.get("watermark") or annot['kind'] != 0:
             self.hide()
             return
         self._hide_timer.stop()
@@ -671,28 +697,7 @@ class AnnotationHoverBar(QFrame):
         self.page_index = page_index
 
         content = (annot.get("content") or "").strip()
-        kind = annot.get("kind", -1)
-        names = {0: "便签", 2: "文本", 3: "线条", 4: "矩形", 5: "椭圆", 8: "高亮", 9: "下划线", 15: "画笔"}
-        kind_name = names.get(kind, "批注")
-        self.edit_btn.show()
-        self.style_btn.setVisible(kind != 0)
-
-        if content or kind == 0:
-            self.content_box.show()
-            self.title_label.setText(tr('{p0}备注', p0=f'{kind_name}'))
-            self.content_label.setText(content if content else tr('（暂无备注内容，点击编辑添加）'))
-            self.edit_btn.setToolTip(tr('编辑备注'))
-        else:
-            self.content_box.hide()
-            self.edit_btn.setToolTip(tr('添加备注'))
-
-        self.move_btn.setVisible(kind in (0, 2, 4))
-        if kind == 2:
-            self.title_label.setText(tr('页面文本框'))
-            self.edit_btn.setToolTip(tr('编辑文本框'))
-            self.style_btn.setToolTip(tr('设置字体、字号与颜色'))
-        else:
-            self.style_btn.setToolTip(tr('应用当前选择的颜色与线宽'))
+        self.content_label.setText(content or tr('（暂无备注内容，点击编辑添加）'))
         self.move_btn.setToolTip(self.tools.host.shortcut_manager.hint('annotation.move',
             tr('拖动可实时预览位置；也可点击后选位置，Esc 取消')))
 
@@ -732,10 +737,6 @@ class AnnotationHoverBar(QFrame):
         self.hide()
         self.tools.start_move_annot(self.annot_id, page_index=self.page_index)
 
-    def _on_style(self):
-        self.hide()
-        self.tools.apply_style_to(self.annot_id)
-
     def _on_delete(self):
         self.hide()
         self.tools.delete_annot(self.annot_id)
@@ -746,6 +747,17 @@ class _ReviewToolbarStyle(QProxyStyle):
         if metric == QStyle.PixelMetric.PM_ToolBarExtensionExtent:
             return 32
         return super().pixelMetric(metric, option, widget)
+
+
+class _ArrowGalleryButton(QPushButton):
+    def initStyleOption(self, option):
+        super().initStyleOption(option)
+        option.features |= QStyleOptionButton.ButtonFeature.HasMenu
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        # QPushButton normally reserves this space only for an attached QMenu.
+        return hint + QSize(self.style().pixelMetric(QStyle.PixelMetric.PM_MenuButtonIndicator, None, self), 0)
 
 
 class AnnotationTools(QWidget):
@@ -775,6 +787,9 @@ class AnnotationTools(QWidget):
         self.stroke_page = None
         self.overlay = None
         self._move_state = None
+        self.selection = self.selection_border = None
+        self._annotation_press = None
+        self._drag_preparation = None
         self._move_preview = None
         self._move_committing = False
         self.color = QColor("#EAB308")
@@ -812,7 +827,7 @@ class AnnotationTools(QWidget):
         self.tool_bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.tool_bar.setMinimumWidth(0)
         self.tool_bar.setFixedHeight(36)
-        self.tool_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.tool_bar.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.tool_group = QActionGroup(self)
         self.tool_actions = []
         short_names = {"browse": "浏览", "select": "选批注", "highlight": "高亮", "underline": "下划线",
@@ -846,7 +861,7 @@ class AnnotationTools(QWidget):
         self.insert_image_button = self.tool_bar.widgetForAction(self.insert_image_action)
         self.insert_image_button.setAccessibleName(tr('插入图片'))
         self.tool_actions[0].setChecked(True)
-        bar_layout.addWidget(self.tool_bar, 1)
+        bar_layout.addWidget(self.tool_bar)
 
         sep1 = self.options_separator = QFrame()
         sep1.setFrameShape(QFrame.Shape.VLine)
@@ -874,6 +889,16 @@ class AnnotationTools(QWidget):
         self.width.setToolTip(tr('批注线宽（pt）'))
         self.width.setFixedSize(62, 32)
         bar_layout.addWidget(self.width)
+        self.arrow_style = dict(head='filled', line='solid')
+        self.arrow_color = QColor('#DC2626')
+        self.arrow_options = _ArrowGalleryButton(tr('箭头样式'))
+        self.arrow_options.setObjectName('arrowGalleryTrigger')
+        set_theme_style(self.arrow_options, 'QPushButton#arrowGalleryTrigger { min-height: 0; padding: 0 7px; }')
+        self.arrow_options.setAccessibleName(tr('箭头样式'))
+        self.arrow_options.setIconSize(QSize(30, 16))
+        self.arrow_options.setFixedHeight(32)
+        self.arrow_options.clicked.connect(lambda: self.choose_arrow_style())
+        bar_layout.addWidget(self.arrow_options)
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.VLine)
@@ -909,6 +934,7 @@ class AnnotationTools(QWidget):
         self.feedback.setObjectName("hint")
         self.feedback.hide()
 
+        bar_layout.addStretch(1)
         close = QToolButton(self.bar)
         close.setFixedSize(32, 32)
         close.setIconSize(QSize(16, 16))
@@ -932,6 +958,7 @@ class AnnotationTools(QWidget):
             self.view.view_changed.connect(self.hover_bar.hide)
             self.view.view_changed.connect(self._position_inline_replace)
             self.view.view_changed.connect(self._move_view_changed)
+            self.view.view_changed.connect(self.position_selection)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -966,7 +993,49 @@ class AnnotationTools(QWidget):
         color_visible = kind in ("highlight", "underline", "ink", "note", "rect", "ellipse", "arrow")
         self.options_separator.setVisible(color_visible)
         self.color_button.setVisible(color_visible)
+        self.color_button.setText(tr('颜色') if kind == 'arrow' else '')
+        self.color_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon if kind == 'arrow'
+                                           else Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.color_button.setFixedWidth(max(36, self.color_button.sizeHint().width() + 6) if kind == 'arrow' else 36)
         self.width.setVisible(kind in ("ink", "rect", "ellipse", "arrow"))
+        self.arrow_options.setVisible(kind == 'arrow')
+        if kind == 'arrow':
+            self.update_arrow_icon()
+
+    def update_arrow_icon(self):
+        from app.arrowstyleui import arrow_icon
+        self.arrow_options.setIcon(arrow_icon(**self.arrow_style, color=self.color,
+            ratio=self.devicePixelRatioF(), size=self.arrow_options.iconSize()))
+
+    def choose_arrow_style(self, annot=None):
+        from app.arrowstyleui import ArrowStyleDialog
+        color = self.color
+        if annot:
+            index, ref = self.snapshot_index, self.host.ws.pages[self.snapshot_index]
+            components = annot['color']
+            if len(components) == 1:
+                color = QColor.fromRgbF(*(components * 3))
+            elif len(components) == 4:
+                color = QColor.fromCmykF(*components)
+            else:
+                color = QColor.fromRgbF(*components)
+        dialog = ArrowStyleDialog(self, annot['arrow_style'] if annot else self.arrow_style,
+                                  color, annot['width'] if annot else self.width.value(), quick=annot is None)
+        if not annot:
+            dialog.anchor_to(self.arrow_options)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if annot:
+                self.commit(PageEdit('style', annotation_id=annot['id'], color=dialog.color.getRgbF()[:3],
+                                     width=dialog.stroke_width, details=tuple(dialog.chosen.items())),
+                            page_index=index, expected_ref=ref)
+            else:
+                color = (QColorDialog.getColor(dialog.color, self, tr('选择批注颜色'))
+                         if dialog.custom_requested else dialog.color)
+                if color.isValid():
+                    self.arrow_style = dialog.chosen
+                    self.color = self.arrow_color = color
+                    self._update_color_button_style()
+        dialog.deleteLater()
 
     def _on_tool_combo_changed(self, index):
         if 0 <= index < len(self.tool_buttons):
@@ -975,12 +1044,21 @@ class AnnotationTools(QWidget):
 
     def _update_color_button_style(self):
         name = self.color.name()
-        self.color_button.setIcon(toolbar_icon("circle", name, 18, themed=False))
+        if self.tool.currentData() == 'arrow':
+            from app.arrowstyleui import ink_icon
+            self.color_button.setIcon(ink_icon(self.color, self.devicePixelRatioF(), size=16))
+            self.color_button.setToolTip(tr('选择批注颜色') + ' · ' + name.upper())
+            self.update_arrow_icon()
+        else:
+            self.color_button.setIcon(toolbar_icon("circle", name, 18, themed=False))
+            self.color_button.setToolTip(tr('选择批注颜色'))
 
     def choose_color(self):
         color = QColorDialog.getColor(self.color, self, "选择批注颜色")
         if color.isValid():
             self.color = color
+            if self.tool.currentData() == 'arrow':
+                self.arrow_color = color
             self._update_color_button_style()
 
     def _ensure_filter(self):
@@ -1051,6 +1129,7 @@ class AnnotationTools(QWidget):
             self._ensure_filter()
             self.color = QColor("#EAB308" if kind in ("highlight", "underline", "note") else "#DC2626")
             if kind == "arrow":
+                self.color = QColor(self.arrow_color)
                 self.width.setValue(1.5)
             self._update_color_button_style()
             if not self.ensure_snapshot(geometry_only=kind not in ("highlight", "underline", "replace")):
@@ -1166,8 +1245,34 @@ class AnnotationTools(QWidget):
             padding = max(6, 12 / max(self.view.transform().m11(), .001)) if item['kind'] == 0 else 6
             expanded = p.Rect(rect.x0 - padding, rect.y0 - padding,
                               rect.x1 + padding, rect.y1 + padding)
-            if expanded.contains(local):
-                return item
+            if not expanded.contains(local):
+                continue
+            kind = item['kind']
+            pad = max(3 / max(self.view.transform().m11(), .1), (item.get('width') or 1) / 2 + 2)
+            vertices = item.get('vertices')
+            if kind in (3, 15) and vertices:
+                strokes = [vertices] if kind == 3 else vertices
+                if not any(_near_segment(local, a, b, pad) for stroke in strokes
+                           for a, b in zip(stroke, stroke[1:])):
+                    if kind == 3 and _on_arrowhead(local, item, pad):
+                        return item
+                    continue
+            elif kind in (8, 9) and vertices:
+                if not any(p.Quad(vertices[i:i + 4]).rect.contains(local)
+                           for i in range(0, len(vertices) - 3, 4)):
+                    continue
+            elif kind == 4 and not item.get('filled'):
+                if (rect + (pad, pad, -pad, -pad)).contains(local):
+                    continue
+            elif kind == 5 and rect.width > 0 and rect.height > 0:
+                cx, cy = (rect.tl + rect.br) / 2
+                radius = math.hypot(2 * (local.x - cx) / rect.width, 2 * (local.y - cy) / rect.height)
+                tolerance = 2 * pad / min(rect.width, rect.height)
+                if radius > 1 + tolerance or not item.get('filled') and radius < 1 - tolerance:
+                    continue
+            elif kind == 2 and not rect.contains(local):
+                continue
+            return item
         return None
 
     def open_note_dialog(self, identifier: str):
@@ -1193,6 +1298,104 @@ class AnnotationTools(QWidget):
             elif dialog.action == "delete":
                 self.commit(PageEdit("delete", annotation_id=identifier), page_index=index, expected_ref=ref)
 
+    def annotation_at_position(self, position):
+        """Use cached annotation metadata, including in hand mode."""
+        point = self.view.mapToScene(position)
+        index = self.view.page_at_point(point)
+        if (0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point)
+                and self.ensure_annotation_summary(index)):
+            return self.find_annotation_at(point)
+        return None
+
+    def can_drag_annotation(self, annot):
+        return (annot and annot['kind'] in (0, 2, 3, 4)
+                and not self.host.store.operation_reason([self.host.ws.pages[self.snapshot_index]], 'annotate'))
+
+    def clear_selection(self):
+        self.selection = None
+        if self.selection_border is not None:
+            self.view._scene.removeItem(self.selection_border)
+            self.selection_border = None
+            self.annotations.setCurrentIndex(0)
+
+    def select_annotation(self, annot, index):
+        import pymupdf as p
+        self.clear_selection()
+        if annot is None:
+            return
+        area = p.Rect(annot['rect']) * p.Matrix(self.snapshot['matrix'])
+        self.selection = _AnnotationSelection(index, self.host.ws.pages[index], self.host.ws.preview_index(),
+            annot, QRectF(area.x0, area.y0, area.width, area.height))
+        pen = QPen(QColor(ui_color('#0F766E')), 1, Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        self.selection_border = self.view._scene.addRect(QRectF(), pen)
+        self.selection_border.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.selection_border.setZValue(4)
+        self.position_selection()
+        self.annotations.setCurrentIndex(self.annotations.findData(annot['id']))
+
+    def position_selection(self):
+        selection = self.selection
+        if selection is None:
+            return
+        index = selection.index
+        if (index >= len(self.host.ws.pages) or self.host.ws.pages[index] is not selection.ref
+                or self.host.ws.preview_index() != selection.active_index or index >= len(self.view.page_rects)):
+            self.clear_selection()
+            return
+        self.selection_border.setRect(selection.local_rect.translated(self.view.page_rects[index].topLeft()))
+
+    def selected_operation(self, name):
+        self.position_selection()
+        selected = self.selection
+        if selected is None or not self.ensure_annotation_summary(selected.index):
+            return
+        identifier = selected.annot['id']
+        if name == 'delete':
+            self.commit(PageEdit('delete', annotation_id=identifier), page_index=selected.index, expected_ref=selected.ref)
+        elif name == 'style':
+            self.apply_style_to(identifier)
+        elif name == 'move':
+            self.start_move_annot(identifier, page_index=selected.index)
+        else:
+            self.open_note_dialog(identifier)
+
+    def annotation_menu(self, event):
+        if event.reason() != QContextMenuEvent.Reason.Keyboard:
+            hit = self.annotation_at_position(event.pos())
+            self.select_annotation(hit, self.snapshot_index)
+        selected = self.selection
+        if selected is None:
+            return False
+        self.hover_bar.hide()
+        self.view.setFocus(Qt.FocusReason.MouseFocusReason)
+        info = selected.annot
+        editable = not self.host.store.operation_reason([selected.ref], 'annotate')
+        menu = QMenu(self.view)
+        actions = {}
+        def add(name, title, enabled=True):
+            action = menu.addAction(title)
+            action.setEnabled(enabled)
+            actions[action] = name
+        if info['kind'] == 2:
+            add('note_text', tr('编辑文本框'), editable)
+        else:
+            add('note_text', tr('查看／修改批注备注'))
+            if info['kind'] != 0:
+                add('style', tr('箭头样式') if info.get('arrow_style') else tr('应用当前选择的颜色与线宽'), editable)
+        if info['kind'] in (3, 4):
+            add('move', tr('移动批注'), editable)
+        menu.addSeparator()
+        add('delete', self.host.shortcut_manager.hint('annotation.delete', tr('删除')), editable)
+        where = event.globalPos()
+        if event.reason() == QContextMenuEvent.Reason.Keyboard:
+            where = self.view.viewport().mapToGlobal(self.view.mapFromScene(self.selection_border.rect().center()))
+        chosen = menu.exec(where)
+        if chosen in actions and self.selection is selected:
+            self.selected_operation(actions[chosen])
+        menu.deleteLater()
+        return True
+
     def _stroke_is_current(self, state):
         index, ref, _, generation = state
         pages = self.host.ws.pages
@@ -1200,6 +1403,7 @@ class AnnotationTools(QWidget):
                 and self.view.layout_generation == generation)
 
     def sync_page(self):
+        self.position_selection()
         stroke = self.stroke_page
         if stroke and self.stroke and not self._stroke_is_current(stroke):
             self.clear_overlay()
@@ -1243,6 +1447,7 @@ class AnnotationTools(QWidget):
             return
         self._close_inline_replace()
         self.hover_bar.hide()
+        self.clear_selection()
         self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self._inline_text_box = InlineTextBox(self, area, index, ref, text, settings, identifier)
         self._set_feedback("直接输入文字，拖动边框控制点调整宽高；右下角设置字体、字号与颜色。Ctrl+Enter 完成，Esc 取消。")
@@ -1269,10 +1474,11 @@ class AnnotationTools(QWidget):
             self.tool.blockSignals(False)
             self.tool_actions[0].setChecked(True)
             self._update_options()
-        self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.view.setFocus()
 
     def clear_overlay(self):
+        self.clear_selection()
         self.cancel_move_annot()
         if hasattr(self, "hover_bar"):
             self.hover_bar.hide()
@@ -1283,13 +1489,18 @@ class AnnotationTools(QWidget):
         self.stroke_page = None
 
     def cancel_tool(self, event):
+        if self._drag_preparation is not None:
+            event.accept()
+            if event.type() == QEvent.Type.KeyPress:
+                self._drag_preparation['cancelled'] = True
+            return True
         box = getattr(self, '_inline_text_box', None)
         replacement = getattr(self, '_inline_replace', None)
         if ((box is not None and box.preedit)
                 or (replacement and replacement['input']._preedit)):
             event.accept()  # Do not discard the editor during input method composition.
             return True
-        if not (self._move_state or self._move_committing or self.stroke or box or replacement
+        if not (self.selection or self._annotation_press or self._move_state or self._move_committing or self.stroke or box or replacement
                 or self.isVisible() and self.tool.currentData() != 'browse'):
             return False
         event.accept()
@@ -1309,13 +1520,31 @@ class AnnotationTools(QWidget):
     def eventFilter(self, watched, event):
         if getattr(self, "view", None) is None:
             return False
+        if self._drag_preparation is not None and watched in (self.view, self.view.viewport()):
+            if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                pos = self.view.viewport().mapFromGlobal(event.globalPosition().toPoint())
+                self._drag_preparation['drop'] = self.view.mapToScene(pos)
+                return True
+            if event.type() == QEvent.Type.Hide:
+                self._drag_preparation['cancelled'] = True
+        if (watched in (self.view, self.view.viewport()) and self.selection and
+                event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress) and
+                QApplication.focusWidget() in (self.view, self.view.viewport()) and
+                not (self.host._saving or getattr(self.host, '_task_dialog', None) or self._move_state
+                     or self._move_committing or self.stroke or getattr(self, '_inline_text_box', None)
+                     or getattr(getattr(self.host, 'image_tools', None), 'engaged', False)) and
+                self.host.shortcut_manager.matches('annotation.delete', event)):
+            event.accept()
+            if event.type() == QEvent.Type.KeyPress:
+                self.selected_operation('delete')
+            return True
         if (getattr(self.host, "_task_dialog", None) is not None
                 and watched in (self.view, self.view.viewport())
                 and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
                                      QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseMove)):
             return True
         if watched in (self.view, self.view.viewport()) and event.type() == QEvent.Type.ShortcutOverride:
-            if event.key() == Qt.Key.Key_Escape and (self._move_state or self._move_committing or self.stroke):
+            if event.key() == Qt.Key.Key_Escape and (self._annotation_press or self._move_state or self._move_committing or self.stroke):
                 event.accept()
                 return True
         if watched in (self.view, self.view.viewport()) and self.stroke and self.tool.currentData() == "mosaic":
@@ -1326,8 +1555,9 @@ class AnnotationTools(QWidget):
                 self._set_feedback("已取消马赛克框选。")
                 return event.type() != QEvent.Type.Hide
             self.sync_page()
-        if watched is self.view and event.type() == QEvent.Type.Hide and self._move_state:
+        if watched is self.view and event.type() == QEvent.Type.Hide:
             self.cancel_move_annot()
+            self.clear_selection()
         state = getattr(self, "_inline_replace", None)
         if state and (watched is state["input"] or state['actions'].isAncestorOf(watched)):
             if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
@@ -1340,7 +1570,7 @@ class AnnotationTools(QWidget):
         if watched is self.view and event.type() == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape and self._move_committing:
                 return True
-            if event.key() == Qt.Key.Key_Escape and self._move_state:
+            if event.key() == Qt.Key.Key_Escape and (self._annotation_press or self._move_state):
                 self.cancel_move_annot()
                 self._set_feedback("已取消移动。")
                 return True
@@ -1362,6 +1592,10 @@ class AnnotationTools(QWidget):
         if not self.host.ws.pages or not self.view.isVisible():
             return False
         kind = self.tool.currentData() if self.isVisible() else "browse"
+        if (event.type() == QEvent.Type.ContextMenu and not (box or self.stroke or self._move_state
+                or getattr(self, '_inline_replace', None) or getattr(self.host, '_task_dialog', None)
+                or getattr(getattr(self.host, 'image_tools', None), 'engaged', False))):
+            return self.annotation_menu(event)
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             if self._move_committing:
                 return True
@@ -1379,6 +1613,10 @@ class AnnotationTools(QWidget):
             if event.type() == QEvent.Type.MouseMove:
                 point = self.view.mapToScene(event.position().toPoint())
                 self.update_move_preview(point)
+                return True
+            if (self._move_state.get('direct') and event.type() == QEvent.Type.MouseButtonRelease
+                    and event.button() == Qt.MouseButton.LeftButton):
+                self.finish_move_annot(self.view.mapToScene(event.position().toPoint()))
                 return True
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self.sync_page()
@@ -1406,53 +1644,84 @@ class AnnotationTools(QWidget):
                     return False
 
         hover_bar = getattr(self, "hover_bar", None)
+        if self._annotation_press:
+            pos, index, ref, generation, identifier, anchor = self._annotation_press
+            if event.type() == QEvent.Type.MouseMove and event.buttons() & Qt.MouseButton.LeftButton:
+                if (event.position().toPoint() - pos).manhattanLength() < QApplication.startDragDistance():
+                    return True
+                self._annotation_press = None
+                if (index < len(self.host.ws.pages) and self.host.ws.pages[index] is ref
+                        and self.view.layout_generation == generation):
+                    # Preparing the artwork runs a nested event loop. A fast release still owns its drop point.
+                    pending = self._drag_preparation = {}
+                    try:
+                        started = self.start_move_annot(identifier, page_index=index, anchor=anchor)
+                    finally:
+                        self._drag_preparation = None
+                    if not started:
+                        return True
+                    self._move_state['direct'] = True
+                    self.hover_bar.hide()
+                    if pending.get('cancelled') or self.view.layout_generation != generation:
+                        self.cancel_move_annot()
+                    elif 'drop' in pending:
+                        self.finish_move_annot(pending['drop'])
+                    elif QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+                        self.update_move_preview(self.view.mapToScene(event.position().toPoint()))
+                    else:
+                        self.cancel_move_annot()
+                return True
+            if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                self._annotation_press = None
+                return True
+            if event.type() in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseButtonPress):
+                self._annotation_press = None
         if hover_bar and hover_bar.isVisible() and hasattr(event, "position"):
             pos = event.position().toPoint()
             if hover_bar.geometry().contains(pos):
                 hover_bar._hide_timer.stop()
                 return False
 
-        # 便签与批注悬停操作条
-        if (event.type() == QEvent.Type.MouseMove and not self.stroke
-                and kind in ("browse", "select") and not self.host._scrolling):
-            try:
-                pos = event.position().toPoint()
-                if hover_bar and hover_bar.isVisible() and hover_bar.geometry().contains(pos):
-                    hover_bar._hide_timer.stop()
+        hover = event.type() == QEvent.Type.MouseMove and not event.buttons() and not self.host._scrolling
+        click = (event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
+                 and event.button() == Qt.MouseButton.LeftButton)
+        if (hover or click) and not self.stroke and kind in ('browse', 'select', 'freetext', 'arrow'):
+            pos = event.position().toPoint()
+            point = self.view.mapToScene(pos)
+            annot = self.annotation_at_position(pos)
+            if annot and (kind == 'arrow' and annot['kind'] != 3 or kind == 'freetext' and annot['kind'] != 2):
+                annot = None
+            movable = not event.modifiers() and self.can_drag_annotation(annot)
+            if hover:
+                if annot and annot['kind'] == 0 and kind != 'freetext':
+                    self.hover_bar.show_for_annot(annot, self.snapshot_index)
+                elif annot and self.hover_bar.isVisible():
+                    self.hover_bar.hide()
+                elif self.hover_bar.isVisible() and not self.hover_bar._hide_timer.isActive():
+                    self.hover_bar._hide_timer.start(250)
+                if movable:
+                    self._set_view_cursor(Qt.CursorShape.SizeAllCursor)
+                    return True
+                if kind != 'browse' and self.view.viewport().cursor().shape() == Qt.CursorShape.SizeAllCursor:
+                    self._set_view_cursor(Qt.CursorShape.ArrowCursor)
+            elif annot and (movable or kind != 'freetext'):
+                index = self.snapshot_index
+                self.select_annotation(annot, index)
+                self.view.setFocus(Qt.FocusReason.MouseFocusReason)
+                if event.type() == QEvent.Type.MouseButtonDblClick:
+                    self.hover_bar.hide()
+                    self.selected_operation('style' if annot.get('arrow_style') else 'note_text')
                 else:
-                    point = self.view.mapToScene(pos)
-                    index = self.view.page_at_point(point)
-                    if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
-                        if self.ensure_annotation_summary(index):
-                            hit_annot = self.find_annotation_at(point)
-                            if hit_annot:
-                                if hover_bar:
-                                    hover_bar.show_for_annot(hit_annot, index)
-                            else:
-                                if hover_bar and hover_bar.isVisible() and not hover_bar._hide_timer.isActive():
-                                    hover_bar._hide_timer.start(250)
-                    else:
-                        if hover_bar and hover_bar.isVisible() and not hover_bar._hide_timer.isActive():
-                            hover_bar._hide_timer.start(250)
-            except Exception:
-                pass
-
-        # Single click keeps one popover; editing is an explicit action or double click.
-        if kind in ("browse", "select") and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
-            if event.button() == Qt.MouseButton.LeftButton and self.host.ws.pages and not self._move_state:
-                point = self.view.mapToScene(event.position().toPoint())
-                index = self.view.page_at_point(point)
-                if 0 <= index < len(self.view.page_rects) and self.view.page_rects[index].contains(point):
-                    if self.ensure_annotation_summary(index):
-                        hit_annot = self.find_annotation_at(point)
-                        if hit_annot and (hit_annot.get("kind") == 0 or hit_annot.get("content")):
-                            self.annotations.setCurrentIndex(self.annotations.findData(hit_annot["id"]))
-                            if event.type() == QEvent.Type.MouseButtonDblClick:
-                                self.hover_bar.hide()
-                                self.open_note_dialog(hit_annot["id"])
-                            else:
-                                self.hover_bar.show_for_annot(hit_annot, index)
-                            return True
+                    self.hover_bar.show_for_annot(annot, index)
+                    if movable:
+                        self._annotation_press = (pos, index, self.host.ws.pages[index], self.view.layout_generation,
+                                            annot['id'], point)
+                    elif kind == 'browse' and annot['kind'] in (8, 9):
+                        # The reader still owns a text-selection drag over marked words.
+                        return False
+                return True
+            elif click:
+                self.clear_selection()
 
         if kind == "browse":
             return False
@@ -1494,7 +1763,15 @@ class AnnotationTools(QWidget):
                     self.overlay.setPen(pen)
                     self.overlay.setBrush(QColor(15, 118, 110, 35))
                 if kind == "arrow":
-                    self.overlay.setBrush(self.color)
+                    from app.arrows import dash_pattern
+                    if self.arrow_style['head'] in ('filled', 'double_filled'):
+                        self.overlay.setBrush(self.color)
+                    shaft = QGraphicsPathItem(self.overlay)
+                    pen = self.overlay.pen()
+                    dashes = dash_pattern(self.arrow_style['line'], self.width.value())
+                    if dashes:
+                        pen.setDashPattern([v / self.width.value() for v in dashes])
+                    shaft.setPen(pen)
                 self.view._scene.addItem(self.overlay)
                 return True
             if not self.stroke:
@@ -1526,16 +1803,20 @@ class AnnotationTools(QWidget):
                     for pos in self.stroke[1:]:
                         path.lineTo(pos)
                 elif kind == "arrow":
-                    from app.pdfedits import arrow_geometry
+                    from app.arrows import geometry
                     if point == self.stroke[0]:
                         return True
-                    left, right, shaft_end = arrow_geometry(
-                        (self.stroke[0].x(), self.stroke[0].y()), (point.x(), point.y()), self.width.value())
-                    path.lineTo(QPointF(*shaft_end))
-                    path.moveTo(point)
-                    path.lineTo(QPointF(*left))
-                    path.lineTo(QPointF(*right))
-                    path.closeSubpath()
+                    shaft, tips = geometry((self.stroke[0].x(), self.stroke[0].y()), (point.x(), point.y()),
+                                           self.width.value(), self.arrow_style['head'])
+                    shaft_path = QPainterPath(QPointF(*shaft[0]))
+                    shaft_path.lineTo(QPointF(*shaft[1]))
+                    self.overlay.childItems()[0].setPath(shaft_path)
+                    for left, tip, right, filled in tips:
+                        path.moveTo(QPointF(*left))
+                        path.lineTo(QPointF(*tip))
+                        path.lineTo(QPointF(*right))
+                        if filled:
+                            path.closeSubpath()
                 else:
                     from PyQt6.QtCore import QRectF
                     rectangle = QRectF(self.stroke[0], point).normalized()
@@ -1571,15 +1852,7 @@ class AnnotationTools(QWidget):
         return p.Point(point.x() - top.x(), point.y() - top.y()) * ~p.Matrix(matrix)
 
     def select_at(self, point):
-        import pymupdf as p
-        local = self.canonical(point)
-        for item in reversed(self.snapshot["annotations"]):
-            if item.get('image_settings') or item.get("watermark"):
-                continue
-            if p.Rect(item["rect"]).contains(local):
-                self.annotations.setCurrentIndex(self.annotations.findData(item["id"]))
-                return
-        self.annotations.setCurrentIndex(0)
+        self.select_annotation(self.find_annotation_at(point), self.snapshot_index)
 
     def _close_inline_replace(self):
         replace_state = getattr(self, "_inline_replace", None)
@@ -2013,9 +2286,12 @@ class AnnotationTools(QWidget):
         if kind == "freetext":
             visible = self.view.page_rects[index]
             if area.width < 16 or area.height < 8:
+                from app.textboxui import InlineTextBox
                 start = points[0] - visible.topLeft()
-                area = p.Rect(start.x(), start.y(), min(start.x() + 220, visible.width()),
-                              min(start.y() + 48, visible.height())) * ~p.Matrix(matrix)
+                width = min(InlineTextBox.initial_width, visible.width())
+                height = min(InlineTextBox.initial_height, visible.height())
+                x, y = min(start.x(), visible.width() - width), min(start.y(), visible.height() - height)
+                area = p.Rect(x, y, x + width, y + height) * ~p.Matrix(matrix)
             if area.width < 16 or area.height < 8:
                 raise ValueError("请在页面内留出文本框空间。")
             self.start_text_box(area, index, ref)
@@ -2066,7 +2342,8 @@ class AnnotationTools(QWidget):
             edit = PageEdit(kind, tuple(area), color=color, width=self.width.value(), annotation_id=identifier)
         else:
             chosen = canonical if kind == "ink" else [canonical[0], canonical[-1]]
-            edit = PageEdit(kind, tuple(tuple(pos) for pos in chosen), color=color, width=self.width.value(), annotation_id=identifier)
+            edit = PageEdit(kind, tuple(tuple(pos) for pos in chosen), color=color, width=self.width.value(),
+                            annotation_id=identifier, details=tuple(self.arrow_style.items()) if kind == 'arrow' else ())
         self.commit(edit, confirm=kind == "replace", page_index=index, expected_ref=ref)
 
     def commit(self, edit, *, confirm=False, page_index=None, expected_ref=None, on_error=None, prepared_preview=None):
@@ -2160,6 +2437,9 @@ class AnnotationTools(QWidget):
         if annot and annot.get("kind") == 2:
             self.open_note_dialog(identifier)
             return
+        if annot and annot.get('arrow_style'):
+            self.choose_arrow_style(annot)
+            return
         if annot and annot.get("watermark"):
             self._set_feedback("水印请在「组织 → 水印」中调整。")
             return
@@ -2184,7 +2464,7 @@ class AnnotationTools(QWidget):
         if not self.host._allow_operation("annotate") or not self.ensure_snapshot(index, geometry_only=True):
             return False
         annot = next((a for a in self.snapshot["annotations"] if a["id"] == identifier), None)
-        if not annot or annot["kind"] not in (0, 2, 4):
+        if not self.can_drag_annotation(annot):
             self._set_feedback("当前批注不支持移动。")
             return False
         self.cancel_move_annot()
@@ -2195,6 +2475,19 @@ class AnnotationTools(QWidget):
         if rect.width > bounds.width or rect.height > bounds.height:
             self._set_feedback("批注大于页面，无法在页内移动。")
             return False
+        ref = self.host.ws.pages[index]
+        layers = None
+        if annot['kind'] in (2, 3):
+            region = tuple(rect * matrix)
+            scale = max(1, self.view.transform().m11() * self.view.devicePixelRatioF())
+            try:
+                layers = run_operation(self.host, tr('正在准备预览…'),
+                    lambda progress: self.host.store.annotation_move_preview(ref, identifier, region, scale))
+            except (PdfError, ValueError, RuntimeError) as exc:
+                self._set_feedback(str(exc))
+                return False
+            if index >= len(self.host.ws.pages) or self.host.ws.pages[index] is not ref:
+                return False
         self._move_state = dict(id=identifier, index=index, active_index=self.host.ws.preview_index(),
             ref=self.host.ws.pages[index], rect=rect, matrix=matrix, bounds=bounds,
             anchor=None if anchor is None else p.Point(anchor.x() - page.x(), anchor.y() - page.y()) * ~matrix,
@@ -2210,9 +2503,26 @@ class AnnotationTools(QWidget):
             fill.setAlpha(45)
             self._move_preview.setBrush(fill)
         self.view._scene.addItem(self._move_preview)
+        if self.selection_border is not None:
+            self.selection_border.hide()
+        if layers:
+            for key, (image, origin, factor) in zip(('backdrop', 'artwork'), layers):
+                if self.view.reading_colors.enabled:
+                    mapped = self.view.reading_colors.map_image(image.convertToFormat(QImage.Format.Format_RGB32))
+                    if image.hasAlphaChannel():
+                        mapped = mapped.convertToFormat(QImage.Format.Format_ARGB32)
+                        mapped.setAlphaChannel(image.convertToFormat(QImage.Format.Format_Alpha8))
+                    image = mapped
+                item = self.view._scene.addPixmap(QPixmap.fromImage(image))
+                item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+                item.setPos(page.topLeft() + QPointF(*origin))
+                item.setScale(1 / factor)
+                item.setZValue(4 if key == 'backdrop' else 5)
+                self._move_state[key] = item
+            self._move_state['artwork_origin'] = self._move_state['artwork'].pos()
         self.hover_bar._hide_timer.stop()
         self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
-        self._set_view_cursor(Qt.CursorShape.CrossCursor)
+        self._set_view_cursor(Qt.CursorShape.SizeAllCursor if anchor is not None else Qt.CursorShape.CrossCursor)
         self._set_feedback("拖动预览位置，松开鼠标放置；Esc 取消。" if anchor is not None else
                            "移动鼠标预览位置，点击放置；Esc 取消。")
         origin = rect.top_left * matrix
@@ -2241,6 +2551,8 @@ class AnnotationTools(QWidget):
         self._move_preview.setPath(path)
         original = rect.top_left * state["matrix"]
         destination = target * state["matrix"]
+        if 'artwork' in state:
+            state['artwork'].setPos(state['artwork_origin'] + QPointF(destination.x - original.x, destination.y - original.y))
         return self.view.mapFromScene(QPointF(destination.x + page.x(), destination.y + page.y())) - self.view.mapFromScene(
             QPointF(original.x + page.x(), original.y + page.y()))
 
@@ -2255,6 +2567,9 @@ class AnnotationTools(QWidget):
             if abs(state["target"] - state["rect"].top_left) < .01:
                 self._set_feedback("位置未改变。")
             elif self.move_annot_to(state["id"], state["target"], page_index=state["index"], expected_ref=state["ref"]):
+                if state.get('direct') and self.ensure_annotation_summary(state['index']):
+                    item = next((item for item in self.snapshot['annotations'] if item['id'] == state['id']), None)
+                    self.select_annotation(item, state['index'])
                 self._set_feedback("批注已移动；Ctrl+Z 撤销，Ctrl+S 保存。")
         except Exception as exc:
             self._set_feedback(f"移动未完成，请检查当前页面：{exc}")
@@ -2263,12 +2578,18 @@ class AnnotationTools(QWidget):
             self.cancel_move_annot()
 
     def cancel_move_annot(self):
+        self._annotation_press = None
         state = self._move_state
         self._move_state = None
         if self._move_preview is not None:
             self.view._scene.removeItem(self._move_preview)
             self._move_preview = None
         if state:
+            if self.selection_border is not None:
+                self.selection_border.show()
+            for key in ('backdrop', 'artwork'):
+                if key in state:
+                    self.view._scene.removeItem(state[key])
             self.view.setDragMode(state["drag_mode"])
             self._set_view_cursor(Qt.CursorShape.ArrowCursor)
             button = self.hover_bar.move_btn

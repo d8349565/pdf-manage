@@ -315,6 +315,7 @@ class ImageTools(QObject):
                                                             rect.height() / background.height()))
             self.view.scene().addItem(self.backdrop)
             self.host.text_selection.clear()
+            self.host.annotation_tools.clear_selection()
             self.host.annotation_tools.hover_bar.hide()
             self.update_overlay()
             self.view.setFocus()

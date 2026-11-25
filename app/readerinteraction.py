@@ -298,6 +298,16 @@ class ReaderInteraction(QObject):
         middle_press = (kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
                         and event.button() == Qt.MouseButton.MiddleButton
                         and event.buttons() == Qt.MouseButton.MiddleButton and not self.panning)
+        if (kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
+                and not event.modifiers() and self.links_enabled()):
+            tools = getattr(self.host, 'annotation_tools', None)
+            pos = event.position().toPoint()
+            if tools and not getattr(tools, '_inline_text_box', None):
+                annot = tools.annotation_at_position(pos)
+                if annot and (annot['kind'] not in (8, 9) or not self.link_at(pos)):
+                    self.link_press = self.link_jump = None
+                    return False
+                tools.clear_selection()
         left_pan = (kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
                     and (self.space or event.modifiers() & Qt.KeyboardModifier.AltModifier
                          or (getattr(self.host, '_reading_tool', 'select') == 'hand' and self.links_enabled())))

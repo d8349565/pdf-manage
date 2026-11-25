@@ -56,6 +56,7 @@ The current source shows a tab close button even for a single PDF and returns to
 ## Common Workflows
 
 - **Merge open PDFs:** Use the merge-open-files command in the **Page** menu, select documents, arrange their order, and save the merged result. Unsaved page and annotation edits in the selected tabs are included; the original files and tabs are retained. The current source also offers a toolbar shortcut.
+- **Interleave two PDFs** from the **Page** menu to combine pages in A1, B1, A2, B2 order. Move B to the top to start with B. Any remaining pages follow at the end.
 - **Compare document revisions:** Open the experimental two-PDF comparison from the **Document** menu, select or drop the old and new files, and inspect each difference against the original page. Save tab edits first for them to participate in the comparison. [Comparison guide (中文)](docs/PDFCOMPARE.md)
 - **Translate a PDF:** Configure a service in **File → App settings → Translation settings**, then open **View → Translation panel**. Online translation sends the requested text to the service you select. [Translation instructions (中文)](CHANGELOG.md)
 - To **export a tall image**, open **PDF to images**, choose **Combine into one tall image**, and select pages to stack at the same width. Save edits to the selected pages before exporting.

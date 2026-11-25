@@ -594,7 +594,7 @@ def install_main_shortcuts(host):
             kind = command.target.split(':', 1)[1]
             actions[identifier] = manager.bind_callback(identifier, host,
                 lambda value=kind: _select_review_tool(host, value))
-        elif identifier.startswith('annotation.'):
+        elif identifier.startswith('annotation.') and not command.manual:
             name = identifier.split('.', 1)[1]
             action = QAction(tr(command.label), host)
             action.triggered.connect(lambda checked=False, value=name: _annotation_operation(host, value))
@@ -631,10 +631,12 @@ def _annotation_operation(host, name):
     tools = getattr(host, 'annotation_tools', None)
     if tools is None or host._saving or getattr(host, '_task_dialog', None):
         return
+    if tools.selection and name in ('style', 'note_text', 'move'):
+        tools.selected_operation(name)
+        return
     hover = tools.hover_bar
-    if name in ('style', 'note_text', 'delete', 'move') and hover.isVisible():
-        button = getattr(hover, {'style': 'style_btn', 'note_text': 'edit_btn',
-                                'delete': 'delete_btn', 'move': 'move_btn'}[name])
+    if name in ('note_text', 'move') and hover.isVisible():
+        button = getattr(hover, {'note_text': 'edit_btn', 'move': 'move_btn'}[name])
         if button.isVisible() and button.isEnabled():
             button.click()
         return

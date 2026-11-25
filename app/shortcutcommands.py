@@ -65,6 +65,7 @@ for _key, _path, _keys in (
     ('pages.insert', '页面/插入页面', ()),
     ('pages.append', '页面/合并文件', ()),
     ('pages.merge_open', '页面/合并已打开文件', ()),
+    ('pages.interleave', '页面/交叉合并两个 PDF', ()),
     ('pages.extract', '页面/提取页面', ()),
     ('pages.split', '页面/拆分文件', ()),
     ('pages.split_page', '页面/分割单页', ()),
@@ -182,7 +183,10 @@ for _key, _label in (
     ('delete', '删除选中批注'), ('move', '移动当前批注'),
     ('choose_color', '选择批注颜色'), ('deactivate', '收起审阅工具'),
 ):
-    _add('annotation.' + _key, _label, '审阅工具', scope='reader')
+    if _key == 'delete':
+        _add('annotation.delete', _label, '审阅工具', scope='annotation', defaults=('Del',), manual=True)
+    else:
+        _add('annotation.' + _key, _label, '审阅工具', scope='reader')
 for _key, _label in (
     ('add', '添加同级书签'), ('add_child', '添加子书签'),
     ('rename', '重命名书签'), ('delete', '删除书签（含子项）'),
@@ -416,6 +420,7 @@ SCOPE_LABELS = {
     'main': '主窗口', 'reader': '阅读区', 'pages': '页面列表',
     'spread': '阅读区的对开／四页布局', 'search': '搜索输入框',
     'textbox': '正在编辑的页面文本框', 'image': '阅读区正在选中的图片',
+    'annotation': '阅读区选中的批注',
     'outline': '大纲书签面板',
 }
 
@@ -442,6 +447,8 @@ def scopes_overlap(left, right):
         return a == b
     if a == 'main' or b == 'main':
         return True
+    if {a, b} == {'image', 'annotation'}:
+        return False
     # Page lists and the reader have disjoint focus ownership. All reader
     # submodes are conservatively overlapping, including child text editors.
     if a != b and (a in ('pages', 'outline') or b in ('pages', 'outline')):

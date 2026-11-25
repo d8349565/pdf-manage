@@ -32,6 +32,7 @@ def iter_annotations(page):
 
 
 def annotation_summary(page):
+    from app.arrows import read_style
     from app.pdfmarks import text_settings, is_watermark
     from app.pdfimages import image_settings
     annotations = []
@@ -39,6 +40,9 @@ def annotation_summary(page):
         annotations.append(dict(id=annotation_token(annot, ordinal), kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
+            arrow_style=read_style(annot) if annot.type[0] == 3 else None,
+            vertices=annot.vertices if annot.type[0] in (3, 8, 9, 15) else None,
+            filled=bool(annot.colors.get('fill')) if annot.type[0] in (4, 5) else False,
             text_settings=text_settings(page, annot) if annot.type[0] == 2 else None,
             watermark=is_watermark(page, annot) or page.parent.xref_get_key(annot.xref, 'ZhiXuSeam')[0] != 'null',
             image_settings=image_settings(page, annot)))
@@ -291,40 +295,6 @@ def selection_quads(raw, rectangle):
         quad = p.recover_line_quad(line, spans=spans)
         quads.append(tuple(tuple(point) for point in quad))
     return tuple(quads)
-
-
-def arrow_geometry(start, end, width):
-    """Return the compact tip and shaft end in PDF points for preview and output."""
-    import pymupdf as p
-    start, end = p.Point(start), p.Point(end)
-    length = abs(end - start)
-    if length < .01:
-        raise ValueError("请拖动绘制箭头。")
-    direction = (end - start) / length
-    normal = p.Point(-direction.y, direction.x)
-    head = min(max(5, width * 3), length * .35)
-    base = end - direction * head
-    return base + normal * (head * .38), base - normal * (head * .38), end - direction * (head * .6)
-
-
-def update_arrow_appearance(page, annot):
-    """Keep a native line annotation, with a smaller, narrower filled tip."""
-    import pymupdf as p
-    if annot.type[0] != p.PDF_ANNOT_LINE or annot.line_ends not in (
-            (p.PDF_ANNOT_LE_NONE, p.PDF_ANNOT_LE_OPEN_ARROW),
-            (p.PDF_ANNOT_LE_NONE, p.PDF_ANNOT_LE_CLOSED_ARROW)):
-        return
-    start, end = annot.vertices
-    width = annot.border["width"] if annot.border["width"] > 0 else 1
-    left, right, shaft_end = arrow_geometry(start, end, width)
-    points = [p.Point(point) * ~page.transformation_matrix for point in (start, end, left, right, shaft_end)]
-    start, end, left, right, shaft_end = [f"{point.x:.4f} {point.y:.4f}" for point in points]
-    color = " ".join(f"{value:.4f}" for value in (annot.colors["stroke"] or (0, 0, 0)))
-    xref = int(page.parent.xref_get_key(annot.xref, "AP/N")[1].split()[0])
-    opacity = "/H gs\n" if page.parent.xref_get_key(xref, "Resources/ExtGState/H")[0] != "null" else ""
-    appearance = (f"q\n{opacity}1 J 1 j\n{width:.4f} w\n{color} RG\n{color} rg\n"
-                  f"{start} m\n{shaft_end} l\nS\n{end} m\n{left} l\n{right} l\nh B\nQ\n")
-    page.parent.update_stream(xref, appearance.encode("ascii"))
 
 
 def replacement_font(page, text, preferred="", flags=0):
@@ -612,6 +582,7 @@ def _write_replacement(page, edit, details):
 
 def apply_edits(page, edits, *, transforms=None):
     import pymupdf as p
+    from app.arrows import read_style, set_style, update_appearance
     subset = False
     identifiers = set()
     for ordinal, annot in enumerate(iter_annotations(page)):
@@ -688,30 +659,38 @@ def apply_edits(page, edits, *, transforms=None):
                 page.delete_annot(annot)
                 continue
             appearance = None
-            if edit.kind == "move" and page.parent.xref_get_key(annot.xref, "ZhiXuText")[0] != "null":
-                xref = int(page.parent.xref_get_key(annot.xref, "AP/N")[1].split()[0])
-                appearance = (xref, page.parent.xref_object(xref), page.parent.xref_stream(xref))
+            if edit.kind == "move" and annot.type[0] == p.PDF_ANNOT_FREE_TEXT:
+                kind, value = page.parent.xref_get_key(annot.xref, "AP/N")
+                if kind == "xref":
+                    xref = int(value.split()[0])
+                    appearance = (xref, page.parent.xref_object(xref), page.parent.xref_stream(xref))
             if edit.kind == "note_text":
                 annot.set_info(content=edit.text)
             elif edit.kind == "move":
                 new_pt = p.Point(edit.points[0])
                 if not all(math.isfinite(v) for v in new_pt):
                     raise ValueError("批注位置无效。")
+                if annot.type[0] == p.PDF_ANNOT_LINE:
+                    from app.arrows import move_line
+                    move_line(page, annot, new_pt)
+                    continue
                 r = annot.rect
                 if annot.set_rect(p.Rect(new_pt.x, new_pt.y, new_pt.x + r.width, new_pt.y + r.height)) is False:
                     raise ValueError("当前批注无法移动，本次修改未应用。")
             else:
                 annot.set_colors(stroke=edit.color)
-                annot.set_border(width=edit.width)
-                if annot.type[0] == p.PDF_ANNOT_LINE and annot.line_ends == (p.PDF_ANNOT_LE_NONE, p.PDF_ANNOT_LE_CLOSED_ARROW):
-                    annot.set_colors(fill=edit.color)
+                style = read_style(annot)
+                if style:
+                    set_style(annot, {**style, **dict(edit.details)}, edit.width, edit.color)
+                else:
+                    annot.set_border(width=edit.width)
             annot.update()
             if appearance is not None:
                 xref, definition, stream = appearance
                 page.parent.update_object(xref, definition)
                 page.parent.update_stream(xref, stream)
                 page.parent.xref_set_key(annot.xref, "AP/N", f"{xref} 0 R")
-            update_arrow_appearance(page, annot)
+            update_appearance(page, annot)
             continue
         if edit.kind in ("highlight", "underline"):
             quads = [p.Quad(quad) for quad in edit.points]
@@ -731,19 +710,18 @@ def apply_edits(page, edits, *, transforms=None):
             annot = page.add_rect_annot(area) if edit.kind == "rect" else page.add_circle_annot(area)
         elif edit.kind == "arrow":
             annot = page.add_line_annot(*edit.points)
-            annot.set_line_ends(p.PDF_ANNOT_LE_NONE, p.PDF_ANNOT_LE_CLOSED_ARROW)
-            annot.set_colors(fill=edit.color)
+            set_style(annot, dict(edit.details), edit.width, edit.color)
         else:
             raise ValueError("不支持的编辑类型。")
         annot.set_colors(stroke=edit.color)
-        if edit.kind not in ("highlight", "underline"):
+        if edit.kind not in ("highlight", "underline", "arrow"):
             annot.set_border(width=edit.width)
         annot.set_opacity(.22 if edit.kind == "highlight" else 1)
         if edit.annotation_id:
             page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(edit.annotation_id))
         annot.update()
         if edit.kind == "arrow":
-            update_arrow_appearance(page, annot)
+            update_appearance(page, annot)
     return subset
 
 

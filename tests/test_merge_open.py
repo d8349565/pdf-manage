@@ -129,6 +129,50 @@ def test_save_cancel_returns_to_selection_and_leaves_tabs_unchanged(opened, monk
     assert not window._saving
 
 
+@pytest.mark.parametrize('disk,reverse', [(False, False), (True, True)])
+def test_interleave_alternates_actual_pages_and_keeps_remainder_and_bookmarks(opened, tmp_path, monkeypatch, disk, reverse):
+    window, paths = opened
+    second = tmp_path / 'backs.pdf'
+    with pymupdf.open() as doc:
+        for n in range(3):
+            doc.new_page().insert_text((40, 60), f'back-{n + 1}')
+        doc.set_toc([[1, 'back bookmark', 2]])
+        doc.save(second)
+    assert window.open_files_in_tabs([str(second)])
+    output = tmp_path / 'alternating.pdf'
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *a, **k: (str(output), 'PDF'))
+    monkeypatch.setattr(QFileDialog, 'getOpenFileNames', lambda *a, **k: ([str(paths[0]), str(second)], 'PDF'))
+    def choose(dialog):
+        if not disk:
+            dialog.page_order.setCurrentIndex(1)
+            assert not dialog.start.isEnabled()
+            for row in (1, 2):
+                dialog.files.item(row).setCheckState(Qt.CheckState.Unchecked)
+        assert dialog.page_order.currentData() and dialog.start.isEnabled()
+        if reverse:
+            dialog.files.setCurrentRow(1)
+            dialog.move_up.click()
+        preview = dialog.preview
+        first = 'backs.pdf' if reverse else 'A.pdf'
+        second = 'A.pdf' if reverse else 'backs.pdf'
+        assert [preview.page_caption(row) for row in preview.rows] == [
+            f'{first} · 第 1 页', f'{second} · 第 1 页', f'{first} · 第 2 页',
+            f'{second} · 第 2 页', 'backs.pdf · 第 3 页']
+        dialog.next_page.click()
+        assert dialog.preview_page.value() == 2
+        hint = dialog.order_hint.text()
+        assert (hint.index('backs.pdf') < hint.index('A.pdf')) == reverse
+        dialog.start.click()
+    interact_with_dialog(monkeypatch, choose)
+    merge = window.interleave_files if disk else window.merge_open_files
+    assert merge()
+    with pymupdf.open(output) as doc:
+        sequence = [pg.get_text().strip() for pg in doc]
+        assert sequence == (['back-1', 'A-1', 'back-2', 'A-2', 'back-3'] if reverse else
+                            ['A-1', 'back-1', 'A-2', 'back-2', 'back-3'])
+        assert dict((title, number) for _, title, number in doc.get_toc())['back bookmark'] == sequence.index('back-2') + 1
+
+
 def test_cannot_overwrite_even_an_unselected_source(opened, monkeypatch):
     window, paths = opened
     original = paths[1].read_bytes()
@@ -145,6 +189,34 @@ def test_cannot_overwrite_even_an_unselected_source(opened, monkeypatch):
     assert not window.merge_open_files()
     assert warnings and '不能覆盖' in warnings[0]
     assert paths[1].read_bytes() == original
+
+
+def test_preview_replaces_rendered_page_after_file_order_changes(opened, monkeypatch):
+    from PyQt6.QtCore import QElapsedTimer
+    from PyQt6.QtTest import QTest
+    window, paths = opened
+    def inspect(dialog):
+        view = dialog.preview
+        def first_image():
+            row = view.rows[0]
+            key = view.image_key(row)
+            timer = QElapsedTimer()
+            timer.start()
+            while key not in view.images and timer.elapsed() < 5000:
+                QTest.qWait(10)
+            assert key in view.images
+            return view.images[key]
+        assert first_image() == window.store.render_qimage(window._tabs[0].ws.pages[0], 650)
+        dialog.files.setCurrentRow(1)
+        dialog.move_up.click()
+        assert first_image() == window.store.render_qimage(window._tabs[1].ws.pages[0], 650)
+        dialog.page_order.setCurrentIndex(1)
+        assert dialog.empty_preview.isVisible() and not dialog.start.isEnabled()
+        dialog.files.item(2).setCheckState(Qt.CheckState.Unchecked)
+        assert view.isVisible() and dialog.start.isEnabled()
+        dialog.reject()
+    interact_with_dialog(monkeypatch, inspect)
+    assert not window.merge_open_files()
 
 
 @pytest.mark.parametrize('error', [OperationCancelled('已取消'), PdfError('目标写入失败')])

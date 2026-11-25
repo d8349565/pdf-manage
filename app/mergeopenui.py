@@ -2,13 +2,14 @@
 from app.i18n import tr
 import os
 from dataclasses import replace
+from itertools import zip_longest
 from pathlib import Path
 
-from PyQt6.QtCore import QRect, QSize, Qt
+from PyQt6.QtCore import QRect, QSignalBlocker, QSize, Qt
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QListWidget,
+    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QStyle, QStyledItemDelegate,
-    QStyleOptionViewItem, QVBoxLayout,
+    QSpinBox, QStackedWidget, QStyleOptionViewItem, QToolButton, QVBoxLayout,
 )
 from PyQt6.QtGui import QColor, QFont, QPalette
 
@@ -30,8 +31,16 @@ def workspace_name(workspace):
     return Path(workspace.path).name if workspace.path else '未命名文档'
 
 
-def merge_pages(store, tabs):
-    pages, outline = [], []
+def merge_order(groups, interleave):
+    if interleave:
+        if len(groups) != 2:
+            raise PdfError(tr('交叉合并需要勾选两份 PDF。'))
+        return [page for pair in zip_longest(*groups) for page in pair if page is not None]
+    return [page for group in groups for page in group]
+
+
+def merge_pages(store, tabs, *, interleave=False):
+    pages, groups, outline = [], [], []
     for tab in tabs:
         original = tab.ws.pages
         incoming = Workspace._unique_pages(original, pages)
@@ -43,7 +52,8 @@ def merge_pages(store, tabs):
         outline.extend(replace(entry, level=entry.level + 1, target_id=targets.get(entry.target_id))
                        for entry in entries)
         pages.extend(incoming)
-    return pages, tuple(outline)
+        groups.append(incoming)
+    return merge_order(groups, interleave), tuple(outline)
 
 
 class MergeFileDelegate(QStyledItemDelegate):
@@ -77,14 +87,14 @@ class MergeFileDelegate(QStyledItemDelegate):
 
 
 class MergeOpenDialog(QDialog):
-    def __init__(self, parent, sources):
+    def __init__(self, parent, sources, *, interleave=False):
         from app.exportdialogs import COMPACT_QSS
         super().__init__(parent)
-        self.setWindowTitle(tr('合并已打开的文件'))
+        self.setWindowTitle(tr('交叉合并两个 PDF') if interleave else tr('合并已打开的文件'))
         self.setObjectName('mergeOpen')
-        self.resize(660, 600)
-        self.setMinimumSize(520, 420)
+        self.resize(960, 620)
         self.sources = {source['tab_id']: source for source in sources}
+        self.files_from_disk = bool(sources) and all(source.get('from_disk') for source in sources)
         self.output_path = None
         self.overwrite_tab_id = None
         self.remember_overwrite = False
@@ -97,10 +107,15 @@ class MergeOpenDialog(QDialog):
             QListWidget#mergeFiles::item:hover { background: #F0FDFA; }
             QListWidget#mergeFiles::item:selected { background: #E1F3EF; }
         ''')
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.setSpacing(12)
-        title = QLabel(tr('合并已打开的文件'))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 18, 20, 16)
+        columns = QHBoxLayout()
+        columns.setSpacing(18)
+        outer.addLayout(columns, 1)
+        layout = QVBoxLayout()
+        columns.addLayout(layout, 4)
+        layout.setSpacing(10)
+        title = QLabel(self.windowTitle())
         set_theme_style(title, 'font-size: 20px; font-weight: 600; color: #173C36;')
         layout.addWidget(title)
         self.instruction = QLabel()
@@ -120,6 +135,7 @@ class MergeOpenDialog(QDialog):
         self.files.setItemDelegate(MergeFileDelegate(self.files))
         self.files.setUniformItemSizes(True)
         self.files.setMinimumHeight(132)
+        self.files.setMaximumHeight(max(142, min(330, len(sources) * 60 + 16)))
         self.files.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.files.setAccessibleName(tr('待合并文件，勾选并拖动排序'))
         self.files.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
@@ -154,6 +170,15 @@ class MergeOpenDialog(QDialog):
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
         form = self.save_form = QFormLayout()
+        self.page_order = QComboBox()
+        self.page_order.addItem(tr('按文件顺序合并'), False)
+        self.page_order.addItem(tr('逐页交叉合并'), True)
+        self.page_order.setCurrentIndex(int(interleave))
+        form.addRow(tr('页面顺序'), self.page_order)
+        self.order_hint = QLabel()
+        self.order_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self.order_hint.setWordWrap(True)
+        form.addRow(self.order_hint)
         self.save_mode = QComboBox()
         self.save_mode.setAccessibleName(tr('合并结果保存方式'))
         self.save_mode.addItem(tr('另存为新文件（默认）'), 'copy')
@@ -171,6 +196,58 @@ class MergeOpenDialog(QDialog):
         self.target_path.setWordWrap(True)
         self.target_path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         form.addRow(self.target_path)
+        layout.addStretch()
+        preview_column = QVBoxLayout()
+        columns.addLayout(preview_column, 6)
+        preview_title = QLabel(tr('合并结果预览'))
+        set_theme_style(preview_title, 'font-size: 16px; font-weight: 600; color: #173C36;')
+        preview_header = QHBoxLayout()
+        preview_header.addWidget(preview_title)
+        preview_header.addStretch()
+        preview_column.addLayout(preview_header)
+        from app.pagepreviewlist import ScrollablePagePreview
+        refs, captions = [], []
+        self.source_rows = {}
+        for source in sources:
+            first = len(refs)
+            refs.extend(source.get('refs', ()))
+            self.source_rows[source['tab_id']] = range(first, len(refs))
+            captions.extend((source['name'], n + 1) for n in range(len(refs) - first))
+        self.preview = ScrollablePagePreview(parent.store, refs, page_caption=lambda row:
+            tr('{name} · 第 {page} 页', name=captions[row][0], page=captions[row][1]))
+        self.preview.setMinimumSize(250, 180)
+        self.preview.set_fit_page(True)
+        self.preview_stack = QStackedWidget()
+        self.preview_stack.addWidget(self.preview)
+        self.empty_preview = QLabel()
+        self.empty_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_preview.setWordWrap(True)
+        self.preview_stack.addWidget(self.empty_preview)
+        preview_column.addWidget(self.preview_stack, 1)
+        self.previous_page = QToolButton()
+        self.previous_page.setIcon(toolbar_icon('chevron-left'))
+        self.previous_page.setToolTip(tr('上一页'))
+        self.previous_page.setAccessibleName(tr('上一页'))
+        preview_header.addWidget(self.previous_page)
+        self.preview_page = QSpinBox()
+        self.preview_page.setAccessibleName(tr('合并结果页码'))
+        self.preview_page.setKeyboardTracking(False)
+        self.preview_page.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        preview_header.addWidget(self.preview_page)
+        self.next_page = QToolButton()
+        self.next_page.setIcon(toolbar_icon('chevron-right'))
+        self.next_page.setToolTip(tr('下一页'))
+        self.next_page.setAccessibleName(tr('下一页'))
+        preview_header.addWidget(self.next_page)
+        self.previous_page.clicked.connect(self.preview_page.stepDown)
+        self.next_page.clicked.connect(self.preview_page.stepUp)
+        self.preview_page.valueChanged.connect(self.go_to_preview_page)
+        self.preview.page_changed.connect(self.preview_scrolled)
+        self.preview_plan = None
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        set_theme_style(divider, 'color: #D7E8E4;')
+        outer.addWidget(divider)
         footer = QHBoxLayout()
         self.summary = QLabel()
         self.summary.setWordWrap(True)
@@ -183,10 +260,11 @@ class MergeOpenDialog(QDialog):
         self.start.clicked.connect(self.choose_output)
         box.rejected.connect(self.reject)
         footer.addWidget(box)
-        layout.addLayout(footer)
+        outer.addLayout(footer)
         self.files.itemChanged.connect(self.refresh)
         self.files.currentRowChanged.connect(self.refresh)
         self.files.model().rowsMoved.connect(self.refresh)
+        self.page_order.currentIndexChanged.connect(self.refresh_target)
         self.save_mode.currentIndexChanged.connect(self.refresh_target)
         self.target.currentIndexChanged.connect(self.refresh_target)
         first = next((row for row in range(self.files.count())
@@ -198,6 +276,40 @@ class MergeOpenDialog(QDialog):
         return [self.files.item(row).data(Qt.ItemDataRole.UserRole) for row in range(self.files.count())
                 if self.files.item(row).checkState() == Qt.CheckState.Checked
                 and self.files.item(row).flags() & Qt.ItemFlag.ItemIsEnabled]
+
+    def refresh_preview(self, selected, interleave, valid):
+        plan = tuple(selected), interleave
+        if plan == self.preview_plan:
+            return
+        self.preview_plan = plan
+        rows = merge_order([self.source_rows[tid] for tid in selected], interleave) if valid else []
+        self.preview.set_rows(rows)
+        self.preview_stack.setCurrentWidget(self.preview if rows else self.empty_preview)
+        if not rows:
+            self.empty_preview.setText(tr('交叉合并需要勾选两份 PDF。') if interleave else tr('至少选择 2 份 PDF。'))
+        with QSignalBlocker(self.preview_page):
+            self.preview_page.setRange(1 if rows else 0, len(rows))
+            self.preview_page.setSuffix(f' / {len(rows)}')
+            self.preview_page.setValue(1 if rows else 0)
+        self.preview_page.setEnabled(bool(rows))
+        self.go_to_preview_page(self.preview_page.value())
+
+    def go_to_preview_page(self, number):
+        if number:
+            self.preview.scroll_to_page(self.preview.rows[number - 1])
+        self.previous_page.setEnabled(number > 1)
+        self.next_page.setEnabled(number < len(self.preview.rows))
+
+    def preview_scrolled(self, row):
+        number = self.preview.rows.index(row) + 1
+        with QSignalBlocker(self.preview_page):
+            self.preview_page.setValue(number)
+        self.previous_page.setEnabled(number > 1)
+        self.next_page.setEnabled(number < len(self.preview.rows))
+
+    def done(self, result):
+        self.preview.shutdown()
+        super().done(result)
 
     def includes_signature(self, selected):
         return any(self.sources[tid].get('signed') for tid in selected)
@@ -234,16 +346,24 @@ class MergeOpenDialog(QDialog):
         # Updating a selection must not clear the combo's model in its own signal.
         selected = self.selected_ids()
         signed_copy = self.includes_signature(selected)
-        self.instruction.setText(tr('选择文件并调整顺序。') if signed_copy else
-                                 tr('选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。'))
+        interleave = self.page_order.currentData()
+        valid_count = len(selected) == 2 if interleave else len(selected) >= 2
+        self.refresh_preview(selected, interleave, valid_count)
+        self.save_form.setRowVisible(self.order_hint, interleave)
+        if interleave:
+            self.order_hint.setText(tr('先取「{p0}」一页，再取「{p1}」一页，交替到末尾。多出的页接在最后。',
+                                       p0=self.sources[selected[0]]['name'], p1=self.sources[selected[1]]['name'])
+                                    if valid_count else tr('交叉合并需要勾选两份 PDF。'))
         copy_only = any(self.sources[tid].get('requires_copy') for tid in selected)
+        self.instruction.setText(tr('选择文件并调整顺序。') if signed_copy or copy_only or self.files_from_disk else
+                                 tr('选择文件并调整顺序。默认另存为新 PDF，也可选择覆盖其中一份文件。'))
         eligible_target = self.target.count() > 1 and not (signed_copy or copy_only)
         self.save_mode.model().item(1).setEnabled(eligible_target)
         if signed_copy and self.save_mode.currentData() != 'copy':
             blocked = self.save_mode.blockSignals(True)
             self.save_mode.setCurrentIndex(0)
             self.save_mode.blockSignals(blocked)
-        self.save_form.setRowVisible(self.save_mode, not signed_copy)
+        self.save_form.setRowVisible(self.save_mode, not signed_copy and not self.files_from_disk)
         overwrite = self.save_mode.currentData() == 'overwrite'
         target = self.sources.get(self.target.currentData(), {})
         for widget in (self.target_caption, self.target, self.target_path):
@@ -251,11 +371,11 @@ class MergeOpenDialog(QDialog):
         self.target_path.setText(target.get('save_path', '') if eligible_target else
                                  tr('所选文件目前仅支持另存新文件，请切换保存方式。'))
         self.target_path.setToolTip(target.get('save_path', ''))
-        self.note.setVisible(not signed_copy or any(self.sources[tid]['dirty'] for tid in selected))
+        self.note.setVisible(not self.files_from_disk and (not signed_copy or any(self.sources[tid]['dirty'] for tid in selected)))
         if signed_copy:
             self.start.setText(tr('合并为副本'))
             self.note.setText(tr('合并包含未保存修改。'))
-            self.start.setEnabled(len(selected) >= 2)
+            self.start.setEnabled(valid_count)
             return
         self.start.setText(tr('合并并覆盖') if overwrite else tr('合并并另存'))
         self.note.setText(tr('合并包含未保存修改。仅覆盖指定文件，其他文件和标签保留。') if overwrite else
@@ -263,13 +383,15 @@ class MergeOpenDialog(QDialog):
         if not eligible_target:
             self.note.setText(self.note.text() + (tr('\n所选内容需要另存副本，暂不支持覆盖。') if copy_only else
                                                  tr('\n所选标签没有可覆盖的文件位置，请另存新文件。')))
-        self.start.setEnabled(len(selected) >= 2 and (not overwrite or eligible_target and bool(target.get('save_path'))))
+        self.start.setEnabled(valid_count and (not overwrite or eligible_target and bool(target.get('save_path'))))
 
     def select_all(self, checked):
-        for row in range(self.files.count()):
-            item = self.files.item(row)
-            if item.flags() & Qt.ItemFlag.ItemIsEnabled:
-                item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+        with QSignalBlocker(self.files):
+            for row in range(self.files.count()):
+                item = self.files.item(row)
+                if item.flags() & Qt.ItemFlag.ItemIsEnabled:
+                    item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+        self.refresh()
 
     def move_selected(self, delta):
         row = self.files.currentRow()
@@ -283,7 +405,7 @@ class MergeOpenDialog(QDialog):
 
     def choose_output(self):
         selected = self.selected_ids()
-        if len(selected) < 2:
+        if not self.start.isEnabled():
             return
         signed_copy = self.includes_signature(selected)
         if not signed_copy and self.save_mode.currentData() == 'overwrite':
@@ -310,7 +432,7 @@ class MergeOpenDialog(QDialog):
             self.accept()
 
 
-def merge_open_files(host, *, tabs=None):
+def merge_open_files(host, *, tabs=None, interleave=False):
     if host._saving or getattr(host, '_task_dialog', None) is not None:
         return False
     tools = getattr(host, 'annotation_tools', None)
@@ -339,6 +461,8 @@ def merge_open_files(host, *, tabs=None):
                       '没有可合并的页面。' if not ws.pages else '')
             reason = reason or host.store.operation_reason(ws.pages, 'merge')
             sources.append(dict(tab_id=tab.tab_id, name=workspace_name(ws), path=ws.path or workspace_name(ws),
+                                from_disk=tab.tab_id not in open_ids,
+                                refs=ws.pages if not reason else (),
                                 pages=len(ws.pages), dirty=ws.dirty, reason=reason,
                                 save_path=save_path, saved_target=ws.last_saved_path,
                                 active=tab.tab_id == host._active_tab_id,
@@ -347,11 +471,12 @@ def merge_open_files(host, *, tabs=None):
                                 requires_copy=tab.tab_id not in open_ids or any(host.store._source(page.source_id).requires_copy or
                                     any(edit.kind in ('page_geometry', 'seam_stamp', 'seam_remove', 'color_cleanup')
                                         for edit in page.edits) for page in ws.pages)))
-        dialog = MergeOpenDialog(host, sources)
+        dialog = MergeOpenDialog(host, sources, interleave=interleave)
         try:
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return False
             ids, path = dialog.selected_ids(), dialog.output_path
+            interleave = dialog.page_order.currentData()
             signed_copy = dialog.includes_signature(ids)
             target_id, remember = dialog.overwrite_tab_id, dialog.remember_overwrite
         finally:
@@ -367,7 +492,7 @@ def merge_open_files(host, *, tabs=None):
             raise PdfError('覆盖目标已改变，请重新选择。')
         if target is None and host.store.is_source_destination(path):
             raise PdfError('不能覆盖已打开的来源文件，请选择新的文件名。')
-        pages, outline = merge_pages(host.store, selected)
+        pages, outline = merge_pages(host.store, selected, interleave=interleave)
         host.store.require_operation(pages, 'merge')
         if signed_copy and target is not None:
             raise PdfError('签名文件只能另存副本，不能覆盖来源文件。')

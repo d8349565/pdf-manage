@@ -940,6 +940,29 @@ class PdfStore:
         background = self.render_qimage(hidden, width)
         return image, background
 
+    def annotation_move_preview(self, ref, identifier, region, scale):
+        """Render the backdrop and transparent artwork once for the entire drag."""
+        import pymupdf as p
+        from app.pdfedits import annotation_token, iter_annotations
+        from app.workspace import PageEdit
+        area = p.Rect(region)
+        scale = min(scale, 4096 / max(area.width, area.height),
+                    math.sqrt(4_000_000 / (area.width * area.height)))
+        with self._render_page(ref) as page:
+            annot = next((a for i, a in enumerate(iter_annotations(page))
+                          if annotation_token(a, i) == identifier and a.type[0] in (p.PDF_ANNOT_FREE_TEXT, p.PDF_ANNOT_LINE)), None)
+            if annot is None:
+                raise PdfError('要移动的批注已不存在。')
+            extra = p.Matrix(1, 1).prerotate(ref.rotation)
+            rotated = page.rect * extra
+            extra *= p.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
+            pix = annot.get_pixmap(matrix=extra * p.Matrix(scale, scale), alpha=True)
+            artwork = QImage(pix.samples_mv, pix.width, pix.height, pix.stride,
+                          QImage.Format.Format_RGBA8888_Premultiplied).copy()
+            origin = (pix.x / scale, pix.y / scale)
+        hidden = ref.edited(PageEdit('delete', annotation_id=identifier))
+        return self.render_region(hidden, region, scale), (artwork, origin, scale)
+
     def remap_annotations(self, mapping):
         # A saved document has new page numbers and PDF coordinate systems.
         # Rebuild its metadata instead of carrying over stale link destinations.
