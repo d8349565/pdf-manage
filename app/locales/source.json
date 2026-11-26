@@ -978,7 +978,7 @@
     "app/printing.py:1200"
   ],
   "仅当前页": [
-    "app/textboxui.py:135"
+    "app/textboxui.py:145"
   ],
   "仅改变阅读显示，保存、导出和打印仍用原色。\n图片、扫描页和批注也会按明暗换色，不单独识别文字。": [
     "app/readingcolors.py:215"
@@ -1390,7 +1390,7 @@
     "app/exportdialogs.py:759",
     "app/ocrui.py:82",
     "app/rasterui.py:48",
-    "app/textboxui.py:135"
+    "app/textboxui.py:145"
   ],
   "全部页面（{p0} 页）": [
     "app/exportdialogs.py:547",
@@ -2167,10 +2167,10 @@
     "app/editingui.py:2369"
   ],
   "取消文本框输入": [
-    "app/textboxui.py:152"
+    "app/textboxui.py:162"
   ],
   "取消本次输入（Esc）": [
-    "app/textboxui.py:151"
+    "app/textboxui.py:161"
   ],
   "取消本页勾选": [
     "app/shortcutcommands.py:cleanup.clear_annotations"
@@ -2972,7 +2972,7 @@
     "app/wordui.py:801"
   ],
   "完成文本框": [
-    "app/textboxui.py:148"
+    "app/textboxui.py:158"
   ],
   "完成裁纸": [
     "app/scanwhiteui.py:371",
@@ -3817,7 +3817,7 @@
   ],
   "当前页及之后": [
     "app/editingui.py:1623",
-    "app/textboxui.py:135"
+    "app/textboxui.py:145"
   ],
   "当前页批注": [
     "app/editingui.py:937"
@@ -4031,7 +4031,7 @@
     "app/shortcutcommands.py:storage.output_reset"
   ],
   "悬停选择常用颜色，点击自定义颜色": [
-    "app/textboxui.py:113"
+    "app/textboxui.py:120"
   ],
   "感谢为项目提供建议和问题反馈的朋友": [
     "app/ui.py:3269"
@@ -4541,7 +4541,7 @@
     "app/editingui.py:507"
   ],
   "按住拖动移动文本框位置": [
-    "app/textboxui.py:90",
+    "app/textboxui.py:97",
     "app/textboxui.py:54"
   ],
   "按住空格或 Alt，再按住鼠标左键拖动": [
@@ -4892,7 +4892,7 @@
     "app/rasterui.py:72"
   ],
   "文字不能为空。要删除，请先取消编辑，再单击文本框并点右上角的删除按钮。": [
-    "app/textboxui.py:469"
+    "app/textboxui.py:498"
   ],
   "文字与纸面的颜色太接近，请调整后应用。": [
     "app/readingcolors.py:286"
@@ -4933,12 +4933,12 @@
     "app/ui.py:3203"
   ],
   "文字超出页面，请减小字号、增大框宽或减少内容。": [
-    "app/textboxui.py:304"
+    "app/textboxui.py:316"
   ],
   "文字颜色": [
     "app/editingui.py:2339",
     "app/readingcolors.py:187",
-    "app/textboxui.py:219"
+    "app/textboxui.py:228"
   ],
   "文字高亮": [
     "app/shortcutcommands.py:review.highlight"
@@ -4947,16 +4947,16 @@
     "app/ui.py:6762"
   ],
   "文本框字体": [
-    "app/textboxui.py:97"
+    "app/textboxui.py:104"
   ],
   "文本框字号": [
-    "app/textboxui.py:109"
+    "app/textboxui.py:116"
   ],
   "文本框插入范围": [
-    "app/textboxui.py:139"
+    "app/textboxui.py:149"
   ],
   "文本框最多输入 20000 个字符。": [
-    "app/textboxui.py:472"
+    "app/textboxui.py:501"
   ],
   "文档": [
     "app/ui.py:3178",
@@ -6626,7 +6626,7 @@
     "app/editingui.py:1514"
   ],
   "移动文本框": [
-    "app/textboxui.py:91",
+    "app/textboxui.py:98",
     "app/textboxui.py:55"
   ],
   "移动页面": [
@@ -7940,10 +7940,10 @@
     "app/ui.py:6829"
   ],
   "选择字体（当前：{p0}）": [
-    "app/textboxui.py:242"
+    "app/textboxui.py:251"
   ],
   "选择字号": [
-    "app/textboxui.py:108"
+    "app/textboxui.py:115"
   ],
   "选择安装位置": [
     "app/shortcutcommands.py:runtime.location"
@@ -7952,7 +7952,7 @@
     "app/storageui.py:323"
   ],
   "选择将此文本框插入哪些页面": [
-    "app/textboxui.py:138"
+    "app/textboxui.py:148"
   ],
   "选择已有水印后调整或删除；新增水印直接设置后添加。": [
     "app/watermarkui.py:129"
@@ -8480,7 +8480,7 @@
   "颜色": [
     "app/arrowstyleui.py:199",
     "app/editingui.py:1036",
-    "app/textboxui.py:112",
+    "app/textboxui.py:119",
     "app/watermarkui.py:160"
   ],
   "颜色模式": [

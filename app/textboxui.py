@@ -4,9 +4,9 @@ from app.themes import set_theme_style
 import math
 import pymupdf as p
 from PyQt6 import sip
-from PyQt6.QtCore import QEvent, QObject, QRectF, QSize, QTimer, Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication
-from PyQt6.QtWidgets import (QAbstractButton, QApplication, QColorDialog, QComboBox, QFontComboBox,
+from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QSize, QTimer, Qt
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication, QWheelEvent
+from PyQt6.QtWidgets import (QAbstractButton, QApplication, QBoxLayout, QColorDialog, QComboBox, QFontComboBox,
                             QFrame, QGraphicsView, QHBoxLayout, QLabel, QTextEdit, QToolButton,
                             QVBoxLayout, QWidget)
 from app.arrowstyleui import add_ink_swatches, ink_icon, update_ink_swatches
@@ -82,7 +82,14 @@ class InlineTextBox(QObject):
         controls = QVBoxLayout(self.toolbar)
         controls.setContentsMargins(4, 4, 4, 4)
         controls.setSpacing(3)
-        row = QHBoxLayout()
+        self.toolbar_row = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.toolbar_row.setSpacing(3)
+        controls.addLayout(self.toolbar_row)
+        style_group, command_group = QWidget(self.toolbar), QWidget(self.toolbar)
+        self.toolbar_row.addWidget(style_group)
+        self.toolbar_row.addWidget(command_group, alignment=Qt.AlignmentFlag.AlignLeft)
+        row = QHBoxLayout(style_group)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(3)
         self.move_button = self.button("", "move", row)
         self.move_button.setObjectName("moveText")
@@ -130,6 +137,9 @@ class InlineTextBox(QObject):
         self.palette_hide_timer.setSingleShot(True)
         self.palette_hide_timer.setInterval(200)
         self.palette_hide_timer.timeout.connect(self.color_palette.hide)
+        commands = QHBoxLayout(command_group)
+        commands.setContentsMargins(0, 0, 0, 0)
+        commands.setSpacing(3)
         self.scope = QComboBox()
         self.scope.setEditable(False)
         for label, value in ((tr('仅当前页'), 'current'), (tr('全部页面'), 'all'), (tr('当前页及之后'), 'from_current')):
@@ -138,20 +148,19 @@ class InlineTextBox(QObject):
         self.scope.setToolTip(tr('选择将此文本框插入哪些页面'))
         self.scope.setAccessibleName(tr('文本框插入范围'))
         self.scope.activated.connect(self._defer_focus_editor)
-        row.addWidget(self.scope)
+        commands.addWidget(self.scope)
         if len(tools.host.ws.pages) <= 1:
             self.scope.hide()
-        apply_button = self.button("", "check", row)
+        apply_button = self.button("", "check", commands)
         apply_button.setObjectName("applyText")
         apply_button.setIcon(toolbar_icon("check", "#FFFFFF", 16))
         self.tools.host.shortcut_manager.watch_hint('textbox.apply', apply_button, '完成文本框')
         apply_button.setAccessibleName(tr('完成文本框'))
         apply_button.clicked.connect(self._defer_apply)
-        cancel_button = self.button("", "x", row)
+        cancel_button = self.button("", "x", commands)
         cancel_button.setToolTip(tr('取消本次输入（Esc）'))
         cancel_button.setAccessibleName(tr('取消文本框输入'))
         cancel_button.clicked.connect(self._defer_close)
-        controls.addLayout(row)
         self.error = QLabel()
         self.error.setWordWrap(True)
         self.error.setMaximumWidth(300)
@@ -172,7 +181,7 @@ class InlineTextBox(QObject):
         self.editor.setFocus()
 
     def button(self, text, icon, layout):
-        button = QToolButton(self.toolbar)
+        button = QToolButton(layout.parentWidget())
         button.setText(text)
         button.setIcon(toolbar_icon(icon, "#334155", 16))
         button.setIconSize(QSize(16, 16))
@@ -227,7 +236,7 @@ class InlineTextBox(QObject):
 
     def position_color_palette(self):
         viewport = self.view.viewport()
-        trigger = self.color_button.geometry().translated(self.toolbar.pos())
+        trigger = self.color_button.rect().translated(self.color_button.mapTo(viewport, QPoint()))
         width, height = self.color_palette.width(), self.color_palette.height()
         x = max(0, min(trigger.center().x() - width // 2, viewport.width() - width))
         y = trigger.bottom() + 1
@@ -251,6 +260,10 @@ class InlineTextBox(QObject):
         if not (self.closed or self.committing or self.positioning or self._move_state or self.layout_timer.isActive()):
             self.layout_timer.start()
 
+    def _has_original_size(self):
+        return (abs(self.base_area.width - self.original_area.width) < .01
+                and abs(self.base_area.height - self.original_area.height) < .01)
+
     def fitted_size(self, visible, page, font, scale, *, wait=False):
         """Measure with the same font and line breaker as PDF output, in page points."""
         from app.pdfedits import replacement_font
@@ -263,8 +276,7 @@ class InlineTextBox(QObject):
         if not text.strip() or len(text) > 20000:
             return visible.width, visible.height
         if (self.identifier and text == self.original_text and self.settings() == self.original_settings
-                and abs(self.base_area.width - self.original_area.width) < .01
-                and abs(self.base_area.height - self.original_area.height) < .01):
+                and self._has_original_size()):
             return visible.width, visible.height
         family, size = self.font.currentFont().family(), self.size.currentData()
         key = (text, family, size, self.manual_size, tuple(visible), page.width(), page.height())
@@ -361,7 +373,7 @@ class InlineTextBox(QObject):
             self.frame.show()
             self.frame.raise_()
             self._place_handles()
-            self.toolbar.adjustSize()
+            self._layout_toolbar(viewport.width() - 4)
             self._position_toolbar(rect)
             self.toolbar.show()
             self.toolbar.raise_()
@@ -369,6 +381,15 @@ class InlineTextBox(QObject):
                 self.position_color_palette()
         finally:
             self.positioning = False
+
+    def _layout_toolbar(self, available_width):
+        margins = self.toolbar.layout().contentsMargins()
+        row = self.toolbar_row
+        wide_width = sum(row.itemAt(i).sizeHint().width() for i in range(row.count()))
+        wide_width += row.spacing() + margins.left() + margins.right()
+        row.setDirection(QBoxLayout.Direction.LeftToRight if wide_width <= available_width
+                         else QBoxLayout.Direction.TopToBottom)
+        self.toolbar.adjustSize()
 
     def _position_toolbar(self, rect):
         viewport = self.view.viewport()
@@ -462,24 +483,31 @@ class InlineTextBox(QObject):
             QGuiApplication.inputMethod().commit()
         self.position(wait=True)
         text = self.editor.toPlainText()
-        if not text.strip():
+        settings = self.settings()
+        position_only = (self.identifier and self.scope_mode() == 'current'
+                         and text == self.original_text and settings == self.original_settings
+                         and self._has_original_size())
+        if position_only:
+            if abs(self.area.tl - self.original_area.tl) < .01:
+                self.close()
+                return True
+        elif not text.strip():
             if self.identifier is None:
                 self.close()
                 return True
             self.show_error(tr('文字不能为空。要删除，请先取消编辑，再单击文本框并点右上角的删除按钮。'))
             return False
-        if len(text) > 20000:
+        elif len(text) > 20000:
             self.show_error(tr('文本框最多输入 20000 个字符。'))
             return False
-        if (self.identifier and self.scope_mode() == 'current'
-                and text == self.original_text and self.settings() == self.original_settings
-                and all(abs(a - b) < .01 for a, b in zip(self.base_area, self.original_area))):
-            self.close()
-            return True
         self.committing = True
         committed = False
         try:
-            committed = bool(self.tools.apply_text_box(self, text, self.settings()))
+            if position_only:
+                committed = self.tools.move_annot_to(self.identifier, self.area.tl, page_index=self.index,
+                                                      expected_ref=self.ref, on_error=self.show_error)
+            else:
+                committed = self.tools.apply_text_box(self, text, settings)
         except Exception as exc:
             self.show_error(str(exc))
             return False
@@ -553,6 +581,15 @@ class InlineTextBox(QObject):
             return False
         if QApplication.activeModalWidget() is not None or QApplication.activePopupWidget() is not None:
             return False
+        if kind == QEvent.Type.Wheel and watched is self.scope and not self.scope.view().isVisible():
+            viewport = self.view.viewport()
+            forwarded = QWheelEvent(
+                QPointF(viewport.mapFromGlobal(event.globalPosition().toPoint())), event.globalPosition(),
+                event.pixelDelta(), event.angleDelta(), event.buttons(), event.modifiers(),
+                event.phase(), event.inverted(), device=event.pointingDevice(),
+            )
+            QApplication.sendEvent(viewport, forwarded)
+            return True
         if watched is self.color_button or watched is self.color_palette:
             if kind == QEvent.Type.Enter:
                 self.palette_hide_timer.stop()

@@ -913,11 +913,12 @@ class PdfStore:
         """Prepare a bounded source preview and a backdrop once per selection."""
         import pymupdf as p
         from PyQt6.QtCore import Qt
+        from app.pdfedits import identified_annotations
         from app.pdfimages import IMAGE_SOURCE, MAX_IMAGE_PIXELS, image_settings
         from app.workspace import PageEdit
         self.require_operation([ref], 'content_edit')
         with self._render_page(ref) as page:
-            annot = next((a for a in (page.annots() or ()) if a.info.get('id') == identifier), None)
+            annot = next((a for token, a in identified_annotations(page) if token == identifier), None)
             if annot is None or image_settings(page, annot) is None:
                 raise PdfError('要编辑的图片已不存在。')
             source = int(page.parent.xref_get_key(annot.xref, IMAGE_SOURCE)[1].split()[0])
@@ -943,14 +944,14 @@ class PdfStore:
     def annotation_move_preview(self, ref, identifier, region, scale):
         """Render the backdrop and transparent artwork once for the entire drag."""
         import pymupdf as p
-        from app.pdfedits import annotation_token, iter_annotations
+        from app.pdfedits import identified_annotations, iter_annotations
         from app.workspace import PageEdit
         area = p.Rect(region)
         scale = min(scale, 4096 / max(area.width, area.height),
                     math.sqrt(4_000_000 / (area.width * area.height)))
         with self._render_page(ref) as page:
-            annot = next((a for i, a in enumerate(iter_annotations(page))
-                          if annotation_token(a, i) == identifier and a.type[0] in (p.PDF_ANNOT_FREE_TEXT, p.PDF_ANNOT_LINE)), None)
+            annot = next((a for token, a in identified_annotations(page)
+                          if token == identifier and a.type[0] in (p.PDF_ANNOT_FREE_TEXT, p.PDF_ANNOT_LINE)), None)
             if annot is None:
                 raise PdfError('要移动的批注已不存在。')
             extra = p.Matrix(1, 1).prerotate(ref.rotation)

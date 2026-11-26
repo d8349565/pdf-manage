@@ -14,7 +14,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 import pymupdf as p
 
 from app.output import check_cancel
-from app.pdfedits import iter_annotations
+from app.pdfedits import identified_annotations, iter_annotations
 from app.workspace import PageEdit
 
 MAX_PIXELS = 24_000_000
@@ -325,12 +325,8 @@ def _render(page, width=1100):
 
 def _annotation_candidates(page, settings, zones):
     mask, _ = zone_masks((1000, max(1, round(1000 * page.rect.height / page.rect.width))), zones)
-    result, seen = [], set()
-    for ordinal, annot in enumerate(iter_annotations(page)):
-        token = annot.info.get('id') or f'zhixu-original-{ordinal}'
-        if token in seen:
-            token = f'zhixu-original-{ordinal}'
-        seen.add(token)
+    result = []
+    for token, annot in identified_annotations(page):
         color = annot.colors.get('stroke') or annot.colors.get('fill') or ()
         if annot.type[0] not in ANNOT_TYPES or len(color) != 3:
             continue

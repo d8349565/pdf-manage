@@ -16,10 +16,6 @@ def cjk_font_buffer():
     return pymupdf.Font("cjk").buffer
 
 
-def annotation_token(annot, ordinal):
-    return annot.info.get("id") or f"zhixu-original-{ordinal}"
-
-
 def iter_annotations(page):
     """Walk once; Page.annots() reloads each xref by searching from the start."""
     import pymupdf as p
@@ -31,13 +27,36 @@ def iter_annotations(page):
         annot = following
 
 
+def available_annotation_id(preferred, reserved):
+    identifier = preferred
+    suffix = 0
+    while identifier in reserved:
+        suffix += 1
+        identifier = f"{preferred}-{suffix}"
+    return identifier
+
+
+def identified_annotations(page):
+    """Identify annotations consistently in the source, preview, and edit replay."""
+    originals = [(annot.info["id"], annot) for annot in iter_annotations(page)]
+    # A synthetic ID must never take an existing name, even one later on the page.
+    reserved = {identifier for identifier, _ in originals}
+    seen = set()
+    for ordinal, (identifier, annot) in enumerate(originals):
+        if not identifier or identifier in seen:
+            identifier = available_annotation_id(f"zhixu-original-{ordinal}", reserved)
+            reserved.add(identifier)
+        seen.add(identifier)
+        yield identifier, annot
+
+
 def annotation_summary(page):
     from app.arrows import read_style
     from app.pdfmarks import text_settings, is_watermark
     from app.pdfimages import image_settings
     annotations = []
-    for ordinal, annot in enumerate(iter_annotations(page)):
-        annotations.append(dict(id=annotation_token(annot, ordinal), kind=annot.type[0],
+    for identifier, annot in identified_annotations(page):
+        annotations.append(dict(id=identifier, kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
             arrow_style=read_style(annot) if annot.type[0] == 3 else None,
@@ -584,15 +603,9 @@ def apply_edits(page, edits, *, transforms=None):
     import pymupdf as p
     from app.arrows import read_style, set_style, update_appearance
     subset = False
-    identifiers = set()
-    for ordinal, annot in enumerate(iter_annotations(page)):
-        identifier = annot.info.get("id", "")
-        token = identifier or f"zhixu-original-{ordinal}"
-        if token in identifiers:
-            token = f"zhixu-original-{ordinal}"
-        identifiers.add(token)
-        if token != identifier:
-            page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(token))
+    for identifier, annot in identified_annotations(page):
+        if identifier != annot.info["id"]:
+            page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(identifier))
     for edit in edits:
         if edit.kind == 'color_cleanup':
             from app.colorcleanup import apply_cleanup
@@ -658,12 +671,6 @@ def apply_edits(page, edits, *, transforms=None):
             if edit.kind == "delete":
                 page.delete_annot(annot)
                 continue
-            appearance = None
-            if edit.kind == "move" and annot.type[0] == p.PDF_ANNOT_FREE_TEXT:
-                kind, value = page.parent.xref_get_key(annot.xref, "AP/N")
-                if kind == "xref":
-                    xref = int(value.split()[0])
-                    appearance = (xref, page.parent.xref_object(xref), page.parent.xref_stream(xref))
             if edit.kind == "note_text":
                 annot.set_info(content=edit.text)
             elif edit.kind == "move":
@@ -673,6 +680,10 @@ def apply_edits(page, edits, *, transforms=None):
                 if annot.type[0] == p.PDF_ANNOT_LINE:
                     from app.arrows import move_line
                     move_line(page, annot, new_pt)
+                    continue
+                if annot.type[0] == p.PDF_ANNOT_FREE_TEXT:
+                    from app.pdfmarks import move_text_box
+                    move_text_box(page, annot, new_pt)
                     continue
                 r = annot.rect
                 if annot.set_rect(p.Rect(new_pt.x, new_pt.y, new_pt.x + r.width, new_pt.y + r.height)) is False:
@@ -685,11 +696,6 @@ def apply_edits(page, edits, *, transforms=None):
                 else:
                     annot.set_border(width=edit.width)
             annot.update()
-            if appearance is not None:
-                xref, definition, stream = appearance
-                page.parent.update_object(xref, definition)
-                page.parent.update_stream(xref, stream)
-                page.parent.xref_set_key(annot.xref, "AP/N", f"{xref} 0 R")
             update_appearance(page, annot)
             continue
         if edit.kind in ("highlight", "underline"):
@@ -718,7 +724,9 @@ def apply_edits(page, edits, *, transforms=None):
             annot.set_border(width=edit.width)
         annot.set_opacity(.22 if edit.kind == "highlight" else 1)
         if edit.annotation_id:
-            page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(edit.annotation_id))
+            reserved = {identifier for xref, _, identifier in page.annot_xrefs() if xref != annot.xref}
+            identifier = available_annotation_id(edit.annotation_id, reserved)
+            page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(identifier))
         annot.update()
         if edit.kind == "arrow":
             update_appearance(page, annot)

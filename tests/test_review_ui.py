@@ -513,7 +513,7 @@ def test_text_box_hover_presets_and_click_custom_color(reader, qapp, monkeypatch
 
     QTest.mouseMove(box.color_button)
     assert box.color_palette.isVisible() and box.color_swatches['#000000'].isChecked()
-    trigger = box.color_button.geometry().translated(box.toolbar.pos())
+    trigger = box.color_button.rect().translated(box.color_button.mapTo(view.viewport(), QPoint()))
     assert view.viewport().rect().contains(box.color_palette.geometry())
     assert not box.color_palette.geometry().intersects(trigger)
     red = box.color_swatches['#dc2626']
@@ -813,7 +813,8 @@ def test_annotation_summary_and_edits_walk_without_reloading_xrefs(monkeypatch):
         page = doc.new_page()
         page.add_text_annot((40, 70), "Keep first")
         page.add_text_annot((80, 110), "Keep second")
-        page.add_rect_annot((120, 140, 160, 180))
+        existing = page.add_rect_annot((120, 140, 160, 180))
+        doc.xref_set_key(existing.xref, "NM", p.get_pdf_str("existing-id"))
         page.insert_link({"kind": p.LINK_URI, "uri": "https://example.invalid/", "from": p.Rect(10, 10, 30, 30)})
         widget = p.Widget()
         widget.field_name, widget.field_type = "KeepField", p.PDF_WIDGET_TYPE_TEXT
@@ -824,8 +825,17 @@ def test_annotation_summary_and_edits_walk_without_reloading_xrefs(monkeypatch):
         summary = annotation_summary(page)
         assert len(summary) == 3
         assert [item["content"] for item in summary[:2]] == ["Keep first", "Keep second"]
-        apply_edits(page, (PageEdit("note", ((180, 220),), text="New note", annotation_id="new-note"),))
-        assert len(annotation_summary(page)) == 4
+        apply_edits(page, (
+            PageEdit("note", ((180, 220),), text="New note", annotation_id="existing-id"),
+            PageEdit("freetext", (180, 260, 320, 290), text="New box", annotation_id="existing-id",
+                     details=(("font", "Helvetica"),)),
+        ))
+        summary = annotation_summary(page)
+        assert [(item["id"], item["kind"], item["content"]) for item in summary[2:]] == [
+            ("existing-id", p.PDF_ANNOT_SQUARE, ""),
+            ("existing-id-1", p.PDF_ANNOT_TEXT, "New note"),
+            ("existing-id-2", p.PDF_ANNOT_FREE_TEXT, "New box"),
+        ]
         assert page.first_widget.field_name == "KeepField"
 
 
@@ -2820,6 +2830,231 @@ def test_text_box_toolbar_save_writes_pending_input(reader, qapp, tmp_path, monk
         assert any(a.info["content"] == "One click" for a in page.annots())
 
 
+@pytest.mark.parametrize("operation", ["delete", "sync"])
+def test_text_box_group_resolves_colliding_annotation_ids(reader, qapp, tmp_path, operation):
+    import json
+    from app.pdfmarks import TEXT_SETTINGS, text_settings
+
+    source, output = tmp_path / "group-collision.pdf", tmp_path / "group-result.pdf"
+    group = "example-group"
+    settings = dict(group=group, font="Helvetica", fontsize=12, color=[0, 0, 0])
+    with p.open() as doc:
+        for index in range(2):
+            page = doc.new_page()
+            if index == 1:
+                rect = page.add_rect_annot((100, 260, 200, 290))
+                rect.set_info(content="Keep this rectangle")
+                doc.xref_set_key(rect.xref, "NM", p.get_pdf_str("shared"))
+            box = page.add_freetext_annot((60, 80, 240, 130), "Old group text")
+            doc.xref_set_key(box.xref, "NM", p.get_pdf_str("shared" if index else "first"))
+            doc.xref_set_key(box.xref, TEXT_SETTINGS, p.get_pdf_str(json.dumps(settings)))
+            if index == 1:
+                # These names already exist when the second annotation needs a generated ID.
+                for y, name in enumerate(("zhixu-original-1", "zhixu-original-1-1"), 1):
+                    note = page.add_text_annot((280, 280 + y * 40), name)
+                    doc.xref_set_key(note.xref, "NM", p.get_pdf_str(name))
+        doc.save(source)
+
+    assert reader.open_files_in_tabs([str(source)])
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot(0)
+    first = tools.snapshot["annotations"][0]
+    before = tuple(reader.ws.pages)
+    if operation == "delete":
+        tools.select_annotation(first, 0)
+        tools.selected_operation("delete_group")
+    else:
+        tools.edit_text_box(first, 0, before[0])
+        editor = tools._inline_text_box
+        editor.scope.setCurrentIndex(editor.scope.findData("all"))
+        editor.editor.setPlainText("New group text")
+        assert editor.apply()
+
+    assert reader.ws.undo_stack.count() == 1
+    changed = tuple(reader.ws.pages)
+    assert all(old is not new for old, new in zip(before, changed))
+    reader.ws.undo_stack.undo()
+    assert tuple(reader.ws.pages) == before
+    reader.ws.undo_stack.redo()
+    assert tuple(reader.ws.pages) == changed
+    reader.store.write(reader.ws.pages, str(output))
+    with p.open(output) as saved:
+        for index in range(2):
+            page = saved[index]
+            annotations = list(page.annots())
+            boxes = [a for a in annotations if a.type[0] == p.PDF_ANNOT_FREE_TEXT]
+            assert [a.info["content"] for a in boxes] == ([] if operation == "delete" else ["New group text"])
+            assert all(text_settings(page, a)["group"] == group for a in boxes)
+            if index == 1:
+                assert [(a.info["id"], a.info["content"]) for a in annotations if a not in boxes] == [
+                    ("shared", "Keep this rectangle"),
+                    ("zhixu-original-1", "zhixu-original-1"),
+                    ("zhixu-original-1-1", "zhixu-original-1-1"),
+                ]
+                assert len({a.info["id"] for a in annotations}) == len(annotations)
+
+
+@pytest.mark.parametrize("rotation", [0, 90])
+def test_text_box_inline_move_preserves_legacy_annotation(reader, qapp, tmp_path, rotation):
+    source, output = tmp_path / "external-text.pdf", tmp_path / "moved-text.pdf"
+    with p.open() as doc:
+        page = doc.new_page(width=595, height=842)
+        old = page.add_freetext_annot((140, 250, 290, 310), "Legacy text", fontsize=24,
+                                     fontname="Cour", text_color=(.2, .3, .7))
+        old.set_info(title="LegacyAuthor", subject="Review", creationDate="D:20251008120100Z")
+        old.set_flags(p.PDF_ANNOT_IS_PRINT | (p.PDF_ANNOT_IS_NO_ROTATE if rotation else 0))
+        old.update()
+        doc.xref_set_key(old.xref, "CustomReviewData", p.get_pdf_str("Keep this"))
+        page.set_rotation(rotation)
+        doc.save(source)
+
+    assert reader.open_files_in_tabs([str(source)])
+    settle(qapp)
+    tools, view = reader.annotation_tools, reader.preview_view
+    assert tools.ensure_snapshot(0)
+    original = tools.snapshot["annotations"][0]
+    before = reader.ws.pages[0]
+    visible = p.Rect(original["rect"]) * p.Matrix(tools.snapshot["matrix"])
+    pos = view.mapFromScene(view.page_rects[0].topLeft() + QPointF(*tuple((visible.tl + visible.br) / 2)))
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    box = tools._inline_text_box
+    assert box is not None and box.identifier == original["id"]
+
+    handle = box.move_button if rotation else box.borders["top"]
+    start = handle.rect().center()
+    shift = QPoint(45, 30)
+    destination = handle.mapToGlobal(start) + shift
+    QTest.mousePress(handle, Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(handle, handle.mapFromGlobal(destination))
+    QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=handle.mapFromGlobal(destination))
+    scale = view.transform().m11()
+    dx, dy = shift.x() / scale, shift.y() / scale
+    expected = (visible + (dx, dy, dx, dy)) * ~box.matrix
+    assert box.apply()
+    after = reader.ws.pages[0]
+    reader.ws.undo_stack.undo()
+    assert reader.ws.pages[0] is before
+    reader.ws.undo_stack.redo()
+    assert reader.ws.pages[0] is after
+    reader.store.write(reader.ws.pages, str(output))
+
+    with p.open(source) as original_doc, p.open(output) as saved:
+        original_page, saved_page = original_doc[0], saved[0]
+        old, moved = original_page.first_annot, saved_page.first_annot
+        assert moved.next is None and tuple(moved.rect) == pytest.approx(tuple(expected), abs=.1)
+        assert moved.info == old.info and moved.flags == old.flags
+        for key in ("DA", "CustomReviewData", "ZhiXuText"):
+            assert saved.xref_get_key(moved.xref, key) == original_doc.xref_get_key(old.xref, key)
+        assert "24" in saved.xref_get_key(moved.xref, "DA")[1]
+        old_ap, moved_ap = [int(doc.xref_get_key(a.xref, "AP/N")[1].split()[0])
+                            for doc, a in ((original_doc, old), (saved, moved))]
+        assert saved.xref_stream(moved_ap) == original_doc.xref_stream(old_ap)
+        assert saved.xref_get_key(moved_ap, "BBox") == original_doc.xref_get_key(old_ap, "BBox")
+
+
+def test_text_box_closed_scope_forwards_wheel_and_saves_only_selected_pages(reader, qapp, tmp_path, monkeypatch):
+    from PyQt6.QtGui import QWheelEvent
+    from PyQt6.QtWidgets import QFileDialog
+
+    output = tmp_path / "current-page.pdf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(output), "PDF"))
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot(0)
+    tools.start_text_box((60, 220, 260, 260), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText("Only on page one")
+    box.position()
+    scroll = reader.preview_view.verticalScrollBar()
+    assert scroll.maximum() > 0
+    for focus in (box.editor, box.scope):
+        scroll.setValue(0)
+        focus.setFocus()
+        qapp.processEvents()
+        assert focus.hasFocus() and box.scope.isVisible()
+        point = box.scope.rect().center()
+        wheel = QWheelEvent(QPointF(point), QPointF(box.scope.mapToGlobal(point)),
+                            QPoint(), QPoint(0, -120), Qt.MouseButton.NoButton,
+                            Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+        QApplication.sendEvent(box.scope, wheel)
+        assert box.scope_mode() == "current" and scroll.value() > 0
+
+    scroll.setValue(0)
+    for key, scope in ((Qt.Key.Key_Down, "all"), (Qt.Key.Key_Up, "current")):
+        QTest.mouseClick(box.scope, Qt.MouseButton.LeftButton)
+        choices = box.scope.view()
+        assert choices.isVisible()
+        QTest.keyClick(choices, key)
+        QTest.keyClick(choices, Qt.Key.Key_Return)
+        reader.activateWindow()
+        qapp.processEvents()
+        assert box.scope_mode() == scope and box.editor.hasFocus()
+    QTest.keyClick(box.editor, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)
+    assert output.exists()
+    with p.open(output) as saved:
+        for index in range(2):
+            page = saved[index]
+            assert [a.info["content"] for a in page.annots(types=[p.PDF_ANNOT_FREE_TEXT])] == (
+                [] if index else ["Only on page one"])
+
+
+def test_text_box_toolbar_buttons_remain_clickable_as_reader_width_changes(reader, qapp):
+    reader.resize(980, 720)
+    reader.immersive.pin.click()
+    reader.act_pages.setChecked(True)
+    reader.act_tools.setChecked(True)
+    reader.open_annotation_tools()
+    settle(qapp)
+    tools, view = reader.annotation_tools, reader.preview_view
+    split = reader.reader_split
+    viewport = view.viewport()
+    assert reader.left_panel.isVisible() and reader.tools_panel.isVisible()
+    split.moveSplitter(350, 1)
+    settle(qapp)
+    assert tools.ensure_snapshot(0)
+    before = reader.ws.pages[0]
+    tools.start_text_box((60, 180, 240, 220), 0, before)
+    box = tools._inline_text_box
+    box.editor.setPlainText("Do not apply")
+    apply = box.toolbar.findChild(QToolButton, "applyText")
+    cancel = next(button for button in box.toolbar.findChildren(QToolButton)
+                  if button.accessibleName() == "取消文本框输入")
+
+    def check_buttons():
+        assert box.scope.isVisible()
+        for control in (box.scope, apply, cancel):
+            assert viewport.rect().contains(control.mapTo(viewport, control.rect().topLeft()))
+            assert viewport.rect().contains(control.mapTo(viewport, control.rect().bottomRight()))
+            assert viewport.childAt(control.mapTo(viewport, control.rect().center())) is control
+
+    check_buttons()
+    narrow_width, narrow_height = viewport.width(), box.toolbar.height()
+    reader.resize(1450, 760)
+    settle(qapp)
+    check_buttons()
+    assert viewport.width() > narrow_width and box.toolbar.height() < narrow_height
+    reader.resize(980, 720)
+    split.moveSplitter(390, 1)
+    settle(qapp)
+    check_buttons()
+    QTest.mouseClick(cancel, Qt.MouseButton.LeftButton)
+    qapp.processEvents()
+    assert tools._inline_text_box is None and reader.ws.pages[0] is before
+
+    tools.start_text_box((60, 180, 240, 220), 0, before)
+    box = tools._inline_text_box
+    box.editor.setPlainText("Apply in the narrow reader")
+    apply = box.toolbar.findChild(QToolButton, "applyText")
+    assert viewport.childAt(apply.mapTo(viewport, apply.rect().center())) is apply
+    QTest.mouseClick(apply, Qt.MouseButton.LeftButton)
+    settle(qapp)
+    assert tools._inline_text_box is None
+    assert reader.ws.pages[0].edits[-1].text == "Apply in the narrow reader"
+
+
 def test_text_box_pending_layout_keeps_latest_input_while_renderer_is_busy(reader):
     from threading import Event, Thread
     reader.open_annotation_tools()
@@ -2909,7 +3144,7 @@ def test_text_box_inline_drag_move_by_border_and_toolbar_button(reader, qapp, mo
     QTest.mouseRelease(ebox.move_button, Qt.MouseButton.LeftButton, pos=start3 + QPoint(40, 20))
     assert ebox.apply()
     settle(qapp)
-    assert reader.ws.pages[0].edits[-1].kind == "freetext_update"
+    assert reader.ws.pages[0].edits[-1].kind == "move"
     assert tools.ensure_snapshot(0)
     updated_annot = next(a for a in tools.snapshot["annotations"] if a["kind"] == 2)
     new_rect = p.Rect(updated_annot["rect"])

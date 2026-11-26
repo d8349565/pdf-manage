@@ -2689,11 +2689,11 @@ class AnnotationTools(QWidget):
                                  color=(self.color.redF(), self.color.greenF(), self.color.blueF()),
                                  width=self.width.value()), page_index=self.snapshot_index)
 
-    def move_annot_to(self, identifier: str, canonical_pt, *, page_index=None, expected_ref=None):
+    def move_annot_to(self, identifier: str, canonical_pt, *, page_index=None, expected_ref=None, on_error=None):
         if identifier:
             return self.commit(PageEdit("move", points=(tuple(canonical_pt),), annotation_id=identifier),
                                page_index=self.snapshot_index if page_index is None else page_index,
-                               expected_ref=expected_ref)
+                               expected_ref=expected_ref, on_error=on_error)
 
     def start_move_annot(self, identifier: str, *, page_index=None, anchor=None):
         import pymupdf as p

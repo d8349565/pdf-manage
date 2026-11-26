@@ -75,10 +75,26 @@ def text_settings(page, annot):
 
 
 def group_text_box_ids(page, group):
-    from app.pdfedits import annotation_token, iter_annotations
-    for ordinal, annot in enumerate(iter_annotations(page)):
+    from app.pdfedits import identified_annotations
+    for identifier, annot in identified_annotations(page):
         if annot.type[0] == 2 and text_settings(page, annot).get("group") == group:
-            yield annotation_token(annot, ordinal)
+            yield identifier
+
+
+def move_text_box(page, annot, target):
+    """Translate the PDF coordinates while retaining the existing appearance and metadata."""
+    from pymupdf import mupdf
+    from app.pdfstructure import page_pdf_matrix
+
+    to_pdf = page.rotation_matrix * ~page_pdf_matrix(page)
+    delta = target * to_pdf - annot.rect.tl * to_pdf
+    native = mupdf.pdf_annot_obj(annot.this)
+    for key in ("Rect", "CL"):
+        array = mupdf.pdf_dict_gets(native, key)
+        count = mupdf.pdf_array_len(array)
+        if count:
+            values = (mupdf.pdf_array_get_real(array, i) + delta[i % 2] for i in range(count))
+            page.parent.xref_set_key(annot.xref, key, "[" + " ".join(f"{v:.9f}" for v in values) + "]")
 
 
 def add_text_box(page, edit):
@@ -118,7 +134,7 @@ def _text_box_appearance(text, family, fontsize, color, width, height, available
 
 def _add_text_box(page, edit):
     import pymupdf as p
-    from app.pdfedits import iter_annotations
+    from app.pdfedits import available_annotation_id, iter_annotations
     settings = dict(edit.details)
     fontsize = float(settings.get("fontsize", 12))
     if not 6 <= fontsize <= 144 or not edit.text.strip() or len(edit.text) > 20000:
@@ -134,11 +150,17 @@ def _add_text_box(page, edit):
     with p.open(stream=appearance, filetype="pdf") as document:
         visible.y1 = visible.y0 + height
         area = visible * page.derotation_matrix
-        previous = next((a for a in iter_annotations(page) if a.info.get("id") == edit.annotation_id), None)
-        if edit.kind == "freetext_update" and previous is None:
-            raise ValueError("要修改的文本框已不存在。")
+        identifier, previous = edit.annotation_id, None
+        if edit.kind == "freetext_update":
+            previous = next((a for a in iter_annotations(page)
+                             if a.type[0] == p.PDF_ANNOT_FREE_TEXT and a.info["id"] == identifier), None)
+            if previous is None:
+                raise ValueError("要修改的文本框已不存在。")
+        elif identifier:
+            identifier = available_annotation_id(identifier, {name for _, _, name in page.annot_xrefs()})
         annot = page.add_freetext_annot(area, edit.text, fontsize=fontsize, text_color=edit.color)
-        page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(edit.annotation_id))
+        if identifier:
+            page.parent.xref_set_key(annot.xref, "NM", p.get_pdf_str(identifier))
         settings.update(fontsize=fontsize, color=list(edit.color))
         page.parent.xref_set_key(annot.xref, TEXT_SETTINGS, p.get_pdf_str(json.dumps(settings, ensure_ascii=False)))
         if page.rotation:
