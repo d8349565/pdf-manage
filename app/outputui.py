@@ -291,7 +291,7 @@ class PageNumbersDialog(QDialog):
         self.start.setRange(1, 1000000)
         form.addRow(tr('起始编号'), self.start)
         self.format = QComboBox()
-        for name, value in (("1", "number"), ("1 / 总数", "fraction"), ("第 1 页，共 N 页", "chinese"), ("Page 1 of N", "english"), ("- 1 -", "dash")):
+        for name, value in (("1", "number"), ("1 / 总数", "fraction"), ("第 1 页", "chinese_page"), ("第 1 页，共 N 页", "chinese"), ("Page 1 of N", "english"), ("- 1 -", "dash")):
             self.format.addItem(name, value)
         form.addRow(tr('可见格式'), self.format)
         self.position = QComboBox()

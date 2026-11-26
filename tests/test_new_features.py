@@ -214,6 +214,15 @@ def test_page_labels_skip_cover_and_chinese_font_is_subset(qapp, tmp_path):
         assert "第" not in doc[0].get_text()
         assert "第 1 页，共 2 页" in doc[1].get_text()
     assert numbered.stat().st_size < 100000
+    chinese_page = tmp_path / "chinese_page.pdf"
+    store.write(pages, str(chinese_page), options=WriteOptions(page_numbers=PageNumberOptions(skip=1, format="chinese_page")))
+    with p.open(chinese_page) as doc:
+        assert "第" not in doc[0].get_text()
+        assert "第 1 页" in doc[1].get_text()
+        assert "共" not in doc[1].get_text()
+        assert "第 2 页" in doc[2].get_text()
+        assert "共" not in doc[2].get_text()
+    assert chinese_page.stat().st_size < 100000
     store.close_all()
 
 
@@ -538,6 +547,14 @@ def test_page_number_dialog_preview_modes(qapp, tmp_path):
         win.refresh()
         dialog = PageNumbersDialog(win)
         dialog.timer.stop()
+        dialog.request_preview()
+        QThreadPool.globalInstance().waitForDone(30000)
+        qapp.processEvents()
+        assert dialog.preview.pixmap() and not dialog.preview.pixmap().isNull()
+        idx = dialog.format.findData("chinese_page")
+        assert idx >= 0
+        dialog.format.setCurrentIndex(idx)
+        assert dialog.options().format == "chinese_page"
         dialog.request_preview()
         QThreadPool.globalInstance().waitForDone(30000)
         qapp.processEvents()

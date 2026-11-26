@@ -19,7 +19,7 @@ class PageNumberOptions:
     def validate(self, count):
         if self.mode not in ("visible", "labels") or not 0 <= self.skip < count or self.start < 1:
             raise ValueError("请至少保留一页用于编号，起始编号须大于零。")
-        if self.format not in ("number", "fraction", "chinese", "english", "dash"):
+        if self.format not in ("number", "fraction", "chinese_page", "chinese", "english", "dash"):
             raise ValueError("不支持的页码格式。")
         if self.position not in {f"{v}-{h}" for v in ("top", "bottom") for h in ("left", "center", "right")}:
             raise ValueError("不支持的页码位置。")
@@ -31,6 +31,7 @@ class PageNumberOptions:
     def text(self, number, total):
         return {
             "number": str(number), "fraction": f"{number} / {total}",
+            "chinese_page": f"第 {number} 页",
             "chinese": f"第 {number} 页，共 {total} 页",
             "english": f"Page {number} of {total}", "dash": f"- {number} -",
         }[self.format]
