@@ -158,7 +158,7 @@
     "app/translation/config.py:40"
   ],
   "Enter 应用修改 · Esc 取消": [
-    "app/editingui.py:2004"
+    "app/editingui.py:2037"
   ],
   "Esc 保留用于取消当前操作，请选择其他组合。": [
     "app/shortcuts.py:45"
@@ -990,7 +990,7 @@
     "app/imagequick.py:107"
   ],
   "从本机字体中选择，应用于当前框选的文字": [
-    "app/editingui.py:2061"
+    "app/editingui.py:2094"
   ],
   "从页面取色": [
     "app/shortcutcommands.py:cleanup.pick"
@@ -1176,7 +1176,7 @@
     "app/mergeopenui.py:186"
   ],
   "保存时会移除所选旧文字并写入新文字。请核对字体和位置。": [
-    "app/editingui.py:2380"
+    "app/editingui.py:2413"
   ],
   "保存时选择新文件位置": [
     "app/ui.py:3745"
@@ -1236,7 +1236,7 @@
     "app/colorcleanupui.py:492"
   ],
   "保留混合样式": [
-    "app/editingui.py:2138"
+    "app/editingui.py:2171"
   ],
   "保留的原组件及缓存位置": [
     "app/storageui.py:223"
@@ -1260,7 +1260,7 @@
     "app/pdfcontentcompareui.py:294"
   ],
   "修改未应用": [
-    "app/editingui.py:2242"
+    "app/editingui.py:2275"
   ],
   "候选第 {p0} 页": [
     "app/pdfcontentcompareui.py:292"
@@ -1291,7 +1291,7 @@
     "app/mergeopenui.py:354"
   ],
   "先在页面中选中批注": [
-    "app/editingui.py:1234"
+    "app/editingui.py:1248"
   ],
   "先在页面或下拉框中选中批注": [
     "app/editingui.py:925"
@@ -1624,7 +1624,7 @@
     "app/translation/ui.py:1213"
   ],
   "删除": [
-    "app/editingui.py:1389",
+    "app/editingui.py:1420",
     "app/imageui.py:164",
     "app/ui.py:4185"
   ],
@@ -1653,6 +1653,10 @@
   ],
   "删除所选页": [
     "app/ui.py:3515"
+  ],
+  "删除文本框": [
+    "app/editingui.py:960",
+    "app/editingui.py:961"
   ],
   "删除条款": [
     "app/pdfcontentcompareui.py:29"
@@ -1734,7 +1738,7 @@
     "app/exportdialogs.py:95"
   ],
   "加粗": [
-    "app/editingui.py:2082"
+    "app/editingui.py:2115"
   ],
   "加载已取消，点击左侧这一项可重试。": [
     "app/pdfcontentcompareui.py:366"
@@ -1796,10 +1800,10 @@
     "app/ui.py:970"
   ],
   "单向实心": [
-    "app/arrowstyleui.py:127"
+    "app/arrowstyleui.py:152"
   ],
   "单向开口": [
-    "app/arrowstyleui.py:127"
+    "app/arrowstyleui.py:152"
   ],
   "单行文字修正": [
     "app/shortcutcommands.py:review.replace"
@@ -1901,7 +1905,7 @@
     "app/shortcutcommands.py:whitening.compare"
   ],
   "原处文字修改": [
-    "app/editingui.py:2003"
+    "app/editingui.py:2036"
   ],
   "原工作区已改变，请关闭后重新打开清理工具。": [
     "app/colorcleanupui.py:897"
@@ -1929,13 +1933,13 @@
     "app/pdfcontentcompareui.py:364"
   ],
   "原文字体": [
-    "app/editingui.py:2060"
+    "app/editingui.py:2093"
   ],
   "原文字号": [
-    "app/editingui.py:2072"
+    "app/editingui.py:2105"
   ],
   "原文颜色": [
-    "app/editingui.py:2102"
+    "app/editingui.py:2135"
   ],
   "原有 OCR 组件保留。": [
     "app/ocrui.py:48"
@@ -2051,10 +2055,10 @@
     "app/wordui.py:260"
   ],
   "双向实心": [
-    "app/arrowstyleui.py:128"
+    "app/arrowstyleui.py:153"
   ],
   "双向开口": [
-    "app/arrowstyleui.py:128"
+    "app/arrowstyleui.py:153"
   ],
   "双重保护 · 打开密码与独立管理密码": [
     "app/exportdialogs.py:80"
@@ -2094,9 +2098,9 @@
   ],
   "取消": [
     "app/annotcropui.py:249",
-    "app/arrowstyleui.py:212",
+    "app/arrowstyleui.py:225",
     "app/deskewui.py:74",
-    "app/editingui.py:2399",
+    "app/editingui.py:2432",
     "app/exportdialogs.py:60",
     "app/imagequick.py:197",
     "app/imagequick.py:119",
@@ -2124,7 +2128,7 @@
     "app/ui.py:6716"
   ],
   "取消 (Esc)": [
-    "app/editingui.py:2129"
+    "app/editingui.py:2162"
   ],
   "取消中": [
     "app/progress.py:112"
@@ -2141,13 +2145,13 @@
     "app/immersivereading.py:152"
   ],
   "取消文字修改": [
-    "app/editingui.py:2128"
+    "app/editingui.py:2161"
   ],
   "取消文本框输入": [
-    "app/textboxui.py:103"
+    "app/textboxui.py:123"
   ],
   "取消本次输入（Esc）": [
-    "app/textboxui.py:102"
+    "app/textboxui.py:122"
   ],
   "取消本页勾选": [
     "app/shortcutcommands.py:cleanup.clear_annotations"
@@ -2604,7 +2608,7 @@
     "app/translation/ui.py:1326"
   ],
   "在一页内框选区域，松开后选择马赛克样式并预览；Esc 取消工具。": [
-    "app/editingui.py:1138"
+    "app/editingui.py:1152"
   ],
   "在主窗口显示「查看更新」，关闭后仍可手动检查。": [
     "app/aboutui.py:220"
@@ -2622,7 +2626,7 @@
     "app/editingui.py:184"
   ],
   "在当前页拖选或绘制；Esc 取消工具。": [
-    "app/editingui.py:1141"
+    "app/editingui.py:1155"
   ],
   "在当前页点击放置图片；Esc 取消。": [
     "app/imageui.py:289"
@@ -2690,7 +2694,7 @@
     "app/pagetoolsui.py:118"
   ],
   "备注内容": [
-    "app/editingui.py:2300"
+    "app/editingui.py:2333"
   ],
   "备用快捷键": [
     "app/shortcutui.py:370",
@@ -2811,7 +2815,7 @@
     "app/pdfcontentcompareui.py:274"
   ],
   "字号（pt）": [
-    "app/editingui.py:2071"
+    "app/editingui.py:2104"
   ],
   "存储位置": [
     "app/shortcutcommands.py:ocr.storage",
@@ -2946,7 +2950,7 @@
     "app/wordui.py:801"
   ],
   "完成文本框": [
-    "app/textboxui.py:99"
+    "app/textboxui.py:119"
   ],
   "完成裁纸": [
     "app/scanwhiteui.py:371",
@@ -2996,7 +3000,7 @@
     "app/outputui.py:329"
   ],
   "实线": [
-    "app/arrowstyleui.py:129"
+    "app/arrowstyleui.py:154"
   ],
   "实际大小": [
     "app/colorcleanupui.py:397"
@@ -3347,7 +3351,7 @@
     "app/scanwhiteui.py:645"
   ],
   "已取消当前工具，返回浏览。": [
-    "app/editingui.py:1517"
+    "app/editingui.py:1548"
   ],
   "已取消打印": [
     "app/printing.py:1762"
@@ -3603,10 +3607,10 @@
     "app/translation/ui.py:701"
   ],
   "应用修改": [
-    "app/editingui.py:2397"
+    "app/editingui.py:2430"
   ],
   "应用修改 (Enter)": [
-    "app/editingui.py:2121"
+    "app/editingui.py:2154"
   ],
   "应用到文档": [
     "app/scanwhiteui.py:330",
@@ -3622,10 +3626,10 @@
     "app/deskewui.py:73"
   ],
   "应用当前选择的颜色与线宽": [
-    "app/editingui.py:1385"
+    "app/editingui.py:1416"
   ],
   "应用文字修改": [
-    "app/editingui.py:2120"
+    "app/editingui.py:2153"
   ],
   "应用水印": [
     "app/watermarkui.py:250"
@@ -3725,7 +3729,7 @@
     "app/updateui.py:389"
   ],
   "当前样式": [
-    "app/arrowstyleui.py:263"
+    "app/arrowstyleui.py:276"
   ],
   "当前档位可能改变图片细节，请放大核对小字与细线。": [
     "app/compression.py:503"
@@ -3761,7 +3765,7 @@
     "app/translation/client.py:153"
   ],
   "当前选区包含不同样式；调整字号将统一当前选区的字号（pt）": [
-    "app/editingui.py:2140"
+    "app/editingui.py:2173"
   ],
   "当前页": [
     "app/exportdialogs.py:546",
@@ -3781,13 +3785,13 @@
     "app/textselection.py:184"
   ],
   "当前页暂无批注": [
-    "app/editingui.py:1216"
+    "app/editingui.py:1230"
   ],
   "当前页未检测到可翻译的文字段落。": [
     "app/translation/ui.py:3282"
   ],
   "当前页没有可修改的文字层。扫描图片或已转为线条的工程图纸可用文本框、画笔或便签标注。": [
-    "app/editingui.py:2323"
+    "app/editingui.py:2356"
   ],
   "当前页没有可选择的文字层。": [
     "app/textselection.py:188"
@@ -3946,8 +3950,8 @@
     "app/shortcutcommands.py:storage.cache_reset"
   ],
   "恢复原样式": [
-    "app/editingui.py:2112",
-    "app/editingui.py:2113"
+    "app/editingui.py:2145",
+    "app/editingui.py:2146"
   ],
   "恢复原色": [
     "app/readingcolors.py:224",
@@ -3981,6 +3985,9 @@
   ],
   "恢复默认输出默认位置": [
     "app/shortcutcommands.py:storage.output_reset"
+  ],
+  "悬停选择常用颜色，点击自定义颜色": [
+    "app/textboxui.py:95"
   ],
   "感谢为项目提供建议和问题反馈的朋友": [
     "app/ui.py:3269"
@@ -4318,8 +4325,8 @@
     "app/signatureui.py:104"
   ],
   "批注线宽": [
-    "app/arrowstyleui.py:204",
-    "app/arrowstyleui.py:206",
+    "app/arrowstyleui.py:217",
+    "app/arrowstyleui.py:219",
     "app/editingui.py:888"
   ],
   "批注线宽（pt）": [
@@ -4442,13 +4449,13 @@
     "app/watermarkpreview.py:61"
   ],
   "拖动绘制椭圆；按住 Shift 画正圆；Esc 取消工具。": [
-    "app/editingui.py:1140"
+    "app/editingui.py:1154"
   ],
   "拖动缩略图，调整页序": [
     "app/quickstartui.py:61"
   ],
   "拖动调整文本框宽高；文字放不下时高度会自动增长": [
-    "app/textboxui.py:55"
+    "app/textboxui.py:56"
   ],
   "拖动选择要翻译的文字": [
     "app/translation/ui.py:2056"
@@ -4833,6 +4840,9 @@
   "文字、批注和表单外观固化；链接、附件与可填写表单不保留。需要搜索和复制文字时，可对副本使用 OCR。": [
     "app/rasterui.py:72"
   ],
+  "文字不能为空。要删除，请先取消编辑，再单击文本框并点右上角的删除按钮。": [
+    "app/textboxui.py:349"
+  ],
   "文字与纸面的颜色太接近，请调整后应用。": [
     "app/readingcolors.py:286"
   ],
@@ -4840,7 +4850,7 @@
     "app/pdfcontentcompareui.py:29"
   ],
   "文字修正预览": [
-    "app/editingui.py:2375"
+    "app/editingui.py:2408"
   ],
   "文字导出已取消。": [
     "app/ui.py:6774"
@@ -4872,11 +4882,12 @@
     "app/ui.py:3203"
   ],
   "文字超出页面，请减小字号、增大框宽或减少内容。": [
-    "app/textboxui.py:192"
+    "app/textboxui.py:228"
   ],
   "文字颜色": [
-    "app/editingui.py:2098",
-    "app/readingcolors.py:187"
+    "app/editingui.py:2131",
+    "app/readingcolors.py:187",
+    "app/textboxui.py:158"
   ],
   "文字高亮": [
     "app/shortcutcommands.py:review.highlight"
@@ -4885,10 +4896,10 @@
     "app/ui.py:6762"
   ],
   "文本框字体": [
-    "app/textboxui.py:78"
+    "app/textboxui.py:79"
   ],
   "文本框字号": [
-    "app/textboxui.py:90"
+    "app/textboxui.py:91"
   ],
   "文档": [
     "app/ui.py:3178",
@@ -4943,7 +4954,7 @@
     "app/pdfcompareui.py:349"
   ],
   "斜体": [
-    "app/editingui.py:2083"
+    "app/editingui.py:2116"
   ],
   "新 PDF 的排版方式": [
     "app/annotcropui.py:220"
@@ -5237,8 +5248,8 @@
     "app/themes.py:terracotta"
   ],
   "更多审阅工具": [
-    "app/editingui.py:973",
-    "app/editingui.py:974"
+    "app/editingui.py:987",
+    "app/editingui.py:988"
   ],
   "更多快捷键操作": [
     "app/shortcutui.py:247"
@@ -5491,8 +5502,8 @@
     "app/printing.py:1301"
   ],
   "本次操作未应用": [
-    "app/editingui.py:1834",
-    "app/editingui.py:2428"
+    "app/editingui.py:1867",
+    "app/editingui.py:2461"
   ],
   "本次未检出正文修改": [
     "app/pdfcontentcompareui.py:307",
@@ -5600,7 +5611,7 @@
     "app/ui.py:3271"
   ],
   "查看／修改批注备注": [
-    "app/editingui.py:1383",
+    "app/editingui.py:1414",
     "app/shortcutcommands.py:annotation.note_text"
   ],
   "查看／微调识别原文": [
@@ -5616,7 +5627,7 @@
     "app/updateui.py:473"
   ],
   "样式设置作用于当前框选的已有文字；可直接应用，无需重新输入": [
-    "app/editingui.py:2024"
+    "app/editingui.py:2057"
   ],
   "根据检测到的文字行与横线校正局部倾斜，文字不足时保留原状；请核对效果。": [
     "app/scanwhiteui.py:249"
@@ -5724,7 +5735,7 @@
     "app/printing.py:1218"
   ],
   "橙色": [
-    "app/arrowstyleui.py:176"
+    "app/arrowstyleui.py:101"
   ],
   "正在下载 {tag}": [
     "app/updateui.py:476"
@@ -5754,7 +5765,7 @@
   ],
   "正在准备预览…": [
     "app/compressionpreview.py:95",
-    "app/editingui.py:2484",
+    "app/editingui.py:2517",
     "app/mosaicui.py:91"
   ],
   "正在分析第 {p0} 页版面与段落…": [
@@ -5881,7 +5892,7 @@
     "app/compression.py:445"
   ],
   "正在试看": [
-    "app/arrowstyleui.py:263"
+    "app/arrowstyleui.py:276"
   ],
   "正在读取 GitHub 发布说明，请稍候。": [
     "app/updateui.py:419"
@@ -6112,8 +6123,8 @@
     "app/pdfcontentcompareui.py:221"
   ],
   "沿用原字体": [
-    "app/editingui.py:2057",
-    "app/editingui.py:2059"
+    "app/editingui.py:2090",
+    "app/editingui.py:2092"
   ],
   "沿短边装订": [
     "app/printing.py:1354"
@@ -6170,7 +6181,7 @@
     "app/exportdialogs.py:230"
   ],
   "添加备注": [
-    "app/editingui.py:2300"
+    "app/editingui.py:2333"
   ],
   "添加备用快捷键": [
     "app/shortcutui.py:221"
@@ -6312,7 +6323,7 @@
     "app/printing.py:1246"
   ],
   "点一下添加便签；Esc 取消工具。": [
-    "app/editingui.py:1139"
+    "app/editingui.py:1153"
   ],
   "点击“统计用量”查看当前组件、可清理缓存和旧备份的占用空间。": [
     "app/storageui.py:193"
@@ -6330,7 +6341,7 @@
     "app/translation/ui.py:1450"
   ],
   "点击或框选文字即可在原处直接修改；Enter 确认，Esc 取消。": [
-    "app/editingui.py:1137"
+    "app/editingui.py:1151"
   ],
   "点击链接跳转；拖动选择文字；": [
     "app/textselection.py:50"
@@ -6339,7 +6350,7 @@
     "app/quickstartui.py:62"
   ],
   "点线": [
-    "app/arrowstyleui.py:129"
+    "app/arrowstyleui.py:154"
   ],
   "版式与图形检查": [
     "app/pdfcontentcompareui.py:102",
@@ -6484,7 +6495,7 @@
     "app/shortcutcommands.py:theme.graphite"
   ],
   "确定": [
-    "app/arrowstyleui.py:211"
+    "app/arrowstyleui.py:224"
   ],
   "确定更新": [
     "app/aboutui.py:302",
@@ -6544,7 +6555,7 @@
     "app/shortcutcommands.py:annotation.move"
   ],
   "移动批注": [
-    "app/editingui.py:1387"
+    "app/editingui.py:1418"
   ],
   "移动页面": [
     "app/shortcutcommands.py:cleanup.move"
@@ -6723,10 +6734,10 @@
     "app/shortcutcommands.py:review.arrow"
   ],
   "箭头样式": [
-    "app/arrowstyleui.py:103",
+    "app/arrowstyleui.py:128",
     "app/editingui.py:894",
     "app/editingui.py:897",
-    "app/editingui.py:1385"
+    "app/editingui.py:1416"
   ],
   "米色纸面": [
     "app/readingcolors.py:159"
@@ -6755,13 +6766,13 @@
     "app/translation/ui.py:2659"
   ],
   "紫色": [
-    "app/arrowstyleui.py:177"
+    "app/arrowstyleui.py:102"
   ],
   "繁體中文": [
     "app/translation/config.py:57"
   ],
   "红色": [
-    "app/arrowstyleui.py:176"
+    "app/arrowstyleui.py:101"
   ],
   "纵向": [
     "app/pagesplitui.py:70",
@@ -6821,7 +6832,7 @@
     "app/recentui.py:292"
   ],
   "绿色": [
-    "app/arrowstyleui.py:177"
+    "app/arrowstyleui.py:102"
   ],
   "绿色版 · 下载 ZIP，退出软件后解压到新文件夹。": [
     "app/updateui.py:264"
@@ -6860,7 +6871,7 @@
     "app/ui.py:6941"
   ],
   "编辑文本框": [
-    "app/editingui.py:1381"
+    "app/editingui.py:1412"
   ],
   "缩小": [
     "app/pdfcontentcompareui.py:133",
@@ -7039,8 +7050,8 @@
     "app/pagesplitui.py:66"
   ],
   "自定义颜色": [
-    "app/arrowstyleui.py:190",
-    "app/arrowstyleui.py:331",
+    "app/arrowstyleui.py:203",
+    "app/arrowstyleui.py:341",
     "app/readingcolors.py:161",
     "app/readingcolors.py:264"
   ],
@@ -7089,10 +7100,10 @@
     "app/updateui.py:433"
   ],
   "蓝色": [
-    "app/arrowstyleui.py:177"
+    "app/arrowstyleui.py:102"
   ],
   "虚线": [
-    "app/arrowstyleui.py:129"
+    "app/arrowstyleui.py:154"
   ],
   "行数": [
     "app/watermarkui.py:194"
@@ -7477,7 +7488,7 @@
     "app/shortcutcommands.py:cleanup.adjust"
   ],
   "调整文本框尺寸": [
-    "app/textboxui.py:56"
+    "app/textboxui.py:57"
   ],
   "调整水印": [
     "app/watermarkui.py:737"
@@ -7626,7 +7637,7 @@
     "app/searchui.py:106"
   ],
   "输入文字…": [
-    "app/textboxui.py:40"
+    "app/textboxui.py:41"
   ],
   "输入页码，按 Enter 跳转": [
     "app/ui.py:3916",
@@ -7781,13 +7792,13 @@
     "app/regioncapture.py:299"
   ],
   "选区含不同样式；只调整需要改变的属性，其余保留": [
-    "app/editingui.py:2139"
+    "app/editingui.py:2172"
   ],
   "选区来源": [
     "app/annotcropui.py:216"
   ],
   "选区没有文字层；扫描图片或已转为线条的工程图纸可用画笔、文本框或便签标注。": [
-    "app/editingui.py:2339"
+    "app/editingui.py:2372"
   ],
   "选择 PDF": [
     "app/pdfcompareui.py:386",
@@ -7854,10 +7865,10 @@
     "app/ui.py:6829"
   ],
   "选择字体（当前：{p0}）": [
-    "app/textboxui.py:145"
+    "app/textboxui.py:181"
   ],
   "选择字号": [
-    "app/textboxui.py:89"
+    "app/textboxui.py:90"
   ],
   "选择安装位置": [
     "app/shortcutcommands.py:runtime.location"
@@ -7872,7 +7883,7 @@
     "app/watermarkui.py:119"
   ],
   "选择当前页批注…": [
-    "app/editingui.py:1213"
+    "app/editingui.py:1227"
   ],
   "选择或拖入{p0} PDF": [
     "app/pdfcompareui.py:293",
@@ -7887,9 +7898,9 @@
   "选择批注颜色": [
     "app/editingui.py:874",
     "app/editingui.py:875",
-    "app/editingui.py:1054",
-    "app/editingui.py:1032",
-    "app/editingui.py:1050",
+    "app/editingui.py:1068",
+    "app/editingui.py:1046",
+    "app/editingui.py:1064",
     "app/shortcutcommands.py:annotation.choose_color"
   ],
   "选择操作后修改快捷键": [
@@ -8302,7 +8313,7 @@
     "app/shortcutcommands.py:review.freetext"
   ],
   "页面文本框内容": [
-    "app/textboxui.py:41"
+    "app/textboxui.py:42"
   ],
   "页面暂时无法加载，请重新选择该页重试。": [
     "app/ui.py:5509"
@@ -8389,8 +8400,9 @@
     "app/filesplitui.py:96"
   ],
   "颜色": [
-    "app/arrowstyleui.py:174",
-    "app/editingui.py:996",
+    "app/arrowstyleui.py:199",
+    "app/editingui.py:1010",
+    "app/textboxui.py:94",
     "app/watermarkui.py:160"
   ],
   "颜色模式": [
@@ -8470,7 +8482,7 @@
     "app/scanwhiteui.py:240"
   ],
   "黑色": [
-    "app/arrowstyleui.py:176"
+    "app/arrowstyleui.py:101"
   ],
   "默认 PDF 应用": [
     "app/ui.py:7231"

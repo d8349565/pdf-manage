@@ -952,6 +952,20 @@ class AnnotationTools(QWidget):
             self.view.setMouseTracking(True)
             self.view.viewport().setMouseTracking(True)
         self.hover_bar = AnnotationHoverBar(self.view.viewport(), self)
+        self.text_delete_button = QToolButton(self.view.viewport())
+        self.text_delete_button.setFixedSize(24, 24)
+        self.text_delete_button.setIcon(toolbar_icon('trash', '#B91C1C', 16))
+        self.text_delete_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.text_delete_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.text_delete_button.setAccessibleName(tr('删除文本框'))
+        self.host.shortcut_manager.watch_hint('annotation.delete', self.text_delete_button, tr('删除文本框'))
+        set_theme_style(self.text_delete_button, '''
+            QToolButton { min-width: 0; min-height: 0; padding: 0; background: #FFFFFF;
+                          border: 1px solid #CBD5E1; border-radius: 5px; }
+            QToolButton:hover { background: #FEF2F2; border-color: #B91C1C; }
+        ''')
+        self.text_delete_button.clicked.connect(lambda: self.selected_operation('delete'))
+        self.text_delete_button.hide()
         if hasattr(self.view, "installEventFilter"):
             self.view.installEventFilter(self)
         if hasattr(self.view, "view_changed"):
@@ -1313,6 +1327,7 @@ class AnnotationTools(QWidget):
 
     def clear_selection(self):
         self.selection = None
+        self.text_delete_button.hide()
         if self.selection_border is not None:
             self.view._scene.removeItem(self.selection_border)
             self.selection_border = None
@@ -1343,7 +1358,23 @@ class AnnotationTools(QWidget):
                 or self.host.ws.preview_index() != selection.active_index or index >= len(self.view.page_rects)):
             self.clear_selection()
             return
-        self.selection_border.setRect(selection.local_rect.translated(self.view.page_rects[index].topLeft()))
+        scene_rect = selection.local_rect.translated(self.view.page_rects[index].topLeft())
+        self.selection_border.setRect(scene_rect)
+        button = self.text_delete_button
+        viewport = self.view.viewport().rect()
+        rect = self.view.mapFromScene(scene_rect).boundingRect()
+        if (selection.annot['kind'] != 2 or self._move_state or not viewport.intersects(rect)
+                or self.host.store.operation_reason([selection.ref], 'annotate')):
+            button.hide()
+            return
+        # Keep even a one-character box clear for double-clicking and dragging.
+        x = min(rect.right() + 1, viewport.width() - button.width())
+        y = rect.top() - button.height()
+        if y < 0 and x <= rect.right():
+            y = rect.bottom() + 1
+        button.move(max(0, x), max(0, min(y, viewport.height() - button.height())))
+        button.show()
+        button.raise_()
 
     def selected_operation(self, name):
         self.position_selection()
@@ -1587,6 +1618,8 @@ class AnnotationTools(QWidget):
             return True
         if event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self._position_inline_replace)
+            if self.selection:
+                QTimer.singleShot(0, self.position_selection)
         if event.type() == QEvent.Type.Leave and not self._move_state:
             self.hover_bar._hide_timer.start(250)
         if not self.host.ws.pages or not self.view.isVisible():
@@ -2505,6 +2538,7 @@ class AnnotationTools(QWidget):
         self.view._scene.addItem(self._move_preview)
         if self.selection_border is not None:
             self.selection_border.hide()
+            self.text_delete_button.hide()
         if layers:
             for key, (image, origin, factor) in zip(('backdrop', 'artwork'), layers):
                 if self.view.reading_colors.enabled:
@@ -2587,6 +2621,7 @@ class AnnotationTools(QWidget):
         if state:
             if self.selection_border is not None:
                 self.selection_border.show()
+                self.position_selection()
             for key in ('backdrop', 'artwork'):
                 if key in state:
                     self.view._scene.removeItem(state[key])

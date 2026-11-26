@@ -8,6 +8,7 @@ from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QComboBox, QFontComboBox,
                             QFrame, QHBoxLayout, QLabel, QTextEdit, QToolButton,
                             QVBoxLayout, QWidget)
+from app.arrowstyleui import add_ink_swatches, ink_icon, update_ink_swatches
 from app.icons import toolbar_icon
 
 
@@ -90,8 +91,27 @@ class InlineTextBox(QObject):
         self.size.setAccessibleName(tr('文本框字号'))
         row.addWidget(self.size)
         self.color = QColor.fromRgbF(*settings.get("color", (0, 0, 0)))
-        self.color_button = self.button("颜色", "circle", row)
+        self.color_button = self.button(tr('颜色'), "circle", row)
+        self.color_button.setToolTip(tr('悬停选择常用颜色，点击自定义颜色'))
         self.color_button.clicked.connect(self.choose_color)
+        self.color_palette = QFrame(self.view.viewport())
+        self.color_palette.setObjectName('textColorPalette')
+        self.color_palette.setAttribute(Qt.WidgetAttribute.WA_NoMousePropagation)
+        set_theme_style(self.color_palette, '''
+            QFrame#textColorPalette { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; }
+            QToolButton { min-width: 0; min-height: 0; padding: 0; border-radius: 4px; }
+            QToolButton:hover { background: #E2EEEC; }
+        ''')
+        palette_row = QHBoxLayout(self.color_palette)
+        palette_row.setContentsMargins(4, 4, 4, 4)
+        palette_row.setSpacing(2)
+        self.color_swatches = add_ink_swatches(palette_row, self.set_color)
+        self.color_palette.adjustSize()
+        self.color_palette.hide()
+        self.palette_hide_timer = QTimer(self)
+        self.palette_hide_timer.setSingleShot(True)
+        self.palette_hide_timer.setInterval(200)
+        self.palette_hide_timer.timeout.connect(self.color_palette.hide)
         apply_button = self.button("", "check", row)
         apply_button.setObjectName("applyText")
         apply_button.setIcon(toolbar_icon("check", "#FFFFFF", 16))
@@ -134,14 +154,30 @@ class InlineTextBox(QObject):
                     color=(self.color.redF(), self.color.greenF(), self.color.blueF()))
 
     def choose_color(self):
-        color = QColorDialog.getColor(self.color, self.frame, "文本颜色")
+        self.color_palette.hide()
+        self.set_color(QColorDialog.getColor(self.color, self.frame, tr('文字颜色')))
+
+    def set_color(self, color):
+        self.color_palette.hide()
         if color.isValid():
             self.color = color
             self.style_changed()
         self.editor.setFocus()
 
+    def position_color_palette(self):
+        viewport = self.view.viewport()
+        trigger = self.color_button.geometry().translated(self.toolbar.pos())
+        width, height = self.color_palette.width(), self.color_palette.height()
+        x = max(0, min(trigger.center().x() - width // 2, viewport.width() - width))
+        y = trigger.bottom() + 1
+        if trigger.top() >= height and (self.toolbar.y() < self.frame.y() or y + height > viewport.height()):
+            y = trigger.top() - height
+        self.color_palette.move(x, y)
+        self.color_palette.raise_()
+
     def style_changed(self, *_):
-        self.color_button.setIcon(toolbar_icon("circle", self.color.name(), 16, themed=False))
+        self.color_button.setIcon(ink_icon(self.color, self.color_button.devicePixelRatioF(), size=16))
+        update_ink_swatches(self.color_swatches, self.color)
         self.font.setToolTip(tr('选择字体（当前：{p0}）', p0=f'{self.font.currentFont().family()}'))
         self.error.hide()
         self.position()
@@ -233,6 +269,7 @@ class InlineTextBox(QObject):
                 for handle in self.handles.values():
                     handle.hide()
                 self.toolbar.hide()
+                self.color_palette.hide()
                 return
             if self.editor.font() != font:
                 self.editor.setFont(font)
@@ -255,6 +292,8 @@ class InlineTextBox(QObject):
             self.toolbar.move(x, y)
             self.toolbar.show()
             self.toolbar.raise_()
+            if self.color_palette.isVisible():
+                self.position_color_palette()
         finally:
             self.positioning = False
 
@@ -307,7 +346,7 @@ class InlineTextBox(QObject):
             if self.identifier is None:
                 self.close()
                 return True
-            self.show_error("文字不能为空；删除文本框请使用批注删除按钮。")
+            self.show_error(tr('文字不能为空。要删除，请先取消编辑，再单击文本框并点右上角的删除按钮。'))
             return False
         if len(text) > 20000:
             self.show_error("文本框最多输入 20000 个字符。")
@@ -346,6 +385,8 @@ class InlineTextBox(QObject):
             handle.hide()
             handle.deleteLater()
         self.toolbar.hide()
+        self.color_palette.hide()
+        self.color_palette.deleteLater()
         self.font.hidePopup()
         self.size.hidePopup()
         self.frame.deleteLater()
@@ -362,6 +403,14 @@ class InlineTextBox(QObject):
             return False
         if QApplication.activeModalWidget() is not None or QApplication.activePopupWidget() is not None:
             return False
+        if watched is self.color_button or watched is self.color_palette:
+            if kind == QEvent.Type.Enter:
+                self.palette_hide_timer.stop()
+                if watched is self.color_button:
+                    self.position_color_palette()
+                    self.color_palette.show()
+            elif kind == QEvent.Type.Leave:
+                self.palette_hide_timer.start()
         if watched in self.handles.values():
             if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 edge = next(name for name, handle in self.handles.items() if handle is watched)
@@ -391,6 +440,10 @@ class InlineTextBox(QObject):
                 return True
         if kind == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Escape and not self.preedit:
+                if self.color_palette.isVisible():
+                    self.color_palette.hide()
+                    self.editor.setFocus()
+                    return True
                 if self._resize_state:
                     self.base_area = self._resize_state[3]
                     self.manual_size = self._resize_state[4]
@@ -413,6 +466,9 @@ class InlineTextBox(QObject):
         if kind == QEvent.Type.Resize and watched is self.view.viewport():
             QTimer.singleShot(0, self.position)
         if kind == QEvent.Type.MouseButtonPress and isinstance(watched, QWidget):
+            if watched is self.color_palette or self.color_palette.isAncestorOf(watched):
+                return False
+            self.color_palette.hide()
             if (watched is self.frame or self.frame.isAncestorOf(watched)
                     or watched is self.toolbar or self.toolbar.isAncestorOf(watched)):
                 return False

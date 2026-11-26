@@ -96,6 +96,31 @@ def ink_icon(color, ratio, *, checked=False, size=18):
     return QIcon(pix)
 
 
+def add_ink_swatches(layout, choose_color):
+    swatches = {}
+    for value, name in (('#000000', tr('黑色')), ('#dc2626', tr('红色')), ('#ea580c', tr('橙色')),
+                        ('#15803d', tr('绿色')), ('#2563eb', tr('蓝色')), ('#7c3aed', tr('紫色'))):
+        button = QToolButton()
+        button.setProperty('swatch', True)
+        button.setProperty('inkColor', value)
+        button.setCheckable(True)
+        button.setAccessibleName(name)
+        button.setToolTip(name)
+        button.setFixedSize(26, 26)
+        button.setIconSize(QSize(18, 18))
+        button.clicked.connect(lambda _, v=value: choose_color(QColor(v)))
+        layout.addWidget(button)
+        swatches[value] = button
+    return swatches
+
+
+def update_ink_swatches(swatches, color):
+    for value, button in swatches.items():
+        checked = value == color.name()
+        button.setChecked(checked)
+        button.setIcon(ink_icon(QColor(value), button.devicePixelRatioF(), checked=checked))
+
+
 class ArrowStyleDialog(QDialog):
     """An anchored one-click gallery for drawing, or an editor for an existing arrow."""
     def __init__(self, parent, style, color, width, *, quick=False):
@@ -172,21 +197,9 @@ class ArrowStyleDialog(QDialog):
         palette = QHBoxLayout()
         palette.setSpacing(3)
         palette.addWidget(QLabel(tr('颜色')))
-        self.swatches = {}
-        for value, name in (('#000000', tr('黑色')), ('#dc2626', tr('红色')), ('#ea580c', tr('橙色')),
-                            ('#15803d', tr('绿色')), ('#2563eb', tr('蓝色')), ('#7c3aed', tr('紫色'))):
-            button = QToolButton()
-            button.setProperty('swatch', True)
-            button.setProperty('inkColor', value)
-            button.setCheckable(True)
-            button.setAccessibleName(name)
-            button.setToolTip(name)
-            button.setFixedSize(26, 26)
-            button.setIconSize(QSize(18, 18))
-            button.clicked.connect(lambda _, v=value: self.choose_color(QColor(v)))
+        self.swatches = add_ink_swatches(palette, self.choose_color)
+        for button in self.swatches.values():
             button.installEventFilter(self)
-            palette.addWidget(button)
-            self.swatches[value] = button
         self.color_button = QPushButton(tr('自定义颜色'))
         self.color_button.setObjectName('customInk')
         self.color_button.clicked.connect(self.pick_color)
@@ -322,10 +335,7 @@ class ArrowStyleDialog(QDialog):
 
     def set_color(self, color):
         self.color = self.preview_color = QColor(color)
-        for value, button in self.swatches.items():
-            checked = value == self.color.name()
-            button.setChecked(checked)
-            button.setIcon(ink_icon(QColor(value), self.devicePixelRatioF(), checked=checked))
+        update_ink_swatches(self.swatches, self.color)
         custom = self.color.name() not in self.swatches
         self.color_button.setIcon(ink_icon(self.color, self.devicePixelRatioF(), checked=True) if custom else QIcon())
         self.color_button.setToolTip(self.color.name().upper() if custom else tr('自定义颜色'))

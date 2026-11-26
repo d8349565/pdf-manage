@@ -354,6 +354,7 @@ def test_text_drag_shows_ink_and_commits_only_on_release(reader, qapp, tmp_path,
         QTest.mouseMove(view.viewport(), end)
         state = tools._move_state
         assert state and state['direct'] and state['artwork'].pos() != state['artwork_origin']
+        assert tools.text_delete_button.isHidden()
         assert state['artwork'].pixmap().hasAlphaChannel() and not state['backdrop'].pixmap().isNull()
         assert reader.ws.pages[0] is ref
         if cancel:
@@ -450,6 +451,7 @@ def test_text_box_context_delete_and_keyboard_target(reader, qapp, monkeypatch):
     pos = view.mapFromScene(top + QPointF(90, 208))
     note = view.mapFromScene(top + QPointF(348, 158))
     QTest.mouseMove(view.viewport(), pos)
+    assert tools.text_delete_button.isHidden()
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     assert tools.hover_bar.isHidden() and tools.selection.ref is ref
     QTest.mouseMove(view.viewport(), note)
@@ -460,10 +462,21 @@ def test_text_box_context_delete_and_keyboard_target(reader, qapp, monkeypatch):
     reader.ws.undo_stack.undo()
     reader.refresh()
     settle(qapp)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    button = tools.text_delete_button
+    assert button.isVisible() and not button.geometry().contains(pos)
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    deleted = reader.ws.pages[0].edits[-1]
+    assert deleted.kind == 'delete' and deleted.annotation_id == ref.edits[-1].annotation_id
+    assert button.isHidden() and tools.selection is None
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    settle(qapp)
     QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     editor = tools._inline_text_box
     assert editor and editor.original_text == 'Editable annotation'
+    assert button.isHidden()
     QTest.keyClick(editor.editor, Qt.Key.Key_Home)
     QTest.keyClick(editor.editor, Qt.Key.Key_Delete)
     assert editor.editor.toPlainText() == 'ditable annotation' and reader.ws.pages[0] is ref
@@ -474,6 +487,56 @@ def test_text_box_context_delete_and_keyboard_target(reader, qapp, monkeypatch):
     event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, pos, view.viewport().mapToGlobal(pos))
     QApplication.sendEvent(view.viewport(), event)
     assert reader.ws.pages[0].edits[-1].kind == 'delete' and reader.ws.pages[0].edits[-1].annotation_id == ref.edits[-1].annotation_id
+
+
+def test_text_box_hover_presets_and_click_custom_color(reader, qapp, monkeypatch):
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QColorDialog
+    tools, view = reader.annotation_tools, reader.preview_view
+    assert tools.ensure_snapshot()
+    tools.start_text_box((80, 200, 220, 240), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText('Color sample')
+    assert box.apply()
+    settle(qapp)
+    ref = reader.ws.pages[0]
+    pos = view.mapFromScene(view.page_rects[0].topLeft() + QPointF(90, 208))
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    box = tools._inline_text_box
+    calls = []
+    choices = iter((QColor(), QColor('#123456')))
+    def pick(initial, parent, title):
+        calls.append((initial.name(), box.color_palette.isVisible()))
+        return next(choices)
+    monkeypatch.setattr(QColorDialog, 'getColor', pick)
+
+    QTest.mouseMove(box.color_button)
+    assert box.color_palette.isVisible() and box.color_swatches['#000000'].isChecked()
+    trigger = box.color_button.geometry().translated(box.toolbar.pos())
+    assert view.viewport().rect().contains(box.color_palette.geometry())
+    assert not box.color_palette.geometry().intersects(trigger)
+    red = box.color_swatches['#dc2626']
+    QTest.mouseMove(red)
+    QTest.qWait(box.palette_hide_timer.interval() + 50)
+    assert box.color_palette.isVisible() and box.color.name() == '#000000'
+    QTest.mouseClick(red, Qt.MouseButton.LeftButton)
+    assert not calls and box.color.name() == '#dc2626' and red.isChecked()
+    assert box.color_palette.isHidden() and reader.ws.pages[0] is ref
+
+    QTest.mouseMove(box.color_button)
+    QTest.mouseMove(box.editor.viewport())
+    QTest.qWait(box.palette_hide_timer.interval() + 50)
+    assert box.color_palette.isHidden() and not box.closed
+    QTest.mouseMove(box.color_button)
+    QTest.mouseClick(box.color_button, Qt.MouseButton.LeftButton)
+    assert box.color.name() == '#dc2626'
+    QTest.mouseClick(box.color_button, Qt.MouseButton.LeftButton)
+    assert calls == [('#dc2626', False)] * 2 and box.color.name() == '#123456'
+    assert box.apply()
+    edit = reader.ws.pages[0].edits[-1]
+    assert edit.kind == 'freetext_update' and edit.annotation_id == ref.edits[-1].annotation_id
+    assert edit.color == pytest.approx(QColor('#123456').getRgbF()[:3])
 
 
 def test_arrow_gallery_previews_without_committing_until_a_tile_is_chosen(reader, monkeypatch):
