@@ -10,6 +10,10 @@ WATERMARK_PREFIX = "zhixu-watermark-"
 WATERMARK_DATA = "ZhiXuWatermarkData"
 
 
+class TextBoxDoesNotFit(ValueError):
+    """The target page cannot accommodate the requested text and font size."""
+
+
 def set_appearance(page, annot, document, opacity=1):
     """Import the form without leaving a second copy in page content."""
     import pymupdf as p
@@ -54,11 +58,27 @@ def text_settings(page, annot):
                     and isinstance(settings.get("fontsize"), (int, float))
                     and 6 <= settings["fontsize"] <= 144
                     and isinstance(settings.get("color"), list) and len(settings["color"]) == 3
-                    and all(isinstance(c, (int, float)) and 0 <= c <= 1 for c in settings["color"])):
+                    and all(isinstance(c, (int, float)) and 0 <= c <= 1 for c in settings["color"])
+                    and (settings.get("group") is None or
+                         isinstance(settings["group"], str) and 1 <= len(settings["group"]) <= 128)):
                 return settings
         except (ValueError, TypeError):
             pass
-    return dict(font="Microsoft YaHei", fontsize=12, color=annot.colors.get("stroke") or (0, 0, 0))
+    color = annot.colors.get("stroke") or ()
+    if len(color) not in (1, 3, 4) or not all(isinstance(c, (int, float)) and 0 <= c <= 1 for c in color):
+        color = (0, 0, 0)
+    elif len(color) == 1:  # DeviceGray
+        color = (color[0],) * 3
+    elif len(color) == 4:  # DeviceCMYK
+        color = tuple((1 - ink) * (1 - color[3]) for ink in color[:3])
+    return dict(font="Microsoft YaHei", fontsize=12, color=color)
+
+
+def group_text_box_ids(page, group):
+    from app.pdfedits import annotation_token, iter_annotations
+    for ordinal, annot in enumerate(iter_annotations(page)):
+        if annot.type[0] == 2 and text_settings(page, annot).get("group") == group:
+            yield annotation_token(annot, ordinal)
 
 
 def add_text_box(page, edit):
@@ -70,9 +90,35 @@ def add_text_box(page, edit):
         page.set_rotation(rotation)
 
 
-def _add_text_box(page, edit):
+@lru_cache(maxsize=2)
+def _text_box_appearance(text, family, fontsize, color, width, height, available):
+    """Keep only finished PDF bytes. Identical boxes can share layout and font subsetting."""
     import pymupdf as p
     from app.pdfedits import replacement_font
+    with p.open() as document:
+        height = min(max(height, fontsize * 1.6), available)
+        scratch = document.new_page(width=width, height=height)
+        glyphs = set(text) - {"\r", "\n", "\t"}
+        font, name, buffer = replacement_font(scratch, glyphs, family)
+        if any(font.glyph_advance(ord(c)) * fontsize > width + .001 for c in glyphs):
+            raise TextBoxDoesNotFit("文字超出页面，请减小字号、增大框宽或减少内容。")
+        scratch.insert_font(fontname=name, fontbuffer=buffer)
+        box = p.Rect(0, 0, width, height)
+        spare = scratch.insert_textbox(box, text, fontname=name, fontsize=fontsize, color=color)
+        if spare < 0 and height < available:
+            box.y1 = min(available, height - spare + fontsize * .25)
+            scratch.set_mediabox(box)
+            spare = scratch.insert_textbox(box, text, fontname=name, fontsize=fontsize, color=color)
+        if spare < 0:
+            raise TextBoxDoesNotFit("文字超出页面，请减小字号、增大框宽或减少内容。")
+        if buffer is not None:
+            document.subset_fonts()
+        return document.tobytes(garbage=3, deflate=True), box.height, buffer is not None
+
+
+def _add_text_box(page, edit):
+    import pymupdf as p
+    from app.pdfedits import iter_annotations
     settings = dict(edit.details)
     fontsize = float(settings.get("fontsize", 12))
     if not 6 <= fontsize <= 144 or not edit.text.strip() or len(edit.text) > 20000:
@@ -82,31 +128,13 @@ def _add_text_box(page, edit):
     if area.is_empty or not all(math.isfinite(v) for v in area) or not bounds.contains(area):
         raise ValueError("文本框须放在页面内。")
     visible = area * page.rotation_matrix
-    with p.open() as document:
-        available = page.rect.y1 - visible.y0
-        scratch = document.new_page(width=visible.width, height=available)
-        glyphs = "".join(c for c in edit.text if c not in "\r\n\t")
-        font, name, buffer = replacement_font(scratch, glyphs, settings.get("font", "Microsoft YaHei"))
-        if any(font.glyph_advance(ord(c)) * fontsize > visible.width + .001 for c in set(glyphs)):
-            raise ValueError("文字超出页面，请减小字号、增大框宽或减少内容。")
-        scratch.insert_font(fontname=name, fontbuffer=buffer)
-        box = p.Rect(0, 0, visible.width, min(max(visible.height, fontsize * 1.6), available))
-        result = scratch.insert_textbox(box, edit.text, fontname=name, fontsize=fontsize, color=edit.color)
-        if result < 0 and box.height < available:
-            box.y1 = min(available, box.height - result + fontsize * .25)
-            result = scratch.insert_textbox(box, edit.text, fontname=name, fontsize=fontsize, color=edit.color)
-        if result < 0:
-            raise ValueError("文字超出页面，请减小字号、增大框宽或减少内容。")
-        # The appearance's MediaBox must match its annotation rectangle.
-        final = document.new_page(width=visible.width, height=box.height)
-        final.insert_font(fontname=name, fontbuffer=buffer)
-        if final.insert_textbox(final.rect, edit.text, fontname=name, fontsize=fontsize, color=edit.color) < 0:
-            raise ValueError("文字放不下，请调整字号或文本框。")
-        document.delete_page(0)
-        document.subset_fonts()
-        visible.y1 = visible.y0 + box.height
+    appearance, height, embedded = _text_box_appearance(
+        edit.text, settings.get("font", "Microsoft YaHei"), fontsize, tuple(edit.color),
+        visible.width, visible.height, page.rect.y1 - visible.y0)
+    with p.open(stream=appearance, filetype="pdf") as document:
+        visible.y1 = visible.y0 + height
         area = visible * page.derotation_matrix
-        previous = next((a for a in (page.annots() or ()) if a.info.get("id") == edit.annotation_id), None)
+        previous = next((a for a in iter_annotations(page) if a.info.get("id") == edit.annotation_id), None)
         if edit.kind == "freetext_update" and previous is None:
             raise ValueError("要修改的文本框已不存在。")
         annot = page.add_freetext_annot(area, edit.text, fontsize=fontsize, text_color=edit.color)
@@ -122,7 +150,7 @@ def _add_text_box(page, edit):
             set_appearance(page, annot, document)
         if previous is not None:
             page.delete_annot(previous)
-    return buffer is not None
+    return embedded
 
 
 def is_watermark(page, annot):

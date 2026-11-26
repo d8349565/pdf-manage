@@ -2495,3 +2495,423 @@ def test_drawing_is_cancelled_when_its_page_is_replaced(reader, qapp):
     assert not tools.stroke and tools.overlay is None
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
     assert [edit.kind for edit in reader.ws.pages[0].edits] == ["note"]
+
+
+def test_text_box_scope_all_and_from_current_pages(reader, qapp, tmp_path):
+    source = tmp_path / "three.pdf"
+    out = tmp_path / "three-out.pdf"
+    with p.open() as doc:
+        for i in range(3):
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((50, 90), f"Page {i + 1}")
+        doc.save(source)
+    assert reader.open_files_in_tabs([str(source)])
+    reader.refresh()
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("freetext"))
+    assert tools.ensure_snapshot()
+
+    tools.start_text_box((40, 20, 260, 50), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    assert not box.scope.isHidden()
+    box.editor.setPlainText("姓名：________")
+    box.scope.setCurrentIndex(box.scope.findData("all"))
+    qapp.processEvents()
+    assert box.apply()
+    assert all(len(page.edits) == 1 and page.edits[0].kind == "freetext" for page in reader.ws.pages)
+    assert all(page.edits[0].text == "姓名：________" for page in reader.ws.pages)
+    ids = {page.edits[0].annotation_id for page in reader.ws.pages}
+    assert len(ids) == 3
+
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    assert all(not page.edits for page in reader.ws.pages)
+    reader.ws.undo_stack.redo()
+    reader.refresh()
+    assert all(len(page.edits) == 1 for page in reader.ws.pages)
+
+    reader.store.write(reader.ws.pages, str(out))
+    with p.open(out) as saved:
+        for page in saved:
+            annots = list(page.annots() or ())
+            assert len(annots) == 1 and annots[0].info.get("content") == "姓名：________"
+
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    reader.go_to_page(1, reveal=False)
+    settle(qapp)
+    tools.start_text_box((40, 20, 260, 50), 1, reader.ws.pages[1])
+    box = tools._inline_text_box
+    box.editor.setPlainText("仅正文页眉")
+    box.scope.setCurrentIndex(box.scope.findData("from_current"))
+    qapp.processEvents()
+    assert box.apply()
+    assert not reader.ws.pages[0].edits
+    assert [page.edits[0].text for page in reader.ws.pages[1:]] == ["仅正文页眉", "仅正文页眉"]
+
+
+def test_text_box_scope_visibility_rules(reader, qapp, tmp_path):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("freetext"))
+    assert tools.ensure_snapshot()
+
+    tools.start_text_box((60, 220, 260, 260), 0, reader.ws.pages[0])
+    new_box = tools._inline_text_box
+    assert not new_box.scope.isHidden()
+    new_box.editor.setPlainText("单页测试")
+    assert new_box.apply()
+
+    existing_id = reader.ws.pages[0].edits[-1].annotation_id
+    tools.start_text_box((60, 220, 260, 260), 0, reader.ws.pages[0], text="单页测试", identifier=existing_id)
+    edit_box = tools._inline_text_box
+    assert not edit_box.scope.isHidden()
+    assert edit_box.scope_mode() == "current"
+    edit_box.close()
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+
+    single = tmp_path / "single.pdf"
+    with p.open() as doc:
+        doc.new_page(width=595, height=842)
+        doc.save(single)
+    assert reader.open_files_in_tabs([str(single)])
+    reader.refresh()
+    settle(qapp)
+    tools.start_text_box((60, 220, 260, 260), 0, reader.ws.pages[0])
+    single_box = tools._inline_text_box
+    assert single_box.scope.isHidden()
+    assert single_box.scope_mode() == "current"
+    single_box.close()
+
+
+def test_text_box_scope_mixed_sizes_and_rotations(reader, qapp, tmp_path):
+    source = tmp_path / "mixed.pdf"
+    out = tmp_path / "mixed-out.pdf"
+    with p.open() as doc:
+        doc.new_page(width=595, height=842)
+        rotated = doc.new_page(width=595, height=842)
+        rotated.set_rotation(90)
+        doc.new_page(width=30, height=30)
+        doc.save(source)
+    assert reader.open_files_in_tabs([str(source)])
+    reader.refresh()
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("freetext"))
+    assert tools.ensure_snapshot()
+
+    tools.start_text_box((40, 20, 260, 50), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText("姓名：________")
+    box.scope.setCurrentIndex(box.scope.findData("all"))
+    qapp.processEvents()
+    assert box.apply()
+    assert len(reader.ws.pages[0].edits) == 1
+    assert len(reader.ws.pages[1].edits) == 1
+    assert not reader.ws.pages[2].edits
+    assert "已在 2 页插入文本框" in tools.feedback.text()
+    assert "1 页因页面过小未插入" in tools.feedback.text()
+
+    reader.store.write(reader.ws.pages, str(out))
+    with p.open(out) as saved:
+        for idx in (0, 1):
+            page = saved[idx]
+            annots = list(page.annots() or ())
+            assert len(annots) == 1 and annots[0].info.get("content") == "姓名：________"
+            visible = annots[0].rect * page.rotation_matrix
+            assert visible.y0 < page.rect.height * 0.2
+
+
+def test_text_box_promote_existing_update_group_without_duplicates_and_delete_group(reader, qapp, tmp_path):
+    from PyQt6.QtGui import QColor
+    from app.pdfmarks import text_settings
+    source = tmp_path / "group.pdf"
+    out = tmp_path / "group-out.pdf"
+    with p.open() as doc:
+        for i in range(3):
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((50, 90), f"Page {i + 1}")
+        doc.save(source)
+    assert reader.open_files_in_tabs([str(source)])
+    reader.refresh()
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    tools.tool.setCurrentIndex(tools.tool.findData("freetext"))
+    assert tools.ensure_snapshot()
+
+    # 1. Insert on page 0 only, then promote to all pages without changing text.
+    tools.start_text_box((40, 20, 260, 50), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText("姓名：________")
+    box.set_color(QColor("#EA580C"))
+    assert box.apply()
+    assert len(reader.ws.pages[0].edits) == 1
+    assert not reader.ws.pages[1].edits and not reader.ws.pages[2].edits
+
+    assert tools.ensure_snapshot()
+    annot0 = next(a for a in tools.snapshot["annotations"] if a["kind"] == 2)
+    tools.edit_text_box(annot0, 0, reader.ws.pages[0])
+    edit_box = tools._inline_text_box
+    assert not edit_box.scope.isHidden()
+    edit_box.scope.setCurrentIndex(edit_box.scope.findData("all"))
+    qapp.processEvents()
+    assert edit_box.apply()
+
+    groups = {dict(page.edits[-1].details).get("group") for page in reader.ws.pages}
+    assert len(groups) == 1 and None not in groups
+    reader.store.write(reader.ws.pages, str(out))
+    with p.open(out) as saved:
+        for page in saved:
+            annots = list(page.annots() or ())
+            assert len(annots) == 1 and annots[0].info.get("content") == "姓名：________"
+
+    # 2. Edit from page 1, change text & color, sync to all pages -> in-place update without duplicates.
+    reader.go_to_page(1, reveal=False)
+    settle(qapp)
+    assert tools.ensure_snapshot(1)
+    annot1 = next(a for a in tools.snapshot["annotations"] if a["kind"] == 2)
+    tools.edit_text_box(annot1, 1, reader.ws.pages[1])
+    edit_box2 = tools._inline_text_box
+    edit_box2.editor.setPlainText("姓名：__________")
+    edit_box2.set_color(QColor("#000000"))
+    edit_box2.scope.setCurrentIndex(edit_box2.scope.findData("all"))
+    qapp.processEvents()
+    assert edit_box2.apply()
+
+    out2 = tmp_path / "group-out2.pdf"
+    reader.store.write(reader.ws.pages, str(out2))
+    with p.open(out2) as saved:
+        saved_groups = set()
+        for page in saved:
+            annots = list(page.annots() or ())
+            assert len(annots) == 1
+            assert annots[0].info.get("content") == "姓名：__________"
+            ts = text_settings(page, annots[0])
+            assert ts["color"] == [0.0, 0.0, 0.0]
+            saved_groups.add(ts.get("group"))
+        assert len(saved_groups) == 1 and None not in saved_groups
+
+    # 3. Reopen saved PDF and batch-delete the group across all pages in one undoable step.
+    reader.ws.reset()
+    assert reader.open_files_in_tabs([str(out2)])
+    reader.refresh()
+    settle(qapp)
+    assert tools.ensure_snapshot(0)
+    reopened_annot = next(a for a in tools.snapshot["annotations"] if a["kind"] == 2)
+    tools.select_annotation(reopened_annot, 0)
+    tools.selected_operation("delete_group")
+    settle(qapp)
+
+    out3 = tmp_path / "group-deleted.pdf"
+    reader.store.write(reader.ws.pages, str(out3))
+    with p.open(out3) as saved:
+        assert all(not list(page.annots() or ()) for page in saved)
+
+    reader.ws.undo_stack.undo()
+    reader.refresh()
+    out4 = tmp_path / "group-restored.pdf"
+    reader.store.write(reader.ws.pages, str(out4))
+    with p.open(out4) as saved:
+        assert all(len(list(page.annots() or ())) == 1 for page in saved)
+
+
+def test_text_box_edit_confirm_button_and_outside_click(reader, qapp, tmp_path):
+    source = tmp_path / "four.pdf"
+    with p.open() as doc:
+        for i in range(4):
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((50, 90), f"Page {i + 1}")
+        doc.save(source)
+    assert reader.open_files_in_tabs([str(source)])
+    reader.refresh()
+    settle(qapp)
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    view = reader.preview_view
+    top = view.page_rects[0].topLeft()
+
+    tools.tool.setCurrentIndex(tools.tool.findData("freetext"))
+    assert tools.ensure_snapshot(0)
+    tools.finish("freetext", [top + QPointF(60, 40), top + QPointF(260, 80)])
+    box = tools._inline_text_box
+    box.editor.setPlainText("姓名：________")
+    QTest.mouseClick(box.toolbar.findChild(QToolButton, "applyText"), Qt.MouseButton.LeftButton)
+    settle(qapp)
+    assert tools._inline_text_box is None and len(reader.ws.pages[0].edits) == 1
+
+    pos = view.mapFromScene(top + QPointF(80, 50))
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    settle(qapp)
+    box2 = tools._inline_text_box
+    assert box2 is not None and box2.identifier
+    box2.scope.showPopup()
+    qapp.processEvents()
+    lv = box2.scope.view()
+    lv.setCurrentIndex(box2.scope.model().index(1, 0))
+    box2.scope.setCurrentIndex(box2.scope.findData("all"))
+    box2.scope.hidePopup()
+    QTest.mouseClick(list(box2.color_swatches.values())[1], Qt.MouseButton.LeftButton)
+    box2.editor.setPlainText("姓名：__________")
+    QTest.mouseClick(box2.toolbar.findChild(QToolButton, "applyText"), Qt.MouseButton.LeftButton)
+    settle(qapp)
+    assert tools._inline_text_box is None
+    assert all(page.edits[-1].text == "姓名：__________" for page in reader.ws.pages)
+
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    settle(qapp)
+    box3 = tools._inline_text_box
+    assert box3 is not None
+    box3.editor.setPlainText("姓名：单页微调")
+    QTest.mouseClick(box3.toolbar.findChild(QToolButton, "applyText"), Qt.MouseButton.LeftButton)
+    settle(qapp)
+    assert tools._inline_text_box is None
+    assert reader.ws.pages[0].edits[-1].text == "姓名：单页微调"
+
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    settle(qapp)
+    box4 = tools._inline_text_box
+    assert box4 is not None
+    QTest.mouseClick(box4.toolbar.findChild(QToolButton, "applyText"), Qt.MouseButton.LeftButton)
+    settle(qapp)
+    assert tools._inline_text_box is None
+
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+    settle(qapp)
+    box5 = tools._inline_text_box
+    assert box5 is not None
+    box5.editor.setPlainText("姓名：点击外部提交")
+    outside = view.mapFromScene(top + QPointF(300, 300))
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=outside)
+    settle(qapp)
+    assert tools._inline_text_box is None
+    assert reader.ws.pages[0].edits[-1].text == "姓名：点击外部提交"
+    reader.ws.reset()
+
+
+def test_text_box_toolbar_save_writes_pending_input(reader, qapp, tmp_path, monkeypatch):
+    from PyQt6.QtWidgets import QFileDialog
+    out = tmp_path / "toolbar-save.pdf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(out), "PDF"))
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot(geometry_only=True)
+    tools.start_text_box((60, 80, 240, 120), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    save = next(button for button in reader.findChildren(QToolButton)
+                if button.accessibleName() == reader.save_action.text() and button.isVisible())
+    box.editor.setPlainText("x" * 20001)
+    QTest.mouseClick(save, Qt.MouseButton.LeftButton)
+    assert not out.exists() and tools._inline_text_box is box and box.error.isVisible()
+    box.editor.setPlainText("One click")
+    QTest.mouseClick(save, Qt.MouseButton.LeftButton)
+    settle(qapp)
+    assert out.exists()
+    with p.open(out) as doc:
+        page = doc[0]
+        assert any(a.info["content"] == "One click" for a in page.annots())
+
+
+def test_text_box_pending_layout_keeps_latest_input_while_renderer_is_busy(reader):
+    from threading import Event, Thread
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    assert tools.ensure_snapshot(geometry_only=True)
+    tools.start_text_box((60, 80, 150, 110), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    locked, release = Event(), Event()
+
+    def hold_render_lock():
+        with reader.store._native_lock:
+            locked.set()
+            release.wait(5)
+
+    thread = Thread(target=hold_render_lock)
+    thread.start()
+    try:
+        assert locked.wait(2)
+        box.editor.setPlainText("First")
+        box.editor.setPlainText("Latest input")
+        box.position()
+        assert thread.is_alive() and box.layout_timer.isActive()
+    finally:
+        release.set()
+        thread.join()
+    # Confirm immediately, before the deferred layout gets its timer tick.
+    assert box.apply()
+    assert reader.ws.pages[0].edits[-1].text == "Latest input"
+    assert box._measure_key[0] == "Latest input"
+
+
+def test_text_box_inline_drag_move_by_border_and_toolbar_button(reader, qapp, monkeypatch):
+    reader.open_annotation_tools()
+    tools = reader.annotation_tools
+    view = reader.preview_view
+    assert tools.ensure_snapshot(0)
+
+    tools.start_text_box((60, 80, 240, 120), 0, reader.ws.pages[0])
+    box = tools._inline_text_box
+    box.editor.setPlainText("姓名：________")
+    qapp.processEvents()
+    box.position()
+    before_vis = box.area * box.matrix
+    assert not box.manual_size
+
+    # 1. Drag via top border -> moves box without locking manual_size; Escape cancels drag.
+    border = box.borders["top"]
+    start = border.rect().center()
+    QTest.mousePress(border, Qt.MouseButton.LeftButton, pos=start)
+    with monkeypatch.context() as patch:
+        measurements = []
+        measure = box.fitted_size
+        def measured(*args, **kwargs):
+            measurements.append(1)
+            return measure(*args, **kwargs)
+        patch.setattr(box, "fitted_size", measured)
+        QTest.mouseMove(border, start + QPoint(50, 30))
+        assert not measurements
+    moved_vis = box.area * box.matrix
+    assert moved_vis.x0 > before_vis.x0 + 10 and moved_vis.y0 > before_vis.y0 + 10
+    assert not box.manual_size
+    QTest.keyClick(box.editor, Qt.Key.Key_Escape)
+    restored_vis = box.area * box.matrix
+    assert restored_vis.x0 == pytest.approx(before_vis.x0, abs=1.0)
+    assert restored_vis.y0 == pytest.approx(before_vis.y0, abs=1.0)
+
+    # 2. Drag via toolbar move button -> commits at new position.
+    move_btn = box.move_button
+    start2 = move_btn.rect().center()
+    QTest.mousePress(move_btn, Qt.MouseButton.LeftButton, pos=start2)
+    QTest.mouseMove(move_btn, start2 + QPoint(45, 25))
+    QTest.mouseRelease(move_btn, Qt.MouseButton.LeftButton, pos=start2 + QPoint(45, 25))
+    after_move = box.area * box.matrix
+    assert after_move.x0 > before_vis.x0 + 10 and after_move.y0 > before_vis.y0 + 5
+    assert box.apply()
+    settle(qapp)
+
+    # 3. Re-open existing text box in edit mode, drag via move button without changing text -> saves new position!
+    assert tools.ensure_snapshot(0)
+    annot = next(a for a in tools.snapshot["annotations"] if a["kind"] == 2)
+    old_rect = p.Rect(annot["rect"])
+    tools.edit_text_box(annot, 0, reader.ws.pages[0])
+    ebox = tools._inline_text_box
+    start3 = ebox.move_button.rect().center()
+    QTest.mousePress(ebox.move_button, Qt.MouseButton.LeftButton, pos=start3)
+    QTest.mouseMove(ebox.move_button, start3 + QPoint(40, 20))
+    QTest.mouseRelease(ebox.move_button, Qt.MouseButton.LeftButton, pos=start3 + QPoint(40, 20))
+    assert ebox.apply()
+    settle(qapp)
+    assert reader.ws.pages[0].edits[-1].kind == "freetext_update"
+    assert tools.ensure_snapshot(0)
+    updated_annot = next(a for a in tools.snapshot["annotations"] if a["kind"] == 2)
+    new_rect = p.Rect(updated_annot["rect"])
+    assert abs(new_rect.x0 - old_rect.x0) > 10 and abs(new_rect.y0 - old_rect.y0) > 5
+    reader.ws.reset()

@@ -960,8 +960,27 @@ class PdfStore:
             artwork = QImage(pix.samples_mv, pix.width, pix.height, pix.stride,
                           QImage.Format.Format_RGBA8888_Premultiplied).copy()
             origin = (pix.x / scale, pix.y / scale)
-        hidden = ref.edited(PageEdit('delete', annotation_id=identifier))
-        return self.render_region(hidden, region, scale), (artwork, origin, scale)
+            annot_rect = annot.rect
+            overlapping = any(a.xref != annot.xref and not (a.rect & annot_rect).is_empty
+                              for a in iter_annotations(page))
+            if not overlapping:
+                overlapping = any(annot_rect.intersects(widget.rect) for widget in page.widgets())
+            if not overlapping and page.first_link:
+                overlapping = any(annot_rect.intersects(link['from'] * page.derotation_matrix)
+                                  for link in page.get_links())
+            backdrop = None
+            if not overlapping:
+                clipped = area & (page.rect * extra)
+                if not clipped.is_empty:
+                    bg_scale = min(scale, math.sqrt(16_000_000 / (clipped.width * clipped.height)),
+                                   8190 / max(clipped.width, clipped.height))
+                    bg_pix = page.get_pixmap(matrix=extra * p.Matrix(bg_scale, bg_scale),
+                                             clip=clipped * ~extra, alpha=False, annots=False)
+                    backdrop = (_to_qimage(bg_pix), (bg_pix.x / bg_scale, bg_pix.y / bg_scale), bg_scale)
+        if backdrop is None:
+            hidden = ref.edited(PageEdit('delete', annotation_id=identifier))
+            backdrop = self.render_region(hidden, region, scale)
+        return backdrop, (artwork, origin, scale)
 
     def remap_annotations(self, mapping):
         # A saved document has new page numbers and PDF coordinate systems.

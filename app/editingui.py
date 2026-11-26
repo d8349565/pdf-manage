@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.icons import toolbar_icon
+from app.output import OperationCancelled, check_cancel
 from app.pdfio import PdfError
 from app.progress import run_operation
 from app.workspace import OutlineEntry, PageEdit, PageRef
@@ -30,6 +31,31 @@ class _AnnotationSelection:
     active_index: int
     annot: dict
     local_rect: QRectF
+
+
+def _map_text_box_rect(src_rect, src_size, dst_size):
+    import pymupdf as p
+    src_w, src_h = src_size
+    dst_w, dst_h = dst_size
+    w = min(src_rect.width, dst_w)
+    h = min(src_rect.height, dst_h)
+    if abs(dst_w - src_w) < 0.5:
+        x0 = src_rect.x0
+    elif abs((src_rect.x0 + src_rect.x1) / 2 - src_w / 2) <= src_w * 0.05:
+        x0 = (dst_w - w) / 2
+    elif (src_rect.x0 + src_rect.x1) / 2 <= src_w / 2:
+        x0 = src_rect.x0
+    else:
+        x0 = dst_w - (src_w - src_rect.x1) - w
+    if abs(dst_h - src_h) < 0.5:
+        y0 = src_rect.y0
+    elif (src_rect.y0 + src_rect.y1) / 2 <= src_h / 2:
+        y0 = src_rect.y0
+    else:
+        y0 = dst_h - (src_h - src_rect.y1) - h
+    x0 = max(0.0, min(x0, dst_w - w))
+    y0 = max(0.0, min(y0, dst_h - h))
+    return p.Rect(x0, y0, x0 + w, y0 + h)
 
 
 def _near_segment(point, start, end, tolerance):
@@ -964,7 +990,7 @@ class AnnotationTools(QWidget):
                           border: 1px solid #CBD5E1; border-radius: 5px; }
             QToolButton:hover { background: #FEF2F2; border-color: #B91C1C; }
         ''')
-        self.text_delete_button.clicked.connect(lambda: self.selected_operation('delete'))
+        self.text_delete_button.clicked.connect(self._on_text_delete_clicked)
         self.text_delete_button.hide()
         if hasattr(self.view, "installEventFilter"):
             self.view.installEventFilter(self)
@@ -998,7 +1024,7 @@ class AnnotationTools(QWidget):
         manager = self.host.shortcut_manager
         for original, identifier, label in (('Ctrl+Z 撤销', 'edit.undo', '撤销'),
                 ('Ctrl+S 保存', 'file.save', '保存'), ('Ctrl+Enter 完成', 'textbox.apply', '完成文本框')):
-            text = text.replace(original, manager.hint(identifier, label))
+            text = text.replace(original, manager.hint(identifier, tr(label)))
         self.feedback.setText(text)
         return text
 
@@ -1376,6 +1402,22 @@ class AnnotationTools(QWidget):
         button.show()
         button.raise_()
 
+    def _on_text_delete_clicked(self):
+        selected = self.selection
+        group_id = (selected.annot.get('text_settings') or {}).get('group') if selected else None
+        if group_id and len(self.host.ws.pages) > 1:
+            menu = QMenu(self.text_delete_button)
+            single = menu.addAction(tr('仅删除当前页'))
+            all_pages = menu.addAction(tr('删除全部页同组文本框'))
+            chosen = menu.exec(self.text_delete_button.mapToGlobal(self.text_delete_button.rect().bottomLeft()))
+            menu.deleteLater()
+            if chosen is single:
+                self.selected_operation('delete')
+            elif chosen is all_pages:
+                self.selected_operation('delete_group')
+        else:
+            self.selected_operation('delete')
+
     def selected_operation(self, name):
         self.position_selection()
         selected = self.selection
@@ -1384,12 +1426,66 @@ class AnnotationTools(QWidget):
         identifier = selected.annot['id']
         if name == 'delete':
             self.commit(PageEdit('delete', annotation_id=identifier), page_index=selected.index, expected_ref=selected.ref)
+        elif name == 'delete_group':
+            self.delete_text_box_group((selected.annot.get('text_settings') or {}).get('group'), selected.index)
         elif name == 'style':
             self.apply_style_to(identifier)
         elif name == 'move':
             self.start_move_annot(identifier, page_index=selected.index)
         else:
             self.open_note_dialog(identifier)
+
+    def delete_text_box_group(self, group_id, current_index):
+        if not group_id:
+            return
+        if getattr(self.host, "_task_dialog", None) is not None:
+            self._set_feedback(tr('正在处理本次操作，请稍候。'))
+            return
+        if not self.host._allow_operation("annotate"):
+            return
+        from app.pdfmarks import group_text_box_ids
+        before = self.host.ws.pages
+        preview_width = self.host._preview_render_width()
+        title = tr('删除全部页同组文本框')
+        def work(progress, cancelled):
+            changes = {}
+            current_image = None
+            for index, ref in enumerate(before):
+                check_cancel(cancelled)
+                with self.host.store._render_page(ref, cancel=cancelled) as page:
+                    matched_ids = list(group_text_box_ids(page, group_id))
+                if matched_ids:
+                    candidate = ref
+                    for aid in matched_ids:
+                        candidate = candidate.edited(PageEdit("delete", annotation_id=aid))
+                    if index == current_index:
+                        current_image = self.host.store.render_qimage(candidate, preview_width)
+                    else:
+                        with self.host.store._render_page(candidate, cancel=cancelled):
+                            pass
+                    changes[index] = candidate
+                progress(index + 1, len(before), title)
+            check_cancel(cancelled)
+            return changes, current_image
+        try:
+            changes, current_image = run_operation(self.host, title, work, cancellable=True)
+            if self.host.ws.pages is not before:
+                raise ValueError(tr('工作区已改变，请重新应用修改。'))
+            if not changes:
+                self._set_feedback(tr('未找到需要删除的同组文本框。'))
+                return
+            self.clear_selection()
+            if current_image is not None and current_index in changes:
+                self.host._cache_page_image(changes[current_index].render_key, current_image)
+            self.host.ws.edit_pages(changes, title)
+            self.snapshot_key = None
+            self.host.refresh()
+            self.ensure_snapshot(geometry_only=True)
+            self._text_box_feedback(tr('已从 {count} 页删除同组文本框。', count=len(changes)))
+        except OperationCancelled:
+            self._set_feedback(tr('已取消任务。'))
+        except (ValueError, PdfError, RuntimeError) as exc:
+            QMessageBox.information(self, tr('本次操作未应用'), str(exc))
 
     def annotation_menu(self, event):
         if event.reason() != QContextMenuEvent.Reason.Keyboard:
@@ -1418,6 +1514,8 @@ class AnnotationTools(QWidget):
             add('move', tr('移动批注'), editable)
         menu.addSeparator()
         add('delete', self.host.shortcut_manager.hint('annotation.delete', tr('删除')), editable)
+        if info['kind'] == 2 and (info.get('text_settings') or {}).get('group') and len(self.host.ws.pages) > 1:
+            add('delete_group', tr('删除全部页同组文本框'), editable)
         where = event.globalPos()
         if event.reason() == QContextMenuEvent.Reason.Keyboard:
             where = self.view.viewport().mapToGlobal(self.view.mapFromScene(self.selection_border.rect().center()))
@@ -1481,16 +1579,126 @@ class AnnotationTools(QWidget):
         self.clear_selection()
         self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
         self._inline_text_box = InlineTextBox(self, area, index, ref, text, settings, identifier)
-        self._set_feedback("直接输入文字，拖动边框控制点调整宽高；右下角设置字体、字号与颜色。Ctrl+Enter 完成，Esc 取消。")
+        self._set_feedback(tr('输入文字，拖动边框移动，拖动控制点调整大小。{apply}，Esc 取消。',
+                              apply='Ctrl+Enter 完成'))
 
     def apply_text_box(self, box, text, settings):
-        settings = dict(settings)
-        settings["rotation"] = (self.host.store._source(box.ref.source_id).page_rotation(box.ref.source_page) + box.ref.rotation) % 360
-        edit = PageEdit("freetext_update" if box.identifier else "freetext", tuple(box.area),
-                       text=text, color=settings.pop("color"),
-                       annotation_id=box.identifier or "zhixu-text-" + uuid.uuid4().hex,
-                       details=tuple(settings.items()))
-        return self.commit(edit, page_index=box.index, expected_ref=box.ref, on_error=box.show_error)
+        scope = box.scope_mode() if hasattr(box, 'scope_mode') else 'current'
+        before = self.host.ws.pages
+        indices = range(len(before)) if scope == 'all' else range(box.index, len(before))
+        if scope == 'current' or len(indices) == 1:
+            settings = dict(settings)
+            settings["rotation"] = (self.host.store._source(box.ref.source_id).page_rotation(box.ref.source_page) + box.ref.rotation) % 360
+            edit = PageEdit("freetext_update" if box.identifier else "freetext", tuple(box.area),
+                           text=text, color=settings.pop("color"),
+                           annotation_id=box.identifier or "zhixu-text-" + uuid.uuid4().hex,
+                           details=tuple(settings.items()))
+            return self.commit(edit, page_index=box.index, expected_ref=box.ref, on_error=box.show_error)
+        if getattr(self.host, "_task_dialog", None) is not None:
+            message = tr('正在处理本次操作，请稍候。')
+            self._set_feedback(message)
+            box.show_error(message)
+            return False
+        if not self.host._allow_operation("annotate"):
+            return False
+        if not 0 <= box.index < len(before) or before[box.index] is not box.ref:
+            message = tr('工作区已改变，请重新应用修改。')
+            self._set_feedback(message)
+            box.show_error(message)
+            return False
+        import pymupdf as p
+        from app.pdfmarks import TextBoxDoesNotFit, group_text_box_ids
+        src_visible = box.area * box.matrix
+        src_size = self.host.store.page_size(box.ref)
+        box_index = box.index
+        box_area = tuple(box.area)
+        box_id = box.identifier
+        box_group = getattr(box, "group", None)
+        base_settings = dict(settings)
+        color = base_settings.pop("color")
+        group_id = base_settings.get("group") or ("zhixu-textgroup-" + uuid.uuid4().hex)
+        base_settings["group"] = group_id
+        preview_width = self.host._preview_render_width()
+        title = tr('同步文本框') if box_id else tr('插入文本框')
+        scope_label = tr('全部页面') if scope == 'all' else tr('当前页及之后')
+        def work(progress, cancelled):
+            changes = {}
+            skipped = 0
+            current_image = None
+            for pos, target_index in enumerate(indices):
+                check_cancel(cancelled)
+                target_ref = before[target_index]
+                if target_index == box_index:
+                    target_area = box_area
+                    eff_rotation = (self.host.store._source(target_ref.source_id).page_rotation(target_ref.source_page) + target_ref.rotation) % 360
+                    edit_kind = "freetext_update" if box_id else "freetext"
+                    annot_id = box_id or ("zhixu-text-" + uuid.uuid4().hex)
+                else:
+                    existing_id = None
+                    with self.host.store._render_page(target_ref, cancel=cancelled) as target_page:
+                        eff_rotation = (target_page.rotation + target_ref.rotation) % 360
+                        extra = p.Matrix(1, 1).prerotate(target_ref.rotation)
+                        rotated = target_page.rect * extra
+                        extra *= p.Matrix(1, 0, 0, 1, -rotated.x0, -rotated.y0)
+                        matrix = target_page.rotation_matrix * extra
+                        bounds = target_page.rect * target_page.derotation_matrix
+                        mapped = _map_text_box_rect(src_visible, src_size, (rotated.width, rotated.height))
+                        rect = (mapped * ~matrix) & bounds
+                        target_area = tuple(rect)
+                        if box_group:
+                            existing_id = next(group_text_box_ids(target_page, group_id), None)
+                    edit_kind = "freetext_update" if existing_id else "freetext"
+                    annot_id = existing_id or ("zhixu-text-" + uuid.uuid4().hex)
+                edit_settings = dict(base_settings, rotation=eff_rotation)
+                edit = PageEdit(edit_kind, target_area, text=text, color=color,
+                                annotation_id=annot_id,
+                                details=tuple(edit_settings.items()))
+                candidate = target_ref.edited(edit)
+                try:
+                    if target_index == box_index:
+                        current_image = self.host.store.render_qimage(candidate, preview_width)
+                    else:
+                        # Applying the edits checks the fit. Other pages prepare their
+                        # word boxes and annotation summaries when they are displayed.
+                        with self.host.store._render_page(candidate, cancel=cancelled):
+                            pass
+                    changes[target_index] = candidate
+                except TextBoxDoesNotFit:
+                    if target_index == box_index:
+                        raise
+                    skipped += 1
+                progress(pos + 1, len(indices), title)
+            check_cancel(cancelled)
+            return changes, skipped, current_image
+        try:
+            changes, skipped, current_image = run_operation(self.host, title, work, cancellable=True)
+            if self.host.ws.pages is not before:
+                raise ValueError(tr('工作区已改变，请重新应用修改。'))
+            if not changes:
+                box.show_error(tr('未能在所选页面插入文本框。'))
+                return False
+            if current_image is not None and box_index in changes:
+                self.host._cache_page_image(changes[box_index].render_key, current_image)
+            action = tr('{action}（{scope}）', action=title, scope=scope_label)
+            self.host.ws.edit_pages(changes, action)
+            self.snapshot_key = None
+            self.host.refresh()
+            self.ensure_snapshot(geometry_only=True)
+            summary = (tr('已在 {count} 页同步文本框。', count=len(changes)) if box_id
+                       else tr('已在 {count} 页插入文本框。', count=len(changes)))
+            if skipped:
+                summary += ' ' + tr('{count} 页因页面过小未插入。', count=skipped)
+            self._text_box_feedback(summary)
+            return True
+        except OperationCancelled:
+            box.show_error(tr('已取消任务。'))
+            return False
+        except (ValueError, PdfError, RuntimeError) as exc:
+            box.show_error(str(exc))
+            return False
+
+    def _text_box_feedback(self, summary):
+        self._set_feedback(summary + ' Ctrl+Z 撤销 · Ctrl+S 保存')
 
     def finish_text_box(self):
         box = getattr(self, "_inline_text_box", None)
@@ -2524,9 +2732,15 @@ class AnnotationTools(QWidget):
         self._move_state = dict(id=identifier, index=index, active_index=self.host.ws.preview_index(),
             ref=self.host.ws.pages[index], rect=rect, matrix=matrix, bounds=bounds,
             anchor=None if anchor is None else p.Point(anchor.x() - page.x(), anchor.y() - page.y()) * ~matrix,
-            target=p.Point(rect.top_left), drag_mode=self.view.dragMode())
+            target=p.Point(rect.top_left), drag_mode=self.view.dragMode(),
+            viewport_update_mode=self.view.viewportUpdateMode())
+        self.view.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
         self._move_preview = QGraphicsPathItem()
         self._move_preview.setZValue(5)
+        initial_box = rect * matrix
+        initial_path = QPainterPath()
+        initial_path.addRect(QRectF(0, 0, initial_box.width, initial_box.height))
+        self._move_preview.setPath(initial_path)
         components = annot.get("color", ())
         color = QColor.fromRgbF(*components) if len(components) == 3 else QColor("#0F766E")
         self._move_preview.setPen(QPen(color, max(.5, annot.get("width") or 1), Qt.PenStyle.DashLine))
@@ -2567,9 +2781,13 @@ class AnnotationTools(QWidget):
 
     def update_move_preview(self, point):
         import pymupdf as p
-        self.sync_page()
         state = self._move_state
         if not state:
+            return None
+        if (state["index"] >= len(self.host.ws.pages)
+                or self.host.ws.pages[state["index"]] is not state["ref"]
+                or self.host.ws.preview_index() != state["active_index"]):
+            self.cancel_move_annot()
             return None
         page = self.view.page_rects[state["index"]]
         local = p.Point(point.x() - page.x(), point.y() - page.y()) * ~state["matrix"]
@@ -2580,9 +2798,7 @@ class AnnotationTools(QWidget):
                          max(bounds.y0, min(bounds.y1 - rect.height, target.y)))
         state["target"] = target
         moved = p.Rect(target.x, target.y, target.x + rect.width, target.y + rect.height) * state["matrix"]
-        path = QPainterPath()
-        path.addRect(QRectF(moved.x0 + page.x(), moved.y0 + page.y(), moved.width, moved.height))
-        self._move_preview.setPath(path)
+        self._move_preview.setPos(moved.x0 + page.x(), moved.y0 + page.y())
         original = rect.top_left * state["matrix"]
         destination = target * state["matrix"]
         if 'artwork' in state:
@@ -2625,6 +2841,8 @@ class AnnotationTools(QWidget):
             for key in ('backdrop', 'artwork'):
                 if key in state:
                     self.view._scene.removeItem(state[key])
+            if 'viewport_update_mode' in state:
+                self.view.setViewportUpdateMode(state['viewport_update_mode'])
             self.view.setDragMode(state["drag_mode"])
             self._set_view_cursor(Qt.CursorShape.ArrowCursor)
             button = self.hover_bar.move_btn

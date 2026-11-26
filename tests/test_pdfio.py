@@ -53,6 +53,50 @@ def _make_rotated_pdf(path, rotations: list[int], w: int = 300, h: int = 400) ->
     doc.close()
 
 
+@pytest.mark.parametrize(("payload", "stroke", "rgb"), [
+    ("null", "[0.5]", (.5, .5, .5)),
+    ("[]", "[0 1 1 0]", (1, 0, 0)),
+    ('"text"', "[0 0 1]", (0, 0, 1)),
+])
+def test_text_box_with_non_object_settings_uses_default_style(payload, stroke, rgb):
+    from app.pdfmarks import text_settings
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        annot = page.add_freetext_annot((30, 40, 160, 72), "text")
+        doc.xref_set_key(annot.xref, "ZhiXuText", pymupdf.get_pdf_str(payload))
+        doc.xref_set_key(annot.xref, "C", stroke)
+        settings = text_settings(page, annot)
+        assert settings["fontsize"] == 12
+        assert tuple(settings["color"]) == rgb
+
+
+def test_text_box_preview_preserves_underlying_form(qapp, tmp_path):
+    from app.workspace import PageEdit
+    source = tmp_path / "field.pdf"
+    area = (30, 40, 160, 72)
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        field = pymupdf.Widget()
+        field.field_name = "name"
+        field.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT
+        field.field_value = "Field value"
+        field.fill_color = (1, 1, 0)
+        field.rect = pymupdf.Rect(area)
+        page.add_widget(field)
+        annot = page.add_freetext_annot(area, "moving")
+        identifier = annot.info["id"]
+        doc.save(source)
+    store = PdfStore()
+    try:
+        ref, = store.load(str(source))
+        actual, _ = store.annotation_move_preview(ref, identifier, area, 1)
+        expected = store.render_region(ref.edited(PageEdit("delete", annotation_id=identifier)), area, 1)
+        assert actual == expected
+        assert actual[0].pixelColor(3, 3).blue() < 20
+    finally:
+        store.close_all()
+
+
 def _loaded_workspace(store: PdfStore, path) -> Workspace:
     ws = Workspace()
     ws.open_replace(store.load(str(path)), str(path))
