@@ -20,7 +20,7 @@ In the installed edition, open the update notice and choose **Update now** to do
 
 For the portable edition, keep `_internal` and `portable.ini` beside the executable and extract everything into a separate, writable folder. Settings, caches, and the default OCR components are stored in its own `Data` folder. Explorer context-menu tools are optional; see the [portable edition notes (中文)](docs/USAGE.md#安装版与绿色版) before moving or deleting the folder.
 
-**To recognize text in scans**, download the separate [OCR add-on](https://github.com/d8349565/pdf-manage/releases/latest/download/ZhiXuPDF-OCR-win-x64.zip) and import its ZIP from the text recognition (OCR) dialog in the **Scan** menu. Compatible components can be reused when updating the main app. [OCR setup and usage (中文)](docs/OCR.md)
+**To recognize text in scans**, download the separate [OCR add-on](https://github.com/d8349565/pdf-manage/releases/latest/download/ZhiXuPDF-OCR-win-x64.zip). Open a scanned PDF, choose **Tools → Text Recognition (OCR) → Install Local OCR Add-on…**, and select the ZIP file. Compatible components can be reused when updating the main app. [OCR setup and usage (中文)](docs/OCR.md)
 
 This page describes the current source code. For a downloaded build, check its corresponding [release notes](https://github.com/d8349565/pdf-manage/releases).
 

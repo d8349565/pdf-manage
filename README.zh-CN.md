@@ -20,7 +20,7 @@
 
 绿色版请保留 `_internal` 和 `portable.ini`，解压到独立且可写的目录。设置、缓存与默认 OCR 组件保存在自己的 `Data` 中；右键菜单按需启用，移动或删除前的处理见[绿色版说明](docs/USAGE.md#安装版与绿色版)。
 
-**需要识别扫描文字时**，另行下载 [OCR 增强包](https://github.com/d8349565/pdf-manage/releases/latest/download/ZhiXuPDF-OCR-win-x64.zip)，从“扫描 → 文字识别（OCR）”导入 ZIP。已有兼容组件可继续使用，无需随主程序更新重装。[安装与使用说明](docs/OCR.md)
+**需要识别扫描文字时**，另行下载 [OCR 增强包](https://github.com/d8349565/pdf-manage/releases/latest/download/ZhiXuPDF-OCR-win-x64.zip)。打开扫描 PDF，点“工具 → 文字识别（OCR）→ 安装本地 OCR 增强包…”，直接选择 ZIP 安装。已有兼容组件可继续使用，无需随主程序更新重装。[安装与使用说明](docs/OCR.md)
 
 本页按当前源码说明功能，下载版以对应的 [Release 说明](https://github.com/d8349565/pdf-manage/releases)为准。
 

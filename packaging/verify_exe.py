@@ -96,7 +96,7 @@ def main() -> None:
                      "app.translation.keystore", "app.translation.ui",
                      "PIL.WebPImagePlugin", "PIL.TiffImagePlugin"):
         assert required in python_modules, f"Missing module: {required}"
-    for filename in ('home.png', 'reading.png', 'arrange.png'):
+    for filename in ('home.png', 'zoom.png', 'reading.png', 'arrange.png', 'sidebar.png', 'ocr-install.png', 'ocr-run.png'):
         relative = Path('app/assets/quickstart') / filename
         captured = internal / relative
         assert captured.is_file(), f'Missing operation-guide image: {relative}'

@@ -204,12 +204,24 @@ def test_guide_shows_real_ui_images_finishes_once_and_can_be_replayed(windows, q
     window.show_first_run_guide()
     qapp.processEvents()
     dialog = window._quick_start_dialog
-    assert dialog.isVisible() and dialog.progress.text() == '1 / 5'
+    assert dialog.isVisible() and dialog.progress.text() == '1 / 7'
     assert not dialog.back_button.isEnabled()
-    for index in range(5):
+    for index in range(7):
         assert dialog.step == index
         assert not dialog.preview.source.isNull(), 'Each step needs a packaged current-UI capture'
-        assert not dialog.preview.pixmap().isNull()
+        pixmap = dialog.preview.pixmap()
+        assert not pixmap.isNull()
+        assert pixmap.devicePixelRatioF() == dialog.preview.devicePixelRatioF()
+        assert pixmap.width() <= dialog.preview.source.width()
+        assert dialog.import_ocr_button.isVisible() == (index in (0, 5))
+        assert dialog.ocr_download.isVisible() == (index == 5)
+        if index == 5:
+            assert '工具 → 文字识别（OCR）' in dialog.description.text()
+            assert '安装本地 OCR 增强包' in dialog.description.text()
+            assert dialog.ocr_download.openExternalLinks()
+            assert 'ZhiXuPDF-OCR-win-x64.zip' in dialog.ocr_download.text()
+        if index == 6:
+            assert '识别范围' in dialog.description.text() and '开始识别' in dialog.description.text()
         dialog.next_button.click()
     assert window._quick_start_dialog is None
     window.close()
@@ -220,6 +232,33 @@ def test_guide_shows_real_ui_images_finishes_once_and_can_be_replayed(windows, q
     restarted.quick_start_action.trigger()
     assert restarted._quick_start_dialog is not None
     restarted._quick_start_dialog.skip_button.click()
+
+
+@pytest.mark.parametrize('step', [0, 5])
+def test_guide_opens_ocr_zip_picker_without_a_document(windows, monkeypatch, step):
+    from PyQt6.QtWidgets import QFileDialog
+    from app import ocrui
+
+    window = windows()
+    assert not window.ws.pages
+    window.quick_start_action.trigger()
+    guide = window._quick_start_dialog
+    for _ in range(step):
+        guide.next_button.click()
+    assert guide.import_ocr_button.isVisible()
+    opened = []
+
+    def cancel_picker(parent, title, directory, file_filter):
+        opened.append((parent, file_filter))
+        return '', ''
+
+    monkeypatch.setattr(QFileDialog, 'getOpenFileName', cancel_picker)
+    guide.import_ocr_button.click()
+    assert opened == [(guide, 'OCR 增强包 (*.zip)')]
+    assert guide.step == step and guide.isVisible()
+    monkeypatch.setattr(ocrui, 'install_local_runtime', lambda parent: True)
+    guide.import_ocr_button.click()
+    assert guide.step == 6 and not guide.import_ocr_button.isVisible()
 
 
 @pytest.mark.parametrize('dismissal', ['skip', 'escape', 'close'])

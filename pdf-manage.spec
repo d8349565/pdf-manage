@@ -139,10 +139,9 @@ a = Analysis(
            # 只选择应用资源，不把目录内的其他本机文件一起打包。
            (str(ROOT / "app" / "assets" / "app.png"), "app/assets"),
            (str(ROOT / "app" / "assets" / "pdf.svg"), "app/assets"),
-           (str(ROOT / "app" / "assets" / "quickstart" / "home.png"), "app/assets/quickstart"),
-           (str(ROOT / "app" / "assets" / "quickstart" / "reading.png"), "app/assets/quickstart"),
-           (str(ROOT / "app" / "assets" / "quickstart" / "arrange.png"), "app/assets/quickstart"),
            (str(ROOT / "packaging" / "licenses"), "licenses")]
+          + [(str(ROOT / "app" / "assets" / "quickstart" / name), "app/assets/quickstart")
+             for name in ("home.png", "zoom.png", "reading.png", "arrange.png", "sidebar.png", "ocr-install.png", "ocr-run.png")]
           + [(str(path), 'app/locales') for path in sorted((ROOT / 'app' / 'locales').glob('*.json'))
              if path.stem in ('en', 'zh-TW', 'ja', 'ko', 'de', 'fr', 'es')]
           + [(str(Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / name), 'PyQt6/Qt6/translations')
