@@ -17,7 +17,7 @@ def qapp():
 def reading_action(window, text):
     view = next(action.menu() for bar in window.findChildren(QMenuBar)
                 for action in bar.actions() if action.text() == '视图')
-    menu = next(action.menu() for action in view.actions() if action.text() == '阅读设置')
+    menu = next(action.menu() for action in view.actions() if action.text() == '阅读布局与适配')
     action = next((action for action in menu.actions() if action.text() == text), None)
     assert action is not None, f'The reading settings menu must offer {text}'
     return action
@@ -121,8 +121,8 @@ def test_reading_and_organizing_have_visible_working_keyboard_shortcuts(qapp, tm
         view = next(action.menu() for bar in window.findChildren(QMenuBar)
                     for action in bar.actions() if action.text() == '视图')
         actions = {action.text(): action for action in view.actions()}
-        assert actions['切换阅读／整理页面'].shortcut().toString() == 'F6'
-        assert actions['阅读'].shortcut().isEmpty()
+        assert window._shortcut_actions['reader.mode'].shortcut().toString() == 'F6'
+        assert actions['阅读模式'].shortcut().isEmpty()
         assert actions['整理页面'].shortcut().isEmpty()
         window.activateWindow()
         window.setFocus()

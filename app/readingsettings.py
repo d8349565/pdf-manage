@@ -1,4 +1,4 @@
-"""A draggable, session-only shortcut to the reader's shared settings menu."""
+"""A draggable, session-only menu of reading options."""
 from app.i18n import tr
 from app.themes import set_theme_style, theme_manager, ui_color
 from PyQt6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer, Qt
@@ -62,10 +62,12 @@ class ReadingSettingsOrb(QToolButton):
         self.hide_action.triggered.connect(self.hide_temporarily)
         self.restore_action = QAction(self._reading_icon, tr('显示阅读悬浮球'), host)
         self.restore_action.triggered.connect(self.restore)
+        self.visibility_action = QAction(tr('显示阅读悬浮球'), host)
+        self.visibility_action.setCheckable(True)
+        self.visibility_action.setChecked(True)
+        self.visibility_action.triggered.connect(self.set_visibility_preference)
         theme_manager().changed.connect(self._refresh_theme)
         self._refresh_theme()
-        menu.addSeparator()
-        menu.addAction(self.hide_action)
         self.view.setMouseTracking(True)
         self.view.installEventFilter(self)
         self.view.viewport().setMouseTracking(True)
@@ -158,6 +160,10 @@ class ReadingSettingsOrb(QToolButton):
         menu.ensurePolished()
         viewport = self.view.viewport()
         bounds = QRect(viewport.mapToGlobal(QPoint()), viewport.size()).adjusted(8, 8, -12, -12)
+        work_area = self.screen().availableGeometry()
+        bounds = bounds.intersected(work_area)
+        if bounds.isEmpty():
+            bounds = work_area
         bottom = min(self.view.mapToGlobal(self._target(True)).y() - 12, bounds.bottom() + 1)
         size = menu.sizeHint()
         right = self.mapToGlobal(self.rect().topRight()).x() + 1
@@ -165,8 +171,10 @@ class ReadingSettingsOrb(QToolButton):
                           max(bounds.top(), bottom - size.height())))
         # 原生菜单显示后的尺寸可能与预估不同，按实际外框再次贴齐按钮上方。
         size = menu.frameGeometry().size()
-        menu.move(max(bounds.left(), min(right, bounds.right() + 1) - size.width()),
-                  max(bounds.top(), bottom - size.height()))
+        x = max(bounds.left(), min(right, bounds.right() + 1) - size.width())
+        y = max(bounds.top(), bottom - size.height())
+        menu.move(max(work_area.left(), min(x, work_area.right() + 1 - size.width())),
+                  max(work_area.top(), min(y, work_area.bottom() + 1 - size.height())))
 
     def hide_temporarily(self):
         self.temporarily_hidden = True
@@ -175,15 +183,22 @@ class ReadingSettingsOrb(QToolButton):
         self.hide_timer.stop()
         self.hide()
         self.sync()
-        self.host.statusBar().showMessage(tr('本次运行已隐藏悬浮球；可从“视图 → 显示阅读悬浮球”恢复。'), 6000)
+        self.host.statusBar().showMessage(tr('本窗口已隐藏阅读悬浮球，可在“视图 → 显示阅读悬浮球”中重新勾选。'), 6000)
 
     def restore(self):
-        self.temporarily_hidden = False
         if self.host.ws.pages:
             self.host.stack.setCurrentIndex(0)
+        self.set_visibility_preference(True)
+
+    def set_visibility_preference(self, show):
+        if not show:
+            self.hide_temporarily()
+            return
+        self.temporarily_hidden = False
         self.sync()
-        self.reveal()
-        self.hide_timer.start(self.HIDE_DELAY)
+        if self.isVisible():
+            self.reveal()
+            self.hide_timer.start(self.HIDE_DELAY)
 
     def shutdown(self):
         self.hide()
@@ -200,6 +215,8 @@ class ReadingSettingsOrb(QToolButton):
             if self.host._zoom_mode in ('page', 'width') else tr('先选择“适合页面”或“适合宽度”，再设为默认'))
         self.restore_action.setEnabled(available)
         self.hide_action.setEnabled(available and not self.temporarily_hidden)
+        self.visibility_action.setEnabled(available)
+        self.visibility_action.setChecked(not self.temporarily_hidden)
         layout = self.host.reading_layout_actions[self.host._reading_layout].text()
         zoom = self.host.reading_zoom_actions[self.host._zoom_mode].text()
         hint = tr('\n阅读区较窄，当前暂用单页。') if self.host.reading_fallback_notice.isVisible() else ''

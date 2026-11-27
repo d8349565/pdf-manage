@@ -12,6 +12,11 @@ from app.themes import ui_color
 # 24×24 outline glyphs, 1.5px stroke, 3px inset so they stay crisp at toolbar size.
 # Metaphors: document for PDF, tray-arrow for save, copy for save-as.
 _PATHS: dict[str, str] = {
+    'help': (
+        '<circle cx="12" cy="12" r="6.5"/>'
+        '<path d="M9.85 10.25a2.2 2.2 0 1 1 3.55 1.78c-.83.62-1.4.85-1.4 1.47"/>'
+        '<path d="M12 15.9v.05" stroke-width="1.8"/>'
+    ),
     'merge': '<path d="M5 3v5c0 4 7 4 7 8v5M19 3v5c0 4-7 4-7 8m-3 2 3 3 3-3"/>',
     'grip-vertical': '<path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" stroke-width="3"/>',
     "search": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',

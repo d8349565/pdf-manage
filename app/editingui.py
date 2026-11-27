@@ -1325,7 +1325,7 @@ class AnnotationTools(QWidget):
         ref = self.host.ws.pages[index]
         content = annot.get("content", "")
         if annot.get("watermark"):
-            self._set_feedback("水印请在「组织 → 水印」中选择后调整或删除。")
+            self._set_feedback(tr('水印请在「工具 → 水印」中选择后调整或删除。'))
             return
         if annot.get("kind") == 2:
             self.edit_text_box(annot, index, ref)
@@ -2682,7 +2682,7 @@ class AnnotationTools(QWidget):
             self.choose_arrow_style(annot)
             return
         if annot and annot.get("watermark"):
-            self._set_feedback("水印请在「组织 → 水印」中调整。")
+            self._set_feedback(tr('水印请在「工具 → 水印」中调整。'))
             return
         if identifier:
             self.commit(PageEdit("style", annotation_id=identifier,

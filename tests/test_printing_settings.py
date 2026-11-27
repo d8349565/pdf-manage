@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pymupdf
 import pytest
-from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, QThreadPool
+from PyQt6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt, QThreadPool
 from PyQt6.QtGui import QFontDatabase, QPageSize, QWheelEvent
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtTest import QSignalSpy, QTest
@@ -41,6 +41,11 @@ def printing_case(qapp, tmp_path, monkeypatch):
     workspace.open_replace(store.load(str(source)), str(source))
     yield workspace, store, source, colors
     QThreadPool.globalInstance().waitForDone(5000)
+    # The test owns these parentless dialogs. Dispose of them before their store and QApplication.
+    for dialog in qapp.topLevelWidgets():
+        if isinstance(dialog, PrintDialog) and dialog.store is store:
+            dialog.deleteLater()
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     workspace.reset()
     store.close_all()
 

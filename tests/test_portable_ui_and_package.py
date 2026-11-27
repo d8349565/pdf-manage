@@ -70,8 +70,7 @@ def test_image_compression_menu_runs_without_document_or_registry(qapp, tmp_path
     monkeypatch.setattr(ImageQuickDialog, 'exec', run)
     window = MainWindow()
     try:
-        document = next(action.menu() for action in window._menubar.actions() if action.text() == '文档')
-        menu = next(action.menu() for action in document.actions() if action.text() == '压缩')
+        menu = next(action.menu() for action in window._menubar.actions() if action.text() == '转换')
         action = next(action for action in menu.actions() if action.text() == '压缩图片')
         assert action.isEnabled() and not window.ws.pages
         action.trigger()

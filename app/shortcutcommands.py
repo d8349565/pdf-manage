@@ -70,23 +70,23 @@ for _key, _path, _keys in (
     ('pages.split', '页面/拆分文件', ()),
     ('pages.split_page', '页面/分割单页', ()),
     ('pages.resize', '页面/调整页面大小', ()),
-    ('pages.rotate_left', '页面/旋转页面/向左旋转 90°', ()),
-    ('pages.rotate_right', '页面/旋转页面/向右旋转 90°', ()),
-    ('document.compare', '文档/两份 PDF 对比（实验）', ()),
-    ('document.signature', '文档/签名与保护信息', ()),
-    ('document.numbers', '文档/页码处理', ()),
-    ('document.watermark', '文档/水印', ()),
-    ('document.seam_stamp', '文档/骑缝章', ()),
-    ('document.crop', '文档/区域摘录', ()),
-    ('document.compress', '文档/压缩/压缩 PDF', ()),
-    ('document.compress_image', '文档/压缩/压缩图片', ()),
-    ('document.encrypt', '文档/安全与副本/加密另存', ()),
-    ('document.decrypt', '文档/安全与副本/解密另存', ()),
-    ('document.editable_copy', '文档/安全与副本/制作可编辑副本', ()),
-    ('scan.cleanup', '扫描/去除彩色笔迹', ()),
-    ('scan.whiten', '扫描/扫描件增强', ()),
-    ('scan.deskew', '扫描/扫描纠偏', ()),
-    ('scan.ocr', '扫描/文字识别（OCR）', ()),
+    ('pages.rotate_left', '页面/向左旋转 90°', ()),
+    ('pages.rotate_right', '页面/向右旋转 90°', ()),
+    ('document.compare', '工具/两份 PDF 对比（实验）', ()),
+    ('document.signature', '工具/签名与保护信息', ()),
+    ('document.numbers', '页面/页码处理', ()),
+    ('document.watermark', '工具/水印', ()),
+    ('document.seam_stamp', '工具/骑缝章', ()),
+    ('document.crop', '编辑/区域摘录', ()),
+    ('document.compress', '工具/压缩 PDF', ()),
+    ('document.compress_image', '转换/压缩图片', ()),
+    ('document.encrypt', '工具/安全与副本/加密另存', ()),
+    ('document.decrypt', '工具/安全与副本/解密另存', ()),
+    ('document.editable_copy', '工具/安全与副本/制作可编辑副本', ()),
+    ('scan.cleanup', '工具/去除彩色笔迹', ()),
+    ('scan.whiten', '工具/扫描件增强', ()),
+    ('scan.deskew', '工具/扫描纠偏', ()),
+    ('scan.ocr', '工具/文字识别（OCR）', ()),
     ('convert.word_pdf', '转换/Word 转 PDF', ()),
     ('convert.images_pdf', '转换/图片转 PDF', ()),
     ('convert.markdown_pdf', '转换/Markdown 转 PDF', ()),
@@ -95,9 +95,8 @@ for _key, _path, _keys in (
     ('convert.pdf_text', '转换/PDF 转 TXT', ()),
     ('convert.pdf_images', '转换/PDF 转图片', ()),
     ('convert.pdf_raster', '转换/PDF 转图片版', ()),
-    ('reader.read', '视图/阅读', ()),
+    ('reader.read', '视图/阅读模式', ()),
     ('reader.arrange', '视图/整理页面', ()),
-    ('reader.mode', '视图/切换阅读／整理页面', ('F6',)),
     ('view.outline', '视图/大纲书签', ('Ctrl+Shift+B',)),
     ('view.pages', '视图/页面栏', ('F8',)),
     ('view.tools', '视图/工具面板', ('F9',)),
@@ -105,37 +104,39 @@ for _key, _path, _keys in (
     ('view.fullscreen', '视图/全屏阅读', ('F11',)),
     ('view.borderless', '视图/无边框模式', ('Ctrl+F11',)),
     ('view.auto_sidebar', '视图/侧栏自动隐藏', ()),
-    ('reader.single', '视图/阅读设置/单页连续', ('Ctrl+1',)),
-    ('reader.spread', '视图/阅读设置/双页对开', ('Ctrl+2',)),
-    ('reader.four', '视图/阅读设置/四页预览（2×2）', ('Ctrl+4',)),
-    ('reader.fit_page', '视图/阅读设置/适合页面', ()),
-    ('reader.fit_width', '视图/阅读设置/适合宽度', ()),
-    ('reader.zoom_manual', '视图/阅读设置/手动缩放', ()),
-    ('reader.save_view', '视图/阅读设置/将当前视图设为默认', ()),
-    ('reader.colors', '视图/阅读设置/阅读配色', ()),
-    ('reader.original_colors', '视图/阅读设置/恢复文档原色', ()),
-    ('reader.hide_orb', '视图/阅读设置/本次运行隐藏悬浮球', ()),
-    ('reader.show_orb', '视图/界面恢复/显示阅读悬浮球', ()),
-    ('view.reset', '视图/界面恢复/恢复界面布局', ()),
-    ('view.fit', '视图/缩放/适合宽度', ('Ctrl+0',)),
+    ('reader.single', '视图/阅读布局与适配/单页连续', ('Ctrl+1',)),
+    ('reader.spread', '视图/阅读布局与适配/双页对开', ('Ctrl+2',)),
+    ('reader.four', '视图/阅读布局与适配/四页预览（2×2）', ('Ctrl+4',)),
+    ('reader.fit_page', '视图/阅读布局与适配/适合页面', ()),
+    ('reader.fit_width', '视图/阅读布局与适配/适合宽度', ()),
+    ('reader.zoom_manual', '视图/阅读布局与适配/手动缩放', ()),
+    ('reader.save_view', '视图/阅读布局与适配/将当前视图设为默认', ()),
+    ('reader.colors', '视图/阅读配色', ()),
+    ('reader.original_colors', '视图/恢复文档原色', ()),
+    ('view.toggle_orb', '视图/显示阅读悬浮球', ()),
+    ('view.reset', '视图/恢复界面布局', ()),
     ('theme.graphite', '视图/界面主题/石墨（默认）', ()),
     ('theme.forest', '视图/界面主题/原版绿', ()),
     ('theme.mountain', '视图/界面主题/远山', ()),
     ('theme.terracotta', '视图/界面主题/赤陶', ()),
     ('theme.night', '视图/界面主题/夜航（深色）', ()),
     ('app.quick_start', '帮助/操作指南', ()),
-    ('app.contributions', '帮助/贡献', ()),
+    ('app.contributions', '帮助/贡献者致谢', ()),
     ('app.about', f'帮助/关于{APP_NAME}', ()),
 ):
     _menu(_key, _path, _keys)
 
+_add('reader.mode', '切换阅读／整理页面', '视图', defaults=('F6',))
+_add('view.fit', '适配当前视图', '视图', defaults=('Ctrl+0',), menu=('视图', '恢复缩略图默认大小'))
+_add('reader.hide_orb', '本次运行隐藏悬浮球', '视图')
+_add('reader.show_orb', '只显示阅读悬浮球', '视图')
 _add('app.language', '界面语言 / Language', '应用设置', menu=('文件', '应用设置', '界面语言 / Language'))
 _menu('edit.copy_pages', '编辑/复制页面', ('Ctrl+C',), scope='pages')
 _menu('pages.delete', '页面/删除页面', ('Del',), scope='pages')
-_menu('reader.select', '视图/阅读设置/选择文字', ('V',), scope='reader')
-_menu('reader.hand', '视图/阅读设置/手形拖动', ('H',), scope='reader')
-_menu('view.zoom_in', '视图/缩放/放大', ('Ctrl++', 'Ctrl+='), repeat=True)
-_menu('view.zoom_out', '视图/缩放/缩小', ('Ctrl+-',), repeat=True)
+_menu('reader.select', '视图/阅读布局与适配/选择文字', ('V',), scope='reader')
+_menu('reader.hand', '视图/阅读布局与适配/手形拖动', ('H',), scope='reader')
+_menu('view.zoom_in', '视图/阅读布局与适配/放大', ('Ctrl++', 'Ctrl+='), repeat=True)
+_menu('view.zoom_out', '视图/阅读布局与适配/缩小', ('Ctrl+-',), repeat=True)
 
 for _key, _label, _keys, _repeat in (
     ('reader.previous', '上一页／上一组', ('Alt+Left',), True),

@@ -11,7 +11,7 @@ from PyQt6.QtCore import QDir, QEvent, QObject, QPoint, QPointF, QRect, QRectF, 
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QAbstractButton, QApplication, QComboBox, QFrame, QGraphicsView, QMenu, QProxyStyle, QStyle,
-    QStyledItemDelegate, QWidgetAction,
+    QStyledItemDelegate, QStyleOptionMenuItem, QWidgetAction,
 )
 
 
@@ -316,17 +316,51 @@ def _configure_combo_popup(combo: QComboBox) -> None:
         container.setStyleSheet("QFrame#comboPopupFrame { background: transparent; border: none; }")
 
 
+class CommandMenu(QMenu):
+    """Main-window commands share toolbar actions but have their own presentation."""
+
+    @classmethod
+    def add_to(cls, parent, title):
+        menu = cls(title, parent)
+        parent.addMenu(menu)
+        return menu
+
+    def shows_icons(self):
+        return self.objectName() == "themeMenu"
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Windows can place a popup over the taskbar when its anchor is near a corner.
+        bounds = self.screen().availableGeometry()
+        self.setMaximumHeight(bounds.height())
+        x = max(bounds.left(), min(self.x(), bounds.right() + 1 - self.width()))
+        y = max(bounds.top(), min(self.y(), bounds.bottom() + 1 - self.height()))
+        self.move(x, y)
+
+    def initStyleOption(self, option, action):
+        super().initStyleOption(option, action)
+        if not self.shows_icons():
+            option.icon = QIcon()
+            option.maxIconWidth = 0
+        if action.isSeparator() and action.text():
+            # A line separator is only 9px high in the Qt stylesheet.
+            option.menuItemType = QStyleOptionMenuItem.MenuItemType.Normal
+            option.state &= ~QStyle.StateFlag.State_Enabled
+
+
 def _configure_menu_window(menu: QMenu) -> None:
-    if menu.property("_menuWindowStyled") or menu.objectName() == "readingSettingsMenu":
+    if menu.property("_menuWindowStyled"):
         return
     if any(isinstance(a, QWidgetAction) for a in menu.actions()):
         return
     menu.setProperty("_menuWindowStyled", True)
-    menu.setWindowFlags(
-        menu.windowFlags()
-        | Qt.WindowType.FramelessWindowHint
-        | Qt.WindowType.NoDropShadowWindowHint
-    )
+    flags = menu.windowFlags() | Qt.WindowType.FramelessWindowHint
+    if isinstance(menu, CommandMenu):
+        # Let the platform place the shadow outside the popup's hit rectangle.
+        flags &= ~Qt.WindowType.NoDropShadowWindowHint
+    else:
+        flags |= Qt.WindowType.NoDropShadowWindowHint
+    menu.setWindowFlags(flags)
     menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
 
@@ -368,8 +402,6 @@ class _MenuPainter(QObject):
 
         if kind != QEvent.Type.Paint or not isinstance(watched, QMenu):
             return False
-        if watched.objectName() == "readingSettingsMenu":
-            return False
         actions = [a for a in watched.actions() if a.isVisible()]
         if any(isinstance(a, QWidgetAction) for a in actions):
             return False
@@ -392,7 +424,15 @@ class _MenuPainter(QObject):
         painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 7.5, 7.5)
 
         active = watched.activeAction()
-        has_icons = any(not a.icon().isNull() for a in actions)
+        command_menu = isinstance(watched, CommandMenu)
+        if command_menu:
+            # A second edge stays visible on white paper with desktop shadows disabled.
+            edge = QColor(colors["shadow"])
+            edge.setAlpha(90)
+            painter.setPen(QPen(edge, 1.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(1.5, 1.5, -1.5, -1.5), 6.5, 6.5)
+        has_icons = (not command_menu or watched.shows_icons()) and any(not a.icon().isNull() for a in actions)
         has_checks = any(a.isCheckable() for a in actions)
         wide_swatch = watched.objectName() == "themeMenu"
 
@@ -436,7 +476,20 @@ class _MenuPainter(QObject):
 
             icon_mode = QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled
             left_x = item_rect.left() + 12.0
-            if wide_swatch and not action.icon().isNull():
+            if has_checks and (command_menu or not has_icons):
+                mark = QRect(int(left_x), int(item_rect.center().y() - 8), 16, 16)
+                if checked:
+                    color = colors["accent"] if enabled else colors["disabled"]
+                    group = action.actionGroup()
+                    if command_menu and group is not None and group.isExclusive():
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(QColor(color))
+                        painter.drawEllipse(mark.adjusted(4, 4, -4, -4))
+                    else:
+                        from app.icons import toolbar_icon
+                        toolbar_icon("check", color, 16, themed=False).paint(painter, mark)
+                left_x += 22.0
+            if wide_swatch and has_icons and not action.icon().isNull():
                 icon_rect = QRect(int(left_x), int(item_rect.center().y() - 9), 36, 18)
                 action.icon().paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter, icon_mode)
                 left_x += 44.0
@@ -456,14 +509,6 @@ class _MenuPainter(QObject):
                         painter, ck_rect
                     )
                 left_x += 25.0
-            elif has_checks:
-                if checked:
-                    from app.icons import toolbar_icon
-                    ck_rect = QRect(int(left_x - 2), int(item_rect.center().y() - 8), 16, 16)
-                    toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
-                        painter, ck_rect
-                    )
-                left_x += 22.0
 
             raw = action.text()
             if "\t" in raw:
@@ -485,13 +530,6 @@ class _MenuPainter(QObject):
                     QPointF(cx - 2.5, cy + 4.0),
                 ]))
                 right_x -= 16.0
-            elif wide_swatch and checked:
-                from app.icons import toolbar_icon
-                ck_rect = QRect(int(right_x - 16), int(item_rect.center().y() - 8), 16, 16)
-                toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
-                    painter, ck_rect
-                )
-                right_x -= 20.0
             elif shortcut:
                 painter.setFont(shortcut_font)
                 painter.setPen(QColor(colors["muted"] if enabled else colors["disabled"]))
@@ -499,7 +537,7 @@ class _MenuPainter(QObject):
                 painter.drawText(sc_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, shortcut)
                 sc_w = painter.fontMetrics().horizontalAdvance(shortcut)
                 right_x -= sc_w + 14.0
-            elif checked and not action.icon().isNull():
+            elif checked and has_icons and not command_menu and not action.icon().isNull():
                 from app.icons import toolbar_icon
                 ck_rect = QRect(int(right_x - 16), int(item_rect.center().y() - 8), 16, 16)
                 toolbar_icon("check", colors["accent"] if enabled else colors["disabled"], 16, themed=False).paint(
@@ -530,6 +568,8 @@ class _CheckboxStyle(QProxyStyle):
     _draws_combo_arrow = True
 
     def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_Menu_Scrollable and isinstance(widget, CommandMenu):
+            return 1
         if hint == QStyle.StyleHint.SH_ComboBox_Popup:
             return 0
         return super().styleHint(hint, option, widget, returnData)

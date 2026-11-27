@@ -130,6 +130,10 @@ def test_reading_palette_live_preview_cancel_persistence_and_pdf_output(qapp, tm
     restored = None
     try:
         assert window.open_files_in_tabs([str(source)])
+        restore = window.restore_reading_colors_action
+        assert restore in window.view_menu.actions() and restore in window.reading_orb.settings_menu.actions()
+        assert window.view_menu.actions().index(restore) == window.view_menu.actions().index(window.reading_colors_action) + 1
+        assert not restore.isEnabled()
         real_exec = ReadingColorsDialog.exec
         def cancel_preview(dialog):
             def interact():
@@ -142,7 +146,7 @@ def test_reading_palette_live_preview_cancel_persistence_and_pdf_output(qapp, tm
         monkeypatch.setattr(ReadingColorsDialog, 'exec', cancel_preview)
         window.reading_colors_action.trigger()
         assert not window.preview_view.reading_colors.enabled
-        assert not ReadingColors.load(window._window_settings).enabled
+        assert not ReadingColors.load(window._window_settings).enabled and not restore.isEnabled()
 
         def apply_preview(dialog):
             def interact():
@@ -169,7 +173,9 @@ def test_reading_palette_live_preview_cancel_persistence_and_pdf_output(qapp, tm
             assert pix.pixel(50, 110) == (255, 0, 0)
             assert 'Original PDF text' in result[0].get_text()
         assert source.read_bytes() == original_bytes
-        window.restore_reading_colors_action.trigger()
+        assert restore.isEnabled()
+        restore.trigger()
+        assert not restore.isEnabled()
         assert not window.preview_view.reading_colors.enabled
         assert not ReadingColors.load(window._window_settings).enabled
     finally:

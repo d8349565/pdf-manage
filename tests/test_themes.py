@@ -1,17 +1,18 @@
 """Theme checks use empty widgets and isolated settings, without documents."""
 import pytest
-from PyQt6.QtCore import QSettings, QSize
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QApplication, QFrame
+from PyQt6.QtCore import QPoint, QSettings, QSize, Qt
+from PyQt6.QtGui import QColor, QImage, QPainter
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QApplication, QFrame, QMenu, QStyleOptionMenuItem
 
 from app.themes import (
-    DEFAULT_THEME, THEMES, THEME_SETTING, current_theme, initialize_theme,
+    CommandMenu, DEFAULT_THEME, THEMES, THEME_SETTING, current_theme, initialize_theme,
     set_theme_style, themed_stylesheet, theme_manager, ui_color,
 )
 from app.ui import MainWindow
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def qapp():
     app = QApplication.instance() or QApplication([])
     app.setStyle("Fusion")
@@ -33,6 +34,73 @@ def contrast(first, second):
         return sum(value * weight for value, weight in zip(linear, (.2126, .7152, .0722)))
     high, low = sorted((luminance(first), luminance(second)), reverse=True)
     return (high + .05) / (low + .05)
+
+
+@pytest.mark.parametrize('theme', THEMES, ids=lambda theme: theme.key)
+def test_command_menu_edges_sections_and_shared_icons(qapp, theme):
+    window = MainWindow()
+    try:
+        window.resize(980, 680)
+        window.show()
+        window.change_theme(theme.key)
+        qapp.processEvents()
+        assert window.theme_button.size() == QSize(28, 28)
+        assert window.theme_button.menu() is window.theme_menu
+        assert window.theme_button.accessibleName() and not window.theme_button.icon().isNull()
+        option = QStyleOptionMenuItem()
+        assert not window.find_action.icon().isNull()
+        edit = window._menubar.actions()[1].menu()
+        edit.initStyleOption(option, window.find_action)
+        assert option.icon.isNull()
+        context = QMenu(window)
+        context.addAction(window.find_action)
+        context.initStyleOption(option, window.find_action)
+        assert not option.icon.isNull()
+        window.theme_menu.initStyleOption(option, window.theme_actions[theme.key])
+        assert not option.icon.isNull()
+
+        view, layout = window.view_menu, window.reading_layout_menu
+        screen = window.screen().availableGeometry()
+        bounds = screen.adjusted(-1, -1, 1, 1)
+        view.popup(screen.bottomRight() - QPoint(1, 1))
+        qapp.processEvents()
+        assert bounds.contains(view.frameGeometry())
+        assert not view.windowFlags() & Qt.WindowType.NoDropShadowWindowHint
+        assert view.actionGeometry(window.mode_section).height() >= view.fontMetrics().height()
+        # Composite the actual popup over white paper without capturing the desktop.
+        popup = view.grab()
+        image = QImage(popup.size(), QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.white)
+        image.setDevicePixelRatio(popup.devicePixelRatio())
+        painter = QPainter(image)
+        painter.drawPixmap(0, 0, popup)
+        painter.end()
+        x = image.width() // 2
+        assert image.pixelColor(x, 0) != QColor('white')
+        assert image.pixelColor(x, 0) != image.pixelColor(x, round(3 * popup.devicePixelRatio()))
+
+        view.setActiveAction(layout.menuAction())
+        QTest.keyClick(view, Qt.Key.Key_Right)
+        qapp.processEvents()
+        assert layout.isVisible() and bounds.contains(layout.frameGeometry())
+        assert layout.frameGeometry().center().x() < view.frameGeometry().center().x()
+        layout.hide()
+        view.hide()
+
+        long_menu = CommandMenu(window)
+        entries = [long_menu.addAction(str(i)) for i in range(80)]
+        long_menu.popup(screen.bottomRight() - QPoint(1, 1))
+        qapp.processEvents()
+        assert bounds.contains(long_menu.frameGeometry())
+        long_menu.setActiveAction(entries[0])
+        for _ in entries[1:]:
+            QTest.keyClick(long_menu, Qt.Key.Key_Down)
+        assert long_menu.activeAction() is entries[-1]
+        assert long_menu.rect().contains(long_menu.actionGeometry(entries[-1]).center())
+        long_menu.hide()
+    finally:
+        window.close()
+        qapp.processEvents()
 
 
 @pytest.mark.parametrize("blocked_path", ["zhixupdf-ui-icons", "zhixupdf-ui-icons/chevron-526b65.svg"])

@@ -558,12 +558,20 @@ def install_main_shortcuts(host):
             else:
                 menu_actions[chain] = action
     walk(host._menubar)
+    walk(host.help_menu, (tr('帮助'),))
+    window_actions = {
+        'reader.mode': host.toggle_mode_action,
+        'view.fit': host.fit_view_action,
+        'reader.hide_orb': host.reading_orb.hide_action,
+        'reader.show_orb': host.reading_orb.restore_action,
+        'document.editable_copy': host.editable_action,
+    }
     host._shortcut_actions = actions = {}
     for identifier, command in COMMANDS.items():
         path = tuple(tr(part) for part in command.menu)
-        if not path or path not in menu_actions:
+        action = window_actions.get(identifier) or menu_actions.get(path)
+        if action is None:
             continue
-        action = menu_actions[path]
         widgets, context = host, Qt.ShortcutContext.WindowShortcut
         if command.scope == 'pages':
             widgets = (host.left_view, host.arrange_view)
@@ -680,6 +688,7 @@ def nudge_for(widget, prefix, event, small=1):
 
 _MAIN_BUTTON_IDS = {command.label: key for key, command in COMMANDS.items() if command.menu}
 _MAIN_BUTTON_IDS.update({
+    '阅读': 'reader.read',
     '适合宽度': 'view.fit', '适合窗口': 'view.fit', '左转所选页': 'pages.rotate_left',
     '右转所选页': 'pages.rotate_right', '删除所选页': 'pages.delete', '提取所选页': 'pages.extract_selected',
     '上一页': 'reader.previous', '下一页': 'reader.next', '第一页': 'reader.first', '最后一页': 'reader.last',

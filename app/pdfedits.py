@@ -7,6 +7,7 @@ from functools import lru_cache
 from itertools import groupby
 import math
 
+from app.i18n import tr
 from app.workspace import PageEdit
 
 
@@ -673,7 +674,7 @@ def apply_edits(page, edits, *, transforms=None):
             if image_settings(page, annot) is not None:
                 raise ValueError('插入的图片请使用图片工具调整或删除。')
             if is_watermark(page, annot):
-                raise ValueError("水印请在「组织 → 水印」中选择后调整或删除。")
+                raise ValueError(tr('水印请在「工具 → 水印」中选择后调整或删除。'))
             if edit.kind == "delete":
                 page.delete_annot(annot)
                 continue

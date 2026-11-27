@@ -134,12 +134,12 @@ def main() -> None:
                 plan = registration_plan(sys.executable)
                 expected = {"merge": plan.clsid, "images": plan.image_clsid, "word": plan.word_clsid}[mode]
                 if clsid != expected:
-                    raise ValueError('此右键入口的位置已改变，请从“文件 → 右键快捷工具”修复。')
+                    raise ValueError(tr('此右键入口的位置已改变，请从“文件 → 应用设置 → 右键快捷工具”修复。'))
             code = serve(app, clsid=clsid, mode=mode)
         except Exception as exc:
             from app.runtime import portable_root
-            hint = ('请从“文件 → 右键快捷工具”修复此版本的菜单。' if portable_root() else
-                    '请重新运行安装程序，并勾选右键快捷工具。')
+            hint = (tr('请从“文件 → 应用设置 → 右键快捷工具”修复此版本的菜单。') if portable_root() else
+                    tr('请重新运行安装程序，并勾选右键快捷工具。'))
             QMessageBox.critical(None, tr('右键入口无法启动'), f"{hint}\n{exc}")
             code = 1
         sys.exit(code)

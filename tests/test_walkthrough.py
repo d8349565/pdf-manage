@@ -23,7 +23,6 @@ from app.ui import (
     ARRANGE_ZOOM_MAX,
     ARRANGE_ZOOM_MIN,
     MIME,
-    STYLESHEET,
     MainWindow,
     THUMB_ITEM_H_PAD,
     THUMB_ITEM_W_PAD,
@@ -1436,7 +1435,7 @@ def test_menu_selected_item_shows_highlight(window, qapp, tmp_path):
     _make_pdf(source, 1, 'menu')
     assert window._load_one(str(source))
     menu = next(m for m in window.findChildren(QMenu) if m.menuAction().text() == "视图")
-    menu = next(action.menu() for action in menu.actions() if action.text() == '缩放')
+    menu = next(action.menu() for action in menu.actions() if action.text() == '阅读布局与适配')
     action = next(a for a in menu.actions() if a.text() == "放大")
     menu.popup(QPoint(80, 80))
     qapp.processEvents()
@@ -1484,22 +1483,12 @@ def test_pages_and_tools_can_hide(window, qapp, tmp_path):
 
 
 def test_tools_panel_keeps_readable_labels(window):
-    import re
-
-    def rule_size(selector: str) -> int:
-        match = re.search(
-            rf"{re.escape(selector)}\s*\{{[^}}]*font-size:\s*(\d+)px",
-            STYLESHEET,
-        )
-        assert match, f"找不到 {selector} 的字号"
-        return int(match.group(1))
-
-    assert rule_size("QLabel#caption") == 14
-    assert rule_size("QPushButton") == 14
-    assert rule_size("QRadioButton") == 14
-    assert rule_size("QLineEdit") == 14
-    assert rule_size("QLabel#hint") == 14
     window.open_export_tool(0)
+    # v1.2 uses 13px within the export sidebar, including its locally styled hints.
+    for widget in (window.tool_selection, window.select_pages_button, window.split_options.each,
+                   window.extract_range, window.tools_panel.findChild(QLabel, "hint")):
+        widget.ensurePolished()
+        assert widget.font().pixelSize() == 13, widget.objectName()
     texts = {w.text() for w in window.tools_panel.findChildren(QLabel) if w.objectName() == "caption"}
     assert "快捷工具" in texts
     assert [header.text() for header in window.export_tools.headers[:3]] == [

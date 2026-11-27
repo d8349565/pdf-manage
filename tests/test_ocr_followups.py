@@ -100,17 +100,17 @@ def test_organization_and_directional_conversion_groups(qapp):
     window = MainWindow()
     try:
         menus = {action.text(): action.menu() for action in window._menubar.actions() if action.menu()}
-        assert '页面' in menus and '文档' in menus and '扫描' in menus and '转换' in menus and '工具' not in menus
+        assert {'页面', '工具', '转换'} <= menus.keys()
         conversion = menus['转换'].actions()
         assert [action.text() for action in conversion] == [
-            'Word 转 PDF', '图片转 PDF', 'Markdown 转 PDF', '',
-            'PDF 转 Word', 'PDF 转 Excel', 'PDF 转 TXT', 'PDF 转图片', 'PDF 转图片版']
-        assert conversion[3].isSeparator()
+            '转为 PDF', 'Word 转 PDF', '图片转 PDF', 'Markdown 转 PDF', '从 PDF 导出',
+            'PDF 转 Word', 'PDF 转 Excel', 'PDF 转 TXT', 'PDF 转图片', 'PDF 转图片版', '独立图片工具', '压缩图片']
+        assert [a.text() for a in conversion if a.isSeparator()] == ['转为 PDF', '从 PDF 导出', '独立图片工具']
         assert all('批量' not in action.text() for action in conversion)
-        assert window.whiten_action in menus['扫描'].actions()
-        assert window.ocr_action in menus['扫描'].actions()
+        assert window.whiten_action in menus['工具'].actions()
+        assert window.ocr_action in menus['工具'].actions()
         assert window.insert_action in menus['页面'].actions()
-        assert window.watermark_action in menus['文档'].actions()
+        assert window.watermark_action in menus['工具'].actions()
     finally:
         window.close()
         qapp.processEvents()

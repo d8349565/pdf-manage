@@ -1,7 +1,7 @@
 from __future__ import annotations
 from app.i18n import tr
 from app.themes import (
-    THEMES, current_theme, ensure_chevron_icons, initialize_theme, set_theme_style,
+    CommandMenu, THEMES, current_theme, ensure_chevron_icons, initialize_theme, set_theme_style,
     theme_manager, theme_swatch, ui_color,
 )
 
@@ -608,6 +608,13 @@ QToolButton[primary="true"]:hover { background: #0D9488; }
 QToolButton[primary="true"]:pressed { background: #0F766E; }
 QToolButton[danger="true"] { color: #B91C1C; }
 QToolButton[danger="true"]:hover { background: #FEF2F2; }
+QToolButton#helpButton {
+    min-width: 28px; min-height: 28px; padding: 0; background: transparent;
+    border: none; border-radius: 4px;
+}
+QToolButton#helpButton:hover { background: #E6F7F4; }
+QToolButton#helpButton:pressed { background: #CCFBF1; }
+QToolButton#helpButton::menu-indicator { image: none; }
 QToolButton#winBtn {
     min-width: 46px;
     min-height: 40px;
@@ -2195,6 +2202,40 @@ class ElidedTitleLabel(QLabel):
         super().paintEvent(event)
 
 
+class _HelpMenuButton(QToolButton):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self._keyboard_cue = False
+
+    def set_keyboard_cue(self, visible):
+        if self._keyboard_cue != visible:
+            self._keyboard_cue = visible
+            self.update()
+
+    def focusInEvent(self, event):
+        reason = event.reason()
+        if reason != Qt.FocusReason.PopupFocusReason:
+            self.set_keyboard_cue(reason in (Qt.FocusReason.TabFocusReason, Qt.FocusReason.BacktabFocusReason,
+                                             Qt.FocusReason.ShortcutFocusReason))
+        super().focusInEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.hasFocus() and self._keyboard_cue:
+            painter = QPainter(self)
+            painter.fillRect((self.width() - 14) // 2, self.height() - 4, 14, 2, QColor(ui_color('accent')))
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space, Qt.Key.Key_Down):
+            self.set_keyboard_cue(True)
+            menu = self.menu()
+            menu.popup(self.mapToGlobal(QPoint(0, self.height())))
+            menu.setActiveAction(menu.actions()[0])
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class TitleBar(QWidget):
     def __init__(self, host: MainWindow) -> None:
         super().__init__(host)
@@ -2219,6 +2260,20 @@ class TitleBar(QWidget):
         host.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         host.title_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         lay.addWidget(host.title_label, 1)
+        host.help_button = _HelpMenuButton(self)
+        host.help_button.setObjectName('helpButton')
+        host.help_button.setFixedSize(28, 28)
+        host.help_button.setIcon(toolbar_icon('help', '#134E4A', CAPTION_PX))
+        host.help_button.setIconSize(QSize(CAPTION_PX, CAPTION_PX))
+        host.help_button.setAccessibleName(tr('帮助与关于'))
+        host.help_button.setToolTip(tr('帮助与关于'))
+        host.help_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        host.help_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        host.help_menu = CommandMenu(tr('帮助'), host.help_button)
+        host.help_button.setMenu(host.help_menu)
+        host.help_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        lay.addWidget(host.help_button)
+        QWidget.setTabOrder(host._menubar, host.help_button)
         host.btn_min = self._win_btn("win-min", tr('最小化'), host.showMinimized)
         host.btn_max = self._win_btn("win-max", tr('最大化'), host._toggle_max)
         host.btn_close = _HoverIconButton("win-close", "#134E4A", "#FFFFFF", self)
@@ -2715,6 +2770,8 @@ class MainWindow(QMainWindow):
         for signal in (self.act_pages.toggled, self.act_tools.toggled, self.sidebar_mode.currentIndexChanged):
             signal.connect(self._save_ui_preferences)
         self.refresh()
+        # The reading stack transfers focus to the document when its first page opens.
+        self.preview_stack.currentWidget().setFocus(Qt.FocusReason.OtherFocusReason)
         mark("window_ready")
         QTimer.singleShot(0, self._continue_last_reading)
         QTimer.singleShot(200, self.reading_history.check_missing)
@@ -2793,11 +2850,11 @@ class MainWindow(QMainWindow):
         self.set_work_mode(0 if self._in_arrange() else 1)
 
     def set_work_mode(self, index):
-        if self._saving or self._confirming_leave or getattr(self, '_task_dialog', None):
+        if (self._saving or self._confirming_leave or getattr(self, '_task_dialog', None)
+                or (index == 1 and not self.ws.pages)):
+            (self.reading_mode_action, self.arrange_mode_action)[self.stack.currentIndex()].setChecked(True)
             return
         if index == 1:
-            if not self.ws.pages:
-                return
             if self.immersive.borderless:
                 self.immersive.borderless_action.setChecked(False)
             if self.immersive.fullscreen:
@@ -3095,7 +3152,7 @@ class MainWindow(QMainWindow):
         self._render_hide_timer.timeout.connect(self._hide_render_progress)
         self.model.busy.connect(self._note_render_busy)
         self.setMenuWidget(TitleBar(self))
-        file_menu = self._menubar.addMenu(tr('文件'))
+        file_menu = CommandMenu.add_to(self._menubar, tr('文件'))
         self.open_action = self._act(tr('打开 PDF / OFD / 图片'), self.open_files)
         file_menu.addAction(self.open_action)
         file_menu.addAction(self._act(tr('最近阅读记录…'), self.manage_reading_history))
@@ -3112,11 +3169,13 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self.storage_action = self._act(tr('存储管理…'), self.manage_storage)
         self.storage_action.setStatusTip(tr('查看 OCR、缓存和输出位置，选择保存目录或清理旧文件'))
-        settings_menu=file_menu.addMenu(tr('应用设置'))
+        settings_menu = CommandMenu.add_to(file_menu, tr('应用设置'))
+        settings_menu.addSection(tr('常规与存储'))
         settings_menu.addAction(self._act(tr('界面语言 / Language'), self.configure_language))
         settings_menu.addAction(self._act(tr('保存设置'), self.configure_save_settings))
-        settings_menu.addAction(self._act(tr('翻译设置…'), self.open_translation_settings))
         settings_menu.addAction(self.storage_action)
+        settings_menu.addSection(tr('效率与系统集成'))
+        settings_menu.addAction(self._act(tr('翻译设置…'), self.open_translation_settings))
         settings_menu.addAction(self._act(tr('快捷键管理'), self.configure_shortcuts))
         if sys.platform == "win32":
             if portable_root() is not None:
@@ -3124,11 +3183,12 @@ class MainWindow(QMainWindow):
             settings_menu.addAction(self._act(tr('设为默认 PDF 应用…'), self.choose_default_application))
         file_menu.addSeparator()
         file_menu.addAction(self._act(tr('退出'), self.close))
-        edit = self._menubar.addMenu(tr('编辑'))
+        edit = CommandMenu.add_to(self._menubar, tr('编辑'))
         self.undo_action = self.undo_group.createUndoAction(self, tr('撤销'))
         self.redo_action = self.undo_group.createRedoAction(self, tr('重做'))
         edit.addAction(self.undo_action)
         edit.addAction(self.redo_action)
+        edit.addSeparator()
         self.copy_pages_action = self._act(tr('复制页面'), self.copy_pages)
         self.copy_pages_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.copy_pages_action.setStatusTip(tr('复制所选页面，可粘贴到本文件或本窗口的其他标签页。'))
@@ -3138,10 +3198,9 @@ class MainWindow(QMainWindow):
         self.paste_pages_action = self._act(tr('粘贴为页面'), self.paste_pages)
         self.paste_pages_action.setStatusTip(tr('将复制的 PDF、图片文件或截图粘贴为新页面；可先点击缩略图或页面间隙。'))
         edit.addAction(self.paste_pages_action)
-        edit.addSeparator()
         edit.addAction(self._act(tr('全选'), self.select_all_pages))
         edit.addAction(self.find_action)
-        edit.addSeparator()
+        edit.addSection(tr('审阅与框选处理'))
         edit.addAction(self._act(tr('审阅与文字修正…'), self.open_annotation_tools))
         self.capture_action = self._act(tr('框选导出图片…'), lambda: self.region_capture.begin())
         self.capture_action.setIcon(toolbar_icon('annotation-select'))
@@ -3151,7 +3210,9 @@ class MainWindow(QMainWindow):
         self.region_translate_action.setIcon(toolbar_icon('region-translate'))
         self.region_translate_action.setToolTip(tr('框选原文、图表或扫描区域，自动提取文字或本地 OCR 并翻译'))
         edit.addAction(self.region_translate_action)
-        edit.addSeparator()
+        self.annot_crop_action = self._act(tr('区域摘录…'), self.open_annotation_crop)
+        edit.addAction(self.annot_crop_action)
+
         self.insert_action = self._act(tr('插入页面…'), self.insert_files)
         self.append_action = self._act(tr('合并文件…'), self.append_files)
         self.merge_open_action = self._act(tr('合并已打开文件'), self.merge_open_files)
@@ -3159,54 +3220,52 @@ class MainWindow(QMainWindow):
         self.merge_open_action.setToolTip(tr('勾选已打开的 PDF，默认合并另存，也可覆盖指定文件'))
         self.merge_open_action.setEnabled(False)
         self.delete_action = self._act(tr('删除页面'), self.delete_pages)
-        tools = self._menubar.addMenu(tr('页面'))
-        tools.addActions([self.insert_action,self.append_action,self.merge_open_action])
-        tools.addAction(self._act(tr('交叉合并两个 PDF…'), self.interleave_files))
-        tools.addSeparator()
+        pages = CommandMenu.add_to(self._menubar, tr('页面'))
+        pages.addSection(tr('合并与插入'))
+        pages.addActions([self.insert_action, self.append_action, self.merge_open_action])
+        pages.addAction(self._act(tr('交叉合并两个 PDF…'), self.interleave_files))
+        pages.addSection(tr('拆分与提取'))
         self.extract_action = self._act(tr('提取页面…'), lambda: self.open_export_tool(0))
         self.split_action = self._act(tr('拆分文件…'), lambda: self.open_export_tool(1))
         self.split_page_action = self._act(tr('分割单页…'), self.split_selected_page)
-        tools.addActions([self.extract_action,self.split_action,self.split_page_action])
-        tools.addSeparator()
+        pages.addActions([self.extract_action, self.split_action, self.split_page_action])
+        pages.addSection(tr('版面与旋转'))
         self.page_size_action = self._act(tr('调整页面大小…'), self.resize_pages)
-        tools.addAction(self.page_size_action)
-        rotation=tools.addMenu(tr('旋转页面'))
-        self.page_rotate_actions=[self._act(tr('向左旋转 90°'),lambda:self.rotate(-90)),
-                                  self._act(tr('向右旋转 90°'),lambda:self.rotate(90))]
-        rotation.addActions(self.page_rotate_actions)
-        tools.addAction(self.delete_action)
-        document = self._menubar.addMenu(tr('文档'))
-        document.addAction(self._act(tr('两份 PDF 对比（实验）…'), self.open_pdf_compare))
-        self.signature_info_action = self._act(tr('签名与保护信息…'), self.show_signature_info)
-        document.addAction(self.signature_info_action)
-        document.addSeparator()
-        self.page_numbers_action=self._act(tr('页码处理…'),self.open_page_numbers)
-        self.watermark_action = self._act(tr('水印…'), self.open_watermarks)
-        self.seam_stamp_action = self._act(tr('骑缝章…'), self.open_seam_stamps)
-        self.annot_crop_action = self._act(tr('区域摘录…'), self.open_annotation_crop)
-        document.addActions([self.page_numbers_action,self.watermark_action,
-                             self.seam_stamp_action,self.annot_crop_action])
-        document.addSeparator()
-        compression=document.addMenu(tr('压缩'))
-        self.compress_action = self._act(tr('压缩 PDF…'), lambda: self.open_export_tool(3))
-        self.image_compress_action=self._act(tr('压缩图片…'),self.compress_image_file)
-        compression.addActions([self.compress_action,self.image_compress_action])
-        security=document.addMenu(tr('安全与副本'))
-        self.encrypt_action = self._act(tr('加密另存…'), self.encrypt_copy)
-        self.decrypt_action = self._act(tr('解密另存…'), self.decrypt_copy)
-        self.editable_action = self._act(tr('制作可编辑副本…'), self.editable_copy)
-        security.addActions([self.encrypt_action,self.decrypt_action,self.editable_action])
-        scans=self._menubar.addMenu(tr('扫描'))
+        self.page_numbers_action = self._act(tr('页码处理…'), self.open_page_numbers)
+        self.page_rotate_actions = [self._act(tr('向左旋转 90°'), lambda: self.rotate(-90)),
+                                    self._act(tr('向右旋转 90°'), lambda: self.rotate(90))]
+        pages.addActions([self.page_size_action, self.page_numbers_action, *self.page_rotate_actions])
+        pages.addSeparator()
+        pages.addAction(self.delete_action)
+
+        tools = CommandMenu.add_to(self._menubar, tr('工具'))
+        tools.addSection(tr('扫描件处理与识别'))
         self.whiten_action = self._act(tr('扫描件增强…'), self.open_whitening)
         self.deskew_action = self._act(tr('扫描纠偏…'), self.open_deskew)
         self.color_cleanup_action = self._act(tr('去除彩色笔迹…'), self.open_color_cleanup)
         self.ocr_action = self._act(tr('文字识别（OCR）…'), self.open_ocr)
-        scans.addActions([self.color_cleanup_action,self.whiten_action,self.deskew_action,self.ocr_action])
-        convert = self._menubar.addMenu(tr('转换'))
+        tools.addActions([self.whiten_action, self.deskew_action, self.color_cleanup_action, self.ocr_action])
+        tools.addSection(tr('印记与核对'))
+        self.watermark_action = self._act(tr('水印…'), self.open_watermarks)
+        self.seam_stamp_action = self._act(tr('骑缝章…'), self.open_seam_stamps)
+        tools.addActions([self.watermark_action, self.seam_stamp_action])
+        tools.addAction(self._act(tr('两份 PDF 对比（实验）…'), self.open_pdf_compare))
+        tools.addSection(tr('压缩与安全'))
+        self.compress_action = self._act(tr('压缩 PDF…'), lambda: self.open_export_tool(3))
+        self.signature_info_action = self._act(tr('签名与保护信息…'), self.show_signature_info)
+        tools.addActions([self.compress_action, self.signature_info_action])
+        security = CommandMenu.add_to(tools, tr('安全与副本'))
+        self.encrypt_action = self._act(tr('加密另存…'), self.encrypt_copy)
+        self.decrypt_action = self._act(tr('解密另存…'), self.decrypt_copy)
+        self.editable_action = self._act(tr('制作可编辑副本…'), self.editable_copy)
+        security.addActions([self.encrypt_action, self.decrypt_action, self.editable_action])
+
+        convert = CommandMenu.add_to(self._menubar, tr('转换'))
+        convert.addSection(tr('转为 PDF'))
         convert.addAction(self._act(tr('Word 转 PDF…'), self.open_word_converter))
         convert.addAction(self._act(tr('图片转 PDF…'), self.images_to_pdf))
         convert.addAction(self._act(tr('Markdown 转 PDF…'), self.convert_markdown))
-        convert.addSeparator()
+        convert.addSection(tr('从 PDF 导出'))
         convert.addAction(self._act(tr('PDF 转 Word…'), lambda: self.open_word_converter(direction="pdf_to_word")))
         self.convert_action = self._act(tr('PDF 转 Excel…'), lambda: self.convert_to_excel(choose_settings=True))
         self.image_export_action = self._act(tr('PDF 转图片…'), self.pdf_to_images)
@@ -3215,19 +3274,26 @@ class MainWindow(QMainWindow):
         convert.addAction(self._act(tr('PDF 转 TXT…'), self.export_text))
         convert.addAction(self.image_export_action)
         convert.addAction(self.raster_action)
-        view = self._menubar.addMenu(tr('视图'))
-        self.reading_mode_action = self._act(tr('阅读'), lambda: self.set_work_mode(0))
+        convert.addSection(tr('独立图片工具'))
+        self.image_compress_action = self._act(tr('压缩图片…'), self.compress_image_file)
+        convert.addAction(self.image_compress_action)
+
+        self.view_menu = view = CommandMenu.add_to(self._menubar, tr('视图'))
+        self.mode_section = view.addSection(tr('工作模式'))
+        mode_group = QActionGroup(self)
+        self.reading_mode_action = self._act(tr('阅读模式'), lambda: self.set_work_mode(0))
         self.arrange_mode_action = self._act(tr('整理页面'), lambda: self.set_work_mode(1))
-        view.addActions([self.reading_mode_action, self.arrange_mode_action])
-        self.addActions([self.reading_mode_action, self.arrange_mode_action])
+        for action in (self.reading_mode_action, self.arrange_mode_action):
+            action.setCheckable(True)
+            mode_group.addAction(action)
+            view.addAction(action)
+        self.reading_mode_action.setChecked(True)
         self.toggle_mode_action = self._act(tr('切换阅读／整理页面'), self.toggle_reading_mode)
-        view.addAction(self.toggle_mode_action)
-        self.addAction(self.toggle_mode_action)
-        self.outline_action = self._act(tr('大纲书签'), self.open_outline)
-        view.addAction(self.outline_action)
+        self.fit_view_action = self._act(tr('恢复缩略图默认大小'), self.zoom_fit)
         view.addSeparator()
-        view.addMenu(self.reading_settings_menu)
-        self.theme_menu = view.addMenu(tr('界面主题'))
+        view.addMenu(self.reading_layout_menu)
+        view.addActions([self.reading_colors_action, self.restore_reading_colors_action])
+        self.theme_menu = CommandMenu.add_to(view, tr('界面主题'))
         self.theme_menu.setObjectName("themeMenu")
         self.theme_menu.setMinimumWidth(220)
         self.theme_menu.setToolTipsVisible(True)
@@ -3250,26 +3316,19 @@ class MainWindow(QMainWindow):
             self.theme_group.addAction(action)
             self.theme_menu.addAction(action)
             self.theme_actions[theme.key] = action
-        view.addSeparator()
-        view.addAction(self.act_pages)
-        view.addAction(self.act_tools)
-        view.addAction(self.act_translation)
-        view.addSeparator()
-        zoom_menu=view.addMenu(tr('缩放'))
-        zoom_menu.addAction(self._act(tr('放大'), self.zoom_in))
-        zoom_menu.addAction(self._act(tr('缩小'), self.zoom_out))
-        zoom_menu.addAction(self._act(tr('适合宽度'), self.zoom_fit))
-        restore=view.addMenu(tr('界面恢复'))
-        restore.addAction(self.reading_orb.restore_action)
-        restore.addAction(self._act(tr('恢复界面布局'),self.reset_ui_preferences))
-        help_menu = self._menubar.addMenu(tr('帮助'))
+        view.addSection(tr('侧栏与面板'))
+        self.outline_action = self._act(tr('大纲书签'), self.open_outline)
+        view.addActions([self.act_pages, self.outline_action, self.act_tools, self.act_translation])
+        help_menu = self.help_menu
         self.quick_start_action = self._act(tr('操作指南'), self.show_quick_start)
         self.quick_start_action.setStatusTip(tr('查看拖入文件、缩放、移动页面与侧栏的常用操作'))
-        self.contribution_action = self._act(tr('贡献'), self.show_contributions)
+        self.contribution_action = self._act(tr('贡献者致谢'), self.show_contributions)
         self.contribution_action.setStatusTip(tr('感谢为项目提供建议和问题反馈的朋友'))
         self.about_action = self._act(tr('关于{p0}', p0=tr(APP_NAME)), self.show_about)
         self.about_action.setStatusTip(tr('查看版本、检查更新、项目地址与赞赏信息'))
-        help_menu.addActions([self.quick_start_action, self.contribution_action, self.about_action])
+        help_menu.addActions([self.quick_start_action, self.contribution_action])
+        help_menu.addSeparator()
+        help_menu.addAction(self.about_action)
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -3283,14 +3342,17 @@ class MainWindow(QMainWindow):
         self.stack.currentChanged.connect(self._sync_mode)
         from app.immersivereading import ImmersiveReading
         self.immersive = ImmersiveReading(self)
-        view.addSeparator()
-        view.addAction(self.immersive.fullscreen_action)
-        view.addAction(self.immersive.borderless_action)
         view.addAction(self.immersive.auto_action)
-        self.reading_settings_menu.addSeparator()
-        self.reading_settings_menu.addAction(self.immersive.fullscreen_action)
-        self.reading_settings_menu.addAction(self.immersive.borderless_action)
-        self.reading_settings_menu.addAction(self.immersive.auto_action)
+        view.addSection(tr('专注阅读与界面'))
+        view.addActions([self.immersive.fullscreen_action, self.immersive.borderless_action,
+                         self.reading_orb.visibility_action])
+        view.addAction(self._act(tr('恢复界面布局'), self.reset_ui_preferences))
+        orb_menu = self.reading_orb.settings_menu
+        orb_menu.addSeparator()
+        orb_menu.addActions([self.immersive.fullscreen_action, self.immersive.borderless_action,
+                             self.immersive.auto_action])
+        orb_menu.addSeparator()
+        orb_menu.addAction(self.reading_orb.hide_action)
         self.addAction(self.act_pages)
         self.addAction(self.outline_action)
         QApplication.instance().installEventFilter(self)
@@ -3537,14 +3599,19 @@ class MainWindow(QMainWindow):
         self.theme_button = QToolButton(bar)
         self.theme_button.setObjectName("themeSwitch")
         self.theme_button.setText(tr('主题'))
-        self.theme_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.theme_button.setIconSize(QSize(28, 14))
-        self.theme_button.setFixedHeight(28)
-        self.theme_button.setMinimumWidth(84)
+        self.theme_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.theme_button.setIconSize(QSize(20, 12))
+        self.theme_button.setFixedSize(28, 28)
         self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.theme_button.setMenu(self.theme_menu)
-        set_theme_style(self.theme_button, "QToolButton#themeSwitch { min-width: 0; min-height: 0; padding: 0 6px; }")
+        set_theme_style(self.theme_button, """
+            QToolButton#themeSwitch {
+                min-width: 26px; min-height: 26px; padding: 0; border: 1px solid transparent;
+            }
+            QToolButton#themeSwitch:focus { border-color: #0F766E; }
+            QToolButton#themeSwitch::menu-indicator { image: none; }
+        """)
         layout.addWidget(self.theme_button)
         return bar
 
@@ -3598,6 +3665,12 @@ class MainWindow(QMainWindow):
                 self._zoom_animation.setCurrentTime(self._zoom_animation.duration())
             self._ensure_arrange()
         self.mode_buttons[index].setChecked(True)
+        (self.reading_mode_action, self.arrange_mode_action)[index].setChecked(True)
+        # Leave the window action registered in both modes. Only its menu entry changes.
+        if index == 1:
+            self.view_menu.insertAction(self.reading_layout_menu.menuAction(), self.fit_view_action)
+        else:
+            self.view_menu.removeAction(self.fit_view_action)
         self.navigation_bar.setVisible(bool(self.ws.pages) and index == 0 and not (
             hasattr(self, 'immersive') and self.immersive.borderless))
         if index == 1 and hasattr(self, "annotation_tools"):
@@ -3992,25 +4065,14 @@ class MainWindow(QMainWindow):
             self.reader_tool_actions[mode] = action
         navigation.addWidget(self._reader_zoom_controls)
         self.navigation_bar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.reading_settings_menu = layout_menu = QMenu(tr('阅读设置'), self)
-        layout_menu.setObjectName('readingSettingsMenu')
-        layout_menu.setAccessibleName(tr('阅读设置'))
+        self.reading_layout_menu = layout_menu = CommandMenu(tr('阅读布局与适配'), self)
+        layout_menu.setAccessibleName(layout_menu.title())
         layout_menu.setToolTipsVisible(True)
-        set_theme_style(layout_menu, '''
-            QMenu#readingSettingsMenu {
-                background: #FFFFFF; color: #29483B; border: 1px solid #D5E5DD;
-                border-radius: 9px; padding: 6px; font-size: 13px;
-            }
-            QMenu#readingSettingsMenu::item { padding: 7px 18px 7px 10px; margin: 1px 3px; border-radius: 5px; }
-            QMenu#readingSettingsMenu::item:selected { background: #EDF6F1; }
-            QMenu#readingSettingsMenu::item:checked { background: #E3F1E9; color: #0F6557; font-weight: 600; }
-            QMenu#readingSettingsMenu::separator { background: #E0EAE5; height: 1px; margin: 5px 7px; }
-        ''')
         self.reading_fallback_notice = QAction(tr('阅读区较窄，当前暂用单页'), layout_menu)
         self.reading_fallback_notice.setEnabled(False)
         self.reading_fallback_notice.setVisible(False)
         layout_menu.addAction(self.reading_fallback_notice)
-        layout_menu.addSection(tr('阅读工具'))
+        layout_menu.addSection(tr('交互方式'))
         layout_menu.addActions(list(self.reader_tool_actions.values()))
         layout_menu.addSection(tr('页面布局'))
         self.reading_layout_group = QActionGroup(self)
@@ -4026,7 +4088,7 @@ class MainWindow(QMainWindow):
             self.reading_layout_actions[mode] = action
             self.addAction(action)
             layout_menu.addAction(action)
-        layout_menu.addSection(tr('页面适配'))
+        self.zoom_section = layout_menu.addSection(tr('页面适配与缩放'))
         self.reading_zoom_group = QActionGroup(self)
         self.reading_zoom_actions = {}
         for mode, label, icon in (('page', tr('适合页面'), 'page-single'),
@@ -4040,18 +4102,25 @@ class MainWindow(QMainWindow):
             self.reading_zoom_group.addAction(action)
             self.reading_zoom_actions[mode] = action
             layout_menu.addAction(action)
-        layout_menu.addSeparator()
+        orb_menu = CommandMenu(tr('阅读设置'), self)
+        orb_menu.setAccessibleName(orb_menu.title())
+        orb_menu.setToolTipsVisible(True)
+        orb_menu.addActions(layout_menu.actions())
+        layout_menu.addAction(self._act(tr('放大'), self.zoom_in))
+        layout_menu.addAction(self._act(tr('缩小'), self.zoom_out))
         self.default_reading_view_action = self._act(tr('将当前视图设为默认'), self.save_default_reading_view)
         self.default_reading_view_action.setToolTip(tr('保存当前页面布局和适配方式，新打开的文档使用此设置'))
-        layout_menu.addAction(self.default_reading_view_action)
-        layout_menu.addSeparator()
+        for menu in (layout_menu, orb_menu):
+            menu.addSeparator()
+            menu.addAction(self.default_reading_view_action)
         self.reading_colors_action = self._act(tr('阅读配色'), self.configure_reading_colors)
         self.restore_reading_colors_action = self._act(tr('恢复文档原色'), self.restore_reading_colors)
         self.restore_reading_colors_action.setEnabled(self._reading_colors.enabled)
-        layout_menu.addActions([self.reading_colors_action, self.restore_reading_colors_action])
+        orb_menu.addSeparator()
+        orb_menu.addActions([self.reading_colors_action, self.restore_reading_colors_action])
         self.preview_view.set_reading_colors(self._reading_colors)
         from app.readingsettings import ReadingSettingsOrb
-        self.reading_orb = ReadingSettingsOrb(self, layout_menu)
+        self.reading_orb = ReadingSettingsOrb(self, orb_menu)
         self.page_number.setFixedHeight(28)
         for button in self.navigation_bar.findChildren(QToolButton):
             button.setFixedSize(28, 28)
@@ -4382,6 +4451,11 @@ class MainWindow(QMainWindow):
         install_main_shortcuts(self)
 
     def _sync_shortcut_hints(self):
+        mode_keys = self.shortcut_manager.label('reader.mode', all_keys=True)
+        fit_keys = self.shortcut_manager.label('view.fit', all_keys=True)
+        self.mode_section.setText(tr('工作模式 · {key} 切换', key=mode_keys) if mode_keys else tr('工作模式'))
+        self.zoom_section.setText(tr('页面适配与缩放 · {key} 适配当前视图', key=fit_keys)
+                                  if fit_keys else tr('页面适配与缩放'))
         self.reader_interaction.reset()
         self._sync_page_navigation()
         self.reading_orb.sync()
@@ -4550,6 +4624,10 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event) -> bool:
         kind = event.type()
+        if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.TabletPress, QEvent.Type.TouchBegin):
+            help_button = getattr(self, 'help_button', None)
+            if help_button is not None:
+                help_button.set_keyboard_cue(False)
         if (kind in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
                 and event.key() == Qt.Key.Key_Escape
                 and not QApplication.activePopupWidget() and not QApplication.activeModalWidget()):

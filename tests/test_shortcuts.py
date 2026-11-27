@@ -49,6 +49,31 @@ def test_catalog_defaults_and_context_reuse(manager):
     assert manager.error(values), 'reader and window scope overlap'
 
 
+def test_saved_v1_menu_keys_bind_to_their_original_operations(qapp, tmp_path, monkeypatch):
+    settings = QSettings(str(tmp_path / 'existing-profile.ini'), QSettings.Format.IniFormat)
+    overrides = {'reader.mode': ['F7'], 'view.fit': ['Ctrl+Alt+0'], 'reader.fit_width': ['Ctrl+Alt+8'],
+                 'reader.hide_orb': ['Ctrl+Alt+7'], 'reader.show_orb': ['Ctrl+Alt+9'],
+                 'reader.original_colors': ['Ctrl+Alt+6'], 'app.about': ['Ctrl+Alt+5']}
+    settings.setValue(SETTINGS_KEY, json.dumps({'version': 1, 'overrides': overrides}))
+    settings.sync()
+    monkeypatch.setattr('app.ui.QSettings', lambda *args: settings)
+    win = MainWindow()
+    try:
+        actions = {'reader.mode': win.toggle_mode_action, 'view.fit': win.fit_view_action,
+                   'reader.fit_width': win.reading_zoom_actions['width'],
+                   'reader.hide_orb': win.reading_orb.hide_action, 'reader.show_orb': win.reading_orb.restore_action,
+                   'reader.original_colors': win.restore_reading_colors_action, 'app.about': win.about_action}
+        for identifier, action in actions.items():
+            assert win._shortcut_actions[identifier] is action
+            assert action.shortcuts() == [QKeySequence(overrides[identifier][0])]
+        assert win.reading_orb.visibility_action.shortcut().isEmpty()
+        assert not any(a.isEnabled() for a in (win.reading_orb.visibility_action,
+                                               win.reading_orb.hide_action, win.reading_orb.restore_action))
+    finally:
+        win.close()
+        qapp.processEvents()
+
+
 def test_keypad_and_backtab_use_the_same_logical_binding(manager):
     from PyQt6.QtCore import QEvent
     from PyQt6.QtGui import QKeyEvent

@@ -21,6 +21,8 @@ def all_commands(window):
                 assert chain not in commands,'Duplicate command path: '+str(chain)
                 commands[chain]=action
     walk(window._menubar,())
+    walk(window.help_menu, ('帮助',))
+    walk(window.reading_orb.settings_menu, ('阅读悬浮球',))
     return commands
 
 
@@ -29,20 +31,19 @@ def all_commands(window):
 EXPECTED={
     ('文件',):['打开 PDF / OFD / 图片','保存','另存为','关闭当前文件','打印','最近阅读记录','退出'],
     ('文件','应用设置'):['界面语言 / Language','保存设置','存储管理','快捷键管理','翻译设置'],
-    ('编辑',):['撤销','重做','复制页面','粘贴为页面','全选','全文搜索','审阅与文字修正','框选导出图片','框选翻译'],
-    ('页面',):['插入页面','合并文件','合并已打开文件','提取页面','拆分文件','分割单页','调整页面大小','删除页面'],
-    ('页面','旋转页面'):['向左旋转 90°','向右旋转 90°'],
-    ('文档',):['两份 PDF 对比（实验）','页码处理','水印','骑缝章','区域摘录','签名与保护信息'],
-    ('文档','压缩'):['压缩 PDF','压缩图片'],
-    ('文档','安全与副本'):['加密另存','解密另存','制作可编辑副本'],
-    ('扫描',):['去除彩色笔迹','扫描件增强','扫描纠偏','文字识别（OCR）'],
-    ('转换',):['Word 转 PDF','图片转 PDF','Markdown 转 PDF','PDF 转 Word','PDF 转 Excel','PDF 转 TXT','PDF 转图片','PDF 转图片版'],
-    ('视图',):['阅读','整理页面','切换阅读／整理页面','全屏阅读','无边框模式','侧栏自动隐藏','大纲书签','页面栏','工具面板','翻译面板'],
-    ('视图','阅读设置'):['单页连续','双页对开','四页预览（2×2）','适合页面','适合宽度','手动缩放','将当前视图设为默认','阅读配色','恢复文档原色','全屏阅读','无边框模式','侧栏自动隐藏','本次运行隐藏悬浮球','手形拖动','选择文字'],
+    ('编辑',):['撤销','重做','复制页面','粘贴为页面','全选','全文搜索','审阅与文字修正','框选导出图片','框选翻译','区域摘录'],
+    ('页面',):['插入页面','合并文件','合并已打开文件','交叉合并两个 PDF','提取页面','拆分文件','分割单页',
+             '调整页面大小','页码处理','向左旋转 90°','向右旋转 90°','删除页面'],
+    ('工具',):['扫描件增强','扫描纠偏','去除彩色笔迹','文字识别（OCR）','水印','骑缝章','两份 PDF 对比（实验）','压缩 PDF','签名与保护信息'],
+    ('工具','安全与副本'):['加密另存','解密另存','制作可编辑副本'],
+    ('转换',):['Word 转 PDF','图片转 PDF','Markdown 转 PDF','PDF 转 Word','PDF 转 Excel','PDF 转 TXT','PDF 转图片','PDF 转图片版','压缩图片'],
+    ('视图',):['阅读模式','整理页面','阅读配色','恢复文档原色','页面栏','大纲书签','工具面板','翻译面板','侧栏自动隐藏',
+             '全屏阅读','无边框模式','显示阅读悬浮球','恢复界面布局'],
+    ('视图','阅读布局与适配'):['手形拖动','选择文字','单页连续','双页对开','四页预览（2×2）','适合页面','适合宽度','手动缩放','放大','缩小','将当前视图设为默认'],
     ('视图','界面主题'):['石墨（默认）','原版绿','远山','赤陶','夜航（深色）'],
-    ('视图','缩放'):['放大','缩小','适合宽度'],
-    ('视图','界面恢复'):['显示阅读悬浮球','恢复界面布局'],
-    ('帮助',):['操作指南','贡献','关于纸序 PDF'],
+    ('阅读悬浮球',):['手形拖动','选择文字','单页连续','双页对开','四页预览（2×2）','适合页面','适合宽度','手动缩放','将当前视图设为默认',
+                  '阅读配色','恢复文档原色','全屏阅读','无边框模式','侧栏自动隐藏','本次运行隐藏悬浮球'],
+    ('帮助',):['操作指南','贡献者致谢','关于纸序 PDF'],
 }
 
 
@@ -75,7 +76,7 @@ def test_dynamic_copy_menu_option_survives_refresh(qapp,tmp_path,monkeypatch,sig
         window.refresh();window._sync_controls()
         label='制作影像副本' if signature=='unknown' else '制作可编辑副本'
         assert window.editable_action.text()==label
-        assert all_commands(window)[('文档','安全与副本',label)] is window.editable_action
+        assert all_commands(window)[('工具','安全与副本',label)] is window.editable_action
         assert window.editable_action.isEnabled()==(signature!='none')
         page_editing_allowed = signature != 'unknown'
         assert window.delete_action.isEnabled() == page_editing_allowed
@@ -102,11 +103,12 @@ def test_existing_shortcuts_survive_nested_menu_relocation(qapp):
                   ('编辑','全选'):'Ctrl+A',('编辑','粘贴为页面'):'Ctrl+V',
                   ('编辑','框选导出图片'):'Ctrl+Shift+C',
                   ('视图','页面栏'):'F8',('视图','工具面板'):'F9',
-                  ('视图','缩放','适合宽度'):'Ctrl+0',
-                  ('视图','阅读设置','单页连续'):'Ctrl+1',
-                  ('视图','阅读设置','双页对开'):'Ctrl+2',
-                  ('视图','阅读设置','四页预览（2×2）'):'Ctrl+4'}
+                  ('视图','阅读布局与适配','单页连续'):'Ctrl+1',
+                  ('视图','阅读布局与适配','双页对开'):'Ctrl+2',
+                  ('视图','阅读布局与适配','四页预览（2×2）'):'Ctrl+4'}
         for path,key in expected.items():assert commands[path].shortcut()==QKeySequence(key)
+        assert window.fit_view_action.shortcut() == QKeySequence('Ctrl+0')
+        assert commands['视图','阅读布局与适配','适合宽度'] is not window.fit_view_action
     finally:
         window.close();qapp.processEvents()
 
@@ -141,18 +143,20 @@ def test_top_level_task_menus_share_actions_with_existing_tools(qapp):
     window=MainWindow()
     try:
         root=window._menubar.actions()
-        assert [action.text() for action in root]==['文件','编辑','页面','文档','扫描','转换','视图','帮助']
+        assert [action.text() for action in root]==['文件','编辑','页面','工具','转换','视图']
         menus={action.text():action.menu() for action in root if action.menu()}
-        assert menus['帮助'].actions()==[window.quick_start_action,window.contribution_action,window.about_action]
+        assert window.help_button.menu() is window.help_menu
+        assert [a for a in window.help_menu.actions() if not a.isSeparator()] == [
+            window.quick_start_action, window.contribution_action, window.about_action]
         assert window.copy_pages_action in menus['编辑'].actions()
         assert window.paste_pages_action in menus['编辑'].actions()
         assert window.insert_action in menus['页面'].actions()
         assert window.delete_action in menus['页面'].actions()
-        assert window.page_numbers_action in menus['文档'].actions()
+        assert window.page_numbers_action in menus['页面'].actions()
         assert window.whiten_action.text()=='扫描件增强'
-        assert menus['扫描'].actions()==[window.color_cleanup_action,window.whiten_action,window.deskew_action,window.ocr_action]
-        compression=next(action.menu() for action in menus['文档'].actions() if action.text()=='压缩')
-        assert compression.actions()==[window.compress_action,window.image_compress_action]
+        assert window.ocr_action in menus['工具'].actions()
+        assert window.compress_action in menus['工具'].actions()
+        assert window.image_compress_action in menus['转换'].actions()
         assert window.image_compress_action.isEnabled() and not window.compress_action.isEnabled()
         settings=next(action.menu() for action in menus['文件'].actions() if action.text()=='应用设置')
         assert window.storage_action in settings.actions()

@@ -106,7 +106,7 @@ class RuntimeInstallDialog(QDialog):
         row.addWidget(choose)
         form.addRow(tr('安装位置'), row)
         layout.addLayout(form)
-        hint(layout, tr('旧组件备份保存在安装目录的上一级，可在“文件 → 存储管理”中查看和清理。'))
+        hint(layout, tr('旧组件备份保存在安装目录的上一级，可在“文件 → 应用设置 → 存储管理”中查看和清理。'))
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         box.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         start = box.addButton(tr('安装到此位置'), QDialogButtonBox.ButtonRole.AcceptRole)

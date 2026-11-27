@@ -453,7 +453,7 @@ def test_layout_icon_and_shortcuts_switch_single_spread_and_four_pages(reader, q
     assert not reader.ws.dirty
 
 
-def test_reading_orb_peeks_reveals_and_opens_the_shared_menu(reader, qapp):
+def test_reading_orb_peeks_reveals_and_opens_its_own_menu(reader, qapp):
     orb, view = reader.reading_orb, reader.preview_view
     QTest.mouseMove(view.viewport(), QPoint(30, 30))
     QTest.mouseMove(view.viewport(), QPoint(20, 20))
@@ -468,7 +468,7 @@ def test_reading_orb_peeks_reveals_and_opens_the_shared_menu(reader, qapp):
     assert view.viewport().geometry().contains(orb.geometry())
     QTest.mouseClick(orb, Qt.MouseButton.LeftButton)
     qapp.processEvents()
-    menu = reader.reading_settings_menu
+    menu = reader.reading_orb.settings_menu
     assert menu.isVisible()
     viewport_bounds = QRect(view.viewport().mapToGlobal(QPoint()), view.viewport().size())
     assert viewport_bounds.contains(menu.frameGeometry())
@@ -500,7 +500,7 @@ def test_reading_orb_drag_restores_auto_hide_without_opening_menu(reader, qapp, 
     QTest.mouseRelease(orb, Qt.MouseButton.LeftButton, pos=offset)
     assert orb.pos() == viewport.pos() + destination
     assert orb.hide_timer.isActive()
-    assert not reader.reading_settings_menu.isVisible()
+    assert not reader.reading_orb.settings_menu.isVisible()
     QTest.mouseMove(viewport, QPoint(viewport.width() // 2, viewport.height() - 40))
     QTest.qWait(orb.HIDE_DELAY + orb._motion_duration + 100)
     assert not orb.expanded and orb.icon().isNull(), '拖动后移开鼠标仍应自动收起'
@@ -516,10 +516,10 @@ def test_reading_orb_drag_restores_auto_hide_without_opening_menu(reader, qapp, 
     orb.restore()
     assert orb.pos() == viewport.pos() + destination
     QTest.mouseClick(orb, Qt.MouseButton.LeftButton, pos=offset)
-    assert reader.reading_settings_menu.isVisible()
+    assert reader.reading_orb.settings_menu.isVisible()
     orb._hide_if_away()
     assert orb.expanded and not orb.hide_timer.isActive()
-    reader.reading_settings_menu.hide()
+    reader.reading_orb.settings_menu.hide()
     QTest.mouseMove(viewport, QPoint(viewport.width() // 2, viewport.height() - 40))
     QTest.qWait(orb.HIDE_DELAY + orb._motion_duration + 100)
     assert not orb.expanded and orb.icon().isNull()

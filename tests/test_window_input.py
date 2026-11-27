@@ -3,8 +3,8 @@ import sys
 
 import pytest
 import pymupdf
-from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QFontDatabase
+from PyQt6.QtCore import QPoint, QSettings, Qt, QTimer
+from PyQt6.QtGui import QFontDatabase, QKeySequence
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QFileDialog, QToolButton
 
@@ -140,6 +140,162 @@ def loaded_window(window, tmp_path):
     window._ingest([str(path)], replace=True)
     QApplication.processEvents()
     return window
+
+
+@pytest.mark.parametrize('language, title', [
+    ('zh-CN', '项目预算与最终验收报告及附表'), ('en', 'Project budget and final acceptance report'),
+    ('de', 'Projektbudget und Abnahmeprotokoll für die abschließende Dokumentenprüfung'),
+])
+def test_help_button_keyboard_and_minimum_width(input_app, tmp_path, language, title):
+    from app.i18n import LANGUAGE_KEY, current_language, initialize_language, tr
+    previous = current_language()
+    settings = QSettings(str(tmp_path / 'help-language.ini'), QSettings.Format.IniFormat)
+    settings.setValue(LANGUAGE_KEY, language)
+    initialize_language(settings, input_app)
+    win = MainWindow()
+    try:
+        win.resize(980, 680)
+        win.show()
+        win.setWindowTitle((title + ' ') * 4 + '.pdf')
+        win.activateWindow()
+        QApplication.setActiveWindow(win)
+        input_app.processEvents()
+        assert (win.width(), win.height()) == (980, 680)
+        icon_space = win.title_label.width()
+        assert win.title_label.text() != win.title_label.fullText()
+        assert win.title_label.toolTip() == win.windowTitle()
+        assert win.title_label.geometry().right() < win.help_button.x() < win.btn_min.x()
+        assert win.help_button.accessibleName() == tr('帮助与关于')
+        win._menubar.setFocus(Qt.FocusReason.TabFocusReason)
+        QTest.keyClick(win._menubar, Qt.Key.Key_Tab)
+        assert win.help_button.hasFocus()
+        for key in (Qt.Key.Key_Return, Qt.Key.Key_Space):
+            QTest.keyClick(win.help_button, key)
+            input_app.processEvents()
+            menu = QApplication.activePopupWidget()
+            assert menu is win.help_menu and menu.activeAction() is win.quick_start_action
+            QTest.keyClick(menu, Qt.Key.Key_Down)
+            assert menu.activeAction() is win.contribution_action
+            QTest.keyClick(menu, Qt.Key.Key_Escape)
+            input_app.processEvents()
+            assert not menu.isVisible() and win.help_button.hasFocus()
+        win.help_button.hide()
+        win._menubar.addMenu(win.help_menu)
+        input_app.processEvents()
+        text_space = win.title_label.width()
+        win._menubar.removeAction(win.help_menu.menuAction())
+        win.help_button.show()
+        assert icon_space > text_space, (language, icon_space, text_space)
+        print(f'{language}: text help {text_space}px, icon help {icon_space}px')
+    finally:
+        win.close()
+        input_app.processEvents()
+        settings.setValue(LANGUAGE_KEY, previous)
+        initialize_language(settings, input_app)
+
+
+@pytest.mark.parametrize('theme', ['forest', 'night'])
+def test_help_button_shows_focus_cue_only_for_keyboard(window, input_app, tmp_path, theme):
+    window.change_theme(theme)
+    window.activateWindow()
+    QApplication.setActiveWindow(window)
+    button, menu = window.help_button, window.help_menu
+    bar = window._menubar
+    assert not button.hasFocus()
+    source = tmp_path / 'help-focus.pdf'
+    with pymupdf.open() as doc:
+        doc.new_page()
+        doc.save(source)
+    assert window.open_files_in_tabs([str(source)])
+    input_app.processEvents()
+    assert window.preview_view.hasFocus()
+    QTest.mouseMove(bar, QPoint(1, 1))
+
+    def appearance():
+        input_app.processEvents()
+        return button.grab().toImage()
+
+    bar.setFocus(Qt.FocusReason.OtherFocusReason)
+    idle = appearance()
+    button.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+    assert button.hasFocus() and appearance() == idle
+
+    bar.setFocus(Qt.FocusReason.OtherFocusReason)
+    QTest.keyClick(bar, Qt.Key.Key_Tab)
+    keyboard = appearance()
+    assert button.hasFocus() and keyboard != idle
+    # Only the short underline changes. The icon and the surrounding edges stay flat.
+    body = keyboard.rect().adjusted(0, 0, 0, -round(4 * keyboard.devicePixelRatio()))
+    assert keyboard.copy(body) == idle.copy(body)
+    QTest.keyClick(button, Qt.Key.Key_Return)
+    input_app.processEvents()
+    assert QApplication.activePopupWidget() is menu
+    QTest.keyClick(menu, Qt.Key.Key_Escape)
+    input_app.processEvents()
+    assert button.hasFocus() and appearance() == keyboard
+
+    def dismiss_menu():
+        QTest.qWaitForWindowExposed(menu, 1000)
+        input_app.processEvents()
+        QTest.keyClick(menu, Qt.Key.Key_Escape)
+
+    menu.aboutToShow.connect(lambda: QTimer.singleShot(0, dismiss_menu))
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    QTest.mouseMove(bar, QPoint(1, 1))
+    assert not menu.isVisible() and appearance() == idle
+    window.preview_view.setFocus()
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    input_app.processEvents()
+    assert window.preview_view.hasFocus()
+
+
+def test_view_shortcuts_keep_reading_and_arranging_independent(loaded_window, input_app):
+    win = loaded_window
+    win.activateWindow()
+    QApplication.setActiveWindow(win)
+    win.preview_view.setFocus()
+    input_app.processEvents()
+    win.reading_zoom_actions['page'].trigger()
+    QTest.keyClick(win.preview_view, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+    assert win.reading_zoom_actions['width'].isChecked()
+    win.reading_zoom_actions['page'].trigger()
+    QTest.keyClick(win.preview_view, Qt.Key.Key_F6)
+    assert win.arrange_mode_action.isChecked() and win.fit_view_action in win.view_menu.actions()
+    win.arrange_zoom_in()
+    QTest.keyClick(win.arrange_view, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+    assert win._arrange_zoom == 1.0 and win._zoom_mode == 'page'
+
+    keys = {'reader.mode': 'Ctrl+Alt+M', 'view.fit': 'Ctrl+Alt+0', 'reader.fit_width': 'Ctrl+Alt+8',
+            'reader.hide_orb': 'Ctrl+Alt+7', 'reader.show_orb': 'Ctrl+Alt+9'}
+    bindings = win.shortcut_manager.values()
+    bindings.update({key: [value] for key, value in keys.items()})
+    assert win.shortcut_manager.apply(bindings) == ''
+    def press(identifier):
+        QTest.keySequence(win, QKeySequence(keys[identifier]))
+        input_app.processEvents()
+    win.arrange_zoom_in()
+    press('reader.fit_width')
+    assert win._arrange_zoom != 1.0 and win._zoom_mode == 'width'
+    press('view.fit')
+    assert win._arrange_zoom == 1.0
+    assert keys['reader.mode'] in win.mode_section.text() and keys['view.fit'] in win.zoom_section.text()
+    assert win.reading_orb.visibility_action.isChecked() and not win.reading_orb.isVisible()
+    for _ in range(2):
+        press('reader.hide_orb')
+        assert not win.reading_orb.visibility_action.isChecked()
+    for _ in range(2):
+        press('reader.show_orb')
+        assert win.reading_mode_action.isChecked() and win.reading_orb.isVisible()
+    assert win.fit_view_action not in win.view_menu.actions()
+    press('reader.mode')
+    press('reader.mode')
+    assert win.reading_mode_action.isChecked()
+    for _ in range(2):
+        win.outline_action.trigger()
+        assert win.act_pages.isChecked() and win.sidebar_mode.currentIndex() == 1
+    bindings.update({'reader.mode': [], 'view.fit': []})
+    assert win.shortcut_manager.apply(bindings) == ''
+    assert win.mode_section.text() == '工作模式' and win.zoom_section.text() == '页面适配与缩放'
 
 
 def click_thumbnail(window, row, modifiers=Qt.KeyboardModifier.NoModifier):
@@ -794,9 +950,10 @@ def test_double_click_arranged_page_opens_it_for_reading(loaded_window):
 def test_reading_settings_stay_available_from_the_view_menu(loaded_window):
     window = loaded_window
     view_menu = next(action.menu() for action in window._menubar.actions() if action.text() == '视图')
-    assert window.reading_settings_menu.menuAction() in view_menu.actions()
-    restore=next(action.menu() for action in view_menu.actions() if action.text()=='界面恢复')
-    assert window.reading_orb.restore_action in restore.actions()
+    assert window.reading_layout_menu.menuAction() in view_menu.actions()
+    assert window.reading_layout_menu is not window.reading_orb.settings_menu
+    assert window.reading_orb.visibility_action in view_menu.actions()
+    assert window.reading_orb.hide_action in window.reading_orb.settings_menu.actions()
     window.reading_zoom_actions['width'].trigger()
     assert window._zoom_mode == 'width'
     assert window.reading_zoom_actions['width'].isChecked()

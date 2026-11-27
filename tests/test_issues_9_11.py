@@ -254,6 +254,8 @@ def test_panel_preferences_restore_user_choices_while_empty_and_reset_only_ui(qa
     monkeypatch.setattr(ui, 'QSettings', factory)
     first = ui.MainWindow()
     try:
+        # Auto-hide reflects the momentary overlay. Pinning makes visibility a saved choice.
+        first.immersive.auto_action.trigger()
         first.act_pages.setChecked(True)
         first.act_tools.setChecked(True)
         first.sidebar_mode.setCurrentIndex(1)
@@ -266,7 +268,10 @@ def test_panel_preferences_restore_user_choices_while_empty_and_reset_only_ui(qa
         assert second.act_pages.isChecked() and second.act_tools.isChecked()
         assert second.sidebar_mode.currentIndex() == 1 and second.export_tools.currentIndex() == tool_index
         assert not second.left_panel.isVisible() and not second.tools_panel.isVisible()
-        second.reset_ui_preferences()
+        reset = second._shortcut_actions['view.reset']
+        assert reset in second.view_menu.actions()
+        reset.trigger()
+        assert second.immersive.auto_action.isChecked()
         assert not second.act_pages.isChecked() and not second.act_tools.isChecked()
         assert factory().value('storage/ocr') == str(tmp_path / 'keep-models')
     finally:
