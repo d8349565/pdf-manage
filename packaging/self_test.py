@@ -178,9 +178,8 @@ def self_test(report_path: Path, ocr_runtime: Path | None = None) -> int:
                 context_dialog.deleteLater()
                 other = registration_plan(str(folder / 'other/ZhiXuPDF.exe'), portable=not menus.plan.portable)
                 assert menus.plan.clsid != other.clsid and set(menus.plan.trees).isdisjoint(other.trees)
-                document_menu = next(action.menu() for action in window._menubar.actions() if action.text() == '文档')
-                compression_menu = next(action.menu() for action in document_menu.actions() if action.text() == '压缩')
-                assert window.image_compress_action in compression_menu.actions()
+                convert_menu = next(action.menu() for action in window._menubar.actions() if action.text() == '转换')
+                assert window.image_compress_action in convert_menu.actions()
                 assert window.image_compress_action.text() == '压缩图片' and window.image_compress_action.isEnabled()
                 report['checks'].append('edition-isolated menu IDs, default-off controls and in-app image compression entry')
                 from app.pagetoolsui import PageSizeDialog
