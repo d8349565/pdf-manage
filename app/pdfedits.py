@@ -22,6 +22,12 @@ def iter_annotations(page):
     annot = page.first_annot
     while annot is not None:
         following = annot.next
+        if following is not None:
+            # PyMuPDF 1.28.2 gives Annot.next a new Page whose cache points back
+            # to that annotation. Reuse first_annot's weak parent so reload_page
+            # can release the native page immediately after this traversal.
+            following.parent = annot.parent
+            page._annot_refs[id(following)] = following
         if annot.type[0] not in (p.PDF_ANNOT_LINK, p.PDF_ANNOT_POPUP, p.PDF_ANNOT_WIDGET):
             yield annot
         annot = following
