@@ -346,7 +346,7 @@ def restore_navigation(out, pages, snapshots, warnings, merged):
         warnings.append(f"{inactive_bookmarks} 个书签的目标页未保留，标题仍在，已取消跳转。")
 
 
-def document_signature(doc):
+def document_signature(doc, *, annotation_pages=()):
     """写入前后检查结构及值，避免写盘成功却少了页面对象。"""
     result = []
     for page in doc:
@@ -357,8 +357,15 @@ def document_signature(doc):
             links.append((item.get("kind"), item.get("page"), item.get("uri"),
                           item.get("file"), item.get("nameddest"), item.get("name"),
                           tuple(round(v, 3) for v in rect)))
+        annotations = []
+        if page.number in annotation_pages:
+            for annot in page.annots() or ():
+                info = annot.info
+                annotations.append((annot.type[0], info.get("id"), info.get("content"),
+                                    tuple(round(v, 3) for v in annot.rect), annot.vertices,
+                                    annot.colors, annot.border, annot.opacity))
         result.append((page.rotation, round(page.rect.width, 3), round(page.rect.height, 3),
-                       page_object_signature(page), links))
+                       page_object_signature(page), links, annotations))
     toc = [(row[0], row[1], row[2], row[3].get("kind")) for row in doc.get_toc(False)]
     attachments = [(name, doc.embfile_info(name).get("size")) for name in doc.embfile_names()]
     return (result, toc, doc.get_page_labels(), attachments)

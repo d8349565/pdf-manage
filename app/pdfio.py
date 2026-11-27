@@ -36,6 +36,12 @@ class NeedPassword(PdfError):
     pass
 
 
+class _RepairDuringSave(PdfError):
+    def __init__(self, expected):
+        super().__init__("写入时触发了 PDF 索引修复。")
+        self.expected = expected
+
+
 class WriteNeedsConfirmation(PdfError):
     def __init__(self, message: str, kind: str) -> None:
         super().__init__(message)
@@ -681,11 +687,11 @@ class PdfStore:
                                          "请明确选择新的输出密码，或选择不加密。", "encryption")
         return numbers, preserve_structure, warnings
 
-    def _assemble(self, pages, sources, options, progress_callback):
+    def _assemble(self, pages, sources, options, progress_callback, *, recover=False):
         import pymupdf
         from app.pdfstructure import (
             capture_navigation, copy_document_properties, namespace_form_fields,
-            page_object_signature, restore_navigation,
+            inspect_safety, page_object_signature, restore_navigation,
         )
         documents = {}
         copy_documents = {}
@@ -694,12 +700,26 @@ class PdfStore:
         numbers, preserve_structure, warnings = self._output_layout(pages, sources, options)
         single = len(sources) == 1
         sid = next(iter(sources))
-        try:
-            for source_id, source in sources.items():
-                doc = pymupdf.open(stream=source.data, filetype="pdf")
-                documents[source_id] = doc
+
+        def open_source(source):
+            doc = pymupdf.open(stream=source.data, filetype="pdf")
+            try:
                 if doc.is_encrypted and doc.authenticate(source.password or "") <= 0:
                     raise PdfError("无法读取源文档的加密信息")
+                if recover:
+                    # Check all references on pristine bytes, before replaying even the first edit.
+                    doc.repair()
+                    auth = doc.authenticate(source.password or "") if source.safety.encrypted else 0
+                    if (doc.page_count != len(source.sizes) or inspect_safety(doc, auth) != source.safety):
+                        raise PdfError("修复后来源文件的页数或保护信息发生变化，已停止写入。")
+                return doc
+            except Exception:
+                doc.close()
+                raise
+
+        try:
+            for source_id, source in sources.items():
+                documents[source_id] = open_source(source)
             if (preserve_structure and documents[sid].is_form_pdf
                     and (numbers[sid] != list(range(len(sources[sid].sizes)))
                          or len({ref.copy_group for ref in pages}) > 1)):
@@ -727,10 +747,8 @@ class PdfStore:
                         groups.setdefault((ref.source_id, ref.copy_group), []).append(ref.source_page)
                 for ordinal, (key, selected) in enumerate(groups.items(), len(documents) + 1):
                     source = sources[key[0]]
-                    doc = pymupdf.open(stream=source.data, filetype="pdf")
+                    doc = open_source(source)
                     copy_documents[key] = doc
-                    if doc.is_encrypted and doc.authenticate(source.password or "") <= 0:
-                        raise PdfError("无法读取复制页面的信息")
                     namespace_form_fields(doc, used_fields, ordinal, selected)
                     copy_signatures[key] = {number: page_object_signature(doc[number]) for number in set(selected)}
             if preserve_structure:
@@ -1250,6 +1268,22 @@ class PdfStore:
     def write(self, pages: list[PageRef], dest: str, *, progress_callback=None,
               options: WriteOptions | None = None, register_result: bool = False, cancel=None,
               _prepare_only=False, _staging_dir=None) -> WriteResult | dict:
+        def attempt(recovery_signature=None):
+            return self._write_once(pages, dest, progress_callback=progress_callback, options=options,
+                                    register_result=register_result, cancel=cancel, _prepare_only=_prepare_only,
+                                    _staging_dir=_staging_dir, recovery_signature=recovery_signature)
+
+        try:
+            return attempt()
+        except _RepairDuringSave as exc:
+            expected = exc.expected
+        check_cancel(cancel)
+        if progress_callback:
+            progress_callback(0, 0, "正在检查原始 PDF 索引并恢复本次编辑")
+        return attempt(expected)
+
+    def _write_once(self, pages, dest, *, progress_callback, options, register_result, cancel,
+                    _prepare_only, _staging_dir, recovery_signature):
         if not pages:
             raise PdfError("没有可保存的页面")
         import pymupdf
@@ -1292,6 +1326,8 @@ class PdfStore:
             if not 0 <= ref.source_page < len(sources[ref.source_id].sizes) or ref.rotation % 90:
                 raise PdfError("页面引用或旋转角度无效，已停止写入。")
         target_stamp = self._check_destination(dest)
+        if recovery_signature is not None and (target_stamp is not None or self.is_source_destination(dest)):
+            raise PdfError("恢复副本需要新文件名，请另存到尚不存在的文件。")
         if (options.encryption or options.compression or options.page_numbers) and self.is_source_destination(dest):
             raise PdfError("此操作只能另存副本，不能覆盖来源文件。")
         if options.allow_structure_loss and self.is_source_destination(dest):
@@ -1310,7 +1346,8 @@ class PdfStore:
                 for source in sources.values():
                     locks.enter_context(cancellable_lock(source.lock, cancel))
                     source.doc_locked()
-                out, password, keep_encryption, warnings = self._assemble(pages, sources, options, progress_callback)
+                out, password, keep_encryption, warnings = self._assemble(
+                    pages, sources, options, progress_callback, recover=recovery_signature is not None)
             check_cancel(cancel)
             if signature_copy:
                 from app.pdfsecurity import freeze_signatures
@@ -1363,7 +1400,10 @@ class PdfStore:
                 subset |= apply_page_numbers(out, options.page_numbers, progress_callback, cancel)
             if subset or (options.compression and not out.is_form_pdf and not out.has_annots()):
                 out.subset_fonts()
-            expected = document_signature(out)
+            edited_pages = {index for index, ref in enumerate(pages) if ref.edits}
+            expected = document_signature(out, annotation_pages=edited_pages)
+            if recovery_signature is not None and expected != recovery_signature:
+                raise PdfError("恢复后的页面、批注或文档结构与本次编辑不符，已停止写入。")
             os.makedirs(folder, exist_ok=True)
             fd, tmp = tempfile.mkstemp(suffix=".pdf", prefix=".pdfasm-", dir=_staging_dir or folder)
             os.close(fd)
@@ -1376,9 +1416,18 @@ class PdfStore:
                 encryption_args = dict(encryption=setting.algorithm,
                                        user_pw=password, owner_pw=setting.owner_password or password,
                                        permissions=setting.permissions)
-            out.save(tmp, garbage=4, deflate=True, deflate_images=bool(options.compression),
-                     deflate_fonts=bool(options.compression), use_objstms=int(bool(options.compression)),
-                     raise_on_repair=True, **encryption_args)
+            try:
+                out.save(tmp, garbage=4, deflate=True, deflate_images=bool(options.compression),
+                         deflate_fonts=bool(options.compression), use_objstms=int(bool(options.compression)),
+                         raise_on_repair=True, **encryption_args)
+            except Exception as exc:
+                if str(exc) != "Document save did a repair" or not out.is_repaired:
+                    raise
+                if recovery_signature is not None:
+                    raise PdfError("恢复副本仍需修复，无法确认本次编辑完整，已停止写入。") from exc
+                if target_stamp is not None or self.is_source_destination(dest):
+                    raise PdfError("PDF 的内部索引需要修复。请另存为新文件名，程序会恢复并核对本次编辑。") from exc
+                raise _RepairDuringSave(expected) from exc
             out.close()
             out = None
             if progress_callback:
@@ -1392,7 +1441,15 @@ class PdfStore:
                     authentication = check.authenticate(password or "")
                     if authentication <= 0:
                         raise PdfError("待保存文件的加密校验失败，原文件未改动。")
-                if check.is_repaired or document_signature(check) != expected:
+                if recovery_signature is not None:
+                    protection = next(iter(sources.values())).safety
+                    keep_permissions = keep_encryption and protection.encrypted and not options.encryption
+                    if (options.encryption or keep_permissions) and not authentication:
+                        raise PdfError("恢复副本未保留加密保护，已停止写入。")
+                    if keep_permissions and check.permissions != protection.permissions:
+                        raise PdfError("恢复副本的文档权限发生变化，已停止写入。")
+                    check.repair()  # Also check objects that reopening alone would not load.
+                if document_signature(check, annotation_pages=edited_pages) != expected or check.is_repaired:
                     raise PdfError("待保存文件的页面、跳转或对象核对失败，原文件未改动。")
                 if signature_copy and signature_state(check) != "none":
                     raise PdfError("签名验证结构未完整移除，已停止输出。")

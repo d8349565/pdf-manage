@@ -25,6 +25,95 @@ def _make_pdf(path: str, n: int, label: str) -> None:
     doc.close()
 
 
+@pytest.fixture
+def late_repair_source(tmp_path, request):
+    source = tmp_path / "source.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((40, 80), "Original page")
+        old = page.add_text_annot((40, 100), "Before editing")
+        old_id = old.info["id"]
+        private = doc.get_new_xref()
+        doc.update_object(private, "<< /Label (example) >>")
+        doc.xref_set_key(doc.pdf_catalog(), "PrivateInfo", f"{private} 0 R")
+        password = getattr(request, "param", None)
+        encryption = dict(encryption=pymupdf.PDF_ENCRYPT_AES_256,
+                          permissions=pymupdf.PDF_PERM_ANNOTATE | pymupdf.PDF_PERM_MODIFY,
+                          owner_pw="owner", user_pw=password) if password else {}
+        raw = doc.tobytes(**encryption)
+    # A reachable object is only loaded when the writer visits the whole file.
+    offset = raw.index(f"{private} 0 obj".encode())
+    entry = f"{offset:010d} 00000 n".encode()
+    assert raw.count(entry) == 1
+    source.write_bytes(raw.replace(entry, b"0000000009 00000 n"))
+    return source, old_id, password
+
+
+@pytest.mark.parametrize("late_repair_source", [None, "reader"], indirect=True)
+def test_save_annotations_after_late_index_repair(tmp_path, late_repair_source):
+    from app.pdfworker import write_pdf
+    from app.workspace import PageEdit
+
+    source, old_id, password = late_repair_source
+    original = source.read_bytes()
+    copy = tmp_path / "notes.pdf"
+    store = PdfStore()
+    try:
+        ref, = store.load(str(source), password=password)
+        ref = ref.edited(PageEdit("note_text", annotation_id=old_id, text="Updated note"))
+        ref = ref.edited(PageEdit("note", ((120, 160),), text="新批注", annotation_id="new-note"))
+        ref = ref.edited(PageEdit("freetext", (50, 200, 250, 230), text="See 5.1.8",
+                                  color=(1, 0, 0), annotation_id="red-text",
+                                  details=(("font", "Helvetica"), ("fontsize", 16))))
+        with pytest.raises(PdfError, match="新文件名"):
+            write_pdf(store, [ref], str(source))
+        assert source.read_bytes() == original
+        result = write_pdf(store, [ref], str(copy), register_result=True)
+        assert result.pages[0].page_id == ref.page_id
+        with pymupdf.open(copy) as saved:
+            assert saved.needs_pass == bool(password)
+            if password:
+                assert saved.authenticate(password)
+                assert saved.permissions & pymupdf.PDF_PERM_ANNOTATE
+                assert not saved.permissions & pymupdf.PDF_PERM_COPY
+            assert not saved.is_repaired
+            page = saved[0]
+            assert "Original page" in page.get_text()
+            assert [(a.info["id"], a.info["content"]) for a in page.annots()] == [
+                (old_id, "Updated note"), ("new-note", "新批注"), ("red-text", "See 5.1.8")]
+            pixels = page.get_pixmap(clip=pymupdf.Rect(50, 200, 250, 230)).samples
+            assert any(r > g + 80 and r > b + 80 for r, g, b in zip(pixels[::3], pixels[1::3], pixels[2::3]))
+            assert saved.xref_get_key(saved.pdf_catalog(), "PrivateInfo/Label") == ("string", "example")
+        assert source.read_bytes() == original
+    finally:
+        store.close_all()
+
+
+def test_recovery_refuses_same_count_with_lost_note_text(tmp_path, late_repair_source, monkeypatch):
+    from app import pdfedits
+    from app.workspace import PageEdit
+
+    source, old_id, _ = late_repair_source
+    original = source.read_bytes()
+    dest = tmp_path / "incomplete.pdf"
+    apply_edits = pdfedits.apply_edits
+
+    def lose_edit_on_replay(page, edits, **kwargs):
+        return False if page.parent.is_repaired else apply_edits(page, edits, **kwargs)
+
+    monkeypatch.setattr(pdfedits, "apply_edits", lose_edit_on_replay)
+    store = PdfStore()
+    try:
+        ref, = store.load(str(source))
+        ref = ref.edited(PageEdit("note_text", annotation_id=old_id, text="Updated note"))
+        with pytest.raises(PdfError, match="本次编辑不符"):
+            store.write([ref], str(dest))
+        assert not dest.exists() and not list(tmp_path.glob(".pdfasm-*"))
+        assert source.read_bytes() == original
+    finally:
+        store.close_all()
+
+
 def test_external_change_distinguishes_own_save_from_replaced_file(qapp, tmp_path):
     source, replacement = tmp_path / 'source.pdf', tmp_path / 'replacement.pdf'
     _make_pdf(str(source), 1, 'Original')
