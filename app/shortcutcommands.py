@@ -98,6 +98,7 @@ for _key, _path, _keys in (
     ('reader.read', '视图/阅读模式', ()),
     ('reader.arrange', '视图/整理页面', ()),
     ('view.outline', '视图/大纲书签', ('Ctrl+Shift+B',)),
+    ('view.attachments', '视图/附件', ()),
     ('view.pages', '视图/页面栏', ('F8',)),
     ('view.tools', '视图/工具面板', ('F9',)),
     ('view.translation', '视图/翻译面板', ()),

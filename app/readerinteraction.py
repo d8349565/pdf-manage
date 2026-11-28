@@ -70,7 +70,7 @@ class ReaderInteraction(QObject):
                 and not (images and images.engaged) and not (capture and capture.active)
                 and not (translation and translation.region_active))
 
-    def link_at(self, position):
+    def link_at(self, position, *, attachments=False):
         point = self.view.mapToScene(position)
         index = self.view.page_at_point(point)
         if not 0 <= index < len(self.host.ws.pages):
@@ -78,7 +78,10 @@ class ReaderInteraction(QObject):
         summary = self.host.store.cached_annotations(self.host.ws.pages[index])
         if summary:
             local = point - self.view.page_rects[index].topLeft()
-            for link in summary.get('links', ()):
+            targets = summary.get('links', ())
+            if attachments:
+                targets = summary.get('file_attachments', ()) + targets
+            for link in targets:
                 x0, y0, x1, y1 = link['from']
                 if x0 <= local.x() <= x1 and y0 <= local.y() <= y1:
                     return index, link
@@ -119,9 +122,9 @@ class ReaderInteraction(QObject):
             return False
         if self.host.store.cached_annotations(pending['ref']) is None:
             return False
-        hit = self.link_at(pending['position'])
+        hit = self.link_at(pending['position'], attachments=True)
         self.link_press = None
-        end_hit = self.link_at(pending['end'])
+        end_hit = self.link_at(pending['end'], attachments=True)
         if hit is not None and hit == end_hit:
             self.host.text_selection.clear()
             self._follow_link(pending['ref'], hit[1])
@@ -148,14 +151,15 @@ class ReaderInteraction(QObject):
         return False
 
     def _begin_link(self, position, *, released=False, end=None):
-        """Resolve links and translated passages on release, leaving drags to the reader."""
+        """Activate links, attachments and translated passages only on release."""
         index = self.view.page_at_point(self.view.mapToScene(position))
         if not 0 <= index < len(self.host.ws.pages):
             return
         ref = self.host.ws.pages[index]
         controller = getattr(self.host, '_translation', None)
         segment = controller.segment_at(index, position) if controller else None
-        if self.host.store.cached_annotations(ref) is None or self.link_at(position) or segment is not None:
+        if (self.host.store.cached_annotations(ref) is None
+                or self.link_at(position, attachments=True) or segment is not None):
             pending = dict(index=index, ref=ref, pages=self.host.ws.pages,
                            generation=self.view.layout_generation, position=position,
                            end=position if end is None else end, released=released, dragged=False,
@@ -167,6 +171,13 @@ class ReaderInteraction(QObject):
                 self._finish_click(pending)
 
     def _follow_link(self, ref, link):
+        if link.get('embedded_pdf') is not None:
+            self._follow_embedded_pdf(ref, link['embedded_pdf'])
+            return
+        if 'attachment_id' in link:
+            from app.attachmentui import open_attachment
+            open_attachment(self.host, ref, link['attachment_id'])
+            return
         import pymupdf as p
         if link.get('kind') == p.LINK_URI:
             url = QUrl(str(link.get('uri', '')).strip())
@@ -185,16 +196,36 @@ class ReaderInteraction(QObject):
                 self.host.statusBar().showMessage(tr('链接指向的页面已不在当前文档中。'), 5000)
                 return
             index = next((i for i in matches if self.host.ws.pages[i].copy_group == ref.copy_group), matches[0])
-            self.host.go_to_page(index + 1)
-            pending = dict(index=index, ref=self.host.ws.pages[index], pages=self.host.ws.pages,
-                           generation=self.view.layout_generation, point=link.get('to', (0, 0)))
-            self.link_jump = pending
-            if self.host.store.cached_annotations(pending['ref']) is None:
-                self._request_metadata(pending)
-            else:
-                self._finish_jump(pending)
+            self._jump_to(index, link.get('to', (0, 0)))
         else:
             self.host.statusBar().showMessage(tr('此链接类型暂不支持打开。'), 5000)
+
+    def _follow_embedded_pdf(self, ref, target):
+        from app.attachmentui import open_attachment
+
+        original = self.host.ws
+        if not open_attachment(self.host, ref, target) or self.host.ws is original:
+            return
+        index, point = target.destination, target.point
+        if isinstance(index, str):
+            destination = self.host.store.named_link_destination(self.host.ws.pages[0], index) or {}
+            index, point = destination.get('page', -1), destination.get('to')
+        if not 0 <= index < len(self.host.ws.pages):
+            self.host.statusBar().showMessage(tr('链接指向的页面已不在当前文档中。'), 5000)
+            return
+        self._jump_to(index, tuple(point) if point is not None else None)
+
+    def _jump_to(self, index, point):
+        self.host.go_to_page(index + 1)
+        if point is None:
+            return
+        pending = dict(index=index, ref=self.host.ws.pages[index], pages=self.host.ws.pages,
+                       generation=self.view.layout_generation, point=point)
+        self.link_jump = pending
+        if self.host.store.cached_annotations(pending['ref']) is None:
+            self._request_metadata(pending)
+        else:
+            self._finish_jump(pending)
 
     def _finish_jump(self, pending):
         if not self._current(pending):
@@ -223,12 +254,18 @@ class ReaderInteraction(QObject):
         index = self.view.page_at_point(point)
         hand = getattr(self.host, '_reading_tool', 'select') == 'hand'
         cursor = Qt.CursorShape.OpenHandCursor if hand else Qt.CursorShape.ArrowCursor
-        hit = self.link_at(position) if self.links_enabled() else None
-        self.view.viewport().setToolTip('' if hit is None else
-            hit[1].get('uri') or (tr('跳转到文档内页面') if 'page' in hit[1] else tr('此链接类型暂不支持打开')))
+        hit = self.link_at(position, attachments=True) if self.links_enabled() else None
         if hit is not None:
+            target = hit[1]
+            if 'attachment_id' in target or target.get('embedded_pdf') is not None:
+                tooltip = tr('打开附件')
+            else:
+                tooltip = target.get('uri') or (tr('跳转到文档内页面') if 'page' in target
+                                                else tr('此链接类型暂不支持打开'))
+            self.view.viewport().setToolTip(tooltip)
             self.view.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             return
+        self.view.viewport().setToolTip('')
         if not hand and 0 <= index < len(self.host.ws.pages) and index < len(self.view.page_rects):
             bounds = self.view.page_rects[index]
             ref = self.host.ws.pages[index]
@@ -298,13 +335,16 @@ class ReaderInteraction(QObject):
         middle_press = (kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
                         and event.button() == Qt.MouseButton.MiddleButton
                         and event.buttons() == Qt.MouseButton.MiddleButton and not self.panning)
+        attachment_press = False
         if (kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
                 and not event.modifiers() and self.links_enabled()):
             tools = getattr(self.host, 'annotation_tools', None)
             pos = event.position().toPoint()
+            hit = self.link_at(pos, attachments=True)
+            attachment_press = hit is not None and 'attachment_id' in hit[1]
             if tools and not getattr(tools, '_inline_text_box', None):
                 annot = tools.annotation_at_position(pos)
-                if annot and (annot['kind'] not in (8, 9) or not self.link_at(pos)):
+                if annot and not attachment_press and (annot['kind'] not in (8, 9) or hit is None):
                     self.link_press = self.link_jump = None
                     return False
                 tools.clear_selection()
@@ -353,11 +393,17 @@ class ReaderInteraction(QObject):
             self.link_press = self.link_jump = None
         if kind == QEvent.Type.MouseButtonDblClick and event.button() == Qt.MouseButton.LeftButton:
             self.link_press = None
+            if not event.modifiers() and self.links_enabled():
+                hit = self.link_at(event.position().toPoint(), attachments=True)
+                if hit is not None and 'attachment_id' in hit[1]:
+                    return True
         if kind == QEvent.Type.MouseButtonPress:
             self.link_press = self.link_jump = None
             if (event.button() == Qt.MouseButton.LeftButton and not event.modifiers()
                     and self.links_enabled()):
                 self._begin_link(event.position().toPoint())
+                if attachment_press:
+                    return True
         pending = self.link_press
         if (pending is not None and not pending['released']
                 and kind in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease)):

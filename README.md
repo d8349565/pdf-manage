@@ -39,7 +39,7 @@ Translations are stored in shared text catalogues with checks for new messages a
 
 | Task | What you can do |
 | --- | --- |
-| Reading | Open PDF and OFD files in tabs; resume recent documents; use one-, two-, or four-page layouts; search, navigate bookmarks, adjust reading colors, and use full-screen or borderless mode |
+| Reading | Open PDF and OFD files in tabs, resume recent documents, and switch between one-, two-, and four-page layouts. Search, navigate bookmarks, open and save PDF attachments, adjust reading colors, or use full-screen and borderless modes. |
 | Page organization | Merge files or open tabs; split, extract, insert, drag to reorder, copy and paste pages; resize paper and split individual pages |
 | Review and extraction | Highlight, add sticky notes, draw ink and shapes; insert text boxes and images; correct single-line text and styles; obscure areas, share annotated images, and extract page regions |
 | PDF translation | Translate the current page, selected text, or a boxed region. Read side by side or in the page, and use the offline OCR add-on for scanned text. |

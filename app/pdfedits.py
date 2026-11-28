@@ -58,12 +58,13 @@ def identified_annotations(page):
 
 
 def annotation_summary(page):
+    import pymupdf as p
     from app.arrows import read_style
     from app.pdfmarks import text_settings, is_watermark
     from app.pdfimages import image_settings
     annotations = []
     for identifier, annot in identified_annotations(page):
-        annotations.append(dict(id=identifier, kind=annot.type[0],
+        item = dict(id=identifier, kind=annot.type[0],
             rect=tuple(annot.rect), content=annot.info.get("content", ""),
             color=annot.colors.get("stroke") or (1, .8, 0), width=annot.border.get("width", 2),
             arrow_style=read_style(annot) if annot.type[0] == 3 else None,
@@ -71,7 +72,10 @@ def annotation_summary(page):
             filled=bool(annot.colors.get('fill')) if annot.type[0] in (4, 5) else False,
             text_settings=text_settings(page, annot) if annot.type[0] == 2 else None,
             watermark=is_watermark(page, annot) or page.parent.xref_get_key(annot.xref, 'ZhiXuSeam')[0] != 'null',
-            image_settings=image_settings(page, annot)))
+            image_settings=image_settings(page, annot))
+        if item['kind'] == p.PDF_ANNOT_FILE_ATTACHMENT:
+            item['attachment_visible'] = not annot.flags & (p.PDF_ANNOT_IS_HIDDEN | p.PDF_ANNOT_IS_NO_VIEW)
+        annotations.append(item)
     return annotations
 
 

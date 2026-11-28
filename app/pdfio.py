@@ -571,6 +571,103 @@ class PdfStore:
         if reason:
             raise PdfError(reason)
 
+    def list_attachments(self, pages, progress=None, cancel=None):
+        from app.i18n import tr
+        from app.pdfattachments import PdfAttachment, attachment_name, file_attachment_annotations
+
+        items = []
+        visited = set()
+        title = tr('正在查找附件…')
+        for number, ref in enumerate(pages, 1):
+            with cancellable_lock(self._native_lock, cancel):
+                source = self._source(ref.source_id)
+                with cancellable_lock(source.lock, cancel):
+                    document = source.doc_locked()
+                    if ref.source_id not in visited:
+                        visited.add(ref.source_id)
+                        for index in range(document.embfile_count()):
+                            check_cancel(cancel)
+                            items.append(PdfAttachment(ref, index, attachment_name(document.embfile_info(index))))
+                    has_annotations = document.xref_get_key(document.page_xref(ref.source_page), 'Annots')[0] != 'null'
+                    if has_annotations and not ref.edits:
+                        page = document.load_page(ref.source_page)
+                        items.extend(PdfAttachment(ref, key, attachment_name(annot.file_info), number)
+                                     for key, annot in file_attachment_annotations(page))
+                if has_annotations and ref.edits:
+                    with self._render_page_locked(ref, cancel) as page:
+                        items.extend(PdfAttachment(ref, key, attachment_name(annot.file_info), number)
+                                     for key, annot in file_attachment_annotations(page))
+            if progress and (number % 16 == 0 or number == len(pages)):
+                progress(number, len(pages), title)
+        return items
+
+    def read_attachment(self, ref, key, cancel=None):
+        from app.i18n import tr
+        from app.pdfattachments import attachment_name, file_attachment_annotations
+
+        self.require_operation([ref], 'copy')
+        with cancellable_lock(self._native_lock, cancel):
+            if isinstance(key, int):
+                source = self._source(ref.source_id)
+                with cancellable_lock(source.lock, cancel):
+                    document = source.doc_locked()
+                    return attachment_name(document.embfile_info(key)), document.embfile_get(key)
+            with self._render_page_locked(ref, cancel) as page:
+                for identifier, annot in file_attachment_annotations(page):
+                    if identifier == key:
+                        return attachment_name(annot.file_info), annot.get_file()
+        raise PdfError(tr('找不到此附件。'))
+
+    def read_linked_pdf(self, ref, link, pages, cancel=None):
+        from app.i18n import tr
+        from app.pdfattachments import catalogue_link_attachment, page_attachment_reference
+        import pymupdf
+
+        self.require_operation([ref], 'copy')
+        with cancellable_lock(self._native_lock, cancel):
+            source = self._source(ref.source_id)
+            with cancellable_lock(source.lock, cancel):
+                document = source.doc_locked()
+                try:
+                    if isinstance(link.attachment, int):
+                        result = catalogue_link_attachment(document, link.attachment)
+                        if result is not None:
+                            return result
+                        match = None
+                    else:
+                        match = page_attachment_reference(document, *link.attachment)
+                except (pymupdf.mupdf.FzErrorBase, ValueError, RuntimeError):
+                    match = None
+            if match is not None:
+                number, key = match
+                candidates = [page for page in pages
+                              if page.source_id == ref.source_id and page.source_page == number]
+                if candidates:
+                    target = next((page for page in candidates if page.copy_group == ref.copy_group), candidates[0])
+                    return self.read_attachment(target, key, cancel)
+        raise PdfError(tr('找不到此附件。'))
+
+    def named_link_destination(self, ref, name):
+        from app.pdfattachments import named_pdf_destination
+
+        source = self._source(ref.source_id)
+        with self._native_lock, source.lock:
+            return named_pdf_destination(source.doc_locked(), name)
+
+    def own_temporary_source(self, ref, workspace):
+        self._source(ref.source_id).requires_copy = True
+        self._owned_workspaces[ref.source_id] = workspace
+
+    def is_temporary_source(self, path):
+        if not path:
+            return False
+        key = _path_key(path)
+        for sid in tuple(self._owned_workspaces):
+            source = self._sources.get(sid)
+            if source is not None and _path_key(source.path) == key:
+                return True
+        return False
+
     def protection_reports(self, pages, progress=None, cancel=None):
         from pathlib import Path
         from app.signatureinfo import collect_signature_info
@@ -879,6 +976,7 @@ class PdfStore:
         return text
 
     def _cache_annotations(self, ref, page):
+        from app.pdfattachments import embedded_pdf_links
         from app.pdfedits import annotation_summary
         from app.pdfstructure import _destination, page_pdf_matrix
         import pymupdf
@@ -894,9 +992,14 @@ class PdfStore:
                        for word in self._textpage_for_page(ref, page, pymupdf.TEXTFLAGS_WORDS).extractWORDS()
                       if str(word[4]).strip())
         annotations = annotation_summary(page)
+        source_matrix = page_pdf_matrix(page) * extra
+        draft = page.parent is self._draft
         links = []
+        if not draft:
+            links.extend({'embedded_pdf': target, 'from': tuple(rect * source_matrix)}
+                         for rect, target in embedded_pdf_links(page))
         for link in page.get_links():
-            destination = self._draft_link_targets.get(link.get('uri')) if page.parent is self._draft else None
+            destination = self._draft_link_targets.get(link.get('uri')) if draft else None
             if destination is None:
                 try:
                     destination = _destination(page.parent, link)
@@ -907,11 +1010,13 @@ class PdfStore:
             if isinstance(item.get('to'), pymupdf.Point):
                 item['to'] = tuple(item['to'])
             links.append(item)
-        source_matrix = page_pdf_matrix(page) * extra
-        if page.parent is self._draft:
+        if draft:
             source_matrix = self._draft_transform * source_matrix
         summary = dict(annotations=annotations, text_boxes=boxes, matrix=tuple(matrix),
                        links=tuple(links), source_pdf_matrix=tuple(source_matrix),
+                       file_attachments=tuple(dict(attachment_id=item['id'],
+                           **{'from': tuple(pymupdf.Rect(item['rect']) * matrix)})
+                           for item in annotations if item.get('attachment_visible')),
                        note_rects=tuple(tuple(pymupdf.Rect(item['rect']) * matrix)
                            for item in annotations if item['kind'] == 0 and not item['image_settings']))
         with self._annotation_lock:
@@ -1053,8 +1158,9 @@ class PdfStore:
                 yield src.preview_page_locked(ref.source_page)
             return
         import pymupdf
+        from app.pdfattachments import embedded_pdf_links
         from app.pdfedits import apply_edits
-        from app.pdfstructure import _destination
+        from app.pdfstructure import _destination, page_pdf_matrix
         key = (ref.source_id, ref.source_page, ref.page_id, ref.revision)
         with cancellable_lock(self._draft_lock, cancel):
             if key != self._draft_key:
@@ -1077,13 +1183,16 @@ class PdfStore:
                                 except ValueError:
                                     target = dict(link)
                                 internal.append((link, target))
+                        source_matrix = page_pdf_matrix(original_page)
+                        internal.extend(({'from': rect * source_matrix}, {'embedded_pdf': target})
+                                        for rect, target in embedded_pdf_links(original_page))
                         # One-page drafts cannot hold cross-page destinations. Keep
                         # inert rectangles plus their original targets. Use unique URIs:
                         # get_links omits xrefs when some actions cannot be parsed.
                         for xref, kind, _ in draft[0].annot_xrefs():
                             if kind == pymupdf.PDF_ANNOT_LINK and (
                                     draft.xref_get_key(xref, 'Dest')[0] != 'null'
-                                    or draft.xref_get_key(xref, 'A/S')[1] in ('/GoTo', '/Named')):
+                                    or draft.xref_get_key(xref, 'A/S')[1] in ('/GoTo', '/Named', '/GoToE')):
                                 draft[0].delete_link({'xref': xref})
                         targets = {}
                         nonce = uuid4().hex

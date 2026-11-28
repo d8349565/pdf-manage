@@ -118,7 +118,7 @@ def test_every_localized_main_menu_entry_keeps_its_command(qapp, tmp_path, langu
         walk(win._menubar)
         walk(win.help_menu)
         walk(win.reading_orb.settings_menu)
-        required = V121_MENU_IDS | {'view.toggle_orb'}
+        required = V121_MENU_IDS | {'view.toggle_orb', 'view.attachments'}
         if sys.platform != 'win32':
             required = required - {'app.default_pdf', 'app.shell_tools'}
         elif not portable:

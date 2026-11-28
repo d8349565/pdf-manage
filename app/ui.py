@@ -2654,6 +2654,7 @@ class MainWindow(QMainWindow):
         self._clipboard_cleanup_timer.timeout.connect(self._release_clipboard_sources)
         self.ws = Workspace()
         self.store = PdfStore()
+        self._opened_attachments = []
         self._undo_refresh_timer = QTimer(self)
         self._undo_refresh_timer.setSingleShot(True)
         self._undo_refresh_timer.setInterval(0)
@@ -3318,7 +3319,9 @@ class MainWindow(QMainWindow):
             self.theme_actions[theme.key] = action
         view.addSection(tr('侧栏与面板'))
         self.outline_action = self._act(tr('大纲书签'), self.open_outline)
-        view.addActions([self.act_pages, self.outline_action, self.act_tools, self.act_translation])
+        self.attachments_action = self._act(tr('附件'), self.open_attachments)
+        view.addActions([self.act_pages, self.outline_action, self.attachments_action,
+                         self.act_tools, self.act_translation])
         help_menu = self.help_menu
         self.quick_start_action = self._act(tr('操作指南'), self.show_quick_start)
         self.quick_start_action.setStatusTip(tr('查看拖入文件、缩放、移动页面与侧栏的常用操作'))
@@ -3701,6 +3704,7 @@ class MainWindow(QMainWindow):
 
     def _sync_controls(self) -> None:
         count = len(self.ws.pages)
+        self.attachments_action.setEnabled(bool(count))
         for mode, action in self.reading_layout_actions.items():
             action.setChecked(mode == self._reading_layout)
         for mode, action in self.reading_zoom_actions.items():
@@ -3958,13 +3962,13 @@ class MainWindow(QMainWindow):
         cap.setObjectName("caption")
         self.left_view = self._list_view(False)
         self.sidebar_mode = QComboBox()
-        self.sidebar_mode.addItems([tr('页面缩略图'), tr('大纲书签')])
+        self.sidebar_mode.addItems([tr('页面缩略图'), tr('大纲书签'), tr('附件')])
         self.sidebar_mode.setAccessibleName(tr('侧栏视图'))
         left_l.addWidget(self.sidebar_mode)
         self.sidebar_stack = QStackedWidget()
         self.sidebar_stack.addWidget(self.left_view)
         left_l.addWidget(self.sidebar_stack)
-        self.sidebar_mode.currentIndexChanged.connect(self.show_outline)
+        self.sidebar_mode.currentIndexChanged.connect(self.show_sidebar)
         split.addWidget(self.left_panel)
         center = QFrame()
         self.reader_frame = center
@@ -4486,6 +4490,8 @@ class MainWindow(QMainWindow):
             self._update_preview(lightweight=True)
             if hasattr(self, "outline_panel") and self.sidebar_mode.currentIndex() == 1:
                 self.outline_panel.refresh()
+            if hasattr(self, 'attachments_panel') and self.sidebar_mode.currentIndex() == 2:
+                self.attachments_panel.refresh()
             name = os.path.basename(self.ws.path) if self.ws.path else (
                 os.path.basename(self._opening_paths[0]) if self._opening_paths and not self.ws.pages else tr('未命名'))
             star = " *" if self.ws.dirty else ""
@@ -6115,7 +6121,8 @@ class MainWindow(QMainWindow):
             self.preview_view.verticalScrollBar().setValue(y)
         elif target.ws.preview_index() is not None:
             self.preview_view.jump_to_page(target.ws.preview_index())
-        self.reading_history.touch(target.ws.path)
+        if not self.store.is_temporary_source(target.ws.path):
+            self.reading_history.touch(target.ws.path)
         return True
 
     def step_tab(self, delta: int) -> None:
@@ -6204,10 +6211,10 @@ class MainWindow(QMainWindow):
         if paths:
             self.open_files_in_tabs(paths)
 
-    def open_files_in_tabs(self, paths: list[str]) -> bool:
-        return self._allow_document_switch() and self._open_files_in_tabs(paths)
+    def open_files_in_tabs(self, paths: list[str], *, temporary=None) -> bool:
+        return self._allow_document_switch() and self._open_files_in_tabs(paths, temporary=temporary)
 
-    def _open_files_in_tabs(self, paths: list[str]) -> bool:
+    def _open_files_in_tabs(self, paths: list[str], *, temporary=None) -> bool:
         valid_paths = [os.path.abspath(p) for p in paths if p and (p.lower().endswith((".pdf", ".ofd")) or _is_image_path(p))]
         if not valid_paths:
             return False
@@ -6244,7 +6251,8 @@ class MainWindow(QMainWindow):
                         self.refresh()
                         self.go_to_page(page_index + 1)
                         self.statusBar().showMessage(tr('已重新读取磁盘上的最新文件'), 5000)
-                self.reading_history.touch(path)
+                if not self.store.is_temporary_source(path):
+                    self.reading_history.touch(path)
                 opened_any = True
                 continue
             state = self.reading_history.find(path)
@@ -6252,6 +6260,8 @@ class MainWindow(QMainWindow):
             if pages is None:
                 self._release_unused_docs()
                 break
+            if temporary is not None:
+                self.store.own_temporary_source(pages[0], temporary)
             cur_tab = self._active_tab()
             if cur_tab is not None and not self.ws.pages and not self.ws.dirty and not self.ws.path:
                 self.ws.reset()
@@ -6268,7 +6278,8 @@ class MainWindow(QMainWindow):
                 self._tabs.append(new_tab)
                 self._activate_tab(new_tab.tab_id)
                 opened_any = True
-            self.reading_history.touch(path)
+            if temporary is None:
+                self.reading_history.touch(path)
             if state is not None:
                 self._restore_reading_position(path, state)
         self._release_unused_docs()
@@ -7107,7 +7118,7 @@ class MainWindow(QMainWindow):
         from app.rasterui import open_raster
         open_raster(self, recovery=recovery)
 
-    def show_outline(self, index):
+    def show_sidebar(self, index):
         if index == 1:
             if not hasattr(self, "outline_panel"):
                 from app.editingui import OutlinePanel
@@ -7115,19 +7126,34 @@ class MainWindow(QMainWindow):
                 self.sidebar_stack.addWidget(self.outline_panel)
                 from app.shortcuts import bind_outline
                 bind_outline(self)
+            self.sidebar_stack.setCurrentWidget(self.outline_panel)
             self.outline_panel.refresh()
-        self.sidebar_stack.setCurrentIndex(index)
-        if index == 1:
             self.outline_panel.sync_position(force=True)
+        elif index == 2:
+            if not hasattr(self, 'attachments_panel'):
+                from app.attachmentui import AttachmentPanel
+                self.attachments_panel = AttachmentPanel(self)
+                self.sidebar_stack.addWidget(self.attachments_panel)
+            self.sidebar_stack.setCurrentWidget(self.attachments_panel)
+            self.attachments_panel.refresh()
         else:
+            self.sidebar_stack.setCurrentWidget(self.left_view)
             self._thumb_timer.start(0)
 
     def open_outline(self):
         self.stack.setCurrentIndex(0)
         self.act_pages.setChecked(True)
         self.sidebar_mode.setCurrentIndex(1)
-        self.show_outline(1)
+        self.show_sidebar(1)
         self.immersive.reveal(keyboard=True)
+
+    def open_attachments(self):
+        self.stack.setCurrentIndex(0)
+        self.act_pages.setChecked(True)
+        self.sidebar_mode.setCurrentIndex(2)
+        self.show_sidebar(2)
+        self.immersive.reveal(keyboard=True)
+        self.attachments_panel.tree.setFocus()
 
     def _ensure_annotation_tools(self):
         if not hasattr(self, "annotation_tools"):
@@ -7674,6 +7700,8 @@ class MainWindow(QMainWindow):
             self._history_timer.stop()
             self._clipboard_cleanup_timer.stop()
             self._closing = True
+            if hasattr(self, 'attachments_panel'):
+                self.attachments_panel.stop_loading()
             self.reader_interaction.reset()
             QApplication.instance().removeEventFilter(self)
             self._preparation_timer.stop()
@@ -7718,6 +7746,7 @@ class MainWindow(QMainWindow):
                 self.annotation_tools.remove_view_filters()
             QThreadPool.globalInstance().waitForDone(1000)
             run_operation(self, tr('关闭文档'), lambda progress: self.store.close_all())
+            self._opened_attachments.clear()
             self._window_settings.setValue("mainWindow/geometry", self.immersive._geometry
                 if self.immersive.fullscreen else self.saveGeometry())
             self._window_settings.sync()
