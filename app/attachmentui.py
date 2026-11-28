@@ -12,7 +12,7 @@ from app.output import OperationCancelled, check_cancel, commit_file, stamp
 from app.pdfattachments import EmbeddedPdfLink
 from app.pdfio import PdfError
 from app.progress import OperationThread, run_operation
-from app.storage import TemporaryWorkspace, check_output_destination, export_path
+from app.storage import TemporaryWorkspace, check_attachment_output_destination, export_path
 
 
 OPENABLE = frozenset({'.pdf', '.txt', '.csv', '.tsv', '.rtf', '.doc', '.docx', '.xls', '.xlsx',
@@ -80,7 +80,7 @@ def save_attachment(host, attachment):
         target = Path(path)
         if host.store.is_source_destination(path):
             raise PdfError(tr('附件不能覆盖已打开的文档，请选择其他位置。'))
-        check_output_destination(target)
+        check_attachment_output_destination(target)
         expected = stamp(target)
 
         def write(progress, cancel):

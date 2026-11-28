@@ -135,6 +135,22 @@ def test_save_opened_attachment_to_default_path_survives_close(reader, tmp_path,
         assert result[0].get_text().strip() == 'Embedded PDF'
 
 
+def test_compression_preview_can_write_to_its_own_task_directory(document):
+    from app.pdfio import WriteOptions
+    from app.storage import TemporaryWorkspace
+
+    store = PdfStore()
+    try:
+        pages = store.load(str(document[0]))
+        with TemporaryWorkspace('compress') as folder:
+            preview = Path(folder) / 'before.pdf'
+            store.write(pages, str(preview), options=WriteOptions(compression='quality'))
+            with pdf.open(preview) as result:
+                assert result.page_count == len(pages)
+    finally:
+        store.close_all()
+
+
 def test_nested_attachment_save_uses_configured_output_and_rejects_cache(reader, tmp_path, monkeypatch):
     from app.attachmentui import open_attachment, save_attachment
     from app.storage import save_directory

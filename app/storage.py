@@ -80,8 +80,9 @@ def export_path(suggested):
     return str(path)
 
 
-def check_output_destination(path):
-    if _is_task_output(path):
+def check_attachment_output_destination(path):
+    """Protect the workspace that is deleted when an attachment closes."""
+    if _is_task_output(path, prefix='task-attachment-'):
         raise StorageError(tr('输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。'))
 
 
@@ -204,8 +205,9 @@ def _is_cache_task(path):
         return False
 
 
-def _is_task_output(path):
-    return any(_is_cache_task(parent) for parent in Path(path).resolve().parents)
+def _is_task_output(path, *, prefix='task-'):
+    return any(parent.name.startswith(prefix) and _is_cache_task(parent)
+               for parent in Path(path).resolve().parents)
 
 
 def _cache_tasks():

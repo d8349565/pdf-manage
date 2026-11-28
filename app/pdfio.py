@@ -710,9 +710,9 @@ class PdfStore:
             raise PdfError(f"无法检查目标文件，请另存新文件：{exc}") from exc
 
     def _inspect_destination(self, dest):
-        from app.storage import check_output_destination
+        from app.storage import check_attachment_output_destination
 
-        check_output_destination(dest)
+        check_attachment_output_destination(dest)
         if os.fspath(dest).lower().endswith('.ofd'):
             raise PdfError('OFD 原文件受保护，请另存为 PDF。')
         for source in self._sources.values():
