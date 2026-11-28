@@ -1,13 +1,15 @@
 """Reader gestures, fit modes and editable images; all inputs are generated here."""
 import base64
 import io
+from types import SimpleNamespace
 
 import pymupdf as p
 import pytest
 from PIL import Image
 from PyQt6.QtCore import QEvent, QObject, QPoint, QPointF, QThreadPool, Qt
+from PyQt6.QtGui import QImage
 from PyQt6.QtTest import QSignalSpy, QTest
-from PyQt6.QtWidgets import QApplication, QLineEdit
+from PyQt6.QtWidgets import QApplication, QLineEdit, QMessageBox
 
 from app.pdfedits import apply_edits
 from app.pdfimages import IMAGE_SOURCE, fit_image, image_bounds, image_settings
@@ -134,6 +136,41 @@ def reader_window(reader_app, tmp_path):
     window.close()
     QThreadPool.globalInstance().waitForDone(30000)
     reader_app.processEvents()
+
+
+def test_review_image_menu_places_clipboard_bitmap_on_current_page(reader_window, monkeypatch):
+    win = reader_window
+    win.open_annotation_tools()
+    win.go_to_page(2)
+    before = tuple(win.ws.pages)
+    image = QImage.fromData(base64.b64decode(image_data(transparent=True)))
+    clipboard = SimpleNamespace(image=lambda: image)
+    monkeypatch.setattr(QApplication, 'clipboard', lambda: clipboard)
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: pytest.fail(args[-1]))
+
+    paste = win.annotation_tools.insert_image_button.defaultAction().menu().actions()[1]
+    paste.trigger()
+    tools = win.image_tools
+    assert tools.pending and tools.ref is before[1]
+    assert tuple(win.ws.pages) == before
+    QTest.keyClick(tools.view, Qt.Key.Key_Escape)
+    assert not tools.engaged and tuple(win.ws.pages) == before
+
+    paste.trigger()
+    assert tools.pending
+    clipboard.image = QImage
+    QTest.mouseClick(tools.view.viewport(), Qt.MouseButton.LeftButton,
+                     pos=tools.view.mapFromScene(tools.overlay.pos()))
+    assert len(win.ws.pages) == 2 and win.ws.pages[0] is before[0]
+    edit, = win.ws.pages[1].edits
+    assert edit.kind == 'image'
+    embedded = QImage.fromData(base64.b64decode(dict(edit.details)['image']))
+    assert embedded.pixelColor(0, 0).alpha() == 0
+    assert embedded.pixelColor(12, 8) == image.pixelColor(12, 8)
+
+    win.ws.undo_stack.undo()
+    paste.trigger()
+    assert tuple(win.ws.pages) == before and tools.pending is None
 
 
 def test_fit_modes_show_whole_page_and_preserve_manual_scale(reader_window, reader_app):

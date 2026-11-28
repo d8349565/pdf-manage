@@ -4624,6 +4624,8 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event) -> bool:
         kind = event.type()
+        if kind in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress) and self._handle_review_paste(obj, event):
+            return True
         if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.TabletPress, QEvent.Type.TouchBegin):
             help_button = getattr(self, 'help_button', None)
             if help_button is not None:
@@ -6358,26 +6360,45 @@ class MainWindow(QMainWindow):
             return True
         return False
 
-    def paste_pages(self,checked=False,*,at_index=None,target_view=None):
+    def _handle_review_paste(self, obj, event):
+        tools = getattr(self, 'annotation_tools', None)
+        if (tools is None or not tools.isVisible() or not isinstance(obj, QWidget) or obj.window() is not self
+                or QApplication.activePopupWidget() or QApplication.activeModalWidget()
+                or not self.shortcut_manager.matches('edit.paste_pages', event)):
+            return False
+        from app.shortcuts import keep_native_text_input
+        if keep_native_text_input(event):
+            return False
+        event.accept()
+        if event.type() == QEvent.Type.KeyPress:
+            self.paste_pages(from_review=True)
+        return True
+
+    def paste_pages(self,checked=False,*,at_index=None,target_view=None,from_review=False):
         if self._saving or getattr(self,'_task_dialog',None) is not None:
             self.statusBar().showMessage(tr('请等待当前任务结束后再粘贴页面。'),5000)
             return False
-        if self.ws.pages and not self._allow_operation('modify'):
-            return False
-        if target_view is None:
-            focus=QApplication.focusWidget()
-            target_view=next((view for view in (self.left_view,self.arrange_view)
-                              if focus is view or focus is not None and view.isAncestorOf(focus)),None)
-            target_view=target_view or (self.arrange_view if self._in_arrange() else self.left_view)
-        if at_index is None:
-            at_index=target_view.paste_gap()
-            if at_index is None:
-                selected=self.ws.target_indices()
-                at_index=max(selected)+1 if selected else len(self.ws.pages)
-        count=len(self.ws.pages)
         try:
             from app.pageclipboard import PageToken, read_pages
-            paths,image=read_pages()
+            if from_review:
+                paths, image = read_pages()
+                if isinstance(image, QImage):
+                    return self.image_tools.paste_image(image, immediate=True)
+            if self.ws.pages and not self._allow_operation('modify'):
+                return False
+            if target_view is None:
+                focus=QApplication.focusWidget()
+                target_view=next((view for view in (self.left_view,self.arrange_view)
+                                  if focus is view or focus is not None and view.isAncestorOf(focus)),None)
+                target_view=target_view or (self.arrange_view if self._in_arrange() else self.left_view)
+            if at_index is None:
+                at_index=target_view.paste_gap()
+                if at_index is None:
+                    selected=self.ws.target_indices()
+                    at_index=max(selected)+1 if selected else len(self.ws.pages)
+            count=len(self.ws.pages)
+            if not from_review:
+                paths, image = read_pages()
             if isinstance(image,PageToken):
                 copied=getattr(self,'_page_copy',None)
                 if copied is None or copied.token!=image.token:

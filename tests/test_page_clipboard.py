@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import QApplication, QLineEdit, QMenu, QMessageBox
 from app import pageclipboard
 from app.output import OperationCancelled
 from app.pageclipboard import read_pages
+from app.pdfimages import image_settings
 from app.pdfio import PdfStore
 from app.ui import MainWindow
 from app.workspace import PageEdit, Workspace
@@ -171,6 +172,47 @@ def test_ctrl_v_inserts_file_batch_after_selection_and_undoes_once(host,tmp_path
     assert all(path.read_bytes()==data for path,data in originals.items()) and not warnings
 
 
+def test_ctrl_v_places_bitmap_on_current_review_page_or_inserts_a_new_page(host, tmp_path, qapp, monkeypatch):
+    window, state, warnings = host
+    base = tmp_path / 'base.pdf'
+    pdf(base, 2)
+    window.open_files_in_tabs([str(base)])
+    window.open_annotation_tools()
+    window.go_to_page(2)
+    window.preview_view.setFocus()
+    qapp.processEvents()
+    before = tuple(window.ws.pages)
+    state['mime'].setImageData(bitmap())
+    monkeypatch.setattr(QApplication, 'clipboard', lambda: pytest.fail('Unexpected system clipboard access'))
+    monkeypatch.setattr(QMessageBox, 'information', lambda *args: pytest.fail(args[-1]))
+
+    QTest.keyClick(window.preview_view, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    assert state['reads'] == 1 and len(window.ws.pages) == 2 and window.ws.pages[0] is before[0]
+    edit, = window.ws.pages[1].edits
+    assert edit.kind == 'image'
+    assert window.image_tools.identifier == edit.annotation_id and window.image_tools.pending is None
+    settings = dict(edit.details)
+    assert (settings['cx'], settings['cy']) == (150, 200)
+
+    output = tmp_path / 'review-paste.pdf'
+    window._write_pdf(list(window.ws.pages), str(output), 'Generated review paste')
+    with p.open(output) as saved:
+        assert len(saved) == 2
+        page = saved[1]
+        assert image_settings(page, next(page.annots())) is not None
+
+    window.ws.undo_stack.undo()
+    assert tuple(window.ws.pages) == before
+
+    window.set_work_mode(1)
+    window.activateWindow()
+    window.arrange_view.setFocus()
+    qapp.processEvents()
+    QTest.keyClick(window.arrange_view, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    assert state['reads'] == 2 and tuple(window.ws.pages[:2]) == before
+    assert len(window.ws.pages) == 3 and not window.ws.pages[2].edits and not warnings
+
+
 def test_paste_into_empty_workspace_combines_files_in_one_tab(host,tmp_path):
     window,state,warnings=host
     a,b=tmp_path/'a.pdf',tmp_path/'b.pdf'; pdf(a);pdf(b,2)
@@ -281,8 +323,15 @@ def test_missing_file_is_checked_by_background_import(host,tmp_path):
     assert not window.paste_pages() and tuple(window.ws.pages)==before and warnings
 
 
-def test_text_editor_keeps_paste_shortcut_without_reading_system_clipboard(host,qapp):
+@pytest.mark.parametrize('review', [False, True])
+def test_text_editor_keeps_paste_shortcut_without_reading_system_clipboard(host,qapp,tmp_path,review):
     window,state,_=host
+    if review:
+        base = tmp_path / 'base.pdf'
+        pdf(base)
+        window.open_files_in_tabs([str(base)])
+        window.open_annotation_tools()
+    before = tuple(window.ws.pages)
     class Editor(QLineEdit):
         received=False
         def keyPressEvent(self,event):
@@ -291,7 +340,7 @@ def test_text_editor_keeps_paste_shortcut_without_reading_system_clipboard(host,
             super().keyPressEvent(event)
     editor=Editor(window);editor.setGeometry(400,180,240,40);editor.show();editor.setFocus();qapp.processEvents()
     QTest.keyClick(editor,Qt.Key.Key_V,Qt.KeyboardModifier.ControlModifier);qapp.processEvents()
-    assert editor.received and state['reads']==0 and not window.ws.pages
+    assert editor.received and state['reads']==0 and tuple(window.ws.pages) == before
 
 
 def test_dragging_whitespace_does_not_turn_rubber_band_selection_into_paste_gap(host,tmp_path,qapp):

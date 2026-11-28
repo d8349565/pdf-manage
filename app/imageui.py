@@ -5,17 +5,22 @@ import base64
 import math
 import uuid
 
-from PyQt6.QtCore import QEvent, QObject, QPointF, QRectF, Qt
+from PyQt6.QtCore import QBuffer, QEvent, QIODevice, QObject, QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDoubleSpinBox, QFileDialog, QFrame,
                             QGraphicsDropShadowEffect, QGraphicsObject, QGraphicsPixmapItem,
                             QGridLayout, QLabel, QMessageBox, QPushButton)
 
 from app.output import OperationCancelled
-from app.pdfimages import fit_image, validate_image, MAX_IMAGE_BYTES
+from app.pdfimages import MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, fit_image, validate_image
 from app.pdfio import PdfError
 from app.progress import run_operation
 from app.workspace import PageEdit
+
+
+def _image_preview(image):
+    return image.scaled(1024, 1024, Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation)
 
 
 def load_image_asset(path):
@@ -25,9 +30,19 @@ def load_image_asset(path):
     image = QImage.fromData(data)
     if image.isNull():
         raise ValueError('图片无法解码，请换一张图片。')
-    image = image.scaled(1024, 1024, Qt.AspectRatioMode.KeepAspectRatio,
-                         Qt.TransformationMode.SmoothTransformation)
-    return data, width, height, image
+    return data, width, height, _image_preview(image)
+
+
+def _load_clipboard_image_asset(image):
+    width, height = image.width(), image.height()
+    if width * height > MAX_IMAGE_PIXELS:
+        raise ValueError(tr('图片超过 2000 万像素，请先缩小图片。'))
+    buffer = QBuffer()
+    if not buffer.open(QIODevice.OpenModeFlag.WriteOnly) or not image.save(buffer, 'PNG'):
+        raise ValueError(tr('剪贴板图片无法读取，请重新复制。'))
+    if buffer.size() > MAX_IMAGE_BYTES:
+        raise ValueError(tr('图片超过 10 MB，请先缩小图片。'))
+    return bytes(buffer.data()), width, height, _image_preview(image)
 
 
 class ImageOverlay(QGraphicsObject):
@@ -256,25 +271,62 @@ class ImageTools(QObject):
         self.bar.show()
         self.bar.raise_()
 
-    def choose_image(self):
+    def _can_insert_image(self):
+        return (bool(self.host.ws.pages) and not self.host._saving
+                and getattr(self.host, '_task_dialog', None) is None
+                and self.host._allow_operation('content_edit'))
+
+    def _prepare_image_tool(self):
         tools = self.host.annotation_tools
-        if not tools.finish_text_box() or not self.host._allow_operation('content_edit'):
-            return
+        if not tools.finish_text_box():
+            return False
         tools.tool.setCurrentIndex(0)
         tools.cancel_move_annot()
         tools._close_inline_replace()
         tools.clear_overlay()
         tools.hover_bar.hide()
-        path, _ = QFileDialog.getOpenFileName(self.host, tr('插入图片'), '', tr('图片 (*.png *.jpg *.jpeg)'))
-        if not path:
+        return True
+
+    def choose_image(self):
+        if not self._can_insert_image() or not self._prepare_image_tool():
             return
+        path, _ = QFileDialog.getOpenFileName(self.host, tr('插入图片'), '', tr('图片 (*.png *.jpg *.jpeg)'))
+        if path:
+            self._place_image(lambda: load_image_asset(path))
+
+    def paste_image(self, image=None, *, immediate=False):
+        if not self._can_insert_image():
+            return False
+        if image is None:
+            image = QApplication.clipboard().image()
+        if image.isNull():
+            self.host.statusBar().showMessage(tr('剪贴板里没有图片，请先截图或复制图片。'), 6000)
+            return False
+        if not self._prepare_image_tool():
+            return False
+        return self._place_image(lambda: _load_clipboard_image_asset(image), immediate=immediate)
+
+    def _place_image(self, load_asset, *, immediate=False):
+        workspace = self.host.ws
+        index = workspace.preview_index()
+        if index is None:
+            return False
+        ref = workspace.pages[index]
+
+        def prepare(progress):
+            asset = load_asset()
+            if self.host.store.cached_annotations(ref) is None:
+                self.host.store.prepare_annotations(ref)
+            return asset
+
         self.clear()
         try:
-            data, width, height, image = run_operation(self.host, '读取图片', lambda progress: load_image_asset(path))
-            index = self.host.ws.preview_index()
-            if index is None:
-                return
-            self.index, self.ref = index, self.host.ws.pages[index]
+            data, width, height, image = run_operation(self.host, tr('读取图片'), prepare)
+            if (self.host.ws is not workspace or workspace.preview_index() != index
+                    or workspace.pages[index] is not ref or not self.view.isVisible()):
+                self.host.statusBar().showMessage(tr('页面已改变，请重新插入图片。'), 6000)
+                return False
+            self.index, self.ref = index, ref
             bounds = self.bounds()
             factor = min((bounds[2] - bounds[0]) * .5 / width, (bounds[3] - bounds[1]) * .5 / height)
             self.settings = dict(version=1, cx=(bounds[0] + bounds[2]) / 2,
@@ -283,14 +335,22 @@ class ImageTools(QObject):
             self.pending = base64.b64encode(data).decode('ascii')
             self.identifier = 'zhixu-image-' + uuid.uuid4().hex
             self.image = image
+            if immediate:
+                self.settings = fit_image(self.settings, bounds)
+                placed = self.commit()
+                if not placed:
+                    self.clear()
+                return placed
             self.update_overlay()
             self.view.setFocus()
             self.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
             self.host.statusBar().showMessage(tr('在当前页点击放置图片；Esc 取消。'), 6000)
+            return True
         except (OSError, ValueError, PdfError, OperationCancelled) as exc:
             self.clear()
             if not isinstance(exc, OperationCancelled):
                 QMessageBox.information(self.host, tr('图片未插入'), str(exc))
+            return False
 
     def select_image(self, index, item):
         if not self.host._allow_operation('content_edit'):

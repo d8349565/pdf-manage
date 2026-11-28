@@ -10,7 +10,7 @@ import uuid
 from time import perf_counter
 
 from PyQt6.QtCore import QEvent, QPointF, QRect, QRectF, QSignalBlocker, QSize, QTimer, Qt
-from PyQt6.QtGui import QAction, QActionGroup, QColor, QContextMenuEvent, QFont, QFontMetrics, QImage, QPainterPath, QPen, QPixmap, QPolygonF
+from PyQt6.QtGui import QAction, QActionGroup, QColor, QContextMenuEvent, QFont, QFontMetrics, QImage, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QBoxLayout, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFrame, QGraphicsDropShadowEffect, QGraphicsPathItem, QGraphicsView, QHeaderView, QHBoxLayout, QInputDialog, QLabel,
@@ -868,9 +868,13 @@ class AnnotationTools(QWidget):
             self.tool_group.addAction(action)
             self.tool_actions.append(action)
         self.insert_image_action = QAction(toolbar_icon('image', '#526B63', 16), tr('图片'), self)
-        self.insert_image_action.setToolTip(tr('插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）'))
-        self.host.shortcut_manager.watch_hint('review.image', self.insert_image_action, '插入图片（PNG/JPEG，可拖动、调整尺寸和旋转）')
+        self.host.shortcut_manager.watch_hint('review.image', self.insert_image_action,
+                                              tr('插入图片（点击选择文件，下拉从剪贴板插入）'))
         self.insert_image_action.triggered.connect(lambda: self.host.image_tools.choose_image())
+        image_sources = QMenu(self.tool_bar)
+        image_sources.addAction(tr('从文件插入'), self.insert_image_action.trigger)
+        image_sources.addAction(tr('从剪贴板插入'), lambda: self.host.image_tools.paste_image())
+        self.insert_image_action.setMenu(image_sources)
         actions = {kind: action for (kind, _, _), action in zip(self.TOOL_DEFS, self.tool_actions)}
         actions['image'] = self.insert_image_action
         actions['capture'] = self.host.capture_action
@@ -885,6 +889,10 @@ class AnnotationTools(QWidget):
         for button, (_, _, name) in zip(self.tool_buttons, self.TOOL_DEFS):
             button.setAccessibleName(tr(name))
         self.insert_image_button = self.tool_bar.widgetForAction(self.insert_image_action)
+        self.insert_image_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.insert_image_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        QShortcut('Alt+Down', self.insert_image_button, self.insert_image_button.showMenu,
+                  context=Qt.ShortcutContext.WidgetShortcut)
         self.insert_image_button.setAccessibleName(tr('插入图片'))
         self.tool_actions[0].setChecked(True)
         bar_layout.addWidget(self.tool_bar)
