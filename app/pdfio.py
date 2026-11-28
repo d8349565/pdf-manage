@@ -710,6 +710,9 @@ class PdfStore:
             raise PdfError(f"无法检查目标文件，请另存新文件：{exc}") from exc
 
     def _inspect_destination(self, dest):
+        from app.storage import check_output_destination
+
+        check_output_destination(dest)
         if os.fspath(dest).lower().endswith('.ofd'):
             raise PdfError('OFD 原文件受保护，请另存为 PDF。')
         for source in self._sources.values():
@@ -786,6 +789,7 @@ class PdfStore:
 
     def _assemble(self, pages, sources, options, progress_callback, *, recover=False):
         import pymupdf
+        from app.pdfattachments import select_pages_preserving_attachments, stabilize_page_attachment_links
         from app.pdfstructure import (
             capture_navigation, copy_document_properties, namespace_form_fields,
             inspect_safety, page_object_signature, restore_navigation,
@@ -848,10 +852,11 @@ class PdfStore:
                     copy_documents[key] = doc
                     namespace_form_fields(doc, used_fields, ordinal, selected)
                     copy_signatures[key] = {number: page_object_signature(doc[number]) for number in set(selected)}
+            attachment_names = None
             if preserve_structure:
                 out = documents.pop(sid)
                 if numbers[sid] != list(range(out.page_count)):
-                    out.select(numbers[sid])
+                    select_pages_preserving_attachments(out, numbers[sid])
                 for index, ref in enumerate(pages):
                     out[index].set_rotation((sources[sid].page_rotation(ref.source_page) + ref.rotation) % 360)
                     if progress_callback:
@@ -879,7 +884,7 @@ class PdfStore:
                                        final=int(key in form_data or remaining[key] == 0))
                     if progress_callback:
                         progress_callback(index + 1, len(pages), "正在组装 PDF 并保留页面对象")
-                copy_document_properties(out, documents, warnings,
+                attachment_names = copy_document_properties(out, documents, warnings,
                     source_paths={sid: _path_key(source.path) for sid, source in sources.items()})
             for index, ref in enumerate(pages):
                 expected = copy_signatures.get((ref.source_id, ref.copy_group),
@@ -888,7 +893,10 @@ class PdfStore:
                     raise PdfError(f"第 {index + 1} 页的批注或表单未完整保留，已停止写入，原文件未改动。")
             # 全页原序的单一来源保留原始跳转定义；重排、抽取及合并才重新映射。
             if not preserve_structure or numbers[sid] != list(range(len(sources[sid].sizes))):
-                restore_navigation(out, pages, snapshots, warnings, merged=not single)
+                restore_navigation(out, pages, snapshots, warnings, merged=not single, attachment_names=attachment_names)
+            elif any(ref.edits for ref in pages):
+                stabilize_page_attachment_links(out, (link for links in snapshots[sid]['embedded_links'].values()
+                                                       for link in links))
             password = sources[sid].password if preserve_structure and options.preserve_encryption else None
             keep_encryption = preserve_structure and options.preserve_encryption
             return out, password, keep_encryption, warnings

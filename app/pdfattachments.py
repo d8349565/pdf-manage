@@ -4,6 +4,7 @@ import math
 from pathlib import PureWindowsPath
 import re
 
+from app.i18n import tr
 from app.workspace import PageRef
 
 
@@ -20,6 +21,15 @@ class EmbeddedPdfLink:
     attachment: int | tuple[int | str, int | str]  # Link xref or page and annotation selectors.
     destination: int | str  # Page number (zero-based) or named destination in the child PDF.
     point: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddedLinkSnapshot:
+    xref: int
+    rect: tuple[float, float, float, float]
+    flags: int
+    destination: str
+    attachment: str | tuple[int, str]  # Original PDF byte-string literal or page and annotation ID.
 
 
 def attachment_name(info):
@@ -87,7 +97,7 @@ def _embedded_pdf_target(mupdf, action, xref):
     return EmbeddedPdfLink(attachment, name) if isinstance(name, str) else None
 
 
-def embedded_pdf_links(page):
+def _embedded_pdf_actions(page):
     """Read GoToE actions omitted by Page.get_links(), using raw PDF coordinates."""
     import pymupdf as p
 
@@ -103,13 +113,113 @@ def embedded_pdf_links(page):
             if mupdf.pdf_to_name(get(action, 'S')) != 'GoToE':
                 continue
             flags = mupdf.pdf_to_int(get(annot, 'F'))
-            if flags & (p.PDF_ANNOT_IS_HIDDEN | p.PDF_ANNOT_IS_NO_VIEW):
-                continue
             rect = p.Rect(mupdf.pdf_to_rect(get(annot, 'Rect'))).normalize()
             if not rect.is_empty and not rect.is_infinite and all(map(math.isfinite, rect)):
-                yield rect, _embedded_pdf_target(mupdf, action, xref)
+                yield xref, rect, flags, action, _embedded_pdf_target(mupdf, action, xref)
         except (mupdf.FzErrorBase, ValueError, RuntimeError):
             continue
+
+
+def embedded_pdf_links(page):
+    import pymupdf as p
+
+    for _, rect, flags, _, target in _embedded_pdf_actions(page):
+        if not flags & (p.PDF_ANNOT_IS_HIDDEN | p.PDF_ANNOT_IS_NO_VIEW):
+            yield rect, target
+
+
+def _pdf_literal(p, obj):
+    return p.JM_BinFromBuffer(p.JM_object_to_buffer(obj, 1, 1)).decode('ascii')
+
+
+def embedded_link_snapshots(page):
+    """Capture local attachment targets independently of PDF object numbers."""
+    import pymupdf as p
+
+    mupdf = p.mupdf
+    document = page.parent
+    pdf = p._as_pdf_document(document)
+    get = mupdf.pdf_dict_gets
+    for xref, rect, flags, action, link in _embedded_pdf_actions(page):
+        if link is None:
+            continue
+        try:
+            if isinstance(link.attachment, int):
+                key = get(get(action, 'T'), 'N')
+                filespec = mupdf.pdf_lookup_name(pdf, p.PDF_NAME('EmbeddedFiles'), key)
+                if not mupdf.pdf_is_embedded_file(filespec):
+                    continue
+                attachment = _pdf_literal(p, mupdf.pdf_resolve_indirect_chain(key))
+            else:
+                attachment = page_attachment_reference(document, *link.attachment)
+                if attachment is None:
+                    continue
+            value = mupdf.pdf_resolve_indirect_chain(get(action, 'D'))
+            if mupdf.pdf_is_array(value):
+                # A child destination array contains page, view, and coordinates.
+                # Preserve their values without copying any source object references.
+                parts = [mupdf.pdf_resolve_indirect_chain(mupdf.pdf_array_get(value, index))
+                         for index in range(mupdf.pdf_array_len(value))]
+                if not all(mupdf.pdf_is_number(part) or mupdf.pdf_is_name(part) or mupdf.pdf_is_null(part)
+                           for part in parts):
+                    continue
+                destination = '[' + ' '.join(_pdf_literal(p, part) for part in parts) + ']'
+            else:
+                destination = _pdf_literal(p, value)
+            yield EmbeddedLinkSnapshot(xref, tuple(rect), flags, destination, attachment)
+        except (mupdf.FzErrorBase, ValueError, RuntimeError):
+            continue
+
+
+def catalogue_target_name(name):
+    import pymupdf as p
+
+    # embfile_add() creates name-tree keys with MuPDF's text string encoding.
+    return _pdf_literal(p, p.mupdf.pdf_new_text_string(name))
+
+
+def page_attachment_target(document, number, identifier):
+    import pymupdf as p
+
+    page = document[number]
+    for token, annot in file_attachment_annotations(page):
+        if token != identifier:
+            continue
+        name = p.get_pdf_str(identifier)
+        # An annotation index can change when unrelated annotations are deleted.
+        if annot.info.get('id') != identifier:
+            document.xref_set_key(annot.xref, 'NM', name)
+        return f'/P {number} /A {name}'
+    raise ValueError(tr('找不到此附件。'))
+
+
+def stabilize_page_attachment_links(document, links):
+    """Keep page-attachment links working when edits change annotation order."""
+    for link in links:
+        if not isinstance(link.attachment, tuple):
+            continue
+        target = page_attachment_target(document, *link.attachment)
+        kind, value = document.xref_get_key(link.xref, 'A')
+        xref, key = (int(value.split()[0]), 'T') if kind == 'xref' else (link.xref, 'A/T')
+        document.xref_set_key(xref, key, f'<< /R /C {target} >>')
+
+
+def insert_embedded_pdf_link(page, link, target):
+    # PyMuPDF's insert_link() has no kind for GoToE. Use its underlying
+    # annotation writer with the validated destination and raw PDF rectangle.
+    rect = ' '.join(f'{coordinate:.9f}' for coordinate in link.rect)
+    page._addAnnot_FromString((f'<< /Type /Annot /Subtype /Link /Rect [{rect}] '
+                               f'/F {link.flags} /BS << /W 0 >> /A << /S /GoToE '
+                               f'/D {link.destination} /T << /R /C {target} >> >> >>',))
+
+
+def _catalogue_file(p, filespec, name):
+    mupdf = p.mupdf
+    info = {key: mupdf.pdf_to_text_string(mupdf.pdf_dict_gets(filespec, field))
+            for key, field in (('ufilename', 'UF'), ('filename', 'F'), ('description', 'Desc'))}
+    info['name'] = name
+    data = p.JM_BinFromBuffer(mupdf.pdf_load_embedded_file_contents(filespec))
+    return info, data
 
 
 def catalogue_link_attachment(document, xref):
@@ -123,11 +233,55 @@ def catalogue_link_attachment(document, xref):
     filespec = mupdf.pdf_lookup_name(pdf, p.PDF_NAME('EmbeddedFiles'), key)
     if not mupdf.pdf_is_embedded_file(filespec):
         return None
-    info = {name: mupdf.pdf_to_text_string(mupdf.pdf_dict_gets(filespec, field))
-            for name, field in (('ufilename', 'UF'), ('filename', 'F'))}
-    info['name'] = mupdf.pdf_to_text_string(key)
-    data = p.JM_BinFromBuffer(mupdf.pdf_load_embedded_file_contents(filespec))
+    info, data = _catalogue_file(p, filespec, mupdf.pdf_to_text_string(key))
     return attachment_name(info), data
+
+
+def catalogue_files(document):
+    """Keep the tree's byte-string keys, including names below /Kids."""
+    import pymupdf as p
+
+    mupdf = p.mupdf
+    pdf = p._as_pdf_document(document)
+    pending = [_catalogue_tree(p, pdf)]
+    seen = set()
+    while pending:
+        node = pending.pop()
+        xref = mupdf.pdf_to_num(node)
+        if xref:
+            if xref in seen:
+                raise ValueError(tr('无法读取附件。'))
+            seen.add(xref)
+        names = mupdf.pdf_dict_gets(node, 'Names')
+        for index in range(0, mupdf.pdf_array_len(names), 2):
+            key = mupdf.pdf_resolve_indirect_chain(mupdf.pdf_array_get(names, index))
+            filespec = mupdf.pdf_array_get(names, index + 1)
+            if not mupdf.pdf_is_string(key) or not mupdf.pdf_is_embedded_file(filespec):
+                raise ValueError(tr('无法读取附件。'))
+            info, data = _catalogue_file(p, filespec, mupdf.pdf_to_text_string(key))
+            yield _pdf_literal(p, key), info, data
+        kids = mupdf.pdf_dict_gets(node, 'Kids')
+        pending.extend(mupdf.pdf_array_get(kids, index)
+                       for index in reversed(range(mupdf.pdf_array_len(kids))))
+
+
+def _catalogue_tree(p, pdf):
+    mupdf = p.mupdf
+    root = mupdf.pdf_dict_gets(mupdf.pdf_trailer(pdf), 'Root')
+    return mupdf.pdf_dict_getl(root, p.PDF_NAME('Names'), p.PDF_NAME('EmbeddedFiles'))
+
+
+def select_pages_preserving_attachments(document, pages):
+    """Keep the original name tree and its byte-string keys across Document.select()."""
+    import pymupdf as p
+
+    mupdf = p.mupdf
+    pdf = p._as_pdf_document(document)
+    files = _catalogue_tree(p, pdf)
+    document.select(pages)
+    if not mupdf.pdf_is_null(files):
+        root = mupdf.pdf_dict_gets(mupdf.pdf_trailer(pdf), 'Root')
+        mupdf.pdf_dict_putl(root, files, p.PDF_NAME('Names'), p.PDF_NAME('EmbeddedFiles'))
 
 
 def named_pdf_destination(document, name):

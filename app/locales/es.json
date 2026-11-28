@@ -2169,6 +2169,7 @@
   "输出排版": "Diseño de salida",
   "输出文件名冲突": "Conflicto de nombres de salida",
   "输出文件夹不存在": "La carpeta de salida no existe",
+  "输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。": "Elige una carpeta de salida fuera de la caché para conservar el archivo exportado.",
   "输出目录": "Carpeta de salida",
   "输出目录中存在同名文件，请分别转换或保留各源文件目录。": "Hay nombres repetidos en la carpeta de salida. Convierta por separado o conserve las carpetas de cada original.",
   "输出目录：": "Carpeta de salida:",

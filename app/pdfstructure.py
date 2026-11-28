@@ -10,6 +10,10 @@ from time import perf_counter
 
 import pymupdf
 
+from app.i18n import tr
+from app.pdfattachments import (catalogue_files, catalogue_target_name, embedded_link_snapshots,
+                                insert_embedded_pdf_link, page_attachment_target)
+
 
 @dataclass(frozen=True)
 class PdfSafety:
@@ -158,7 +162,7 @@ def capture_navigation(doc, page_numbers, *, allow_structure_loss=False, warning
             destination = dict(dest, kind=pymupdf.LINK_NONE)
             warnings.append("无法解析的书签保留标题并取消跳转，请核对副本。")
         toc.append([level, title, page_no, destination])
-    links = {}
+    links, embedded_links = {}, {}
     page_objects = {}
     for number in set(page_numbers):
         page = doc[number]
@@ -178,13 +182,15 @@ def capture_navigation(doc, page_numbers, *, allow_structure_loss=False, warning
             item["from"] = pymupdf.Rect(link["from"]) * inverse
             captured.append(item)
         raw_links = sum(kind == pymupdf.PDF_ANNOT_LINK for _, kind, _ in page.annot_xrefs())
-        if len(captured) != raw_links:
+        embedded = tuple(embedded_link_snapshots(page)) if len(captured) < raw_links else ()
+        if len(captured) + len(embedded) != raw_links:
             if not allow_structure_loss:
                 raise ValueError("存在无法完整解析的链接，不能保证保存完整")
             warnings.append("无法完整解析的链接已从副本移除，请核对。")
         links[number] = captured
+        embedded_links[number] = embedded
         page_objects[number] = page_object_signature(page)
-    return {"toc": toc, "links": links, "labels": doc.get_page_labels(),
+    return {"toc": toc, "links": links, "embedded_links": embedded_links, "labels": doc.get_page_labels(),
             "objects": page_objects}
 
 
@@ -237,17 +243,20 @@ def copy_document_properties(out, documents, warnings, *, source_paths=None):
     if len(documents) > 1:
         warnings.append("合并文件的文档属性采用第一个来源；各来源的附件分别保留。")
     used_names = set()
-    copied_attachments = set()
+    copied_attachments = {}
+    attachment_names = {}
     for ordinal, (sid, doc) in enumerate(documents.items(), 1):
-        for name in doc.embfile_names():
-            info = doc.embfile_info(name)
-            data = doc.embfile_get(name)
+        for name_key, info, data in catalogue_files(doc):
+            if (sid, name_key) in attachment_names:
+                raise ValueError(tr('无法读取附件。'))
+            name = info['name']
+            key = None
             if source_paths is not None:
-                key = (source_paths[sid], name, info.get("filename"), info.get("ufilename"),
+                key = (source_paths[sid], name_key, info.get("filename"), info.get("ufilename"),
                        info.get("description"), hashlib.sha256(data).digest())
                 if key in copied_attachments:
+                    attachment_names[sid, name_key] = copied_attachments[key]
                     continue
-                copied_attachments.add(key)
             candidate = name
             suffix = 1
             while candidate in used_names:
@@ -255,12 +264,16 @@ def copy_document_properties(out, documents, warnings, *, source_paths=None):
                 suffix += 1
             out.embfile_add(candidate, data, filename=info.get("filename"),
                             ufilename=info.get("ufilename"), desc=info.get("description"))
+            attachment_names[sid, name_key] = candidate
+            if key is not None:
+                copied_attachments[key] = candidate
             used_names.add(candidate)
             if candidate != name:
                 warnings.append(f"同名附件已改名为「{candidate}」。")
+    return attachment_names
 
 
-def restore_navigation(out, pages, snapshots, warnings, merged):
+def restore_navigation(out, pages, snapshots, warnings, merged, *, attachment_names=None):
     mappings = {}
     group_mappings = {}
     for index, ref in enumerate(pages):
@@ -326,6 +339,20 @@ def restore_navigation(out, pages, snapshots, warnings, merged):
                 link["page"] = target
                 link["to"] = link.get("to", pymupdf.Point(0, 0)) * out[target].transformation_matrix
             page.insert_link(link)
+        for embedded in snapshot['embedded_links'][ref.source_page]:
+            if isinstance(embedded.attachment, tuple):
+                old_target, identifier = embedded.attachment
+                number = group_mappings[ref.source_id, ref.copy_group].get(
+                    old_target, mappings[ref.source_id].get(old_target))
+                if number is None:
+                    removed_links += 1
+                    continue
+                target = page_attachment_target(out, number, identifier)
+            else:
+                name_key = embedded.attachment if attachment_names is None else catalogue_target_name(
+                    attachment_names[ref.source_id, embedded.attachment])
+                target = f'/N {name_key}'
+            insert_embedded_pdf_link(page, embedded, target)
         out.reload_page(page)
         if has_labels:
             rules = snapshot["labels"]
@@ -357,6 +384,8 @@ def document_signature(doc, *, annotation_pages=()):
             links.append((item.get("kind"), item.get("page"), item.get("uri"),
                           item.get("file"), item.get("nameddest"), item.get("name"),
                           tuple(round(v, 3) for v in rect)))
+        embedded = [(link.attachment, link.flags, link.destination,
+                     tuple(round(v, 3) for v in link.rect)) for link in embedded_link_snapshots(page)]
         annotations = []
         if page.number in annotation_pages:
             for annot in page.annots() or ():
@@ -365,7 +394,7 @@ def document_signature(doc, *, annotation_pages=()):
                                     tuple(round(v, 3) for v in annot.rect), annot.vertices,
                                     annot.colors, annot.border, annot.opacity))
         result.append((page.rotation, round(page.rect.width, 3), round(page.rect.height, 3),
-                       page_object_signature(page), links, annotations))
+                       page_object_signature(page), links, embedded, annotations))
     toc = [(row[0], row[1], row[2], row[3].get("kind")) for row in doc.get_toc(False)]
     attachments = [(name, doc.embfile_info(name).get("size")) for name in doc.embfile_names()]
     return (result, toc, doc.get_page_labels(), attachments)

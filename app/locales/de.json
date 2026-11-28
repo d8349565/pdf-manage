@@ -2169,6 +2169,7 @@
   "输出排版": "Ausgabelayout",
   "输出文件名冲突": "Konflikt bei Ausgabedateinamen",
   "输出文件夹不存在": "Ausgabeordner existiert nicht",
+  "输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。": "Wählen Sie einen Ausgabeordner außerhalb des Caches, damit die exportierte Datei dauerhaft gespeichert bleibt.",
   "输出目录": "Ausgabeordner",
   "输出目录中存在同名文件，请分别转换或保留各源文件目录。": "Im Ausgabeordner bestehen doppelte Namen. Konvertieren Sie getrennt oder verwenden Sie jeweils den Quellordner.",
   "输出目录：": "Ausgabeordner:",

@@ -2232,7 +2232,7 @@
     "app/exportdialogs.py:299"
   ],
   "另存为…": [
-    "app/attachmentui.py:133",
+    "app/attachmentui.py:135",
     "app/ui.py:7300"
   ],
   "另存为新文件（默认）": [
@@ -3854,8 +3854,8 @@
     "app/ui.py:3745"
   ],
   "当前文档没有附件。": [
-    "app/attachmentui.py:156",
-    "app/attachmentui.py:193"
+    "app/attachmentui.py:158",
+    "app/attachmentui.py:195"
   ],
   "当前文档页：{p0}": [
     "app/signatureui.py:130"
@@ -4257,7 +4257,7 @@
     "app/printing.py:1192"
   ],
   "打开": [
-    "app/attachmentui.py:132",
+    "app/attachmentui.py:134",
     "app/recentui.py:353",
     "app/storageui.py:227",
     "app/shortcutcommands.py:history.open",
@@ -4498,6 +4498,7 @@
     "app/outputui.py:434"
   ],
   "找不到此附件。": [
+    "app/pdfattachments.py:193",
     "app/pdfio.py:619",
     "app/pdfio.py:648"
   ],
@@ -5072,7 +5073,7 @@
     "app/textboxui.py:501"
   ],
   "文档": [
-    "app/attachmentui.py:196"
+    "app/attachmentui.py:198"
   ],
   "文档.pdf": [
     "app/ui.py:6928",
@@ -5264,7 +5265,10 @@
     "app/translation/ui.py:3193"
   ],
   "无法读取附件。": [
-    "app/attachmentui.py:188"
+    "app/attachmentui.py:190",
+    "app/pdfattachments.py:253",
+    "app/pdfattachments.py:260",
+    "app/pdfstructure.py:251"
   ],
   "无法调整页面大小": [
     "app/pagetoolsui.py:309"
@@ -5979,7 +5983,7 @@
     "app/mosaicui.py:137"
   ],
   "正在查找附件…": [
-    "app/attachmentui.py:156",
+    "app/attachmentui.py:158",
     "app/pdfio.py:580"
   ],
   "正在检查…": [
@@ -6118,7 +6122,7 @@
   ],
   "此类型的附件请先另存。": [
     "app/attachmentui.py:38",
-    "app/attachmentui.py:219"
+    "app/attachmentui.py:221"
   ],
   "此链接类型暂不支持打开": [
     "app/readerinteraction.py:264"
@@ -6816,7 +6820,7 @@
     "app/translation/extractor.py:309"
   ],
   "第 {p0} 页": [
-    "app/attachmentui.py:196",
+    "app/attachmentui.py:198",
     "app/editingui.py:384",
     "app/pdfcontentcompareui.py:292",
     "app/pdfcontentcompareui.py:384",
@@ -7871,6 +7875,10 @@
   "输出文件夹不存在": [
     "app/wordui.py:727"
   ],
+  "输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。": [
+    "app/storage.py:85",
+    "app/storage.py:108"
+  ],
   "输出目录": [
     "app/outputui.py:93",
     "app/outputui.py:215"
@@ -8383,17 +8391,17 @@
     "app/shortcutcommands.py:colors.apply"
   ],
   "附件": [
-    "app/attachmentui.py:120",
+    "app/attachmentui.py:122",
     "app/ui.py:3322",
     "app/ui.py:3965",
     "app/shortcutcommands.py:view.attachments",
     "app/shortcutcommands.py:view.attachments"
   ],
   "附件不能覆盖已打开的文档，请选择其他位置。": [
-    "app/attachmentui.py:81"
+    "app/attachmentui.py:82"
   ],
   "附件已另存。": [
-    "app/attachmentui.py:96"
+    "app/attachmentui.py:98"
   ],
   "限制权限时必须使用不同的管理密码。权限限制不能保证绝对防复制。": [
     "app/exportdialogs.py:122"

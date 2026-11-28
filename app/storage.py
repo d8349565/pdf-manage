@@ -8,9 +8,10 @@ import shutil
 import sys
 import tempfile
 
-from PyQt6.QtCore import QLockFile, QSettings
+from PyQt6.QtCore import QLockFile, QSettings, QStandardPaths
 
 from app import APP_SLUG
+from app.i18n import tr
 from app.output import check_cancel
 from app.runtime import portable_data, portable_root, preferences
 
@@ -72,7 +73,16 @@ def output_directory():
 
 def export_path(suggested):
     folder = output_directory()
-    return str(folder / Path(suggested).name) if folder else str(suggested)
+    path = folder / Path(suggested).name if folder else Path(suggested)
+    if _is_task_output(path):
+        documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        path = (Path(documents) if documents else Path.home()) / path.name
+    return str(path)
+
+
+def check_output_destination(path):
+    if _is_task_output(path):
+        raise StorageError(tr('输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。'))
 
 
 def previous_directories(kind):
@@ -95,7 +105,7 @@ def check_directory(kind, path):
     output = path if kind == 'output' else output_directory()
     caches = [path] if kind == 'cache' else [directory('cache').resolve(), *previous_directories('cache')]
     if output is not None and any(Path(output).resolve().is_relative_to(cache) for cache in caches):
-        raise StorageError('输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。')
+        raise StorageError(tr('输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。'))
 
 
 def save_directory(kind, path):
@@ -183,20 +193,28 @@ class TemporaryWorkspace:
         self.cleanup()
 
 
+def _is_cache_task(path):
+    if not re.fullmatch(r'task-[a-z]+-[a-z0-9_]+', path.name):
+        return False
+    marker = path / '.zhixu-task'
+    try:
+        return (path.is_dir() and not is_link(path) and marker.is_file() and not is_link(marker)
+                and marker.stat().st_size < 64 and marker.read_text(encoding='ascii') == 'ZhiXuPDF scratch v1')
+    except (OSError, UnicodeError):
+        return False
+
+
+def _is_task_output(path):
+    return any(_is_cache_task(parent) for parent in Path(path).resolve().parents)
+
+
 def _cache_tasks():
     for root in dict.fromkeys([directory('cache'), *previous_directories('cache')]):
         if not root.is_dir() or is_link(root):
             continue
         for path in root.iterdir():
-            if not re.fullmatch(r'task-[a-z]+-[a-z0-9_]+', path.name) or not path.is_dir() or is_link(path):
-                continue
-            marker = path / '.zhixu-task'
-            try:
-                if (marker.is_file() and not is_link(marker) and marker.stat().st_size < 64
-                        and marker.read_text(encoding='ascii') == 'ZhiXuPDF scratch v1'):
-                    yield path
-            except (OSError, UnicodeError):
-                continue
+            if _is_cache_task(path):
+                yield path
 
 
 def _backups():

@@ -2169,6 +2169,7 @@
   "输出排版": "Disposition de sortie",
   "输出文件名冲突": "Conflit de noms de sortie",
   "输出文件夹不存在": "Le dossier de sortie n’existe pas",
+  "输出文件夹须位于缓存目录之外，避免把导出结果当作临时文件。": "Choisissez un dossier de sortie en dehors du cache pour conserver le fichier exporté.",
   "输出目录": "Dossier de sortie",
   "输出目录中存在同名文件，请分别转换或保留各源文件目录。": "Noms identiques dans le dossier de sortie. Convertissez séparément ou conservez les dossiers de chaque source.",
   "输出目录：": "Dossier de sortie :",
